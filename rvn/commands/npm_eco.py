@@ -2,7 +2,7 @@
 
 All registry operations for JavaScript packages.  Canonical npm protocol
 routes are fully functional; unified routes (marked with ✦) are wired to
-the RavenStash API and will be enabled when the server-side endpoints are
+the Ravenstash API and will be enabled when the server-side endpoints are
 deployed.
 
     rvn npm install lodash                    # install from private registry
@@ -403,10 +403,10 @@ def npm_yank(
     repo: str | None = typer.Option(None, "--repo", "-r"),
     profile: str | None = typer.Option(None, "--profile", "-p"),
 ) -> None:
-    """Mark a package version as yanked via RavenStash unified API.
+    """Mark a package version as yanked via Ravenstash unified API.
 
     ✦ Unified feature — yank is not a native npm protocol concept.
-       A yanked version is hidden in the RavenStash metadata layer.
+       A yanked version is hidden in the Ravenstash metadata layer.
        Installers using the standard npm CLI will NOT see the yank effect;
        only rvn-aware tooling respects it.
 
@@ -443,7 +443,7 @@ def npm_deprecate(
     """Deprecate a package version in the npm registry.
 
     In canonical mode this uses the native npm deprecate command.
-    In unified mode it calls the RavenStash API.
+    In unified mode it calls the Ravenstash API.
 
     \b
         rvn npm deprecate my-pkg@1.0.0 "use my-pkg@2 instead"
@@ -545,7 +545,7 @@ def npm_version(
 # ── dist-tag ──────────────────────────────────────────────────────────────────
 # npm dist-tags are a native npm concept (latest, beta, next, etc.).
 # Canonical routes pass through to the npm registry protocol.
-# Unified routes also store tag state in the RavenStash metadata layer.
+# Unified routes also store tag state in the Ravenstash metadata layer.
 
 
 @_tag_app.command("ls")

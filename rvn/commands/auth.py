@@ -49,7 +49,7 @@ def auth_login(
         None, "--email", "-e", help="Account email (prompted if omitted)."
     ),
 ) -> None:
-    """Authenticate and store credentials for a RavenStash instance.
+    """Authenticate and store credentials for a Ravenstash instance.
 
     Prompts for email and password interactively when not provided via flags.
     The access token is stored in the system keyring (or config file as fallback).

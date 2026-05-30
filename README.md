@@ -1,7 +1,7 @@
-# rvn — Universal Package Manager CLI for RavenStash
+# rvn — Universal Package Manager CLI for Ravenstash
 
 `rvn` is a unified command-line interface for publishing and consuming packages
-across all RavenStash-hosted registries: **PyPI**, **npm**, and **Maven**.
+across all Ravenstash-hosted registries: **PyPI**, **npm**, and **Maven**.
 
 Instead of configuring twine, `.npmrc`, and Maven `settings.xml` separately, `rvn`
 manages credentials in one place and delegates to native toolchains (pip, uv, npm,
@@ -100,7 +100,7 @@ rvn/
 ├── cli.py              # Root typer app, subcommand registration
 ├── config.py           # Config file r/w, profile resolution
 ├── auth.py             # Credential storage (keyring + config fallback)
-├── client.py           # httpx-based RavenStash API client
+├── client.py           # httpx-based Ravenstash API client
 ├── output.py           # Rich console helpers (tables, progress, errors)
 ├── registries/
 │   ├── base.py         # AbstractRegistry protocol + shared types

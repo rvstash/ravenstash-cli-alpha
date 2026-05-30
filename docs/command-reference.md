@@ -1,6 +1,6 @@
 # rvn Command Reference
 
-Universal CLI for RavenStash private registries — Python (PyPI), JavaScript (npm), and Java (Maven).
+Universal CLI for Ravenstash private registries — Python (PyPI), JavaScript (npm), and Java (Maven).
 
 ## Quick overview
 
@@ -31,7 +31,7 @@ Universal CLI for RavenStash private registries — Python (PyPI), JavaScript (n
 | Snapshot list | ✅ webapp API | ✅ `npm view dist-tags` | ✅ webapp API |
 | Multi-registry auth | ✅ per-kind override | ✅ per-kind override | ✅ per-kind override |
 
-**Legend:** ✅ canonical = works via native protocol URLs (fully functional). ✅ webapp API = goes through the RavenStash management API (may degrade gracefully with 404 on older servers). ❌ = not supported by the registry protocol.
+**Legend:** ✅ canonical = works via native protocol URLs (fully functional). ✅ webapp API = goes through the Ravenstash management API (may degrade gracefully with 404 on older servers). ❌ = not supported by the registry protocol.
 
 ---
 
@@ -39,7 +39,7 @@ Universal CLI for RavenStash private registries — Python (PyPI), JavaScript (n
 
 ### `rvn auth login`
 
-Interactive login to a RavenStash instance.
+Interactive login to a Ravenstash instance.
 
 ```
 $ rvn auth login
@@ -230,7 +230,7 @@ $ rvn pypi bump major
 
 ### dist-tag ls / add / rm
 
-PyPI has no native dist-tag support. These commands call the RavenStash management API (requires server-side support; graceful 404 on older instances).
+PyPI has no native dist-tag support. These commands call the Ravenstash management API (requires server-side support; graceful 404 on older instances).
 
 ```
 $ rvn pypi dist-tag ls mypackage --repo my-pypi
@@ -349,7 +349,7 @@ $ rvn npm publish --tag beta --repo my-npm
 
 ### Yank
 
-npm has no native yank concept. Goes through the RavenStash webapp API.
+npm has no native yank concept. Goes through the Ravenstash webapp API.
 
 ```
 $ rvn npm yank my-package 1.0.0 --repo my-npm
@@ -506,7 +506,7 @@ $ rvn maven tree --repo my-maven
 
 ### Yank
 
-Maven has no native yank concept. Goes through the RavenStash webapp API.
+Maven has no native yank concept. Goes through the Ravenstash webapp API.
 
 ```
 $ rvn maven yank com.example:mylib:1.0.0 --repo my-maven
@@ -542,7 +542,7 @@ $ rvn maven bump major
 
 ### dist-tag ls / add / rm
 
-Maven has no native dist-tag concept. These commands use the RavenStash management API.
+Maven has no native dist-tag concept. These commands use the Ravenstash management API.
 
 ```
 $ rvn maven dist-tag ls com.example:mylib --repo my-maven

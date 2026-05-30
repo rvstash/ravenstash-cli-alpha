@@ -44,7 +44,7 @@ from .commands.system import app as system_app
 
 app = typer.Typer(
     name="rvn",
-    help="Universal package manager CLI for RavenStash private registries.",
+    help="Universal package manager CLI for Ravenstash private registries.",
     no_args_is_help=True,
     context_settings={"help_option_names": ["-h", "--help"]},
 )
@@ -206,7 +206,7 @@ def main(
         help="Print version and exit.",
     ),
 ) -> None:
-    """rvn — Unified package manager for RavenStash private registries.
+    """rvn — Unified package manager for Ravenstash private registries.
 
     Covers Python, Node.js, and Java/Maven — project lifecycle and registry
     operations in one tool, modelled on uv's clean command surface.

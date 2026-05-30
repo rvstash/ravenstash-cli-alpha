@@ -9,7 +9,7 @@ description = "Demo Python project for exercising rvn CLI commands"
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
-authors = [{ name = "RavenStash Demo" }]
+authors = [{ name = "Ravenstash Demo" }]
 keywords = ["demo", "example", "ravenstash"]
 classifiers = [
     "Development Status :: 3 - Alpha",

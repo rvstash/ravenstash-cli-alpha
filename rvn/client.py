@@ -1,4 +1,4 @@
-"""httpx-based RavenStash Central API client.
+"""httpx-based Ravenstash Central API client.
 
 All requests go through this module so that auth headers, base URL, and error
 handling are consistent everywhere.

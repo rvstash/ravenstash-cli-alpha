@@ -1,7 +1,7 @@
 # rvn examples
 
 Three self-contained demo projects for exercising the `rvn` CLI against public
-registries and the built-in runtime manager.  None of them require a RavenStash
+registries and the built-in runtime manager.  None of them require a Ravenstash
 account for the commands marked **public**.  Commands marked **private** need
 `rvn auth login` first.
 
@@ -55,7 +55,7 @@ rvnx ruff check src/
 rvnx black --check src/
 rvnx mypy src/
 
-# PRIVATE — publish to RavenStash (needs login + repo)
+# PRIVATE — publish to Ravenstash (needs login + repo)
 rvn pypi publish --repo my-pypi-repo    # build + twine upload
 rvn pypi bump patch                     # bumps version in pyproject.toml
 rvn pypi dist-tag ls --repo my-pypi-repo --name rvn-demo-python
@@ -80,7 +80,7 @@ rvn npm outdated                        # npm outdated
 # PUBLIC — try npx-style runner
 rvnx --npm prettier --check src/
 
-# PRIVATE — publish to RavenStash (needs login + repo)
+# PRIVATE — publish to Ravenstash (needs login + repo)
 rvn npm publish --repo my-npm-repo
 rvn npm bump patch                      # npm version patch
 rvn npm dist-tag ls --repo my-npm-repo --name rvn-demo-npm
@@ -105,7 +105,7 @@ rvn maven list                          # mvn dependency:list
 rvn maven repo-url --repo my-maven-repo     # (shows what URL would be used)
 rvn maven settings-xml --repo my-maven-repo # (shows settings.xml snippet)
 
-# PRIVATE — publish to RavenStash (needs login + repo)
+# PRIVATE — publish to Ravenstash (needs login + repo)
 rvn maven deploy --repo my-maven-repo   # mvn deploy:deploy-file
 rvn maven bump patch                    # mvn versions:set
 ```
@@ -115,7 +115,7 @@ rvn maven bump patch                    # mvn versions:set
 ## Auth flow (for private commands)
 
 ```bash
-# Login to your RavenStash instance
+# Login to your Ravenstash instance
 rvn auth login --api-url https://api.ravenstash.com
 
 # Or for a self-hosted instance

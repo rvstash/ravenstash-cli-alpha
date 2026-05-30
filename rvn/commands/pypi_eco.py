@@ -2,7 +2,7 @@
 
 All registry operations for Python packages, from first install to release
 management.  Canonical routes are fully functional; unified routes (marked
-with ✦) are wired to the RavenStash API and will be enabled as soon as the
+with ✦) are wired to the Ravenstash API and will be enabled as soon as the
 server-side endpoints are deployed.
 
     rvn pypi install requests boto3           # install from private index
@@ -488,8 +488,8 @@ def pypi_version(
 
 
 # ── dist-tag ──────────────────────────────────────────────────────────────────
-# Managed via RavenStash unified API.  The PyPI protocol has no native dist-tag
-# concept; these tags live in the RavenStash metadata layer and are used by
+# Managed via Ravenstash unified API.  The PyPI protocol has no native dist-tag
+# concept; these tags live in the Ravenstash metadata layer and are used by
 # rvn (and future rvn-aware tooling) to resolve aliases like "stable" or "beta".
 
 
@@ -550,7 +550,7 @@ def pypi_tag_add(
     except ApiError as exc:
         if exc.status_code == 404:
             output.fatal(
-                "dist-tag management requires a newer RavenStash server.\n"
+                "dist-tag management requires a newer Ravenstash server.\n"
                 "  Check for server updates at https://ravenstash.com/changelog"
             )
         output.fatal(str(exc))

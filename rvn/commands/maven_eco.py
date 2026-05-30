@@ -2,7 +2,7 @@
 
 All registry operations for Maven artifacts.  Canonical Maven protocol routes
 are fully functional; unified routes (marked with ✦) are wired to the
-RavenStash API and will be enabled when server-side endpoints are deployed.
+Ravenstash API and will be enabled when server-side endpoints are deployed.
 
     rvn maven install com.google.guava:guava:33.0   # fetch artifact
     rvn maven sync                                   # mvn dependency:resolve
@@ -387,10 +387,10 @@ def maven_yank(
     repo: str | None = typer.Option(None, "--repo", "-r"),
     profile: str | None = typer.Option(None, "--profile", "-p"),
 ) -> None:
-    """Mark an artifact version as yanked via RavenStash unified API.
+    """Mark an artifact version as yanked via Ravenstash unified API.
 
     ✦ Unified feature — yank is not a native Maven protocol concept.
-       A yanked version is hidden in the RavenStash metadata layer.
+       A yanked version is hidden in the Ravenstash metadata layer.
        Standard Maven clients will NOT see the yank effect; only rvn-aware
        tooling respects it.
 
@@ -429,7 +429,7 @@ def maven_deprecate(
     repo: str | None = typer.Option(None, "--repo", "-r"),
     profile: str | None = typer.Option(None, "--profile", "-p"),
 ) -> None:
-    """Mark an artifact version as deprecated via RavenStash unified API.
+    """Mark an artifact version as deprecated via Ravenstash unified API.
 
     ✦ Unified feature — deprecation is not a native Maven protocol concept.
        Standard Maven clients will NOT see the deprecation; only rvn-aware
@@ -456,7 +456,7 @@ def maven_deprecate(
     except ApiError as exc:
         if exc.status_code == 404:
             output.fatal(
-                "The deprecate endpoint requires a newer RavenStash server.\n"
+                "The deprecate endpoint requires a newer Ravenstash server.\n"
                 "  Check for server updates at https://ravenstash.com/changelog"
             )
         output.fatal(str(exc))
@@ -571,7 +571,7 @@ def maven_version(
 
 
 # ── dist-tag ──────────────────────────────────────────────────────────────────
-# Maven has no native dist-tag concept.  Tags live in the RavenStash
+# Maven has no native dist-tag concept.  Tags live in the Ravenstash
 # metadata layer and are used by rvn-aware tooling to resolve aliases
 # like "stable", "release", or "beta".
 
@@ -636,7 +636,7 @@ def maven_tag_add(
     except ApiError as exc:
         if exc.status_code == 404:
             output.fatal(
-                "dist-tag management requires a newer RavenStash server.\n"
+                "dist-tag management requires a newer Ravenstash server.\n"
                 "  Check for server updates at https://ravenstash.com/changelog"
             )
         output.fatal(str(exc))

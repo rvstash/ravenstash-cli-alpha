@@ -11,7 +11,7 @@ from .. import config as cfg_mod
 from .. import output
 
 
-app = typer.Typer(help="Authenticate with a RavenStash instance.")
+app = typer.Typer(help="Authenticate with a Ravenstash instance.")
 
 
 @app.callback(invoke_without_command=True)
@@ -27,7 +27,7 @@ def login(
         None, "--email", "-e", help="Account email (prompted if omitted)."
     ),
 ) -> None:
-    """Authenticate and store credentials for a RavenStash instance.
+    """Authenticate and store credentials for a Ravenstash instance.
 
     Prompts for email and password interactively when not provided via flags.
     The access token is stored in the system keyring (or config file as fallback).
