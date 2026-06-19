@@ -14,11 +14,12 @@ Config file shape
 
     [profiles.default]
     api_url = "https://api.ravenstash.com"
-    token   = "rvn_tok_..."          # optional — keyring is preferred
+    customer_id = "cus_..."
+    credential_type = "temporary"
+    expires_at = "2026-06-17T16:00:00+00:00"
 
     [profiles.dev]
-    api_url = "http://localhost:6000"
-    token   = "rvn_tok_dev_..."
+    api_url = "http://localhost:6002"
 
     [registries.pypi]
     default_repo = "my-pypi"
@@ -48,22 +49,23 @@ CONFIG_FILE = CONFIG_DIR / "config.toml"
 
 DEFAULT_API_URLS: dict[str, str] = {
     "default": "https://api.ravenstash.com",
-    "dev": "http://localhost:6000",
-    "staging": "https://api-staging.ravenstash.com",
+    "dev": "http://localhost:6002",
+    "staging": "https://api.staging-hxa159.ravenstash.com",
 }
 
 
 @dataclass
 class ProfileConfig:
     api_url: str = "https://api.ravenstash.com"
-    token: str | None = None  # plain-text fallback; keyring is preferred
+    customer_id: str | None = None
+    credential_type: str | None = None
+    expires_at: str | None = None
 
 
 @dataclass
 class RegistryDefaults:
     default_repo: str | None = None
     api_url: str | None = None  # per-kind API URL override (takes precedence over profile api_url)
-    token: str | None = None  # per-kind token override (takes precedence over profile token)
 
 
 @dataclass
@@ -78,6 +80,12 @@ class RvnConfig:
 
     def registry_defaults(self, kind: RegistryKind) -> RegistryDefaults:
         return self.registries.get(kind, RegistryDefaults())
+
+
+def current_profile_name(cfg: RvnConfig | None = None) -> str:
+    """Return the effective active profile name."""
+    resolved_cfg = cfg or load()
+    return os.environ.get("RVN_PROFILE") or resolved_cfg.default_profile
 
 
 # ── Serialisation helpers ─────────────────────────────────────────────────────
@@ -97,14 +105,15 @@ def load() -> RvnConfig:
     for name, vals in raw.get("profiles", {}).items():
         cfg.profiles[name] = ProfileConfig(
             api_url=vals.get("api_url", "https://api.ravenstash.com"),
-            token=vals.get("token"),
+            customer_id=vals.get("customer_id"),
+            credential_type=vals.get("credential_type"),
+            expires_at=vals.get("expires_at"),
         )
 
     for kind, vals in raw.get("registries", {}).items():
         cfg.registries[kind] = RegistryDefaults(  # type: ignore[index]
             default_repo=vals.get("default_repo"),
             api_url=vals.get("api_url"),
-            token=vals.get("token"),
         )
 
     return cfg
@@ -117,7 +126,14 @@ def save(cfg: RvnConfig) -> None:
     if cfg.profiles:
         raw["profiles"] = {
             name: {
-                k: v for k, v in {"api_url": p.api_url, "token": p.token}.items() if v is not None
+                k: v
+                for k, v in {
+                    "api_url": p.api_url,
+                    "customer_id": p.customer_id,
+                    "credential_type": p.credential_type,
+                    "expires_at": p.expires_at,
+                }.items()
+                if v is not None
             }
             for name, p in cfg.profiles.items()
         }
@@ -129,7 +145,6 @@ def save(cfg: RvnConfig) -> None:
                 for k, v in {
                     "default_repo": r.default_repo,
                     "api_url": r.api_url,
-                    "token": r.token,
                 }.items()
                 if v is not None
             }
@@ -143,12 +158,49 @@ def save(cfg: RvnConfig) -> None:
 # ── Convenience setters ───────────────────────────────────────────────────────
 
 
-def set_profile_value(profile: str, api_url: str | None = None, token: str | None = None) -> None:
+def set_profile_value(profile: str, api_url: str | None = None) -> None:
     cfg = load()
     existing = cfg.profiles.get(profile, ProfileConfig())
     cfg.profiles[profile] = ProfileConfig(
         api_url=api_url if api_url is not None else existing.api_url,
-        token=token if token is not None else existing.token,
+        customer_id=existing.customer_id,
+        credential_type=existing.credential_type,
+        expires_at=existing.expires_at,
+    )
+    save(cfg)
+
+
+def clear_profile_credential_metadata(profile: str) -> None:
+    cfg = load()
+    existing = cfg.profiles.get(profile)
+    if existing is None:
+        return
+    cfg.profiles[profile] = ProfileConfig(
+        api_url=existing.api_url,
+        customer_id=None,
+        credential_type=None,
+        expires_at=None,
+    )
+    save(cfg)
+
+
+def set_profile_metadata(
+    profile: str,
+    *,
+    api_url: str | None = None,
+    customer_id: str | None = None,
+    credential_type: str | None = None,
+    expires_at: str | None = None,
+) -> None:
+    cfg = load()
+    existing = cfg.profiles.get(profile, ProfileConfig())
+    cfg.profiles[profile] = ProfileConfig(
+        api_url=api_url if api_url is not None else existing.api_url,
+        customer_id=customer_id if customer_id is not None else existing.customer_id,
+        credential_type=credential_type
+        if credential_type is not None
+        else existing.credential_type,
+        expires_at=expires_at if expires_at is not None else existing.expires_at,
     )
     save(cfg)
 
@@ -159,13 +211,31 @@ def set_default_profile(profile: str) -> None:
     save(cfg)
 
 
+def delete_profile(profile: str) -> bool:
+    cfg = load()
+    if profile not in cfg.profiles:
+        return False
+
+    del cfg.profiles[profile]
+    if cfg.default_profile == profile:
+        cfg.default_profile = next(iter(cfg.profiles), "default")
+    save(cfg)
+    return True
+
+
+def delete_all_profiles() -> None:
+    cfg = load()
+    cfg.profiles = {}
+    cfg.default_profile = "default"
+    save(cfg)
+
+
 def set_registry_default_repo(kind: RegistryKind, repo: str, profile: str | None = None) -> None:
     cfg = load()
     existing = cfg.registries.get(kind, RegistryDefaults())
     cfg.registries[kind] = RegistryDefaults(
         default_repo=repo,
         api_url=existing.api_url,
-        token=existing.token,
     )
     save(cfg)
 
@@ -173,15 +243,13 @@ def set_registry_default_repo(kind: RegistryKind, repo: str, profile: str | None
 def set_registry_override(
     kind: RegistryKind,
     api_url: str | None = None,
-    token: str | None = None,
     default_repo: str | None = None,
 ) -> None:
-    """Set per-kind registry overrides (api_url, token, or default_repo)."""
+    """Set per-kind registry overrides (api_url or default_repo)."""
     cfg = load()
     existing = cfg.registries.get(kind, RegistryDefaults())
     cfg.registries[kind] = RegistryDefaults(
         default_repo=default_repo if default_repo is not None else existing.default_repo,
         api_url=api_url if api_url is not None else existing.api_url,
-        token=token if token is not None else existing.token,
     )
     save(cfg)

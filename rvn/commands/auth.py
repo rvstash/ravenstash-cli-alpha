@@ -1,30 +1,36 @@
-"""rvn auth — multi-registry authentication management.
+"""rvn auth — authentication and registry defaults.
 
 Wraps the core login/logout flow and adds commands to configure per-kind
-registry overrides (separate URLs and tokens for PyPI, npm, and Maven).
+registry defaults.
 
     rvn auth login                        # interactive login (default profile)
     rvn auth login --profile work         # login to a named profile
-    rvn auth logout                       # remove credentials
-    rvn auth add-registry --kind pypi \\
-        --api-url https://api.myhost.com \\
-        --token rvn_tok_... \\
-        --repo my-pypi                    # per-kind override
+    rvn auth switch                       # choose active profile
+    rvn auth logout                       # remove credentials for current profile
+    rvn auth add-registry --kind pypi --repo my-pypi
     rvn auth list                         # show all profiles + per-kind overrides
     rvn auth status                       # verify current token against the API
 """
 
 from __future__ import annotations
 
-import getpass
+import os
+import sys
+from contextlib import contextmanager
+from typing import TYPE_CHECKING
 
-import httpx
 import typer
+from rich.live import Live
+from rich.markup import escape
 
 from .. import auth as auth_mod
 from .. import config as cfg_mod
 from .. import output
-from ..client import ApiClient, ApiError
+from .login import perform_device_login
+
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
 
 
 app = typer.Typer(
@@ -34,59 +40,251 @@ app = typer.Typer(
 )
 
 
+_KEY_UP = "up"
+_KEY_DOWN = "down"
+_KEY_ENTER = "enter"
+_KEY_CTRL_C = "ctrl-c"
+_ESCAPE_SEQUENCE_TIMEOUT_SECONDS = 0.25
+_ESCAPE_SEQUENCE_MAX_CHARS = 8
+
+
+def _current_profile_name(cfg: cfg_mod.RvnConfig) -> str:
+    return cfg_mod.current_profile_name(cfg)
+
+
+def _target_profile(profile: str | None, cfg: cfg_mod.RvnConfig) -> str:
+    return profile or _current_profile_name(cfg)
+
+
+def _require_profile(cfg: cfg_mod.RvnConfig, profile: str) -> None:
+    if profile not in cfg.profiles:
+        output.fatal(
+            f"Profile '{profile}' is not configured. "
+            f"Run `rvn auth login --profile {profile}` first."
+        )
+
+
+@contextmanager
+def _raw_terminal() -> Iterator[None]:
+    if sys.platform == "win32":
+        yield
+        return
+
+    try:
+        import termios
+        import tty
+    except ImportError:
+        yield
+        return
+
+    try:
+        fd = sys.stdin.fileno()
+        old_settings = termios.tcgetattr(fd)
+        tty.setcbreak(fd)
+    except (OSError, termios.error):
+        yield
+        return
+
+    try:
+        yield
+    finally:
+        termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+
+
+def _read_selector_key() -> str:
+    if sys.platform == "win32":
+        import msvcrt
+
+        key = msvcrt.getwch()
+        if key in {"\x00", "\xe0"}:
+            code = msvcrt.getwch()
+            if code == "H":
+                return _KEY_UP
+            if code == "P":
+                return _KEY_DOWN
+        if key in {"\n", "\r"}:
+            return _KEY_ENTER
+        if key == "\x03":
+            return _KEY_CTRL_C
+        return key
+
+    key = _read_stdin_char()
+    if key == "\x03":
+        return _KEY_CTRL_C
+    if key in {"\n", "\r"}:
+        return _KEY_ENTER
+    if key == "\x1b":
+        return _selector_key_from_escape_sequence(_read_escape_sequence(key))
+    return key
+
+
+def _read_escape_sequence(first_char: str) -> str:
+    import select
+
+    sequence = first_char
+    while len(sequence) < _ESCAPE_SEQUENCE_MAX_CHARS:
+        if not select.select([_stdin_selector()], [], [], _ESCAPE_SEQUENCE_TIMEOUT_SECONDS)[0]:
+            break
+        char = _read_stdin_char()
+        if not char:
+            break
+        sequence += char
+        if sequence == "\x1bO":
+            continue
+        if char.isalpha() or char == "~":
+            break
+    return sequence
+
+
+def _stdin_fileno() -> int | None:
+    try:
+        return sys.stdin.fileno()
+    except (AttributeError, OSError):
+        return None
+
+
+def _stdin_selector() -> int | object:
+    fd = _stdin_fileno()
+    return fd if fd is not None else sys.stdin
+
+
+def _read_stdin_char() -> str:
+    fd = _stdin_fileno()
+    if fd is None:
+        return sys.stdin.read(1)
+    try:
+        return os.read(fd, 1).decode("utf-8", errors="ignore")
+    except OSError:
+        return sys.stdin.read(1)
+
+
+def _selector_key_from_escape_sequence(sequence: str) -> str:
+    if sequence in {"\x1b[A", "\x1bOA"}:
+        return _KEY_UP
+    if sequence in {"\x1b[B", "\x1bOB"}:
+        return _KEY_DOWN
+    if sequence.startswith("\x1b[") and sequence.endswith("A"):
+        return _KEY_UP
+    if sequence.startswith("\x1b[") and sequence.endswith("B"):
+        return _KEY_DOWN
+    return sequence
+
+
+def _render_profile_selector(
+    profiles: list[str],
+    selected_index: int,
+    active_profile: str,
+) -> str:
+    lines = [
+        "[bold]Select Ravenstash profile[/]",
+        "[dim]Use ↑/↓ and ENTER to confirm.[/]",
+        "",
+    ]
+    for index, profile in enumerate(profiles):
+        pointer = ">" if index == selected_index else " "
+        active = " [dim](active)[/]" if profile == active_profile else ""
+        label = f"[bold]{escape(profile)}[/]" if index == selected_index else escape(profile)
+        lines.append(f"[cyan]{pointer}[/] {label}{active}")
+    return "\n".join(lines)
+
+
+def _select_profile_interactive(cfg: cfg_mod.RvnConfig) -> str:
+    profiles = list(cfg.profiles)
+    if not profiles:
+        output.fatal("No profiles configured. Run `rvn auth login` first.")
+    if not sys.stdin.isatty() or not output.console.is_terminal:
+        output.fatal("Cannot open profile selector. Use `rvn auth switch --profile <name>`.")
+
+    active_profile = _current_profile_name(cfg)
+    selected_index = profiles.index(active_profile) if active_profile in profiles else 0
+
+    with (
+        _raw_terminal(),
+        Live(
+            _render_profile_selector(profiles, selected_index, active_profile),
+            console=output.console,
+            refresh_per_second=10,
+            transient=True,
+        ) as live,
+    ):
+        while True:
+            key = _read_selector_key()
+            if key == _KEY_CTRL_C:
+                raise KeyboardInterrupt
+            if key == _KEY_UP:
+                selected_index = (selected_index - 1) % len(profiles)
+            elif key == _KEY_DOWN:
+                selected_index = (selected_index + 1) % len(profiles)
+            elif key == _KEY_ENTER:
+                return profiles[selected_index]
+            live.update(_render_profile_selector(profiles, selected_index, active_profile))
+
+
+def _warn_env_profile_override() -> None:
+    if os.environ.get("RVN_PROFILE"):
+        output.warn("RVN_PROFILE is set and still overrides the default profile in this shell.")
+
+
 # ── login ─────────────────────────────────────────────────────────────────────
 
 
 @app.command("login")
 def auth_login(
-    profile: str = typer.Option(
-        "default", "--profile", "-p", help="Config profile to write credentials into."
+    profile: str | None = typer.Option(
+        None,
+        "--profile",
+        "-p",
+        help="Config profile to write credentials into (default: active profile).",
     ),
     api_url: str | None = typer.Option(
-        None, "--api-url", help="Override API base URL (saved to profile)."
+        None, "--api-url", help="Override DevAPI base URL (saved to profile)."
     ),
-    email: str | None = typer.Option(
-        None, "--email", "-e", help="Account email (prompted if omitted)."
+    no_browser: bool = typer.Option(
+        False, "--no-browser", help="Suppress the browser-opening hint."
     ),
 ) -> None:
     """Authenticate and store credentials for a Ravenstash instance.
 
-    Prompts for email and password interactively when not provided via flags.
-    The access token is stored in the system keyring (or config file as fallback).
-
     \b
         rvn auth login
         rvn auth login --profile work --api-url https://api.mycompany.com
-        rvn auth login --email me@example.com
     """
     cfg = cfg_mod.load()
-    existing_profile = cfg.profiles.get(profile)
-    resolved_api_url = api_url or (
-        existing_profile.api_url if existing_profile else "https://api.ravenstash.com"
+    perform_device_login(
+        profile=_target_profile(profile, cfg),
+        api_url=api_url,
+        no_browser=no_browser,
     )
 
-    if api_url:
-        cfg_mod.set_profile_value(profile, api_url=api_url)
 
-    if not email:
-        email = typer.prompt("Email")
-    password = getpass.getpass("Password: ")
+# ── switch ────────────────────────────────────────────────────────────────────
 
-    output.info(f"Authenticating with {resolved_api_url} ...")
+
+@app.command("switch")
+def auth_switch(
+    profile: str | None = typer.Option(
+        None,
+        "--profile",
+        "-p",
+        help="Profile to activate. Omit to choose from an interactive list.",
+    ),
+) -> None:
+    """Switch the active default profile.
+
+    \b
+        rvn auth switch
+        rvn auth switch --profile work
+    """
+    cfg = cfg_mod.load()
     try:
-        resp = httpx.post(
-            f"{resolved_api_url.rstrip('/')}/webapp/auth/login",
-            json={"email": email, "password": password},
-            timeout=15.0,
-        )
-        resp.raise_for_status()
-        token = resp.json()["access_token"]
-    except Exception as exc:
-        output.fatal(f"Login failed: {exc}")
+        selected_profile = profile or _select_profile_interactive(cfg)
+    except KeyboardInterrupt:
+        output.fatal("Profile switch cancelled.")
 
-    auth_mod.set_token(profile, token)
-    cfg_mod.set_profile_value(profile, api_url=resolved_api_url)
-    output.success(f"Authenticated. Token saved for profile '{profile}'.")
+    _require_profile(cfg, selected_profile)
+    cfg_mod.set_default_profile(selected_profile)
+    output.success(f"Active profile set to '{selected_profile}'.")
+    _warn_env_profile_override()
 
 
 # ── logout ────────────────────────────────────────────────────────────────────
@@ -94,18 +292,92 @@ def auth_login(
 
 @app.command("logout")
 def auth_logout(
-    profile: str = typer.Option(
-        "default", "--profile", "-p", help="Profile to remove credentials from."
+    profile: str | None = typer.Option(
+        None,
+        "--profile",
+        "-p",
+        help="Profile to remove credentials from (default: active profile).",
+    ),
+    all_profiles: bool = typer.Option(
+        False,
+        "--all",
+        "-a",
+        help="Remove credentials from all configured profiles.",
     ),
 ) -> None:
-    """Remove stored credentials for a profile.
+    """Remove stored credentials for one or all profiles.
 
     \b
         rvn auth logout
         rvn auth logout --profile work
+        rvn auth logout --all
     """
-    auth_mod.delete_token(profile)
-    output.success(f"Credentials removed for profile '{profile}'.")
+    if all_profiles and profile:
+        output.fatal("Use either `--profile` or `--all`, not both.")
+
+    cfg = cfg_mod.load()
+    if all_profiles:
+        profiles = list(cfg.profiles)
+        if not profiles:
+            output.info("No profiles configured.")
+            return
+        for profile_name in profiles:
+            auth_mod.delete_token(profile_name)
+        output.success("Credentials removed for all profiles.")
+        return
+
+    profile_name = _target_profile(profile, cfg)
+    auth_mod.delete_token(profile_name)
+    output.success(f"Credentials removed for profile '{profile_name}'.")
+
+
+# ── delete ────────────────────────────────────────────────────────────────────
+
+
+@app.command("delete")
+def auth_delete(
+    profile: str | None = typer.Option(
+        None,
+        "--profile",
+        "-p",
+        help="Profile to delete (default: active profile).",
+    ),
+    all_profiles: bool = typer.Option(
+        False,
+        "--all",
+        "-a",
+        help="Delete all configured profiles.",
+    ),
+) -> None:
+    """Delete one or all profiles, including their stored credentials.
+
+    \b
+        rvn auth delete
+        rvn auth delete --profile work
+        rvn auth delete --all
+    """
+    if all_profiles and profile:
+        output.fatal("Use either `--profile` or `--all`, not both.")
+
+    cfg = cfg_mod.load()
+    if all_profiles:
+        profiles = list(cfg.profiles)
+        if not profiles:
+            output.info("No profiles configured.")
+            return
+        for profile_name in profiles:
+            auth_mod.delete_token(profile_name)
+        cfg_mod.delete_all_profiles()
+        output.success("All profiles deleted.")
+        _warn_env_profile_override()
+        return
+
+    profile_name = _target_profile(profile, cfg)
+    _require_profile(cfg, profile_name)
+    auth_mod.delete_token(profile_name)
+    cfg_mod.delete_profile(profile_name)
+    output.success(f"Profile '{profile_name}' deleted.")
+    _warn_env_profile_override()
 
 
 # ── add-registry ──────────────────────────────────────────────────────────────
@@ -124,12 +396,6 @@ def auth_add_registry(
         "--api-url",
         help="API URL for this registry kind (overrides the active profile URL).",
     ),
-    token: str | None = typer.Option(
-        None,
-        "--token",
-        "-t",
-        help="Auth token for this registry kind (overrides the active profile token).",
-    ),
     repo: str | None = typer.Option(
         None,
         "--repo",
@@ -137,24 +403,16 @@ def auth_add_registry(
         help="Default repository slug for this registry kind.",
     ),
 ) -> None:
-    """Configure per-kind registry credentials and defaults.
+    """Configure per-kind registry defaults.
 
-    Use this when you have separate API URLs or tokens for different
-    registry kinds (e.g. PyPI on one host, npm on another), or when
-    you want to pin a default repository slug per kind.
+    Use this when you have separate API URLs for different registry kinds, or
+    when you want to pin a default repository slug per kind.
 
     \b
-        # Point the pypi kind at a custom host + set a token
-        rvn auth add-registry --kind pypi \\
-            --api-url https://api.myhost.com \\
-            --token rvn_tok_... \\
-            --repo my-pypi
+        rvn auth add-registry --kind pypi --api-url https://api.myhost.com --repo my-pypi
 
         # Just set the default repo for npm, reuse the profile token
         rvn auth add-registry --kind npm --repo my-npm
-
-        # Override only the token for maven
-        rvn auth add-registry --kind maven --token rvn_tok_mvn_...
     """
     allowed = {"pypi", "npm", "maven"}
     if kind not in allowed:
@@ -163,15 +421,12 @@ def auth_add_registry(
     cfg_mod.set_registry_override(
         kind=kind,  # type: ignore[arg-type]
         api_url=api_url,
-        token=token,
         default_repo=repo,
     )
 
     parts = []
     if api_url:
         parts.append(f"api-url={api_url}")
-    if token:
-        parts.append("token=***")
     if repo:
         parts.append(f"repo={repo}")
 
@@ -196,11 +451,19 @@ def auth_list() -> None:
         output.info("  (none configured — run `rvn auth login`)")
     else:
         rows: list[list[str]] = []
+        active_profile = _current_profile_name(cfg)
         for name, p in cfg.profiles.items():
-            default_marker = " (active)" if name == cfg.default_profile else ""
-            has_token = "yes" if auth_mod.get_token(name) or p.token else "no"
-            rows.append([f"{name}{default_marker}", p.api_url, has_token])
-        output.table(["Profile", "API URL", "Token stored"], rows)
+            default_marker = " (active)" if name == active_profile else ""
+            token_source = auth_mod.token_source(name)
+            rows.append(
+                [
+                    f"{name}{default_marker}",
+                    p.api_url,
+                    p.customer_id or "unknown",
+                    token_source or "no",
+                ]
+            )
+        output.table(["Profile", "API URL", "Customer", "Credential source"], rows)
 
     output.section("Per-kind registry overrides")
     if not cfg.registries:
@@ -213,10 +476,10 @@ def auth_list() -> None:
                     kind,
                     r.default_repo or "(not set)",
                     r.api_url or "(uses profile)",
-                    "yes" if r.token else "(uses profile)",
+                    "(uses profile)",
                 ]
             )
-        output.table(["Kind", "Default repo", "API URL override", "Token override"], rows)
+        output.table(["Kind", "Default repo", "API URL override", "Token"], rows)
 
 
 # ── status ────────────────────────────────────────────────────────────────────
@@ -235,20 +498,23 @@ def auth_status(
         rvn auth status --profile work
     """
     cfg = cfg_mod.load()
-    p = cfg.active_profile(profile)
-    token = auth_mod.get_token(profile or cfg.default_profile) or p.token
+    profile_name = _target_profile(profile, cfg)
+    p = cfg.active_profile(profile_name)
+    token = auth_mod.get_token(profile_name)
+    source = auth_mod.token_source(profile_name)
 
     if not token:
         output.error("No credentials found. Run `rvn auth login`.")
         raise typer.Exit(1)
 
-    client = ApiClient(api_url=p.api_url, token=token)
-    try:
-        client.get("/webapp/account/me")
-        output.success(f"Authenticated as active user. API: {p.api_url}")
-    except ApiError as exc:
-        if exc.status_code == 401:
-            output.error("Token is invalid or expired. Run `rvn auth login` to refresh.")
-        else:
-            output.error(f"API returned {exc.status_code}: {exc}")
-        raise typer.Exit(1) from exc
+    output.kv(
+        {
+            "Profile": profile_name,
+            "API URL": p.api_url,
+            "Token source": source or "unknown",
+            "Credential type": p.credential_type or "unknown",
+            "Customer": p.customer_id or "unknown",
+            "Expires at": p.expires_at or "not recorded",
+        },
+        title="Authentication status",
+    )

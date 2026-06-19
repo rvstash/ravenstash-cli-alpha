@@ -1,19 +1,21 @@
 """Credential storage for rvn.
 
-Prefers keyring (OS keychain / secret service) and falls back to plain-text
-in the config file.  The keyring service name is ``rvn`` and the username is
-the profile name.
+Device-login credentials are stored in the OS keyring. Automation credentials
+must be supplied through ``RVN_TOKEN``.
 
 Public API
 ----------
 get_token(profile) -> str | None
 set_token(profile, token) -> None
 delete_token(profile) -> None
+token_source(profile) -> str | None
 """
 
 from __future__ import annotations
 
 import logging
+import os
+from datetime import UTC, datetime
 
 
 logger = logging.getLogger(__name__)
@@ -48,8 +50,11 @@ def _kr_set(profile: str, token: str) -> None:
 
         keyring.set_password(_SERVICE, profile, token)
     except Exception as exc:
-        logger.warning("keyring unavailable, storing token in config file: %s", exc)
-        _fallback_set(profile, token)
+        msg = (
+            "No usable OS keyring is available. Use RVN_TOKEN for CI/headless "
+            "runs or configure a keyring before storing local credentials."
+        )
+        raise RuntimeError(msg) from exc
 
 
 def _kr_delete(profile: str) -> None:
@@ -61,41 +66,57 @@ def _kr_delete(profile: str) -> None:
         pass
 
 
-# ── config-file fallback ──────────────────────────────────────────────────────
-
-
-def _fallback_get(profile: str) -> str | None:
+def _stored_profile_expired(profile: str) -> bool:
     from . import config as cfg_mod
 
-    cfg = cfg_mod.load()
-    p = cfg.profiles.get(profile)
-    return p.token if p else None
-
-
-def _fallback_set(profile: str, token: str) -> None:
-    from . import config as cfg_mod
-
-    cfg_mod.set_profile_value(profile, token=token)
+    p = cfg_mod.load().profiles.get(profile)
+    if not p or p.credential_type != "temporary" or not p.expires_at:
+        return False
+    try:
+        expires_at = datetime.fromisoformat(p.expires_at)
+    except ValueError:
+        return False
+    now = datetime.now(expires_at.tzinfo or UTC)
+    return expires_at <= now
 
 
 # ── Public API ────────────────────────────────────────────────────────────────
 
 
 def get_token(profile: str) -> str | None:
-    """Return the stored token for *profile*, trying keyring first."""
+    """Return the effective credential for *profile*.
+
+    RVN_TOKEN always wins and is intended for PAT/M2M automation. Local stored
+    credentials are short-lived CLI JWTs from the device login flow.
+    """
+    env_token = os.environ.get("RVN_TOKEN")
+    if env_token:
+        return env_token
+    if _stored_profile_expired(profile):
+        return None
     if _keyring_available():
         token = _kr_get(profile)
         if token:
             return token
-    return _fallback_get(profile)
+    return None
+
+
+def token_source(profile: str) -> str | None:
+    """Return where the effective credential for *profile* comes from."""
+    if os.environ.get("RVN_TOKEN"):
+        return "RVN_TOKEN"
+    if _stored_profile_expired(profile):
+        return None
+    if _keyring_available() and _kr_get(profile):
+        return "keyring"
+    return None
 
 
 def set_token(profile: str, token: str) -> None:
     """Persist *token* for *profile* (keyring preferred)."""
-    if _keyring_available():
-        _kr_set(profile, token)
-    else:
-        _fallback_set(profile, token)
+    if not _keyring_available():
+        raise RuntimeError("No usable OS keyring is available. Use RVN_TOKEN for CI/headless runs.")
+    _kr_set(profile, token)
 
 
 def delete_token(profile: str) -> None:
@@ -103,4 +124,4 @@ def delete_token(profile: str) -> None:
     _kr_delete(profile)
     from . import config as cfg_mod
 
-    cfg_mod.set_profile_value(profile, token=None)
+    cfg_mod.clear_profile_credential_metadata(profile)

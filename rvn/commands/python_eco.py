@@ -47,7 +47,7 @@ app = typer.Typer(
 def _creds(profile: str | None, repo: str | None) -> tuple | None:
     cfg = cfg_mod.load()
     p = cfg.active_profile(profile)
-    token = auth_mod.get_token(profile or cfg.default_profile) or p.token
+    token = auth_mod.get_token(profile or cfg.default_profile)
     slug = repo or cfg.registry_defaults("pypi").default_repo
     if not slug or not token:
         return None
@@ -311,14 +311,15 @@ def python_install(
     """Install Python packages from the private registry."""
     cfg = cfg_mod.load()
     p = cfg.active_profile(profile)
-    token = auth_mod.get_token(profile or cfg.default_profile) or p.token
+    token = auth_mod.get_token(profile or cfg.default_profile)
     slug = repo or cfg.registry_defaults("pypi").default_repo
     if not slug:
         output.fatal(
-            "No repository configured. Pass --repo or set a default with `rvn config set-default-repo pypi <slug>`."
+            "No repository configured. Pass --repo or set a default with "
+            "`rvn auth add-registry --kind pypi --repo <slug>`."
         )
     if not token:
-        output.fatal("Not authenticated. Run `rvn login` first.")
+        output.fatal("Not authenticated. Run `rvn auth login` first.")
 
     try:
         index_url = get_router(routing).pypi_index_url(p.api_url, slug)
@@ -352,12 +353,12 @@ def python_publish(
     """Publish wheel/sdist files to the private PyPI repository."""
     cfg = cfg_mod.load()
     p = cfg.active_profile(profile)
-    token = auth_mod.get_token(profile or cfg.default_profile) or p.token
+    token = auth_mod.get_token(profile or cfg.default_profile)
     slug = repo or cfg.registry_defaults("pypi").default_repo
     if not slug:
         output.fatal("No repository configured.")
     if not token:
-        output.fatal("Not authenticated. Run `rvn login`.")
+        output.fatal("Not authenticated. Run `rvn auth login`.")
 
     files = list(dist_dir.glob("*.whl")) + list(dist_dir.glob("*.tar.gz"))
     if not files:
@@ -406,15 +407,15 @@ def python_yank(
 
     cfg = cfg_mod.load()
     p = cfg.active_profile(profile)
-    token = auth_mod.get_token(profile or cfg.default_profile) or p.token
+    token = auth_mod.get_token(profile or cfg.default_profile)
     slug = repo or cfg.registry_defaults("pypi").default_repo
     if not slug:
         output.fatal(
             "No repository configured. Pass --repo or set a default with "
-            "`rvn config set-default-repo pypi <slug>`."
+            "`rvn auth add-registry --kind pypi --repo <slug>`."
         )
     if not token:
-        output.fatal("Not authenticated. Run `rvn login` first.")
+        output.fatal("Not authenticated. Run `rvn auth login` first.")
 
     client = ApiClient(p.api_url, token)  # type: ignore[arg-type]
     body: dict | None = {"reason": reason} if reason else None
@@ -505,7 +506,8 @@ def python_index_url(
 
     url = pypi_reg.simple_index_url(p.api_url, slug)
     if with_auth:
-        token = auth_mod.get_token(profile or cfg.default_profile) or p.token
-        if token:
-            url = _authed_index(url, token)
+        output.fatal(
+            "Refusing to print a credential-bearing URL. "
+            "Use `rvn python install` or configure pip/uv with RVN_TOKEN."
+        )
     typer.echo(url)

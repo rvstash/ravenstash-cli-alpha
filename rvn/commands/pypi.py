@@ -56,12 +56,12 @@ def _resolve(
     """
     cfg = cfg_mod.load()
     p = cfg.active_profile(profile)
-    token = auth_mod.get_token(profile or cfg.default_profile) or p.token
+    token = auth_mod.get_token(profile or cfg.default_profile)
     slug = repo or cfg.registry_defaults("pypi").default_repo
     if not slug:
         output.fatal(
             "No repository specified.  Pass --repo or set a default:\n"
-            "  rvn config set-default-repo pypi <slug>"
+            "  rvn auth add-registry --kind pypi --repo <slug>"
         )
     return p.api_url, slug, token  # type: ignore[return-value]
 
@@ -222,9 +222,11 @@ def index_url(
         rvn pypi index-url --auth           # with __token__:<token> embedded
         pip install requests --extra-index-url $(rvn pypi index-url --auth)
     """
-    api_url, slug, token = _resolve(repo, profile)
+    api_url, slug, _token = _resolve(repo, profile)
     url = pypi_reg.simple_index_url(api_url, slug)
-    if auth and token:
-        parsed = urlparse(url)
-        url = urlunparse(parsed._replace(netloc=f"__token__:{token}@{parsed.netloc}"))
+    if auth:
+        output.fatal(
+            "Refusing to print a credential-bearing URL. "
+            "Use `rvn pypi install` or configure pip/uv with RVN_TOKEN."
+        )
     typer.echo(url)

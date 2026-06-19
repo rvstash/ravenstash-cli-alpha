@@ -14,7 +14,7 @@ Universal CLI for Ravenstash private registries — Python (PyPI), JavaScript (n
 | `rvn node` | Node.js runtime management (pin) |
 | `rvn java` | Java runtime management (pin) |
 | `rvn sync / add / remove / venv` | Universal auto-detect project commands |
-| `rvn login / config / repos / packages / tokens` | Account and management |
+| `rvn auth / repos / packages / tokens` | Authentication, profile, and management commands |
 
 ## Feature support matrix
 
@@ -43,18 +43,21 @@ Interactive login to a Ravenstash instance.
 
 ```
 $ rvn auth login
-Email: me@example.com
-Password: ****
-Authenticating with https://api.ravenstash.com ...
-✓ Authenticated. Token saved for profile 'default'.
+Device code: ABCD-1234
+Open this URL and enter the code to approve the device: https://app.ravenstash.com/login/device
+Open the link in your browser, or CTRL+CLICK it from your terminal.
+✓ Authenticated profile 'default' with a temporary credential.
 ```
 
 ```
 $ rvn auth login --profile work --api-url https://api.mycompany.com
-Email: me@example.com
-Password: ****
-✓ Authenticated. Token saved for profile 'work'.
+Device code: WXYZ-9876
+Open this URL and enter the code to approve the device: https://app.mycompany.com/login/device
+✓ Authenticated profile 'work' with a temporary credential.
 ```
+
+`rvn` stores only the short-lived CLI JWT in the OS keyring. PAT/M2M credentials
+belong in `RVN_TOKEN`; that env var always takes precedence over local profiles.
 
 ### `rvn auth logout`
 
@@ -64,24 +67,46 @@ $ rvn auth logout
 
 $ rvn auth logout --profile work
 ✓ Credentials removed for profile 'work'.
+
+$ rvn auth logout --all
+✓ Credentials removed for all profiles.
+```
+
+### `rvn auth switch`
+
+```
+$ rvn auth switch
+# Opens an interactive profile picker. Use ↑/↓ and ENTER to confirm.
+
+$ rvn auth switch --profile work
+✓ Active profile set to 'work'.
+```
+
+### `rvn auth delete`
+
+```
+$ rvn auth delete
+✓ Profile 'default' deleted.
+
+$ rvn auth delete --profile work
+✓ Profile 'work' deleted.
+
+$ rvn auth delete --all
+✓ All profiles deleted.
 ```
 
 ### `rvn auth add-registry`
 
-Configure per-kind overrides: separate API URL, token, or default repo for PyPI, npm, or Maven.
+Configure per-kind overrides: separate API URL or default repo for PyPI, npm, or Maven.
 
 ```
 $ rvn auth add-registry --kind pypi \
     --api-url https://api.myhost.com \
-    --token rvn_tok_pypi_abc123 \
     --repo my-pypi
-✓ Registry 'pypi' updated: api-url=https://api.myhost.com, token=***, repo=my-pypi
+✓ Registry 'pypi' updated: api-url=https://api.myhost.com, repo=my-pypi
 
 $ rvn auth add-registry --kind npm --repo my-npm
 ✓ Registry 'npm' updated: repo=my-npm
-
-$ rvn auth add-registry --kind maven --token rvn_tok_mvn_xyz
-✓ Registry 'maven' updated: token=***
 ```
 
 ### `rvn auth list`
@@ -90,20 +115,20 @@ $ rvn auth add-registry --kind maven --token rvn_tok_mvn_xyz
 $ rvn auth list
 
 Profiles
-┌─────────────────┬──────────────────────────────────┬──────────────┐
-│ Profile         │ API URL                          │ Token stored │
-├─────────────────┼──────────────────────────────────┼──────────────┤
-│ default (active)│ https://api.ravenstash.com       │ yes          │
-│ work            │ https://api.mycompany.com        │ yes          │
-└─────────────────┴──────────────────────────────────┴──────────────┘
+┌──────────────────┬────────────────────────────┬─────────────┬───────────────────┐
+│ Profile          │ API URL                    │ Customer    │ Credential source │
+├──────────────────┼────────────────────────────┼─────────────┼───────────────────┤
+│ default (active) │ https://api.ravenstash.com │ cus_default │ keyring           │
+│ work             │ https://api.mycompany.com  │ cus_work    │ RVN_TOKEN         │
+└──────────────────┴────────────────────────────┴─────────────┴───────────────────┘
 
 Per-kind registry overrides
 ┌────────┬──────────────┬─────────────────────────────┬────────────────┐
-│ Kind   │ Default repo │ API URL override             │ Token override │
+│ Kind   │ Default repo │ API URL override             │ Token          │
 ├────────┼──────────────┼─────────────────────────────┼────────────────┤
-│ pypi   │ my-pypi      │ https://api.myhost.com       │ yes            │
+│ pypi   │ my-pypi      │ https://api.myhost.com       │ (uses profile) │
 │ npm    │ my-npm       │ (uses profile)               │ (uses profile) │
-│ maven  │ (not set)    │ (uses profile)               │ yes            │
+│ maven  │ (not set)    │ (uses profile)               │ (uses profile) │
 └────────┴──────────────┴─────────────────────────────┴────────────────┘
 ```
 
@@ -111,10 +136,22 @@ Per-kind registry overrides
 
 ```
 $ rvn auth status
-✓ Authenticated as active user. API: https://api.ravenstash.com
+Authentication status
+Profile:         default
+API URL:         https://api.ravenstash.com
+Token source:    keyring
+Credential type: temporary
+Customer:        cus_default
+Expires at:      2026-06-18T16:00:00+00:00
 
 $ rvn auth status --profile work
-✓ Authenticated as active user. API: https://api.mycompany.com
+Authentication status
+Profile:         work
+API URL:         https://api.mycompany.com
+Token source:    keyring
+Credential type: temporary
+Customer:        cus_work
+Expires at:      2026-06-18T16:00:00+00:00
 ```
 
 ---
@@ -437,7 +474,7 @@ https://api.ravenstash.com/npm/r/my-npm/
 
 $ rvn npm npmrc --repo my-npm
 registry=https://api.ravenstash.com/npm/r/my-npm/
-//api.ravenstash.com/:_authToken=rvn_tok_...
+//api.ravenstash.com/:_authToken=${RVN_TOKEN}
 ```
 
 ---
@@ -596,7 +633,7 @@ $ rvn maven settings-xml --repo my-maven
     <server>
       <id>rvn</id>
       <username>__token__</username>
-      <password>rvn_tok_...</password>
+      <password>${RVN_TOKEN}</password>
     </server>
   </servers>
   <mirrors>
@@ -721,7 +758,9 @@ default_profile = "default"
 
 [profiles.default]
 api_url = "https://api.ravenstash.com"
-# token stored in system keyring (preferred) or here as fallback
+customer_id = "cus_..."
+credential_type = "temporary"
+expires_at = "2026-06-18T16:00:00+00:00"
 
 [profiles.work]
 api_url = "https://api.mycompany.com"
@@ -729,7 +768,6 @@ api_url = "https://api.mycompany.com"
 [registries.pypi]
 default_repo = "my-pypi"
 # api_url = "https://api.other.com"   # optional per-kind URL override
-# token = "rvn_tok_..."               # optional per-kind token override
 
 [registries.npm]
 default_repo = "my-npm"
@@ -741,8 +779,8 @@ default_repo = "my-maven"
 Set defaults via CLI:
 
 ```
-$ rvn config set-default-repo pypi my-pypi
-$ rvn config set-default-repo npm my-npm
-$ rvn config set-default-repo maven my-maven
-$ rvn auth add-registry --kind pypi --api-url https://... --token rvn_tok_...
+$ rvn auth add-registry --kind pypi --repo my-pypi
+$ rvn auth add-registry --kind npm --repo my-npm
+$ rvn auth add-registry --kind maven --repo my-maven
+$ rvn auth add-registry --kind pypi --api-url https://...
 ```

@@ -781,9 +781,9 @@ def maven_settings_xml(
         rvn maven settings-xml
         rvn maven settings-xml >> ~/.m2/settings.xml
     """
-    api_url, slug, token = _resolve(profile, repo)
+    api_url, slug, _token = _resolve(profile, repo)
     try:
         repo_url = get_router(routing).maven_repo_url(api_url, slug)
     except NotImplementedError as exc:
         output.fatal(str(exc))
-    typer.echo(maven_reg._build_settings_xml(repo_url, token or "<your-token>", server_id))
+    typer.echo(maven_reg._build_settings_xml(repo_url, "${RVN_TOKEN}", server_id))

@@ -48,14 +48,14 @@ def _resolve(kind: str, repo_override: str | None, profile: str | None) -> tuple
     """Return (api_url, repo_slug, token) or call output.fatal()."""
     cfg = cfg_mod.load()
     p = cfg.active_profile(profile)
-    token = auth_mod.get_token(profile or cfg.default_profile) or p.token
+    token = auth_mod.get_token(profile or cfg.default_profile)
     if not token:
-        output.fatal("No token found. Run: rvn login")
+        output.fatal("No token found. Run: rvn auth login")
     slug = repo_override or cfg.registry_defaults(kind).default_repo  # type: ignore[arg-type]
     if not slug:
         output.fatal(
             f"No default {kind} repository configured.\n"
-            f"  Use --repo <slug>  or  rvn config set-default-repo {kind} <slug>"
+            f"  Use --repo <slug>  or  rvn auth add-registry --kind {kind} --repo <slug>"
         )
     return p.api_url, slug, token  # type: ignore[return-value]
 

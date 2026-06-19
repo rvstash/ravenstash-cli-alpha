@@ -5,7 +5,7 @@ Registers all subcommand groups and provides the global --profile and
 
 Command surface
 ---------------
-rvn login / rvn auth / rvn config / rvn repos / rvn packages / rvn tokens
+rvn auth / rvn config / rvn repos / rvn packages / rvn tokens
     Account, config, auth, and management commands.
 
 rvn sync / rvn venv / rvn add / rvn remove
@@ -30,7 +30,7 @@ from __future__ import annotations
 
 import typer
 
-from .commands import auth, config, login, packages, pkg, repos, tokens
+from .commands import auth, config, packages, pkg, repos, tokens
 from .commands.add_remove import add_app, remove_app
 from .commands.env import app as venv_app
 from .commands.maven_eco import app as maven_eco_app
@@ -50,7 +50,6 @@ app = typer.Typer(
 )
 
 # ── Management commands ───────────────────────────────────────────────────────
-app.add_typer(login.app, name="login")
 app.add_typer(auth.app, name="auth")
 app.add_typer(config.app, name="config")
 app.add_typer(repos.app, name="repos")
@@ -241,6 +240,7 @@ def main(
     \b
     Multi-registry auth:
         rvn auth login                          # interactive login
+        rvn auth switch                         # choose active profile
         rvn auth add-registry --kind npm --repo my-npm
         rvn auth list                           # show all profiles + per-kind overrides
         rvn auth status                         # verify token

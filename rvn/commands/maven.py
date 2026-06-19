@@ -48,12 +48,12 @@ def _resolve(
     """Return (api_url, slug, token_or_None)."""
     cfg = cfg_mod.load()
     p = cfg.active_profile(profile)
-    token = auth_mod.get_token(profile or cfg.default_profile) or p.token
+    token = auth_mod.get_token(profile or cfg.default_profile)
     slug = repo or cfg.registry_defaults("maven").default_repo
     if not slug:
         output.fatal(
             "No repository specified.  Pass --repo or set a default:\n"
-            "  rvn config set-default-repo maven <slug>"
+            "  rvn auth add-registry --kind maven --repo <slug>"
         )
     return p.api_url, slug, token  # type: ignore[return-value]
 
@@ -226,7 +226,9 @@ def settings_xml(
         mvn install --settings /tmp/rvn-settings.xml
         rvn mvn settings-xml >> ~/.m2/settings.xml
     """
-    api_url, slug, token = _resolve(repo, profile)
+    api_url, slug, _token = _resolve(repo, profile)
     repo_url_str = maven_reg.repo_url(api_url, slug)
-    token = token or "<your-api-token>"
-    typer.echo(maven_reg._build_settings_xml(repo_url_str, token, server_id), nl=False)
+    typer.echo(
+        maven_reg._build_settings_xml(repo_url_str, "${RVN_TOKEN}", server_id),
+        nl=False,
+    )

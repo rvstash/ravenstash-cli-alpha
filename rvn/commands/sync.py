@@ -46,7 +46,7 @@ def _creds(
 ) -> tuple[str, str, str] | None:
     cfg = cfg_mod.load()
     p = cfg.active_profile(profile)
-    token = auth_mod.get_token(profile or cfg.default_profile) or p.token
+    token = auth_mod.get_token(profile or cfg.default_profile)
     slug = repo_override or cfg.registry_defaults(kind).default_repo  # type: ignore[arg-type]
     if not slug or not token:
         return None
@@ -284,7 +284,7 @@ def sync(
         if creds is None:
             output.warn(
                 "No registry credentials configured — syncing without private registry.\n"
-                "Run `rvn login` or set a default repo with `rvn config set-default-repo`."
+                "Run `rvn auth login` or set a default repo with `rvn auth add-registry`."
             )
 
     if info.eco == "python":

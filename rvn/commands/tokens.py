@@ -55,10 +55,7 @@ def create_token(
     write: bool = typer.Option(False, "--write", "-w", help="Grant write (publish) access"),
     profile: str | None = typer.Option(None, "--profile", "-p"),
 ) -> None:
-    """Create a new repository-scoped API token.
-
-    The plain-text token is printed once and never shown again.
-    """
+    """Create a new repository-scoped API token without printing the secret."""
     client = _client(profile)
     try:
         payload: dict = {"repository_slug": repo, "write": write}
@@ -74,10 +71,11 @@ def create_token(
             "ID": t.get("id", ""),
             "Label": t.get("label", "—"),
             "Write": "yes" if t.get("write") else "no",
-            "Token": t.get("token", ""),
         }
     )
-    output.warn("Copy this token now — it will not be shown again.")
+    output.warn(
+        "The raw token secret was not printed. Use the webapp token dialog for one-time secret display."
+    )
 
 
 @app.command("revoke")

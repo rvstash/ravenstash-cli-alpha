@@ -45,7 +45,7 @@ app = typer.Typer(
 def _creds(profile: str | None, repo: str | None) -> tuple | None:
     cfg = cfg_mod.load()
     p = cfg.active_profile(profile)
-    token = auth_mod.get_token(profile or cfg.default_profile) or p.token
+    token = auth_mod.get_token(profile or cfg.default_profile)
     slug = repo or cfg.registry_defaults("maven").default_repo
     if not slug or not token:
         return None
@@ -319,12 +319,12 @@ def java_install(
     """Fetch a Maven artifact from the private registry into the local repo."""
     cfg = cfg_mod.load()
     p = cfg.active_profile(profile)
-    token = auth_mod.get_token(profile or cfg.default_profile) or p.token
+    token = auth_mod.get_token(profile or cfg.default_profile)
     slug = repo or cfg.registry_defaults("maven").default_repo
     if not slug:
         output.fatal("No repository configured. Pass --repo or set a default.")
     if not token:
-        output.fatal("Not authenticated. Run `rvn login` first.")
+        output.fatal("Not authenticated. Run `rvn auth login` first.")
 
     try:
         repo_url = get_router(routing).maven_repo_url(p.api_url, slug)
@@ -359,12 +359,12 @@ def java_deploy(
     """Deploy a Maven artifact to the private registry."""
     cfg = cfg_mod.load()
     p = cfg.active_profile(profile)
-    token = auth_mod.get_token(profile or cfg.default_profile) or p.token
+    token = auth_mod.get_token(profile or cfg.default_profile)
     slug = repo or cfg.registry_defaults("maven").default_repo
     if not slug:
         output.fatal("No repository configured.")
     if not token:
-        output.fatal("Not authenticated. Run `rvn login`.")
+        output.fatal("Not authenticated. Run `rvn auth login`.")
 
     try:
         upload_url = get_router(routing).maven_repo_url(p.api_url, slug)
@@ -415,14 +415,12 @@ def java_settings_xml(
     """Print a Maven settings.xml snippet for this registry."""
     cfg = cfg_mod.load()
     p = cfg.active_profile(profile)
-    token = auth_mod.get_token(profile or cfg.default_profile) or p.token
     slug = repo or cfg.registry_defaults("maven").default_repo
     if not slug:
         output.fatal("No repository configured.")
 
     repo_url = maven_reg.repo_url(p.api_url, slug)
-    token = token or "<your-token>"
-    typer.echo(maven_reg._build_settings_xml(repo_url, token, server_id))
+    typer.echo(maven_reg._build_settings_xml(repo_url, "${RVN_TOKEN}", server_id))
 
 
 # ── yank ──────────────────────────────────────────────────────────────────────

@@ -25,7 +25,10 @@ def show(
         {
             "Profile": active,
             "API URL": p.api_url,
-            "Token stored": "yes" if (p.token or _has_keyring_token(active)) else "no",
+            "Credential source": _credential_source(active) or "no",
+            "Customer": p.customer_id or "—",
+            "Credential type": p.credential_type or "—",
+            "Expires at": p.expires_at or "—",
             "Config file": str(cfg_mod.CONFIG_FILE),
         },
         title="Active configuration",
@@ -83,7 +86,7 @@ def list_profiles() -> None:
         for name, p in cfg.profiles.items()
     ]
     if not rows:
-        output.info("No profiles configured. Run: rvn login")
+        output.info("No profiles configured. Run: rvn auth login")
         return
     output.table(["Profile", "API URL", "Active"], rows)
 
@@ -91,7 +94,7 @@ def list_profiles() -> None:
 # ── helpers ───────────────────────────────────────────────────────────────────
 
 
-def _has_keyring_token(profile: str) -> bool:
+def _credential_source(profile: str) -> str | None:
     from .. import auth as auth_mod
 
-    return bool(auth_mod.get_token(profile))
+    return auth_mod.token_source(profile)

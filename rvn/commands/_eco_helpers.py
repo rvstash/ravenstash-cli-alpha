@@ -31,13 +31,13 @@ def resolve_registry(
     cfg = cfg_mod.load()
     p = cfg.active_profile(profile)
     reg = cfg.registry_defaults(kind)
-    token = reg.token or auth_mod.get_token(profile or cfg.default_profile) or p.token
+    token = auth_mod.get_token(profile or cfg.default_profile)
     slug = repo or reg.default_repo
     api_url = reg.api_url or p.api_url
     if not slug:
         output.fatal(
             f"No repository specified.  Pass --repo or set a default:\n"
-            f"  rvn config set-default-repo {kind} <slug>"
+            f"  rvn auth add-registry --kind {kind} --repo <slug>"
         )
     return api_url, slug, token  # type: ignore[return-value]
 
@@ -50,7 +50,7 @@ def require_token(
     """Like :func:`resolve_registry` but also fatals when the token is absent."""
     api_url, slug, token = resolve_registry(kind, profile, repo)
     if not token:
-        output.fatal("Not authenticated. Run `rvn login` or `rvn auth add-registry`.")
+        output.fatal("Not authenticated. Run `rvn auth login` or set RVN_TOKEN.")
     return api_url, slug, token  # type: ignore[return-value]
 
 

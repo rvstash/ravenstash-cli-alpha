@@ -53,12 +53,12 @@ def _resolve(
     """Return (api_url, slug, token_or_None)."""
     cfg = cfg_mod.load()
     p = cfg.active_profile(profile)
-    token = auth_mod.get_token(profile or cfg.default_profile) or p.token
+    token = auth_mod.get_token(profile or cfg.default_profile)
     slug = repo or cfg.registry_defaults("npm").default_repo
     if not slug:
         output.fatal(
             "No repository specified.  Pass --repo or set a default:\n"
-            "  rvn config set-default-repo npm <slug>"
+            "  rvn auth add-registry --kind npm --repo <slug>"
         )
     return p.api_url, slug, token  # type: ignore[return-value]
 
@@ -240,9 +240,8 @@ def print_npmrc(
         rvn npm npmrc
         rvn npm npmrc >> .npmrc
     """
-    api_url, slug, token = _resolve(repo, profile)
+    api_url, slug, _token = _resolve(repo, profile)
     reg_url = npm_reg.registry_url(api_url, slug)
     host = urlparse(reg_url).netloc
     typer.echo(f"registry={reg_url}")
-    if token:
-        typer.echo(f"//{host}/:_authToken={token}")
+    typer.echo(f"//{host}/:_authToken=${{RVN_TOKEN}}")

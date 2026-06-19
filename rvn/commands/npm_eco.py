@@ -751,13 +751,12 @@ def npm_npmrc(
         rvn npm npmrc
         rvn npm npmrc >> .npmrc
     """
-    api_url, slug, token = _resolve(profile, repo)
+    api_url, slug, _token = _resolve(profile, repo)
     try:
         reg_url = get_router(routing).npm_registry_url(api_url, slug)
     except NotImplementedError as exc:
         output.fatal(str(exc))
     host = urlparse(reg_url).netloc
     lines = [f"registry={reg_url}"]
-    if token:
-        lines.append(f"//{host}/:_authToken={token}")
+    lines.append(f"//{host}/:_authToken=${{RVN_TOKEN}}")
     typer.echo("\n".join(lines))

@@ -77,7 +77,7 @@ def _resolve(
     """Return (api_url, slug, token) or None if nothing is configured."""
     cfg = cfg_mod.load()
     p = cfg.active_profile(profile)
-    token = auth_mod.get_token(profile or cfg.default_profile) or p.token
+    token = auth_mod.get_token(profile or cfg.default_profile)
     slug = repo_override or cfg.registry_defaults(kind).default_repo  # type: ignore[arg-type]
     if not slug or not token:
         return None
@@ -420,7 +420,7 @@ def run_tool(
             output.warn(
                 f"No {resolved_kind} repository configured for this profile. "
                 f"Running {tool} without private registry injection.\n"
-                f"  Hint: rvn config set-default-repo {resolved_kind} <slug>"
+                f"  Hint: rvn auth add-registry --kind {resolved_kind} --repo <slug>"
             )
 
     try:

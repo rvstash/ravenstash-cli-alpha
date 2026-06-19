@@ -38,7 +38,7 @@ remove_app = typer.Typer(name="remove", help="Remove a dependency from the proje
 def _creds(kind: str, profile: str | None, repo_override: str | None) -> tuple | None:
     cfg = cfg_mod.load()
     p = cfg.active_profile(profile)
-    token = auth_mod.get_token(profile or cfg.default_profile) or p.token
+    token = auth_mod.get_token(profile or cfg.default_profile)
     slug = repo_override or cfg.registry_defaults(kind).default_repo  # type: ignore[arg-type]
     if not slug or not token:
         return None

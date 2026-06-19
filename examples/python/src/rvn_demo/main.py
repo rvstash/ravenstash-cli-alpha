@@ -59,6 +59,7 @@ def info(
 
     if as_json:
         import json
+
         typer.echo(json.dumps(pkg.model_dump(), indent=2))
         return
 
@@ -78,6 +79,7 @@ def versions(
     limit: int = typer.Option(10, "--limit", "-n", help="Max number of versions to show."),
 ) -> None:
     """List recent versions of a public PyPI package."""
+
     async def _get_versions() -> list[str]:
         async with httpx.AsyncClient(timeout=10.0) as client:
             resp = await client.get(f"https://pypi.org/pypi/{name}/json")

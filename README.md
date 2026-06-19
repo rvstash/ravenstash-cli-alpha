@@ -28,12 +28,56 @@ rvn <kind> <verb> [args]
 | `rvn repos create my-libs pypi` | Create a new repository |
 | `rvn packages list my-pypi` | List packages in a repository |
 | `rvn tokens create my-pypi --write` | Create a scoped API token |
-| `rvn login` | Authenticate and store credentials |
-| `rvn config show` | Print current active profile |
+| `rvn auth login` | Authenticate with browser/device approval |
+| `rvn auth status` | Print the current profile authentication state |
+| `rvn auth list` | List profiles and per-kind registry defaults |
+| `rvn auth switch` | Select the active profile |
+| `rvn auth logout` | Remove the current profile credential |
+| `rvn auth delete` | Delete a profile and its stored credential |
 
 ---
 
-## Configuration
+## Auth, Profiles, And Configuration
+
+Interactive login uses Ravenstash device authorization:
+
+```bash
+rvn auth login
+rvn auth login --profile staging --api-url https://api.staging-hxa159.ravenstash.com
+```
+
+The CLI creates a device session through DevAPI, prints a human code such as
+`ABCD-1234`, and asks the user to open the verification page. The browser page is
+`/login/device`; the code is entered there, not embedded in the URL. While the
+browser flow completes, the CLI polls `POST /v0/auth/device/token`.
+
+Successful login stores only the short-lived CLI JWT in the OS keyring, with
+profile metadata in `~/.rvn/config.toml`. `rvn` does not store PAT/M2M tokens.
+Automation should pass a customer-scoped token through `RVN_TOKEN`; that env var
+always takes precedence over local keyring/config state.
+
+Profile commands:
+
+```bash
+rvn auth status
+rvn auth list
+rvn auth switch
+rvn auth switch --profile work
+rvn auth logout
+rvn auth logout --profile work
+rvn auth logout --all
+rvn auth delete
+rvn auth delete --profile work
+rvn auth delete --all
+```
+
+Default DevAPI URLs:
+
+| Profile | URL |
+|---|---|
+| `default` | `https://api.ravenstash.com` |
+| `staging` | `https://api.staging-hxa159.ravenstash.com` |
+| `dev` | `http://localhost:6002` |
 
 Configuration lives at `~/.rvn/config.toml`:
 
@@ -42,11 +86,12 @@ default_profile = "default"
 
 [profiles.default]
 api_url = "https://api.ravenstash.com"
-token   = "rvn_tok_..."
+customer_id = "cus_..."
+credential_type = "temporary"
+expires_at = "2026-06-18T16:00:00+00:00"
 
 [profiles.dev]
-api_url = "http://localhost:6000"
-token   = "rvn_tok_dev_..."
+api_url = "http://localhost:6002"
 
 # Optional per-kind default repository slug
 [registries.pypi]
@@ -59,7 +104,15 @@ default_repo = "my-npm"
 default_repo = "my-maven"
 ```
 
-Switch profiles with `--profile dev` or the `RVN_PROFILE` env var.
+Set per-kind default repositories with:
+
+```bash
+rvn auth add-registry --kind pypi --repo my-pypi
+rvn auth add-registry --kind npm --repo my-npm
+rvn auth add-registry --kind maven --repo my-maven
+```
+
+Switch profiles with `--profile dev`, `RVN_PROFILE=dev`, or `rvn auth switch`.
 
 ---
 
@@ -99,7 +152,7 @@ coordinates and auth transparently:
 rvn/
 ├── cli.py              # Root typer app, subcommand registration
 ├── config.py           # Config file r/w, profile resolution
-├── auth.py             # Credential storage (keyring + config fallback)
+├── auth.py             # Credential lookup (RVN_TOKEN + keyring)
 ├── client.py           # httpx-based Ravenstash API client
 ├── output.py           # Rich console helpers (tables, progress, errors)
 ├── registries/
@@ -108,8 +161,9 @@ rvn/
 │   ├── npm.py          # npm JSON publish, npm install delegation
 │   └── maven.py        # Maven PUT publish, mvn install delegation
 └── commands/
-    ├── config.py       # `rvn config` subcommands
-    ├── login.py        # `rvn login`
+    ├── auth.py         # `rvn auth` profile and credential commands
+    ├── login.py        # Shared device-authorization implementation
+    ├── config.py       # Low-level config helpers
     ├── repos.py        # `rvn repos` subcommands
     ├── packages.py     # `rvn packages` subcommands
     ├── tokens.py       # `rvn tokens` subcommands

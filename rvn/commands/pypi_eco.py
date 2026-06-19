@@ -668,13 +668,16 @@ def pypi_index_url(
         rvn pypi index-url
         rvn pypi index-url --auth    # includes __token__:... in URL
     """
-    api_url, slug, token = _resolve(profile, repo)
+    api_url, slug, _token = _resolve(profile, repo)
     try:
         url = get_router(routing).pypi_index_url(api_url, slug)
     except NotImplementedError as exc:
         output.fatal(str(exc))
-    if with_auth and token:
-        url = _authed_index(url, token)
+    if with_auth:
+        output.fatal(
+            "Refusing to print a credential-bearing URL. "
+            "Use `rvn pypi install` or configure pip/uv with RVN_TOKEN."
+        )
     typer.echo(url)
 
 

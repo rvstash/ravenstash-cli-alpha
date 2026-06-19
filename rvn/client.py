@@ -53,12 +53,12 @@ class ApiClient:
         cfg = cfg_mod.load()
         profile_name = profile or cfg.default_profile
         p: ProfileConfig = cfg.active_profile(profile_name)
-        token = auth_mod.get_token(profile_name) or p.token
+        token = auth_mod.get_token(profile_name)
         if not token:
             from . import output
 
             output.fatal(
-                f"No token for profile '{profile_name}'. Run: rvn login --profile {profile_name}"
+                f"No token for profile '{profile_name}'. Run: rvn auth login --profile {profile_name}"
             )
         return cls(api_url=p.api_url, token=token)  # type: ignore[arg-type]
 

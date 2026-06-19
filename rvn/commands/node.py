@@ -45,7 +45,7 @@ app = typer.Typer(
 def _creds(profile: str | None, repo: str | None) -> tuple | None:
     cfg = cfg_mod.load()
     p = cfg.active_profile(profile)
-    token = auth_mod.get_token(profile or cfg.default_profile) or p.token
+    token = auth_mod.get_token(profile or cfg.default_profile)
     slug = repo or cfg.registry_defaults("npm").default_repo
     if not slug or not token:
         return None
@@ -284,12 +284,12 @@ def node_install(
     """Install Node packages from the private npm registry."""
     cfg = cfg_mod.load()
     p = cfg.active_profile(profile)
-    token = auth_mod.get_token(profile or cfg.default_profile) or p.token
+    token = auth_mod.get_token(profile or cfg.default_profile)
     slug = repo or cfg.registry_defaults("npm").default_repo
     if not slug:
         output.fatal("No repository configured. Pass --repo or set a default.")
     if not token:
-        output.fatal("Not authenticated. Run `rvn login` first.")
+        output.fatal("Not authenticated. Run `rvn auth login` first.")
 
     extra_args: list[str] = []
     if save:
@@ -327,12 +327,12 @@ def node_publish(
     """Publish the npm package to the private registry."""
     cfg = cfg_mod.load()
     p = cfg.active_profile(profile)
-    token = auth_mod.get_token(profile or cfg.default_profile) or p.token
+    token = auth_mod.get_token(profile or cfg.default_profile)
     slug = repo or cfg.registry_defaults("npm").default_repo
     if not slug:
         output.fatal("No repository configured.")
     if not token:
-        output.fatal("Not authenticated. Run `rvn login`.")
+        output.fatal("Not authenticated. Run `rvn auth login`.")
 
     try:
         reg_url = get_router(routing).npm_registry_url(p.api_url, slug)
@@ -377,7 +377,6 @@ def node_npmrc(
     """Print .npmrc configuration snippet for this registry."""
     cfg = cfg_mod.load()
     p = cfg.active_profile(profile)
-    token = auth_mod.get_token(profile or cfg.default_profile) or p.token
     slug = repo or cfg.registry_defaults("npm").default_repo
     if not slug:
         output.fatal("No repository configured.")
@@ -385,8 +384,7 @@ def node_npmrc(
     reg_url = npm_reg.registry_url(p.api_url, slug)
     host = urlparse(reg_url).netloc
     lines = [f"registry={reg_url}"]
-    if token:
-        lines.append(f"//{host}/:_authToken={token}")
+    lines.append(f"//{host}/:_authToken=${{RVN_TOKEN}}")
     typer.echo("\n".join(lines))
 
 
@@ -428,12 +426,12 @@ def node_deprecate(
     """
     cfg = cfg_mod.load()
     p = cfg.active_profile(profile)
-    token = auth_mod.get_token(profile or cfg.default_profile) or p.token
+    token = auth_mod.get_token(profile or cfg.default_profile)
     slug = repo or cfg.registry_defaults("npm").default_repo
     if not slug:
         output.fatal("No repository configured. Pass --repo or set a default.")
     if not token:
-        output.fatal("Not authenticated. Run `rvn login` first.")
+        output.fatal("Not authenticated. Run `rvn auth login` first.")
 
     reg_url = npm_reg.registry_url(p.api_url, slug)
     env = {**os.environ}
