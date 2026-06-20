@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import typer
 
+from .. import auth as auth_mod
 from .. import config as cfg_mod
 from .. import output
 
@@ -27,7 +28,7 @@ def show(
             "API URL": p.api_url,
             "Credential source": _credential_source(active) or "no",
             "Customer": p.customer_id or "—",
-            "Credential type": p.credential_type or "—",
+            "Credential type": auth_mod.display_credential_type(p.credential_type) or "—",
             "Expires at": p.expires_at or "—",
             "Config file": str(cfg_mod.CONFIG_FILE),
         },
@@ -95,6 +96,4 @@ def list_profiles() -> None:
 
 
 def _credential_source(profile: str) -> str | None:
-    from .. import auth as auth_mod
-
     return auth_mod.token_source(profile)

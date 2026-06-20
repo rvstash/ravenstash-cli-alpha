@@ -44,17 +44,29 @@ Interactive login uses Ravenstash device authorization:
 ```bash
 rvn auth login
 rvn auth login --profile staging --api-url https://api.staging-hxa159.ravenstash.com
+rvn auth login --duration 8h
 ```
 
 The CLI creates a device session through DevAPI, prints a human code such as
 `ABCD-1234`, and asks the user to open the verification page. The browser page is
 `/login/device`; the code is entered there, not embedded in the URL. While the
-browser flow completes, the CLI polls `POST /v0/auth/device/token`.
+browser flow completes, the CLI polls `POST /v0/auth/device/token`. `--duration`
+preselects the refresh duration on the approval screen; accepted values include
+`8h`, `3days`, `1month`, and `1year`. If no duration is provided, the browser
+approval defaults to 4 hours. Durations must be between 1 hour and 365 days.
+Device login and refresh requests send `User-Agent: rvn/<version>` plus OS
+platform metadata for the webapp/backoffice device-session lists.
 
-Successful login stores only the short-lived CLI JWT in the OS keyring, with
-profile metadata in `~/.rvn/config.toml`. `rvn` does not store PAT/M2M tokens.
-Automation should pass a customer-scoped token through `RVN_TOKEN`; that env var
-always takes precedence over local keyring/config state.
+Successful login stores the short-lived CLI JWT and a profile-scoped device
+refresh token in the OS keyring, with profile metadata in `~/.rvn/config.toml`.
+If the profile already has an active expiring login, `rvn auth login` replaces
+it and best-effort revokes the previous device refresh token after the new login
+succeeds.
+When the expiring access token expires, `rvn` refreshes automatically through
+DevAPI, persists the rotated token pair, and retries the failed request once.
+`rvn` does not store PAT/M2M tokens. Automation should pass a customer-scoped
+token through `RVN_TOKEN`; that env var always takes precedence over local
+keyring/config state and is never refreshed.
 
 Profile commands:
 
@@ -87,7 +99,7 @@ default_profile = "default"
 [profiles.default]
 api_url = "https://api.ravenstash.com"
 customer_id = "cus_..."
-credential_type = "temporary"
+credential_type = "expiring"
 expires_at = "2026-06-18T16:00:00+00:00"
 
 [profiles.dev]

@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import importlib.metadata
+import platform as platform_mod
+import re
 import time
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -19,6 +21,14 @@ from .. import output
 app = typer.Typer(help="Authenticate with Ravenstash.")
 
 _POLL_FRAMES = ("🔄", "🔃")
+_HOUR_SECONDS = 60 * 60
+_DAY_SECONDS = 24 * _HOUR_SECONDS
+_MIN_DURATION_SECONDS = _HOUR_SECONDS
+_MAX_DURATION_SECONDS = 365 * _DAY_SECONDS
+_DURATION_RE = re.compile(
+    r"^\s*(?P<amount>\d+)\s*(?P<unit>h|hour|hours|d|day|days|month|months|year|years)\s*$",
+    re.IGNORECASE,
+)
 
 
 def _rvn_version() -> str:
@@ -26,6 +36,14 @@ def _rvn_version() -> str:
         return importlib.metadata.version("rvn")
     except importlib.metadata.PackageNotFoundError:
         return "dev"
+
+
+def _rvn_user_agent() -> str:
+    return f"rvn/{_rvn_version()}"
+
+
+def _device_platform() -> str:
+    return platform_mod.system().strip().lower() or "unknown"
 
 
 def _resolve_api_url(profile: str, api_url: str | None) -> str:
@@ -55,26 +73,52 @@ def _error_code(response: httpx.Response) -> str | None:
     return None
 
 
-def _store_temporary_credential(
+def parse_duration_seconds(value: str) -> int:
+    match = _DURATION_RE.match(value)
+    if not match:
+        raise ValueError("Use a duration like 8h, 3days, 1month, or 1year.")
+
+    amount = int(match.group("amount"))
+    unit = match.group("unit").lower()
+    if unit in {"h", "hour", "hours"}:
+        seconds = amount * _HOUR_SECONDS
+    elif unit in {"d", "day", "days"}:
+        seconds = amount * _DAY_SECONDS
+    elif unit in {"month", "months"}:
+        seconds = amount * 30 * _DAY_SECONDS
+    else:
+        seconds = amount * 365 * _DAY_SECONDS
+
+    if seconds < _MIN_DURATION_SECONDS or seconds > _MAX_DURATION_SECONDS:
+        raise ValueError("Duration must be between 1 hour and 1 year.")
+    return seconds
+
+
+def _store_expiring_credential(
     *,
     profile: str,
     api_url: str,
     token: str,
+    refresh_token: str,
     customer_id: str | None,
     expires_in: int,
+    refresh_expires_in: int,
 ) -> None:
     try:
         auth_mod.set_token(profile, token)
+        auth_mod.set_refresh_token(profile, refresh_token)
     except RuntimeError as exc:
         output.fatal(str(exc))
 
     expires_at = datetime.now(UTC) + timedelta(seconds=expires_in)
+    refresh_expires_at = datetime.now(UTC) + timedelta(seconds=refresh_expires_in)
     cfg_mod.set_profile_metadata(
         profile,
         api_url=api_url,
         customer_id=customer_id,
-        credential_type="temporary",
+        credential_type=auth_mod.EXPIRING_CREDENTIAL_TYPE,
         expires_at=expires_at.isoformat(),
+        refresh_expires_at=refresh_expires_at.isoformat(),
     )
 
 
@@ -140,18 +184,38 @@ def perform_device_login(
     profile: str,
     api_url: str | None,
     no_browser: bool,
+    duration: str | None = None,
 ) -> None:
     resolved_api_url = _resolve_api_url(profile, api_url)
+    existing_profile = cfg_mod.load().profiles.get(profile)
+    previous_refresh_token: str | None = None
+    previous_refresh_api_url = existing_profile.api_url if existing_profile else resolved_api_url
+    if auth_mod.has_active_expiring_session(profile):
+        previous_refresh_token = auth_mod.get_refresh_token(profile)
+        output.info(f"Profile '{profile}' is already authenticated; replacing it.")
+
     cfg_mod.set_profile_metadata(profile, api_url=resolved_api_url)
+    requested_duration_seconds: int | None = None
+    if duration:
+        try:
+            requested_duration_seconds = parse_duration_seconds(duration)
+        except ValueError as exc:
+            output.fatal(str(exc))
 
     try:
         with httpx.Client(timeout=15.0) as client:
+            rvn_version = _rvn_version()
+            request_payload: dict[str, Any] = {
+                "client_name": "rvn CLI",
+                "rvn_version": rvn_version,
+                "platform": _device_platform(),
+            }
+            if requested_duration_seconds is not None:
+                request_payload["requested_duration_seconds"] = requested_duration_seconds
             create_resp = client.post(
                 f"{resolved_api_url}/v0/auth/device/code",
-                json={
-                    "client_name": "rvn CLI",
-                    "rvn_version": _rvn_version(),
-                },
+                headers={"User-Agent": f"rvn/{rvn_version}"},
+                json=request_payload,
             )
             create_resp.raise_for_status()
             session = create_resp.json()
@@ -173,20 +237,28 @@ def perform_device_login(
             while time.monotonic() < deadline:
                 poll_resp = client.post(
                     f"{resolved_api_url}/v0/auth/device/token",
+                    headers={"User-Agent": _rvn_user_agent()},
                     json={"device_code": device_code},
                 )
                 if poll_resp.is_success:
                     payload = poll_resp.json()
-                    _store_temporary_credential(
+                    _store_expiring_credential(
                         profile=profile,
                         api_url=resolved_api_url,
                         token=payload["access_token"],
+                        refresh_token=payload["refresh_token"],
                         customer_id=payload.get("customer_id"),
                         expires_in=int(payload.get("expires_in") or 0),
+                        refresh_expires_in=int(payload.get("refresh_expires_in") or 0),
                     )
+                    if previous_refresh_token:
+                        auth_mod.revoke_device_refresh_token(
+                            previous_refresh_api_url,
+                            previous_refresh_token,
+                        )
                     poll_display.stop()
                     output.success(
-                        f"Authenticated profile '{profile}' with a temporary credential."
+                        f"Authenticated profile '{profile}' with an expiring credential."
                     )
                     return
 
@@ -231,11 +303,21 @@ def login(
         "--no-browser",
         help="Suppress the browser-opening hint.",
     ),
+    duration: str | None = typer.Option(
+        None,
+        "--duration",
+        help="Requested device session duration, for example 8h or 3days.",
+    ),
 ) -> None:
     """Authenticate with device authorization and store the short-lived JWT."""
     if ctx.invoked_subcommand is not None:
         return
-    perform_device_login(profile=profile, api_url=api_url, no_browser=no_browser)
+    perform_device_login(
+        profile=profile,
+        api_url=api_url,
+        no_browser=no_browser,
+        duration=duration,
+    )
 
 
 @app.command("logout")

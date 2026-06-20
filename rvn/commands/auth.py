@@ -242,18 +242,25 @@ def auth_login(
     no_browser: bool = typer.Option(
         False, "--no-browser", help="Suppress the browser-opening hint."
     ),
+    duration: str | None = typer.Option(
+        None,
+        "--duration",
+        help="Requested device session duration, for example 8h or 3days.",
+    ),
 ) -> None:
     """Authenticate and store credentials for a Ravenstash instance.
 
     \b
         rvn auth login
         rvn auth login --profile work --api-url https://api.mycompany.com
+        rvn auth login --duration 8h
     """
     cfg = cfg_mod.load()
     perform_device_login(
         profile=_target_profile(profile, cfg),
         api_url=api_url,
         no_browser=no_browser,
+        duration=duration,
     )
 
 
@@ -512,7 +519,7 @@ def auth_status(
             "Profile": profile_name,
             "API URL": p.api_url,
             "Token source": source or "unknown",
-            "Credential type": p.credential_type or "unknown",
+            "Credential type": auth_mod.display_credential_type(p.credential_type) or "unknown",
             "Customer": p.customer_id or "unknown",
             "Expires at": p.expires_at or "not recorded",
         },

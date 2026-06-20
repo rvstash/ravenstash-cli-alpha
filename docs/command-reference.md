@@ -46,18 +46,38 @@ $ rvn auth login
 Device code: ABCD-1234
 Open this URL and enter the code to approve the device: https://app.ravenstash.com/login/device
 Open the link in your browser, or CTRL+CLICK it from your terminal.
-✓ Authenticated profile 'default' with a temporary credential.
+✓ Authenticated profile 'default' with an expiring credential.
 ```
 
 ```
 $ rvn auth login --profile work --api-url https://api.mycompany.com
 Device code: WXYZ-9876
 Open this URL and enter the code to approve the device: https://app.mycompany.com/login/device
-✓ Authenticated profile 'work' with a temporary credential.
+✓ Authenticated profile 'work' with an expiring credential.
 ```
 
-`rvn` stores only the short-lived CLI JWT in the OS keyring. PAT/M2M credentials
-belong in `RVN_TOKEN`; that env var always takes precedence over local profiles.
+Use `--duration` to preselect the refresh duration shown on the browser approval
+screen:
+
+```bash
+rvn auth login --duration 8h
+rvn auth login --duration "7 days"
+rvn auth login --duration 1month
+```
+
+Accepted units are hours, days, months, and years. A month is 30 days, a year is
+365 days, and values must be between 1 hour and 1 year. If omitted, the browser
+approval screen defaults to 4 hours.
+Device login and refresh requests send `User-Agent: rvn/<version>` plus OS
+platform metadata for active device-session displays.
+
+`rvn` stores the short-lived CLI JWT and a profile-scoped device refresh token in
+the OS keyring. If the profile already has an active expiring login, a new
+successful login replaces it and best-effort revokes the previous device refresh
+token. When the access token expires, `rvn` refreshes through DevAPI, stores the
+rotated token pair, and retries the failed request once. PAT/M2M credentials
+belong in `RVN_TOKEN`; that env var always takes precedence over local profiles
+and is never refreshed.
 
 ### `rvn auth logout`
 
@@ -140,7 +160,7 @@ Authentication status
 Profile:         default
 API URL:         https://api.ravenstash.com
 Token source:    keyring
-Credential type: temporary
+Credential type: expiring
 Customer:        cus_default
 Expires at:      2026-06-18T16:00:00+00:00
 
@@ -149,7 +169,7 @@ Authentication status
 Profile:         work
 API URL:         https://api.mycompany.com
 Token source:    keyring
-Credential type: temporary
+Credential type: expiring
 Customer:        cus_work
 Expires at:      2026-06-18T16:00:00+00:00
 ```
@@ -759,7 +779,7 @@ default_profile = "default"
 [profiles.default]
 api_url = "https://api.ravenstash.com"
 customer_id = "cus_..."
-credential_type = "temporary"
+credential_type = "expiring"
 expires_at = "2026-06-18T16:00:00+00:00"
 
 [profiles.work]

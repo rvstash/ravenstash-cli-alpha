@@ -15,8 +15,9 @@ Config file shape
     [profiles.default]
     api_url = "https://api.ravenstash.com"
     customer_id = "cus_..."
-    credential_type = "temporary"
+    credential_type = "expiring"
     expires_at = "2026-06-17T16:00:00+00:00"
+    refresh_expires_at = "2026-06-17T20:00:00+00:00"
 
     [profiles.dev]
     api_url = "http://localhost:6002"
@@ -60,6 +61,7 @@ class ProfileConfig:
     customer_id: str | None = None
     credential_type: str | None = None
     expires_at: str | None = None
+    refresh_expires_at: str | None = None
 
 
 @dataclass
@@ -108,6 +110,7 @@ def load() -> RvnConfig:
             customer_id=vals.get("customer_id"),
             credential_type=vals.get("credential_type"),
             expires_at=vals.get("expires_at"),
+            refresh_expires_at=vals.get("refresh_expires_at"),
         )
 
     for kind, vals in raw.get("registries", {}).items():
@@ -132,6 +135,7 @@ def save(cfg: RvnConfig) -> None:
                     "customer_id": p.customer_id,
                     "credential_type": p.credential_type,
                     "expires_at": p.expires_at,
+                    "refresh_expires_at": p.refresh_expires_at,
                 }.items()
                 if v is not None
             }
@@ -166,6 +170,7 @@ def set_profile_value(profile: str, api_url: str | None = None) -> None:
         customer_id=existing.customer_id,
         credential_type=existing.credential_type,
         expires_at=existing.expires_at,
+        refresh_expires_at=existing.refresh_expires_at,
     )
     save(cfg)
 
@@ -180,6 +185,7 @@ def clear_profile_credential_metadata(profile: str) -> None:
         customer_id=None,
         credential_type=None,
         expires_at=None,
+        refresh_expires_at=None,
     )
     save(cfg)
 
@@ -191,6 +197,7 @@ def set_profile_metadata(
     customer_id: str | None = None,
     credential_type: str | None = None,
     expires_at: str | None = None,
+    refresh_expires_at: str | None = None,
 ) -> None:
     cfg = load()
     existing = cfg.profiles.get(profile, ProfileConfig())
@@ -201,6 +208,9 @@ def set_profile_metadata(
         if credential_type is not None
         else existing.credential_type,
         expires_at=expires_at if expires_at is not None else existing.expires_at,
+        refresh_expires_at=refresh_expires_at
+        if refresh_expires_at is not None
+        else existing.refresh_expires_at,
     )
     save(cfg)
 
