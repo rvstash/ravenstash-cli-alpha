@@ -19,22 +19,20 @@ Config file shape
     expires_at = "2026-06-17T16:00:00+00:00"
     refresh_expires_at = "2026-06-17T20:00:00+00:00"
 
-    [profiles.dev]
-    api_url = "http://localhost:6002"
-
     [registries.pypi]
-    default_repo = "my-pypi"
+    default_repo = "repo_..."
 
     [registries.npm]
-    default_repo = "my-npm"
+    default_repo = "repo_..."
 
     [registries.maven]
-    default_repo = "my-maven"
+    default_repo = "repo_..."
 """
 
 from __future__ import annotations
 
 import os
+import re
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -47,17 +45,15 @@ RegistryKind = Literal["pypi", "npm", "maven"]
 
 CONFIG_DIR = Path.home() / ".rvn"
 CONFIG_FILE = CONFIG_DIR / "config.toml"
+PROFILE_ENV_FILE = CONFIG_DIR / "profiles.env"
+LOCAL_ENV_FILE_NAME = ".rvn.env"
 
-DEFAULT_API_URLS: dict[str, str] = {
-    "default": "https://api.ravenstash.com",
-    "dev": "http://localhost:6002",
-    "staging": "https://api.staging-hxa159.ravenstash.com",
-}
+DEFAULT_API_URL = "https://api.ravenstash.com"
 
 
 @dataclass
 class ProfileConfig:
-    api_url: str = "https://api.ravenstash.com"
+    api_url: str = DEFAULT_API_URL
     customer_id: str | None = None
     credential_type: str | None = None
     expires_at: str | None = None
@@ -67,7 +63,6 @@ class ProfileConfig:
 @dataclass
 class RegistryDefaults:
     default_repo: str | None = None
-    api_url: str | None = None  # per-kind API URL override (takes precedence over profile api_url)
 
 
 @dataclass
@@ -78,7 +73,7 @@ class RvnConfig:
 
     def active_profile(self, profile_name: str | None = None) -> ProfileConfig:
         name = profile_name or os.environ.get("RVN_PROFILE") or self.default_profile
-        return self.profiles.get(name, ProfileConfig())
+        return self.profiles.get(name, _default_profile_config(name))
 
     def registry_defaults(self, kind: RegistryKind) -> RegistryDefaults:
         return self.registries.get(kind, RegistryDefaults())
@@ -88,6 +83,81 @@ def current_profile_name(cfg: RvnConfig | None = None) -> str:
     """Return the effective active profile name."""
     resolved_cfg = cfg or load()
     return os.environ.get("RVN_PROFILE") or resolved_cfg.default_profile
+
+
+# ── Environment helpers ───────────────────────────────────────────────────────
+
+
+def _profile_env_key(profile_name: str) -> str:
+    normalized = re.sub(r"[^A-Za-z0-9]+", "_", profile_name).strip("_").upper()
+    return f"RVN_PROFILE_{normalized}_API_URL"
+
+
+def _parse_env_value(value: str) -> str:
+    value = value.strip()
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
+        return value[1:-1]
+    return value
+
+
+def _read_env_file(path: Path) -> dict[str, str]:
+    if not path.exists() or not path.is_file():
+        return {}
+
+    values: dict[str, str] = {}
+    for raw_line in path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("export "):
+            line = line.removeprefix("export ").strip()
+        key, sep, value = line.partition("=")
+        if not sep:
+            continue
+        key = key.strip()
+        if key:
+            values[key] = _parse_env_value(value)
+    return values
+
+
+def _nearest_local_env_file() -> Path | None:
+    current = Path.cwd()
+    for directory in (current, *current.parents):
+        candidate = directory / LOCAL_ENV_FILE_NAME
+        if candidate.exists():
+            return candidate
+    return None
+
+
+def _env_file_values() -> dict[str, str]:
+    values = _read_env_file(PROFILE_ENV_FILE)
+    local_env_file = _nearest_local_env_file()
+    if local_env_file is not None:
+        values.update(_read_env_file(local_env_file))
+    explicit_env_file = os.environ.get("RVN_ENV_FILE")
+    if explicit_env_file:
+        values.update(_read_env_file(Path(explicit_env_file).expanduser()))
+    return values
+
+
+def _env_value(name: str) -> str | None:
+    return os.environ.get(name) or _env_file_values().get(name)
+
+
+def profile_api_url(profile_name: str) -> str:
+    """Return the default API URL for *profile_name* from env/config defaults."""
+    keys = [_profile_env_key(profile_name)]
+    if profile_name == "default":
+        keys.append("RVN_API_URL")
+    for key in keys:
+        value = _env_value(key)
+        if value:
+            return value.rstrip("/")
+    return DEFAULT_API_URL
+
+
+def _default_profile_config(profile_name: str) -> ProfileConfig:
+    return ProfileConfig(api_url=profile_api_url(profile_name))
 
 
 # ── Serialisation helpers ─────────────────────────────────────────────────────
@@ -106,7 +176,7 @@ def load() -> RvnConfig:
 
     for name, vals in raw.get("profiles", {}).items():
         cfg.profiles[name] = ProfileConfig(
-            api_url=vals.get("api_url", "https://api.ravenstash.com"),
+            api_url=vals.get("api_url", profile_api_url(name)),
             customer_id=vals.get("customer_id"),
             credential_type=vals.get("credential_type"),
             expires_at=vals.get("expires_at"),
@@ -116,7 +186,6 @@ def load() -> RvnConfig:
     for kind, vals in raw.get("registries", {}).items():
         cfg.registries[kind] = RegistryDefaults(  # type: ignore[index]
             default_repo=vals.get("default_repo"),
-            api_url=vals.get("api_url"),
         )
 
     return cfg
@@ -148,7 +217,6 @@ def save(cfg: RvnConfig) -> None:
                 k: v
                 for k, v in {
                     "default_repo": r.default_repo,
-                    "api_url": r.api_url,
                 }.items()
                 if v is not None
             }
@@ -164,7 +232,7 @@ def save(cfg: RvnConfig) -> None:
 
 def set_profile_value(profile: str, api_url: str | None = None) -> None:
     cfg = load()
-    existing = cfg.profiles.get(profile, ProfileConfig())
+    existing = cfg.profiles.get(profile, _default_profile_config(profile))
     cfg.profiles[profile] = ProfileConfig(
         api_url=api_url if api_url is not None else existing.api_url,
         customer_id=existing.customer_id,
@@ -200,7 +268,7 @@ def set_profile_metadata(
     refresh_expires_at: str | None = None,
 ) -> None:
     cfg = load()
-    existing = cfg.profiles.get(profile, ProfileConfig())
+    existing = cfg.profiles.get(profile, _default_profile_config(profile))
     cfg.profiles[profile] = ProfileConfig(
         api_url=api_url if api_url is not None else existing.api_url,
         customer_id=customer_id if customer_id is not None else existing.customer_id,
@@ -240,26 +308,7 @@ def delete_all_profiles() -> None:
     save(cfg)
 
 
-def set_registry_default_repo(kind: RegistryKind, repo: str, profile: str | None = None) -> None:
+def set_registry_default_repo(kind: RegistryKind, repo: str) -> None:
     cfg = load()
-    existing = cfg.registries.get(kind, RegistryDefaults())
-    cfg.registries[kind] = RegistryDefaults(
-        default_repo=repo,
-        api_url=existing.api_url,
-    )
-    save(cfg)
-
-
-def set_registry_override(
-    kind: RegistryKind,
-    api_url: str | None = None,
-    default_repo: str | None = None,
-) -> None:
-    """Set per-kind registry overrides (api_url or default_repo)."""
-    cfg = load()
-    existing = cfg.registries.get(kind, RegistryDefaults())
-    cfg.registries[kind] = RegistryDefaults(
-        default_repo=default_repo if default_repo is not None else existing.default_repo,
-        api_url=api_url if api_url is not None else existing.api_url,
-    )
+    cfg.registries[kind] = RegistryDefaults(default_repo=repo)
     save(cfg)

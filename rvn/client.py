@@ -6,7 +6,7 @@ handling are consistent everywhere.
 Usage
 -----
     client = ApiClient.from_profile("default")
-    repos = client.get("/webapp/repositories/").json()
+    repos = client.get("/webapp/repository/").json()
 """
 
 from __future__ import annotations
@@ -58,7 +58,7 @@ class ApiClient:
     @classmethod
     def from_profile(cls, profile: str | None = None) -> ApiClient:
         cfg = cfg_mod.load()
-        profile_name = profile or cfg.default_profile
+        profile_name = profile or cfg_mod.current_profile_name(cfg)
         p: ProfileConfig = cfg.active_profile(profile_name)
         token = auth_mod.get_token(profile_name)
         if not token:
@@ -122,28 +122,3 @@ class ApiClient:
 
     def delete(self, path: str) -> httpx.Response:
         return self._request("DELETE", path)
-
-    # ── auth helpers ──────────────────────────────────────────────────────────
-
-    def login(self, email: str, password: str) -> str:
-        """Exchange credentials for a JWT access token."""
-        with httpx.Client(timeout=self._timeout) as hx:
-            resp = hx.post(
-                self._url("/webapp/auth/login"),
-                json={"email": email, "password": password},
-            )
-        self._raise(resp)
-        data = resp.json()
-        return data["access_token"]
-
-    def create_repo_token(self, repo_slug: str, write: bool = False) -> dict:
-        """Create a repository-scoped API token.
-
-        Returns the full token object including the plain-text ``token`` field
-        (only returned on creation).
-        """
-        resp = self.post(
-            "/webapp/tokens/",
-            json={"repository_slug": repo_slug, "write": write},
-        )
-        return resp.json()

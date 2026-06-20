@@ -4,11 +4,11 @@ Operational guidance for the `rvn` CLI package.
 
 ## What this repository is
 
-- Universal Ravenstash package-manager CLI for publishing and consuming PyPI, npm, and Maven packages.
+- Ravenstash developer CLI for auth, local runtime management, package repositories, and future developer-product areas.
 - The CLI manages Ravenstash credentials, including refresh-backed expiring
   device-login credentials, and delegates install flows to native toolchains
   where appropriate.
-- CLI code lives under `rvn/`, with registry-specific behavior under `rvn/registries/` and command wiring under `rvn/commands/`.
+- CLI code lives under `rvn/`, organized by command area: `auth/`, `runtime/`, `pkg/`, `repo/`, and `ci/`.
 
 ## Working rules
 
@@ -16,16 +16,17 @@ Operational guidance for the `rvn` CLI package.
   and profile-scoped device refresh tokens live in keyring, while profile
   metadata lives in `~/.rvn/config.toml`.
 - Preserve native-toolchain delegation for install flows unless the task explicitly changes that contract.
-- Keep registry-specific protocol logic in `rvn/registries/{pypi,npm,maven}.py`.
+- Keep registry-specific protocol logic in `rvn/pkg/registries/{pypi,npm,maven}.py`.
 - Keep command modules thin and route shared behavior through common helpers.
-- Do not assume public Ravenstash endpoints are finalized; support local/dev profiles through configuration.
+- Do not hardcode local, dev, or staging Ravenstash endpoints. Support them
+  through user config, process environment variables, or ignored env files such
+  as `.rvn.env` and `~/.rvn/profiles.env`.
 
 ## Verification
 
 Run from `packages/rvn/` after code changes:
 
 ```bash
-uv sync
-uv run pytest
-uv run ruff check rvn tests
+.venv/bin/pytest
+.venv/bin/ruff check rvn tests
 ```

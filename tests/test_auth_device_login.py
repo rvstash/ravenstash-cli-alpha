@@ -10,10 +10,10 @@ from typer.testing import CliRunner
 if TYPE_CHECKING:
     from pathlib import Path
 
-from rvn import auth as auth_mod
 from rvn import config as cfg_mod
-from rvn.commands import auth as auth_cmd
-from rvn.commands import login as login_mod
+from rvn.auth import commands as auth_cmd
+from rvn.auth import credentials as auth_mod
+from rvn.auth import device as login_mod
 
 
 runner = CliRunner()
@@ -119,6 +119,20 @@ token = "rvn_tok_old"
     assert auth_mod.token_source("default") is None
 
 
+def test_staging_profile_uses_env_api_url_when_not_configured(monkeypatch, tmp_path: Path) -> None:
+    config_dir = tmp_path / ".rvn"
+    config_dir.mkdir()
+    config_file = config_dir / "config.toml"
+    config_file.write_text('default_profile = "default"\n', encoding="utf-8")
+    monkeypatch.setattr(cfg_mod, "CONFIG_DIR", config_dir)
+    monkeypatch.setattr(cfg_mod, "CONFIG_FILE", config_file)
+    monkeypatch.setattr(cfg_mod, "PROFILE_ENV_FILE", config_dir / "profiles.env")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("RVN_PROFILE_STAGING_API_URL", "https://staging.example.test")
+
+    assert cfg_mod.load().active_profile("staging").api_url == "https://staging.example.test"
+
+
 @pytest.mark.parametrize(
     ("raw", "expected"),
     [
@@ -149,7 +163,7 @@ def test_auth_switch_profile_sets_active_profile(monkeypatch, tmp_path: Path) ->
     monkeypatch.setattr(cfg_mod, "CONFIG_DIR", config_dir)
     monkeypatch.setattr(cfg_mod, "CONFIG_FILE", config_dir / "config.toml")
 
-    result = runner.invoke(auth_cmd.app, ["switch", "--profile", "work"])
+    result = runner.invoke(auth_cmd.app, ["profile", "switch", "work"])
 
     assert result.exit_code == 0
     assert cfg_mod.load().default_profile == "work"
@@ -252,7 +266,7 @@ def test_auth_delete_profile_removes_config_and_token(monkeypatch, tmp_path: Pat
     deleted: list[str] = []
     monkeypatch.setattr(auth_cmd.auth_mod, "delete_token", lambda profile: deleted.append(profile))
 
-    result = runner.invoke(auth_cmd.app, ["delete"])
+    result = runner.invoke(auth_cmd.app, ["profile", "delete"])
     cfg = cfg_mod.load()
 
     assert result.exit_code == 0
@@ -270,7 +284,7 @@ def test_auth_delete_all_profiles(monkeypatch, tmp_path: Path) -> None:
     deleted: list[str] = []
     monkeypatch.setattr(auth_cmd.auth_mod, "delete_token", lambda profile: deleted.append(profile))
 
-    result = runner.invoke(auth_cmd.app, ["delete", "-a"])
+    result = runner.invoke(auth_cmd.app, ["profile", "delete", "-a"])
     cfg = cfg_mod.load()
 
     assert result.exit_code == 0
@@ -419,12 +433,8 @@ def test_device_login_replaces_active_profile_and_revokes_previous_refresh(
     _write_profiles_config(config_dir)
     monkeypatch.setattr(cfg_mod, "CONFIG_DIR", config_dir)
     monkeypatch.setattr(cfg_mod, "CONFIG_FILE", config_dir / "config.toml")
-    monkeypatch.setattr(login_mod.auth_mod, "_keyring_available", lambda: True)
-    monkeypatch.setattr(
-        login_mod.auth_mod,
-        "_kr_get",
-        lambda profile: "old-refresh" if profile == "default:refresh" else None,
-    )
+    monkeypatch.setattr(login_mod.auth_mod, "has_active_expiring_session", lambda profile: True)
+    monkeypatch.setattr(login_mod.auth_mod, "get_refresh_token", lambda profile: "old-refresh")
     _FakeClient.requests = []
     _FakeClient.responses = [
         _FakeResponse(
@@ -500,12 +510,7 @@ def test_device_login_does_not_revoke_expired_previous_refresh(
     )
     monkeypatch.setattr(cfg_mod, "CONFIG_DIR", config_dir)
     monkeypatch.setattr(cfg_mod, "CONFIG_FILE", config_dir / "config.toml")
-    monkeypatch.setattr(login_mod.auth_mod, "_keyring_available", lambda: True)
-    monkeypatch.setattr(
-        login_mod.auth_mod,
-        "_kr_get",
-        lambda profile: "old-refresh" if profile == "default:refresh" else None,
-    )
+    monkeypatch.setattr(login_mod.auth_mod, "has_active_expiring_session", lambda profile: False)
     _FakeClient.requests = []
     _FakeClient.responses = [
         _FakeResponse(
