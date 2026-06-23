@@ -1,0 +1,22 @@
+name: rvn
+arch: __ARCH__
+platform: linux
+version: __VERSION__
+section: devel
+priority: optional
+maintainer: Ravenstash <support@ravenstash.com>
+description: Ravenstash developer CLI.
+vendor: Ravenstash
+homepage: https://ravenstash.com
+license: Proprietary
+depends:
+  - ca-certificates
+contents:
+  - src: dist/pyinstaller/rvn
+    dst: /usr/lib/rvn
+    type: tree
+  - src: /usr/lib/rvn/rvn
+    dst: /usr/bin/rvn
+    type: symlink
+  - src: README.md
+    dst: /usr/share/doc/rvn/README.md

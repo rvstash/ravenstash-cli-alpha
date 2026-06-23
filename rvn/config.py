@@ -40,10 +40,12 @@ from typing import Literal
 
 import tomli_w
 
+from .paths import rvn_home
+
 
 RegistryKind = Literal["pypi", "npm", "maven"]
 
-CONFIG_DIR = Path.home() / ".rvn"
+CONFIG_DIR = rvn_home()
 CONFIG_FILE = CONFIG_DIR / "config.toml"
 PROFILE_ENV_FILE = CONFIG_DIR / "profiles.env"
 LOCAL_ENV_FILE_NAME = ".rvn.env"

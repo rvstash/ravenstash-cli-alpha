@@ -139,6 +139,49 @@ rvn pkg maven configure --repo <repository-id>
 
 Package-token management is intentionally not part of the alpha CLI surface.
 
+## Installation on Ubuntu / WSL
+
+The supported end-user install path is a system package, not `pip install`.
+The Linux package contains a self-contained `rvn` executable and installs it at
+`/usr/bin/rvn`; user config, credentials, and managed runtimes stay in `~/.rvn`.
+
+APT repository install:
+
+```bash
+sudo install -d -m 0755 /etc/apt/keyrings
+curl -fsSL https://downloads.ravenstash.com/rvn/apt/ravenstash-rvn.gpg \
+  | sudo tee /etc/apt/keyrings/ravenstash-rvn.gpg >/dev/null
+echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/ravenstash-rvn.gpg] https://downloads.ravenstash.com/rvn/apt stable main" \
+  | sudo tee /etc/apt/sources.list.d/ravenstash-rvn.list
+sudo apt update
+sudo apt install rvn
+```
+
+Direct `.deb` artifacts are also published for early testing:
+
+```bash
+sudo apt install ./rvn_<version>_amd64.deb
+```
+
+WSL/headless note: `RVN_TOKEN` works without extra setup. Persistent
+`rvn auth login` stores access and refresh tokens in the OS keyring, so WSL
+needs a usable keyring service before local login credentials can be saved.
+
+## Release packaging
+
+Linux package scaffolding lives under `packaging/`. From this folder:
+
+```bash
+packaging/scripts/build-release-artifacts.sh
+```
+
+That builds the PyInstaller bundle, Debian package, tarball, and checksum file.
+APT repository metadata is generated separately:
+
+```bash
+RVN_APT_GPG_KEY_ID=<key-id> packaging/scripts/update-apt-repo.sh
+```
+
 ## Local Development
 
 Use the package venv directly from this folder:

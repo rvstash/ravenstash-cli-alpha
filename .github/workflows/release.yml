@@ -1,0 +1,64 @@
+# name: release
+
+# on:
+#   push:
+#     tags:
+#       - "v*.*.*"
+#   workflow_dispatch:
+
+# permissions:
+#   contents: write
+
+# jobs:
+#   linux-amd64:
+#     runs-on: ubuntu-22.04
+#     steps:
+#       - uses: actions/checkout@v4
+
+#       - name: Set up Python
+#         uses: actions/setup-python@v5
+#         with:
+#           python-version: "3.12"
+
+#       - name: Set up uv
+#         uses: astral-sh/setup-uv@v5
+
+#       - name: Set up Go
+#         uses: actions/setup-go@v5
+#         with:
+#           go-version: stable
+
+#       - name: Sync project
+#         run: uv sync --locked
+
+#       - name: Install build tools
+#         run: |
+#           uv pip install "pyinstaller>=6,<7"
+#           go install github.com/goreleaser/nfpm/v2/cmd/nfpm@latest
+#           echo "$HOME/go/bin" >> "$GITHUB_PATH"
+
+#       - name: Verify
+#         run: |
+#           .venv/bin/pytest
+#           .venv/bin/ruff check rvn tests
+#           .venv/bin/pyright
+
+#       - name: Build release artifacts
+#         run: packaging/scripts/build-release-artifacts.sh
+
+#       - name: Upload workflow artifacts
+#         uses: actions/upload-artifact@v4
+#         with:
+#           name: rvn-linux-amd64
+#           path: dist/release/*
+
+#       - name: Publish GitHub release
+#         if: startsWith(github.ref, 'refs/tags/')
+#         env:
+#           GH_TOKEN: ${{ github.token }}
+#         run: |
+#           gh release create "$GITHUB_REF_NAME" dist/release/* \
+#             --verify-tag \
+#             --title "$GITHUB_REF_NAME" \
+#             --notes "rvn $GITHUB_REF_NAME" \
+#           || gh release upload "$GITHUB_REF_NAME" dist/release/* --clobber

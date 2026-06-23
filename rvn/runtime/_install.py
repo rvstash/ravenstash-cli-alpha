@@ -12,10 +12,12 @@ from pathlib import Path
 
 import httpx
 
+from ..paths import rvn_home
+
 
 # ── Directory constants ────────────────────────────────────────────────────────
 
-RVN_DIR = Path.home() / ".rvn"
+RVN_DIR = rvn_home()
 RUNTIMES_DIR = RVN_DIR / "runtimes"  # ~/.rvn/runtimes/{kind}/{version}/
 SHIMS_DIR = RVN_DIR / "shims"  # ~/.rvn/shims/{binary} → shim scripts
 ENV_FILE = RVN_DIR / "env"  # ~/.rvn/env  (source in shell rc)
