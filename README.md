@@ -91,54 +91,56 @@ Repository commands:
 rvn pkg repo list
 rvn pkg repo list --kind pypi
 rvn pkg repo create my-python-packages --kind pypi --default
-rvn pkg repo show <repo-pid>
-rvn pkg repo delete <repo-pid>
-rvn pkg repo set-default pypi <repo-pid>
+rvn pkg repo show <repo-name>
+rvn pkg repo delete <repo-name>
+rvn pkg repo set-default pypi <repo-name>
 rvn pkg repo defaults
 ```
 
-Repository references use the repository public id (`repo_pid`). Commands that
-build package-manager URLs also accept `<customer-pid>/<repo-pid>` when you need
-to override the profile's stored customer public id.
+Repository references use the package repository name, such as
+`my-python-packages`. Repository names use lowercase letters, numbers, and
+hyphens. Commands that build package-manager URLs also accept
+`<customer-public-id>/<repo-name>` when you need to override the profile's
+stored customer public ID.
 
 Package metadata commands:
 
 ```bash
-rvn pkg package list --repo <repo-pid>
-rvn pkg package show requests --repo <repo-pid>
-rvn pkg package delete requests --repo <repo-pid>
-rvn pkg package delete-version requests 2.32.0 --repo <repo-pid>
-rvn pkg package yank requests 2.32.0 --repo <repo-pid> --reason "bad build"
+rvn pkg package list --repo <repo-name>
+rvn pkg package show requests --repo <repo-name>
+rvn pkg package delete requests --repo <repo-name>
+rvn pkg package delete-version requests 2.32.0 --repo <repo-name>
+rvn pkg package yank requests 2.32.0 --repo <repo-name> --reason "bad build"
 ```
 
 PyPI helpers:
 
 ```bash
-rvn pkg pypi index-url --repo <repo-pid>
-rvn pkg pypi upload-url --repo <repo-pid>
-rvn pkg pypi install requests --repo <repo-pid>
-rvn pkg pypi publish dist/ --repo <repo-pid>
-rvn pkg pypi configure --repo <repo-pid>
+rvn pkg pypi index-url --repo <repo-name>
+rvn pkg pypi upload-url --repo <repo-name>
+rvn pkg pypi install requests --repo <repo-name>
+rvn pkg pypi publish dist/ --repo <repo-name>
+rvn pkg pypi configure --repo <repo-name>
 ```
 
 npm helpers:
 
 ```bash
-rvn pkg npm registry-url --repo <repo-pid>
-rvn pkg npm npmrc --repo <repo-pid>
-rvn pkg npm install lodash --repo <repo-pid>
-rvn pkg npm publish . --repo <repo-pid>
-rvn pkg npm configure --repo <repo-pid>
+rvn pkg npm registry-url --repo <repo-name>
+rvn pkg npm npmrc --repo <repo-name>
+rvn pkg npm install lodash --repo <repo-name>
+rvn pkg npm publish . --repo <repo-name>
+rvn pkg npm configure --repo <repo-name>
 ```
 
 Maven helpers:
 
 ```bash
-rvn pkg maven repo-url --repo <repo-pid>
-rvn pkg maven settings --repo <repo-pid>
-rvn pkg maven install com.example:lib:1.0.0 --repo <repo-pid>
-rvn pkg maven deploy ./target/lib.jar --group com.example --artifact lib --version 1.0.0 --repo <repo-pid>
-rvn pkg maven configure --repo <repo-pid>
+rvn pkg maven repo-url --repo <repo-name>
+rvn pkg maven settings --repo <repo-name>
+rvn pkg maven install com.example:lib:1.0.0 --repo <repo-name>
+rvn pkg maven deploy ./target/lib.jar --group com.example --artifact lib --version 1.0.0 --repo <repo-name>
+rvn pkg maven configure --repo <repo-name>
 ```
 
 Package-token management is intentionally not part of the alpha CLI surface.

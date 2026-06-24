@@ -39,8 +39,9 @@ rvn pkg repo create my-node-packages --kind npm --default
 rvn pkg repo create my-java-packages --kind maven --default
 ```
 
-`rvn pkg` expects Ravenstash repository public IDs. After a repository is set as
-the default for its kind, the `--repo` flag can be omitted for that kind.
+`rvn pkg` expects package repository names, such as `my-python-packages`.
+After a repository is set as the default for its kind, the `--repo` flag can be
+omitted for that kind.
 
 ## Package Helpers
 

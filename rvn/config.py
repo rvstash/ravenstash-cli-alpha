@@ -21,13 +21,13 @@ Config file shape
     refresh_expires_at = "2026-06-17T20:00:00+00:00"
 
     [registries.pypi]
-    default_repo = "repo_..."
+    default_repo = "my-python-packages"
 
     [registries.npm]
-    default_repo = "repo_..."
+    default_repo = "my-node-packages"
 
     [registries.maven]
-    default_repo = "repo_..."
+    default_repo = "my-java-packages"
 """
 
 from __future__ import annotations

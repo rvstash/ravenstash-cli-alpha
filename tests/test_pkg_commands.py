@@ -63,13 +63,13 @@ customer_id = "cus_123"
 customer_public_id = "custpid1"
 
 [registries.pypi]
-default_repo = "repo_pypi"
+default_repo = "repo-pypi"
 
 [registries.npm]
-default_repo = "repo_npm"
+default_repo = "repo-npm"
 
 [registries.maven]
-default_repo = "repo_maven"
+default_repo = "repo-maven"
 """.strip(),
         encoding="utf-8",
     )
@@ -94,15 +94,15 @@ def test_pkg_repo_list_filters_by_kind_and_uses_profile_customer(
         [
             [
                 {
-                    "id": "repo_pypi",
-                    "slug": "python",
+                    "id": "repo-pypi",
+                    "repo_pid": "repo-pypi",
                     "registry_kind": "pypi",
                     "package_count": 2,
                     "storage_bytes": 128,
                 },
                 {
-                    "id": "repo_npm",
-                    "slug": "node",
+                    "id": "repo-npm",
+                    "repo_pid": "repo-npm",
                     "registry_kind": "npm",
                     "package_count": 3,
                     "storage_bytes": 256,
@@ -116,14 +116,13 @@ def test_pkg_repo_list_filters_by_kind_and_uses_profile_customer(
 
     assert result.exit_code == 0
     assert fake.calls == [("GET", "/webapp/repository/", {"customer_id": "cus_123"})]
-    assert "repo_pypi" in result.output
-    assert "python" in result.output
-    assert "repo_npm" not in result.output
+    assert "repo-pypi" in result.output
+    assert "repo-npm" not in result.output
 
 
 def test_pkg_repo_create_can_set_default_repo(monkeypatch, tmp_path: Path) -> None:
     _isolate_config(monkeypatch, tmp_path)
-    fake = _FakeApiClient([{"id": "repo_new", "slug": "new-node"}])
+    fake = _FakeApiClient([{"id": "new-node", "repo_pid": "new-node"}])
     _use_fake_client(monkeypatch, fake)
 
     result = runner.invoke(
@@ -137,12 +136,12 @@ def test_pkg_repo_create_can_set_default_repo(monkeypatch, tmp_path: Path) -> No
             "/webapp/repository/",
             {
                 "customer_id": "cus_123",
-                "slug": "new-node",
+                "repo_pid": "new-node",
                 "registry_kind": "npm",
             },
         )
     ]
-    assert cfg_mod.load().registry_defaults("npm").default_repo == "repo_new"
+    assert cfg_mod.load().registry_defaults("npm").default_repo == "new-node"
     assert "Created npm package repository" in result.output
 
 
@@ -160,8 +159,8 @@ def test_pkg_repo_show_renders_repository_details(monkeypatch, tmp_path: Path) -
     fake = _FakeApiClient(
         [
             {
-                "id": "repo_pypi",
-                "slug": "python",
+                "id": "repo-pypi",
+                "repo_pid": "repo-pypi",
                 "registry_kind": "pypi",
                 "package_count": 7,
                 "storage_bytes": 4096,
@@ -171,12 +170,11 @@ def test_pkg_repo_show_renders_repository_details(monkeypatch, tmp_path: Path) -
     )
     _use_fake_client(monkeypatch, fake)
 
-    result = runner.invoke(pkg_cmd.app, ["repo", "show", "repo_pypi"])
+    result = runner.invoke(pkg_cmd.app, ["repo", "show", "repo-pypi"])
 
     assert result.exit_code == 0
-    assert fake.calls == [("GET", "/webapp/repository/repo_pypi", None)]
-    assert "repo_pypi" in result.output
-    assert "python" in result.output
+    assert fake.calls == [("GET", "/webapp/repository/repo-pypi", None)]
+    assert "repo-pypi" in result.output
     assert "4096" in result.output
 
 
@@ -198,7 +196,7 @@ def test_pkg_package_list_and_show_use_repository_package_paths(
                 ]
             },
             {
-                "repository_id": "repo_pypi",
+                "repository_id": "repo-pypi",
                 "package_name": "demo",
                 "latest_version": "1.2.3",
                 "version_count": 2,
@@ -216,14 +214,14 @@ def test_pkg_package_list_and_show_use_repository_package_paths(
     )
     _use_fake_client(monkeypatch, fake)
 
-    list_result = runner.invoke(pkg_cmd.app, ["package", "list", "--repo", "repo_pypi"])
-    show_result = runner.invoke(pkg_cmd.app, ["package", "show", "demo", "--repo", "repo_pypi"])
+    list_result = runner.invoke(pkg_cmd.app, ["package", "list", "--repo", "repo-pypi"])
+    show_result = runner.invoke(pkg_cmd.app, ["package", "show", "demo", "--repo", "repo-pypi"])
 
     assert list_result.exit_code == 0
     assert show_result.exit_code == 0
     assert fake.calls == [
-        ("GET", "/webapp/repository/repo_pypi/packages", None),
-        ("GET", "/webapp/repository/repo_pypi/packages/demo", None),
+        ("GET", "/webapp/repository/repo-pypi/packages", None),
+        ("GET", "/webapp/repository/repo-pypi/packages/demo", None),
     ]
     assert "demo" in list_result.output
     assert "1.2.3" in show_result.output
@@ -236,26 +234,26 @@ def test_pkg_package_mutations_call_expected_api_paths(monkeypatch, tmp_path: Pa
 
     delete_result = runner.invoke(
         pkg_cmd.app,
-        ["package", "delete", "demo", "--repo", "repo_pypi", "--yes"],
+        ["package", "delete", "demo", "--repo", "repo-pypi", "--yes"],
     )
     delete_version_result = runner.invoke(
         pkg_cmd.app,
-        ["package", "delete-version", "demo", "1.0.0", "--repo", "repo_pypi", "--yes"],
+        ["package", "delete-version", "demo", "1.0.0", "--repo", "repo-pypi", "--yes"],
     )
     yank_result = runner.invoke(
         pkg_cmd.app,
-        ["package", "yank", "demo", "1.0.1", "--repo", "repo_pypi", "--reason", "bad build"],
+        ["package", "yank", "demo", "1.0.1", "--repo", "repo-pypi", "--reason", "bad build"],
     )
 
     assert delete_result.exit_code == 0
     assert delete_version_result.exit_code == 0
     assert yank_result.exit_code == 0
     assert fake.calls == [
-        ("DELETE", "/webapp/repository/repo_pypi/packages/demo", None),
-        ("DELETE", "/webapp/repository/repo_pypi/packages/demo/versions/1.0.0", None),
+        ("DELETE", "/webapp/repository/repo-pypi/packages/demo", None),
+        ("DELETE", "/webapp/repository/repo-pypi/packages/demo/versions/1.0.0", None),
         (
             "POST",
-            "/webapp/repository/repo_pypi/packages/demo/versions/1.0.1/yank",
+            "/webapp/repository/repo-pypi/packages/demo/versions/1.0.1/yank",
             {"reason": "bad build"},
         ),
     ]
@@ -266,19 +264,19 @@ def test_pkg_package_mutations_call_expected_api_paths(monkeypatch, tmp_path: Pa
     [
         (
             ["pypi", "index-url", "--profile", "staging"],
-            f"{STAGING_API_URL}/pypi/x/custpid1/repo_pypi/simple/",
+            f"{STAGING_API_URL}/pypi/x/custpid1/repo-pypi/simple/",
         ),
         (
             ["pypi", "upload-url", "--profile", "staging"],
-            f"{STAGING_API_URL}/native/pypi/x/custpid1/repo_pypi/",
+            f"{STAGING_API_URL}/native/pypi/x/custpid1/repo-pypi/",
         ),
         (
             ["npm", "registry-url", "--profile", "staging"],
-            f"{STAGING_API_URL}/npm/x/custpid1/repo_npm/",
+            f"{STAGING_API_URL}/npm/x/custpid1/repo-npm/",
         ),
         (
             ["maven", "repo-url", "--profile", "staging"],
-            f"{STAGING_API_URL}/maven/x/custpid1/repo_maven/",
+            f"{STAGING_API_URL}/maven/x/custpid1/repo-maven/",
         ),
     ],
 )
@@ -308,13 +306,13 @@ def test_pkg_configure_snippets_are_printed_for_native_toolchains(
 
     assert pypi_result.exit_code == 0
     assert "extra-index-url" in pypi_result.output
-    assert "repo_pypi" in pypi_result.output
+    assert "repo-pypi" in pypi_result.output
     assert npm_result.exit_code == 0
     assert "_authToken=${RVN_TOKEN}" in npm_result.output
-    assert "repo_npm" in npm_result.output
+    assert "repo-npm" in npm_result.output
     assert maven_result.exit_code == 0
     assert "<settings" in maven_result.output
-    assert "repo_maven" in maven_result.output
+    assert "repo-maven" in maven_result.output
 
 
 def test_pypi_install_injects_authenticated_extra_index_url(
@@ -336,7 +334,7 @@ def test_pypi_install_injects_authenticated_extra_index_url(
     assert result.exit_code == 0
     assert calls[0][0] == ["/bin/pip", "install", "demo"]
     assert calls[0][1]["PIP_EXTRA_INDEX_URL"] == (
-        f"https://__token__:secret-token@{STAGING_HOST}/pypi/x/custpid1/repo_pypi/simple/"
+        f"https://__token__:secret-token@{STAGING_HOST}/pypi/x/custpid1/repo-pypi/simple/"
     )
 
 
@@ -358,11 +356,11 @@ def test_npm_install_injects_token_for_registry_host(monkeypatch, tmp_path: Path
         "/bin/npm",
         "install",
         "--registry",
-        f"{STAGING_API_URL}/npm/x/custpid1/repo_npm/",
+        f"{STAGING_API_URL}/npm/x/custpid1/repo-npm/",
         "@scope/demo",
     ]
     assert (
-        calls[0][1][f"NPM_CONFIG_//{STAGING_HOST}/npm/x/custpid1/repo_npm/:_authToken"]
+        calls[0][1][f"NPM_CONFIG_//{STAGING_HOST}/npm/x/custpid1/repo-npm/:_authToken"]
         == "secret-token"
     )
 
@@ -409,10 +407,10 @@ def test_npm_publish_calls_registry_adapter(monkeypatch, tmp_path: Path) -> None
     assert result.exit_code == 0
     assert calls == [
         {
-            "registry_url": f"{STAGING_API_URL}/native/npm/x/custpid1/repo_npm/",
+            "registry_url": f"{STAGING_API_URL}/native/npm/x/custpid1/repo-npm/",
             "token": "secret-token",
             "package_dir": package_dir,
-            "download_registry_url": f"{STAGING_API_URL}/npm/x/custpid1/repo_npm/",
+            "download_registry_url": f"{STAGING_API_URL}/npm/x/custpid1/repo-npm/",
         }
     ]
 
@@ -450,7 +448,7 @@ def test_maven_deploy_checks_file_and_calls_registry_adapter(monkeypatch, tmp_pa
     assert result.exit_code == 0
     assert calls == [
         {
-            "upload_url": f"{STAGING_API_URL}/native/maven/x/custpid1/repo_maven/",
+            "upload_url": f"{STAGING_API_URL}/native/maven/x/custpid1/repo-maven/",
             "token": "secret-token",
             "group_id": "com.example",
             "artifact_id": "demo",

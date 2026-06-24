@@ -128,8 +128,8 @@ def test_save_and_load_round_trips_profiles_and_registry_defaults(
             )
         },
         registries={
-            "pypi": cfg_mod.RegistryDefaults(default_repo="repo_pypi"),
-            "npm": cfg_mod.RegistryDefaults(default_repo="repo_npm"),
+            "pypi": cfg_mod.RegistryDefaults(default_repo="repo-pypi"),
+            "npm": cfg_mod.RegistryDefaults(default_repo="repo-npm"),
         },
     )
 
@@ -140,8 +140,8 @@ def test_save_and_load_round_trips_profiles_and_registry_defaults(
     assert loaded.profiles["work"].api_url == "https://api.work.example"
     assert loaded.profiles["work"].customer_id == "cus_work"
     assert loaded.profiles["work"].customer_public_id == "custpid1"
-    assert loaded.registry_defaults("pypi").default_repo == "repo_pypi"
-    assert loaded.registry_defaults("npm").default_repo == "repo_npm"
+    assert loaded.registry_defaults("pypi").default_repo == "repo-pypi"
+    assert loaded.registry_defaults("npm").default_repo == "repo-npm"
     assert loaded.registry_defaults("maven").default_repo is None
 
 

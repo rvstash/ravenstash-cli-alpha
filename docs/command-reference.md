@@ -69,51 +69,53 @@ Repository commands:
 
 ```bash
 rvn pkg repo list [--customer-id CUSTOMER] [--kind pypi|npm|maven]
-rvn pkg repo create SLUG --kind pypi|npm|maven [--customer-id CUSTOMER] [--default]
-rvn pkg repo show REPOSITORY_ID
-rvn pkg repo delete REPOSITORY_ID
-rvn pkg repo set-default pypi|npm|maven REPOSITORY_ID
+rvn pkg repo create NAME --kind pypi|npm|maven [--customer-id CUSTOMER] [--default]
+rvn pkg repo show REPOSITORY_NAME
+rvn pkg repo delete REPOSITORY_NAME
+rvn pkg repo set-default pypi|npm|maven REPOSITORY_NAME
 rvn pkg repo defaults
 ```
+
+Repository names use lowercase letters, numbers, and hyphens.
 
 Package metadata commands:
 
 ```bash
-rvn pkg package list --repo REPOSITORY_ID
-rvn pkg package show NAME --repo REPOSITORY_ID
-rvn pkg package delete NAME --repo REPOSITORY_ID
-rvn pkg package delete-version NAME VERSION --repo REPOSITORY_ID
-rvn pkg package yank NAME VERSION --repo REPOSITORY_ID [--reason TEXT]
+rvn pkg package list --repo REPOSITORY_NAME
+rvn pkg package show NAME --repo REPOSITORY_NAME
+rvn pkg package delete NAME --repo REPOSITORY_NAME
+rvn pkg package delete-version NAME VERSION --repo REPOSITORY_NAME
+rvn pkg package yank NAME VERSION --repo REPOSITORY_NAME [--reason TEXT]
 ```
 
 PyPI helpers:
 
 ```bash
-rvn pkg pypi index-url [--repo REPOSITORY_ID]
-rvn pkg pypi upload-url [--repo REPOSITORY_ID]
-rvn pkg pypi install PACKAGE... [--repo REPOSITORY_ID]
-rvn pkg pypi publish [DIST_DIR] [--repo REPOSITORY_ID]
-rvn pkg pypi configure [--repo REPOSITORY_ID]
+rvn pkg pypi index-url [--repo REPOSITORY_NAME]
+rvn pkg pypi upload-url [--repo REPOSITORY_NAME]
+rvn pkg pypi install PACKAGE... [--repo REPOSITORY_NAME]
+rvn pkg pypi publish [DIST_DIR] [--repo REPOSITORY_NAME]
+rvn pkg pypi configure [--repo REPOSITORY_NAME]
 ```
 
 npm helpers:
 
 ```bash
-rvn pkg npm registry-url [--repo REPOSITORY_ID]
-rvn pkg npm npmrc [--repo REPOSITORY_ID]
-rvn pkg npm install PACKAGE... [--repo REPOSITORY_ID]
-rvn pkg npm publish [PACKAGE_DIR] [--repo REPOSITORY_ID]
-rvn pkg npm configure [--repo REPOSITORY_ID]
+rvn pkg npm registry-url [--repo REPOSITORY_NAME]
+rvn pkg npm npmrc [--repo REPOSITORY_NAME]
+rvn pkg npm install PACKAGE... [--repo REPOSITORY_NAME]
+rvn pkg npm publish [PACKAGE_DIR] [--repo REPOSITORY_NAME]
+rvn pkg npm configure [--repo REPOSITORY_NAME]
 ```
 
 Maven helpers:
 
 ```bash
-rvn pkg maven repo-url [--repo REPOSITORY_ID]
-rvn pkg maven settings [--repo REPOSITORY_ID]
-rvn pkg maven install GROUP:ARTIFACT:VERSION [--repo REPOSITORY_ID]
-rvn pkg maven deploy FILE --group GROUP --artifact ARTIFACT --version VERSION [--repo REPOSITORY_ID]
-rvn pkg maven configure [--repo REPOSITORY_ID]
+rvn pkg maven repo-url [--repo REPOSITORY_NAME]
+rvn pkg maven settings [--repo REPOSITORY_NAME]
+rvn pkg maven install GROUP:ARTIFACT:VERSION [--repo REPOSITORY_NAME]
+rvn pkg maven deploy FILE --group GROUP --artifact ARTIFACT --version VERSION [--repo REPOSITORY_NAME]
+rvn pkg maven configure [--repo REPOSITORY_NAME]
 ```
 
 No package-token command is exposed in the alpha CLI.
