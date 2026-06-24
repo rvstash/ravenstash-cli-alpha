@@ -6,7 +6,7 @@ Implements the Legacy PyPI Upload API directly (same wire protocol as twine),
 so no external tool is required.  The multipart form POST replicates what
 ``twine upload`` sends:
 
-    POST /pypi/r/{repo_id}
+    POST /native/pypi/x/{customer_pid}/{repo_pid}/
     Authorization: Basic __token__:{token}
     Content-Type: multipart/form-data
 
@@ -117,7 +117,7 @@ def publish(
     """Upload one or more wheel/sdist files to a PyPI-compatible registry.
 
     Args:
-        upload_url: Full upload endpoint, e.g. ``https://host/pypi/r/my-repo``.
+        upload_url: Full upload endpoint.
         token:      Repository token (used as HTTP Basic password).
         files:      List of paths to ``.whl`` or ``.tar.gz`` dist files.
         timeout:    Per-file upload timeout in seconds.

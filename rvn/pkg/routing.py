@@ -2,9 +2,9 @@
 
 Ravenstash registry protocol routes are intentionally kind-specific:
 
-    PyPI:  {api_url}/pypi/r/{repo_id}/simple/
-    npm:   {api_url}/npm/r/{repo_id}/
-    Maven: {api_url}/maven/r/{repo_id}/
+    PyPI:  {api_url}/pypi/x/{customer_pid}/{repo_pid}/simple/
+    npm:   {api_url}/npm/x/{customer_pid}/{repo_pid}/
+    Maven: {api_url}/maven/x/{customer_pid}/{repo_pid}/
 """
 
 from __future__ import annotations
@@ -14,17 +14,25 @@ class CanonicalRouter:
     """Current production routing for package repositories."""
 
     @staticmethod
-    def pypi_index_url(api_url: str, repo_id: str) -> str:
-        return f"{api_url.rstrip('/')}/pypi/r/{repo_id}/simple/"
+    def pypi_index_url(api_url: str, customer_pid: str, repo_pid: str) -> str:
+        return f"{api_url.rstrip('/')}/pypi/x/{customer_pid}/{repo_pid}/simple/"
 
     @staticmethod
-    def pypi_upload_url(api_url: str, repo_id: str) -> str:
-        return f"{api_url.rstrip('/')}/pypi/r/{repo_id}/"
+    def pypi_upload_url(api_url: str, customer_pid: str, repo_pid: str) -> str:
+        return f"{api_url.rstrip('/')}/native/pypi/x/{customer_pid}/{repo_pid}/"
 
     @staticmethod
-    def npm_registry_url(api_url: str, repo_id: str) -> str:
-        return f"{api_url.rstrip('/')}/npm/r/{repo_id}/"
+    def npm_registry_url(api_url: str, customer_pid: str, repo_pid: str) -> str:
+        return f"{api_url.rstrip('/')}/npm/x/{customer_pid}/{repo_pid}/"
 
     @staticmethod
-    def maven_repo_url(api_url: str, repo_id: str) -> str:
-        return f"{api_url.rstrip('/')}/maven/r/{repo_id}/"
+    def npm_upload_registry_url(api_url: str, customer_pid: str, repo_pid: str) -> str:
+        return f"{api_url.rstrip('/')}/native/npm/x/{customer_pid}/{repo_pid}/"
+
+    @staticmethod
+    def maven_repo_url(api_url: str, customer_pid: str, repo_pid: str) -> str:
+        return f"{api_url.rstrip('/')}/maven/x/{customer_pid}/{repo_pid}/"
+
+    @staticmethod
+    def maven_upload_url(api_url: str, customer_pid: str, repo_pid: str) -> str:
+        return f"{api_url.rstrip('/')}/native/maven/x/{customer_pid}/{repo_pid}/"

@@ -15,6 +15,7 @@ Config file shape
     [profiles.default]
     api_url = "https://api.ravenstash.com"
     customer_id = "cus_..."
+    customer_public_id = "a8f3k2mz"
     credential_type = "expiring"
     expires_at = "2026-06-17T16:00:00+00:00"
     refresh_expires_at = "2026-06-17T20:00:00+00:00"
@@ -57,6 +58,7 @@ DEFAULT_API_URL = "https://api.ravenstash.com"
 class ProfileConfig:
     api_url: str = DEFAULT_API_URL
     customer_id: str | None = None
+    customer_public_id: str | None = None
     credential_type: str | None = None
     expires_at: str | None = None
     refresh_expires_at: str | None = None
@@ -180,6 +182,7 @@ def load() -> RvnConfig:
         cfg.profiles[name] = ProfileConfig(
             api_url=vals.get("api_url", profile_api_url(name)),
             customer_id=vals.get("customer_id"),
+            customer_public_id=vals.get("customer_public_id"),
             credential_type=vals.get("credential_type"),
             expires_at=vals.get("expires_at"),
             refresh_expires_at=vals.get("refresh_expires_at"),
@@ -204,6 +207,7 @@ def save(cfg: RvnConfig) -> None:
                 for k, v in {
                     "api_url": p.api_url,
                     "customer_id": p.customer_id,
+                    "customer_public_id": p.customer_public_id,
                     "credential_type": p.credential_type,
                     "expires_at": p.expires_at,
                     "refresh_expires_at": p.refresh_expires_at,
@@ -238,6 +242,7 @@ def set_profile_value(profile: str, api_url: str | None = None) -> None:
     cfg.profiles[profile] = ProfileConfig(
         api_url=api_url if api_url is not None else existing.api_url,
         customer_id=existing.customer_id,
+        customer_public_id=existing.customer_public_id,
         credential_type=existing.credential_type,
         expires_at=existing.expires_at,
         refresh_expires_at=existing.refresh_expires_at,
@@ -253,6 +258,7 @@ def clear_profile_credential_metadata(profile: str) -> None:
     cfg.profiles[profile] = ProfileConfig(
         api_url=existing.api_url,
         customer_id=None,
+        customer_public_id=None,
         credential_type=None,
         expires_at=None,
         refresh_expires_at=None,
@@ -265,6 +271,7 @@ def set_profile_metadata(
     *,
     api_url: str | None = None,
     customer_id: str | None = None,
+    customer_public_id: str | None = None,
     credential_type: str | None = None,
     expires_at: str | None = None,
     refresh_expires_at: str | None = None,
@@ -274,6 +281,9 @@ def set_profile_metadata(
     cfg.profiles[profile] = ProfileConfig(
         api_url=api_url if api_url is not None else existing.api_url,
         customer_id=customer_id if customer_id is not None else existing.customer_id,
+        customer_public_id=customer_public_id
+        if customer_public_id is not None
+        else existing.customer_public_id,
         credential_type=credential_type
         if credential_type is not None
         else existing.credential_type,

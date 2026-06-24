@@ -57,6 +57,7 @@ default_profile = "{default_profile}"
 [profiles.default]
 api_url = "https://api.ravenstash.com"
 customer_id = "cus_default"
+customer_public_id = "custpid1"
 credential_type = "{credential_type}"
 expires_at = "2099-01-01T00:00:00+00:00"
 refresh_expires_at = "{refresh_expires_at}"
@@ -64,6 +65,7 @@ refresh_expires_at = "{refresh_expires_at}"
 [profiles.work]
 api_url = "https://api.work.example"
 customer_id = "cus_work"
+customer_public_id = "workpid1"
 credential_type = "{credential_type}"
 expires_at = "2099-01-01T00:00:00+00:00"
 refresh_expires_at = "{refresh_expires_at}"
@@ -360,6 +362,7 @@ def test_device_login_handles_slow_down_and_stores_expiring_jwt(monkeypatch) -> 
                 "expires_in": 900,
                 "refresh_expires_in": 14400,
                 "customer_id": "cus_123",
+                "customer_public_id": "custpid1",
             },
         ),
     ]
@@ -405,6 +408,7 @@ def test_device_login_handles_slow_down_and_stores_expiring_jwt(monkeypatch) -> 
     assert metadata_writes[-1]["profile"] == "default"
     assert metadata_writes[-1]["api_url"] == "https://api.ravenstash.com"
     assert metadata_writes[-1]["customer_id"] == "cus_123"
+    assert metadata_writes[-1]["customer_public_id"] == "custpid1"
     assert metadata_writes[-1]["credential_type"] == "expiring"
     assert metadata_writes[-1]["expires_at"]
     assert metadata_writes[-1]["refresh_expires_at"]
@@ -457,6 +461,7 @@ def test_device_login_replaces_active_profile_and_revokes_previous_refresh(
                 "expires_in": 900,
                 "refresh_expires_in": 14400,
                 "customer_id": "cus_123",
+                "customer_public_id": "custpid1",
             },
         ),
     ]
@@ -533,6 +538,7 @@ def test_device_login_does_not_revoke_expired_previous_refresh(
                 "expires_in": 900,
                 "refresh_expires_in": 14400,
                 "customer_id": "cus_123",
+                "customer_public_id": "custpid1",
             },
         ),
     ]
@@ -593,6 +599,7 @@ def test_refresh_expiring_credential_rotates_tokens(
                 "expires_in": 900,
                 "refresh_expires_in": 14400,
                 "customer_id": "cus_123",
+                "customer_public_id": "custpid1",
             },
         )
     ]
@@ -616,6 +623,7 @@ def test_refresh_expiring_credential_rotates_tokens(
     ]
     profile = cfg_mod.load().profiles["default"]
     assert profile.credential_type == "expiring"
+    assert profile.customer_public_id == "custpid1"
     assert profile.refresh_expires_at is not None
 
 

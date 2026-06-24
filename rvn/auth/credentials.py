@@ -223,6 +223,7 @@ def refresh_expiring_credential(profile: str) -> str | None:
         profile,
         api_url=p.api_url,
         customer_id=payload.get("customer_id"),
+        customer_public_id=payload.get("customer_public_id"),
         credential_type=EXPIRING_CREDENTIAL_TYPE,
         expires_at=expires_at.isoformat(),
         refresh_expires_at=refresh_expires_at.isoformat(),

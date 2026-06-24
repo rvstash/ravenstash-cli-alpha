@@ -98,6 +98,7 @@ def _store_expiring_credential(
     token: str,
     refresh_token: str,
     customer_id: str | None,
+    customer_public_id: str | None,
     expires_in: int,
     refresh_expires_in: int,
 ) -> None:
@@ -113,6 +114,7 @@ def _store_expiring_credential(
         profile,
         api_url=api_url,
         customer_id=customer_id,
+        customer_public_id=customer_public_id,
         credential_type=auth_mod.EXPIRING_CREDENTIAL_TYPE,
         expires_at=expires_at.isoformat(),
         refresh_expires_at=refresh_expires_at.isoformat(),
@@ -245,6 +247,7 @@ def perform_device_login(
                         token=payload["access_token"],
                         refresh_token=payload["refresh_token"],
                         customer_id=payload.get("customer_id"),
+                        customer_public_id=payload.get("customer_public_id"),
                         expires_in=int(payload.get("expires_in") or 0),
                         refresh_expires_in=int(payload.get("refresh_expires_in") or 0),
                     )

@@ -7,7 +7,7 @@ POM, sources JAR, etc.) we:
 
 1. Compute the Maven repository path:
    ``{group_path}/{artifact_id}/{version}/{artifact_id}-{version}.jar``
-2. PUT the file to ``/maven/r/{repo_id}/{path}``
+2. PUT the file to ``/native/maven/x/{customer_pid}/{repo_pid}/{path}``
 3. PUT the MD5 and SHA-1 checksum sidecar files.
 
 Coordinates format
@@ -88,7 +88,7 @@ def publish(
     """Upload Maven artifacts by direct HTTP PUT.
 
     Args:
-        upload_url:   Base upload URL, e.g. ``https://host/maven/r/my-repo``.
+        upload_url:   Base upload URL.
         token:        Repository token (HTTP Basic password).
         group_id:     Maven groupId, e.g. ``com.example``.
         artifact_id:  Maven artifactId, e.g. ``mylib``.

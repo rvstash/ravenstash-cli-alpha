@@ -59,6 +59,9 @@ default_profile = "default"
 
 [registries.pypi]
 default_repo = "repo_alias"
+
+[profiles.staging]
+customer_public_id = "custpid1"
 """.strip(),
     )
 
@@ -68,7 +71,7 @@ default_repo = "repo_alias"
     assert pkg_result.exit_code == 0
     assert packages_result.exit_code == 0
     assert packages_result.output == pkg_result.output
-    assert packages_result.output.strip() == f"{STAGING_API_URL}/pypi/r/repo_alias/simple/"
+    assert packages_result.output.strip() == f"{STAGING_API_URL}/pypi/x/custpid1/repo_alias/simple/"
 
 
 @pytest.mark.parametrize(

@@ -9,7 +9,7 @@ Implements the npm publish wire protocol directly:
 3. Computes SHA-1 (integrity) and SHA-512 (ssri) of the tarball.
 4. Builds the JSON publish body ``{ _id, name, dist-tags, versions:{...}, _attachments:{...} }``
    where the tarball is base64-encoded inside ``_attachments``.
-5. PUTs the payload to ``/npm/r/{repo_id}/{package}``.
+5. PUTs the payload to ``/native/npm/x/{customer_pid}/{repo_pid}/{package}``.
 
 This means **no ``npm`` binary is required for publishing**.
 
@@ -77,14 +77,18 @@ def publish(
     token: str,
     package_dir: Path | None = None,
     *,
+    download_registry_url: str | None = None,
     timeout: float = 120.0,
 ) -> list[PublishResult]:
     """Publish the npm package in *package_dir* to *registry_url*.
 
     Args:
-        registry_url: Base npm registry URL, e.g. ``https://host/npm/r/my-repo``.
+        registry_url: Base npm upload registry URL.
         token:        Repository token (used as Bearer auth).
         package_dir:  Directory containing ``package.json`` (default: cwd).
+        download_registry_url:
+            Optional base download registry URL used in the published tarball
+            metadata. Defaults to ``registry_url`` for compatibility.
         timeout:      Upload timeout in seconds.
     """
     if package_dir is None:
@@ -101,7 +105,8 @@ def publish(
 
     # npm publish body
     safe_name = name.lstrip("@").replace("/", "-")
-    tarball_url = f"{registry_url.rstrip('/')}/{name}/-/{safe_name}-{version}.tgz"
+    tarball_base_url = (download_registry_url or registry_url).rstrip("/")
+    tarball_url = f"{tarball_base_url}/{name}/-/{safe_name}-{version}.tgz"
 
     version_manifest = {
         **pkg,

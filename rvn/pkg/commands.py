@@ -73,21 +73,64 @@ def _customer_id(profile: str | None, explicit_customer_id: str | None = None) -
     return p.customer_id
 
 
+def _customer_public_id(
+    profile: str | None,
+    explicit_customer_pid: str | None = None,
+) -> str:
+    if explicit_customer_pid:
+        return explicit_customer_pid
+    env_customer_pid = os.environ.get("RVN_CUSTOMER_PID") or os.environ.get(
+        "RVN_CUSTOMER_PUBLIC_ID"
+    )
+    if env_customer_pid:
+        return env_customer_pid
+    _, p = _profile(profile)
+    if not p.customer_public_id:
+        output.fatal(
+            "No customer_public_id is stored for this profile. "
+            "Run `rvn auth login` again, pass --customer-pid, or pass "
+            "--repo <customer-pid>/<repo-pid>."
+        )
+    return p.customer_public_id
+
+
 def _require_kind(kind: str) -> None:
     if kind not in _KINDS:
         output.fatal(f"Unknown package repository kind '{kind}'. Use: pypi, npm, maven")
 
 
-def _repo_for_kind(kind: str, repo: str | None) -> str:
+def _split_repo_ref(repo_ref: str) -> tuple[str | None, str]:
+    value = repo_ref.strip().strip("/")
+    if not value:
+        output.fatal("Repository id cannot be empty.")
+    if "/" not in value:
+        return None, value
+    customer_pid, repo_pid = value.split("/", 1)
+    customer_pid = customer_pid.strip()
+    repo_pid = repo_pid.strip().strip("/")
+    if not customer_pid or not repo_pid or "/" in repo_pid:
+        output.fatal("Repository must be <repo-pid> or <customer-pid>/<repo-pid>.")
+    return customer_pid, repo_pid
+
+
+def _repo_ref_from_response(repo: dict, fallback_repo_pid: str) -> str:
+    customer_pid = repo.get("customer_public_id")
+    repo_pid = repo.get("repo_pid") or repo.get("repository_public_id") or fallback_repo_pid
+    if customer_pid and repo_pid:
+        return f"{customer_pid}/{repo_pid}"
+    return repo_pid
+
+
+def _repo_for_kind(kind: str, repo: str | None) -> tuple[str | None, str]:
     _require_kind(kind)
     cfg = cfg_mod.load()
     resolved = repo or cfg.registry_defaults(kind).default_repo  # type: ignore[arg-type]
     if not resolved:
         output.fatal(
             f"No {kind} package repository selected. "
-            f"Pass --repo or run `rvn pkg repo set-default {kind} <repo-id>`."
+            f"Pass --repo or run `rvn pkg repo set-default {kind} <repo-pid>`."
         )
-    return resolved
+    return _split_repo_ref(resolved)
 
 
 def _token(profile: str | None) -> str | None:
@@ -111,12 +154,23 @@ def _authed_url(url: str, token: str) -> str:
     return urlunparse(parsed._replace(netloc=f"__token__:{token}@{parsed.netloc}"))
 
 
+def _npm_auth_token_key(registry_url: str) -> str:
+    parsed = urlparse(registry_url)
+    path = parsed.path or "/"
+    if not path.endswith("/"):
+        path += "/"
+    return f"//{parsed.netloc}{path}:_authToken"
+
+
 def _registry_context(
     kind: str,
     repo: str | None,
     profile: str | None,
-) -> tuple[str, str, str | None]:
-    return _api_url(profile), _repo_for_kind(kind, repo), _token(profile)
+    customer_pid: str | None = None,
+) -> tuple[str, str, str, str | None]:
+    repo_customer_pid, repo_pid = _repo_for_kind(kind, repo)
+    resolved_customer_pid = repo_customer_pid or _customer_public_id(profile, customer_pid)
+    return _api_url(profile), resolved_customer_pid, repo_pid, _token(profile)
 
 
 # ── repo ─────────────────────────────────────────────────────────────────────
@@ -186,8 +240,9 @@ def repo_create(
     repo_id = repo.get("id", "")
     output.success(f"Created {kind} package repository '{repo.get('slug', slug)}' ({repo_id}).")
     if set_default and repo_id:
-        cfg_mod.set_registry_default_repo(kind, repo_id)  # type: ignore[arg-type]
-        output.info(f"Default {kind} package repository set to {repo_id}.")
+        default_repo = _repo_ref_from_response(repo, repo_id)
+        cfg_mod.set_registry_default_repo(kind, default_repo)  # type: ignore[arg-type]
+        output.info(f"Default {kind} package repository set to {default_repo}.")
 
 
 @repo_app.command("show")
@@ -394,20 +449,26 @@ def package_yank(
 def pypi_index_url(
     repo: str | None = typer.Option(None, "--repo", "-r", help="Repository public ID."),
     profile: str | None = typer.Option(None, "--profile", "-p"),
+    customer_pid: str | None = typer.Option(
+        None, "--customer-pid", help="Customer public ID override."
+    ),
 ) -> None:
     """Print the private PyPI simple-index URL."""
-    api_url, repo_id, _ = _registry_context("pypi", repo, profile)
-    typer.echo(_ROUTER.pypi_index_url(api_url, repo_id))
+    api_url, customer_pid, repo_id, _ = _registry_context("pypi", repo, profile, customer_pid)
+    typer.echo(_ROUTER.pypi_index_url(api_url, customer_pid, repo_id))
 
 
 @pypi_app.command("upload-url")
 def pypi_upload_url(
     repo: str | None = typer.Option(None, "--repo", "-r", help="Repository public ID."),
     profile: str | None = typer.Option(None, "--profile", "-p"),
+    customer_pid: str | None = typer.Option(
+        None, "--customer-pid", help="Customer public ID override."
+    ),
 ) -> None:
     """Print the private PyPI upload URL."""
-    api_url, repo_id, _ = _registry_context("pypi", repo, profile)
-    typer.echo(_ROUTER.pypi_upload_url(api_url, repo_id))
+    api_url, customer_pid, repo_id, _ = _registry_context("pypi", repo, profile, customer_pid)
+    typer.echo(_ROUTER.pypi_upload_url(api_url, customer_pid, repo_id))
 
 
 @pypi_app.command("install")
@@ -415,10 +476,13 @@ def pypi_install(
     packages: list[str] = typer.Argument(..., help="Package specs to install."),
     repo: str | None = typer.Option(None, "--repo", "-r", help="Repository public ID."),
     profile: str | None = typer.Option(None, "--profile", "-p"),
+    customer_pid: str | None = typer.Option(
+        None, "--customer-pid", help="Customer public ID override."
+    ),
 ) -> None:
     """Install Python packages using pip with Ravenstash credentials injected."""
-    api_url, repo_id, token = _registry_context("pypi", repo, profile)
-    index_url = _ROUTER.pypi_index_url(api_url, repo_id)
+    api_url, customer_pid, repo_id, token = _registry_context("pypi", repo, profile, customer_pid)
+    index_url = _ROUTER.pypi_index_url(api_url, customer_pid, repo_id)
     env = {**os.environ}
     if token:
         env["PIP_EXTRA_INDEX_URL"] = _authed_url(index_url, token)
@@ -434,15 +498,18 @@ def pypi_publish(
     dist_dir: Path = typer.Argument(Path("dist"), help="Directory with wheels/sdists."),
     repo: str | None = typer.Option(None, "--repo", "-r", help="Repository public ID."),
     profile: str | None = typer.Option(None, "--profile", "-p"),
+    customer_pid: str | None = typer.Option(
+        None, "--customer-pid", help="Customer public ID override."
+    ),
 ) -> None:
     """Upload wheel and sdist files to a PyPI package repository."""
-    api_url, repo_id, _ = _registry_context("pypi", repo, profile)
+    api_url, customer_pid, repo_id, _ = _registry_context("pypi", repo, profile, customer_pid)
     token = _require_token(profile)
     files = list(dist_dir.glob("*.whl")) + list(dist_dir.glob("*.tar.gz"))
     if not files:
         output.fatal(f"No .whl or .tar.gz files found in {dist_dir}")
     results = pypi_reg.publish(
-        upload_url=_ROUTER.pypi_upload_url(api_url, repo_id),
+        upload_url=_ROUTER.pypi_upload_url(api_url, customer_pid, repo_id),
         token=token,
         files=files,
     )
@@ -461,10 +528,13 @@ def pypi_publish(
 def pypi_configure(
     repo: str | None = typer.Option(None, "--repo", "-r", help="Repository public ID."),
     profile: str | None = typer.Option(None, "--profile", "-p"),
+    customer_pid: str | None = typer.Option(
+        None, "--customer-pid", help="Customer public ID override."
+    ),
 ) -> None:
     """Print pip configuration for the private PyPI repository."""
-    api_url, repo_id, _ = _registry_context("pypi", repo, profile)
-    index_url = _ROUTER.pypi_index_url(api_url, repo_id)
+    api_url, customer_pid, repo_id, _ = _registry_context("pypi", repo, profile, customer_pid)
+    index_url = _ROUTER.pypi_index_url(api_url, customer_pid, repo_id)
     typer.echo(f"[global]\nextra-index-url = {index_url}")
 
 
@@ -475,22 +545,28 @@ def pypi_configure(
 def npm_registry_url(
     repo: str | None = typer.Option(None, "--repo", "-r", help="Repository public ID."),
     profile: str | None = typer.Option(None, "--profile", "-p"),
+    customer_pid: str | None = typer.Option(
+        None, "--customer-pid", help="Customer public ID override."
+    ),
 ) -> None:
     """Print the private npm registry URL."""
-    api_url, repo_id, _ = _registry_context("npm", repo, profile)
-    typer.echo(_ROUTER.npm_registry_url(api_url, repo_id))
+    api_url, customer_pid, repo_id, _ = _registry_context("npm", repo, profile, customer_pid)
+    typer.echo(_ROUTER.npm_registry_url(api_url, customer_pid, repo_id))
 
 
 @npm_app.command("npmrc")
 def npmrc(
     repo: str | None = typer.Option(None, "--repo", "-r", help="Repository public ID."),
     profile: str | None = typer.Option(None, "--profile", "-p"),
+    customer_pid: str | None = typer.Option(
+        None, "--customer-pid", help="Customer public ID override."
+    ),
 ) -> None:
     """Print an .npmrc snippet for the private npm repository."""
-    api_url, repo_id, _ = _registry_context("npm", repo, profile)
-    registry_url = _ROUTER.npm_registry_url(api_url, repo_id)
-    host = urlparse(registry_url).netloc
-    typer.echo(f"registry={registry_url}\n//{host}/:_authToken=${{RVN_TOKEN}}")
+    api_url, customer_pid, repo_id, _ = _registry_context("npm", repo, profile, customer_pid)
+    registry_url = _ROUTER.npm_registry_url(api_url, customer_pid, repo_id)
+    auth_key = _npm_auth_token_key(registry_url)
+    typer.echo(f"registry={registry_url}\n{auth_key}=${{RVN_TOKEN}}")
 
 
 @npm_app.command("install")
@@ -498,14 +574,16 @@ def npm_install(
     packages: list[str] = typer.Argument(..., help="Package specs to install."),
     repo: str | None = typer.Option(None, "--repo", "-r", help="Repository public ID."),
     profile: str | None = typer.Option(None, "--profile", "-p"),
+    customer_pid: str | None = typer.Option(
+        None, "--customer-pid", help="Customer public ID override."
+    ),
 ) -> None:
     """Install npm packages with Ravenstash credentials injected."""
-    api_url, repo_id, token = _registry_context("npm", repo, profile)
-    registry_url = _ROUTER.npm_registry_url(api_url, repo_id)
+    api_url, customer_pid, repo_id, token = _registry_context("npm", repo, profile, customer_pid)
+    registry_url = _ROUTER.npm_registry_url(api_url, customer_pid, repo_id)
     env = {**os.environ}
     if token:
-        host = urlparse(registry_url).netloc
-        env[f"NPM_CONFIG_//{host}/:_authToken"] = token
+        env[f"NPM_CONFIG_{_npm_auth_token_key(registry_url)}"] = token
     else:
         output.warn("No credentials found; running npm without private repository auth.")
     subprocess.run(
@@ -518,14 +596,18 @@ def npm_publish(
     package_dir: Path = typer.Argument(Path("."), help="Directory containing package.json."),
     repo: str | None = typer.Option(None, "--repo", "-r", help="Repository public ID."),
     profile: str | None = typer.Option(None, "--profile", "-p"),
+    customer_pid: str | None = typer.Option(
+        None, "--customer-pid", help="Customer public ID override."
+    ),
 ) -> None:
     """Publish an npm package to a Ravenstash npm repository."""
-    api_url, repo_id, _ = _registry_context("npm", repo, profile)
+    api_url, customer_pid, repo_id, _ = _registry_context("npm", repo, profile, customer_pid)
     token = _require_token(profile)
     results = npm_reg.publish(
-        registry_url=_ROUTER.npm_registry_url(api_url, repo_id),
+        registry_url=_ROUTER.npm_upload_registry_url(api_url, customer_pid, repo_id),
         token=token,
         package_dir=package_dir,
+        download_registry_url=_ROUTER.npm_registry_url(api_url, customer_pid, repo_id),
     )
     failed = False
     for result in results:
@@ -542,9 +624,12 @@ def npm_publish(
 def npm_configure(
     repo: str | None = typer.Option(None, "--repo", "-r", help="Repository public ID."),
     profile: str | None = typer.Option(None, "--profile", "-p"),
+    customer_pid: str | None = typer.Option(
+        None, "--customer-pid", help="Customer public ID override."
+    ),
 ) -> None:
     """Print .npmrc configuration for the private npm repository."""
-    npmrc(repo=repo, profile=profile)
+    npmrc(repo=repo, profile=profile, customer_pid=customer_pid)
 
 
 # ── Maven ────────────────────────────────────────────────────────────────────
@@ -554,10 +639,13 @@ def npm_configure(
 def maven_repo_url(
     repo: str | None = typer.Option(None, "--repo", "-r", help="Repository public ID."),
     profile: str | None = typer.Option(None, "--profile", "-p"),
+    customer_pid: str | None = typer.Option(
+        None, "--customer-pid", help="Customer public ID override."
+    ),
 ) -> None:
     """Print the private Maven repository URL."""
-    api_url, repo_id, _ = _registry_context("maven", repo, profile)
-    typer.echo(_ROUTER.maven_repo_url(api_url, repo_id))
+    api_url, customer_pid, repo_id, _ = _registry_context("maven", repo, profile, customer_pid)
+    typer.echo(_ROUTER.maven_repo_url(api_url, customer_pid, repo_id))
 
 
 def _settings_xml(repo_url: str, password_expr: str = "${env.RVN_TOKEN}") -> str:
@@ -592,10 +680,13 @@ def _settings_xml(repo_url: str, password_expr: str = "${env.RVN_TOKEN}") -> str
 def maven_settings(
     repo: str | None = typer.Option(None, "--repo", "-r", help="Repository public ID."),
     profile: str | None = typer.Option(None, "--profile", "-p"),
+    customer_pid: str | None = typer.Option(
+        None, "--customer-pid", help="Customer public ID override."
+    ),
 ) -> None:
     """Print a Maven settings.xml snippet for the private Maven repository."""
-    api_url, repo_id, _ = _registry_context("maven", repo, profile)
-    typer.echo(_settings_xml(_ROUTER.maven_repo_url(api_url, repo_id)))
+    api_url, customer_pid, repo_id, _ = _registry_context("maven", repo, profile, customer_pid)
+    typer.echo(_settings_xml(_ROUTER.maven_repo_url(api_url, customer_pid, repo_id)))
 
 
 @maven_app.command("install")
@@ -603,11 +694,14 @@ def maven_install(
     coords: str = typer.Argument(..., help="Maven coordinates: groupId:artifactId:version."),
     repo: str | None = typer.Option(None, "--repo", "-r", help="Repository public ID."),
     profile: str | None = typer.Option(None, "--profile", "-p"),
+    customer_pid: str | None = typer.Option(
+        None, "--customer-pid", help="Customer public ID override."
+    ),
 ) -> None:
     """Fetch a Maven artifact into the local Maven cache."""
-    api_url, repo_id, _ = _registry_context("maven", repo, profile)
+    api_url, customer_pid, repo_id, _ = _registry_context("maven", repo, profile, customer_pid)
     token = _require_token(profile)
-    repo_url = _ROUTER.maven_repo_url(api_url, repo_id)
+    repo_url = _ROUTER.maven_repo_url(api_url, customer_pid, repo_id)
     settings_xml = maven_reg._build_settings_xml(repo_url, token)
     with tempfile.NamedTemporaryFile(
         mode="w", suffix=".xml", prefix="rvn-settings-", delete=False
@@ -637,14 +731,17 @@ def maven_deploy(
     version: str = typer.Option(..., "--version", "-v", help="Maven version."),
     repo: str | None = typer.Option(None, "--repo", "-r", help="Repository public ID."),
     profile: str | None = typer.Option(None, "--profile", "-p"),
+    customer_pid: str | None = typer.Option(
+        None, "--customer-pid", help="Customer public ID override."
+    ),
 ) -> None:
     """Deploy an artifact file to a Ravenstash Maven repository."""
     if not artifact_file.exists():
         output.fatal(f"Artifact file not found: {artifact_file}")
-    api_url, repo_id, _ = _registry_context("maven", repo, profile)
+    api_url, customer_pid, repo_id, _ = _registry_context("maven", repo, profile, customer_pid)
     token = _require_token(profile)
     results = maven_reg.publish(
-        upload_url=_ROUTER.maven_repo_url(api_url, repo_id),
+        upload_url=_ROUTER.maven_upload_url(api_url, customer_pid, repo_id),
         token=token,
         group_id=group,
         artifact_id=artifact,
@@ -666,6 +763,9 @@ def maven_deploy(
 def maven_configure(
     repo: str | None = typer.Option(None, "--repo", "-r", help="Repository public ID."),
     profile: str | None = typer.Option(None, "--profile", "-p"),
+    customer_pid: str | None = typer.Option(
+        None, "--customer-pid", help="Customer public ID override."
+    ),
 ) -> None:
     """Print Maven settings.xml configuration for the private Maven repository."""
-    maven_settings(repo=repo, profile=profile)
+    maven_settings(repo=repo, profile=profile, customer_pid=customer_pid)

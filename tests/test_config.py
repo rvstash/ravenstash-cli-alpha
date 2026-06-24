@@ -54,6 +54,7 @@ default_profile = "staging"
 
 [profiles.staging]
 customer_id = "cus_staging"
+customer_public_id = "custpid1"
 """.strip(),
         encoding="utf-8",
     )
@@ -62,6 +63,7 @@ customer_id = "cus_staging"
 
     assert profile.api_url == "https://staging.example.test"
     assert profile.customer_id == "cus_staging"
+    assert profile.customer_public_id == "custpid1"
 
 
 def test_profile_api_url_can_be_declared_in_gitignored_local_env_file(
@@ -119,6 +121,7 @@ def test_save_and_load_round_trips_profiles_and_registry_defaults(
             "work": cfg_mod.ProfileConfig(
                 api_url="https://api.work.example",
                 customer_id="cus_work",
+                customer_public_id="custpid1",
                 credential_type="expiring",
                 expires_at="2099-01-01T00:00:00+00:00",
                 refresh_expires_at="2099-01-02T00:00:00+00:00",
@@ -136,6 +139,7 @@ def test_save_and_load_round_trips_profiles_and_registry_defaults(
     assert loaded.default_profile == "work"
     assert loaded.profiles["work"].api_url == "https://api.work.example"
     assert loaded.profiles["work"].customer_id == "cus_work"
+    assert loaded.profiles["work"].customer_public_id == "custpid1"
     assert loaded.registry_defaults("pypi").default_repo == "repo_pypi"
     assert loaded.registry_defaults("npm").default_repo == "repo_npm"
     assert loaded.registry_defaults("maven").default_repo is None
@@ -155,6 +159,7 @@ def test_set_profile_metadata_preserves_existing_values(monkeypatch, tmp_path: P
                 "default": cfg_mod.ProfileConfig(
                     api_url="https://api.example",
                     customer_id="cus_old",
+                    customer_public_id="oldpid1",
                     credential_type="expiring",
                 )
             }
@@ -166,6 +171,7 @@ def test_set_profile_metadata_preserves_existing_values(monkeypatch, tmp_path: P
 
     assert profile.api_url == "https://api.example"
     assert profile.customer_id == "cus_new"
+    assert profile.customer_public_id == "oldpid1"
     assert profile.credential_type == "expiring"
 
 
