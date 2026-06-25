@@ -8,12 +8,17 @@ Alpha command surface:
 | `rvn runtime` | Local Python, Node, and Java runtime management |
 | `rvn pkg` | Package repositories and package-manager configuration |
 | `rvn packages` | Alias for `rvn pkg` |
+| `rvn pip` | Native pip passthrough with ephemeral Ravenstash auth injection |
+| `rvn uv` | Native uv passthrough with ephemeral Ravenstash auth injection |
+| `rvn twine` | Native twine passthrough with ephemeral Ravenstash auth injection |
+| `rvn npm` | Native npm passthrough with ephemeral Ravenstash auth injection |
+| `rvn mvn` | Native Maven passthrough with ephemeral Ravenstash auth injection |
 | `rvn repo` | Placeholder for future source repositories |
 | `rvn ci` | Placeholder for future CI |
 
 Removed from the alpha surface: previous experimental project lifecycle
-commands, ecosystem-specific root groups, package token commands, and direct
-repository/token top-level management groups.
+commands, package token commands, and direct repository/token top-level
+management groups.
 
 ## `rvn auth`
 
@@ -119,6 +124,46 @@ rvn pkg maven configure [--repo REPOSITORY_NAME]
 ```
 
 No package-token command is exposed in the alpha CLI.
+
+## Native Package-Manager Wrappers
+
+```bash
+rvn pip [--rvn-profile NAME] [--rvn-repo REPOSITORY_NAME] [--rvn-customer-pid PID] [--rvn-native-config respect|override|isolate] PIP_ARGS...
+rvn uv [--rvn-profile NAME] [--rvn-repo REPOSITORY_NAME] [--rvn-customer-pid PID] [--rvn-native-config respect|override|isolate] UV_ARGS...
+rvn twine [--rvn-profile NAME] [--rvn-repo REPOSITORY_NAME] [--rvn-customer-pid PID] [--rvn-native-config respect|override|isolate] TWINE_ARGS...
+rvn npm [--rvn-profile NAME] [--rvn-repo REPOSITORY_NAME] [--rvn-customer-pid PID] [--rvn-native-config respect|override|isolate] NPM_ARGS...
+rvn mvn [--rvn-profile NAME] [--rvn-repo REPOSITORY_NAME] [--rvn-customer-pid PID] [--rvn-native-config respect|override|isolate] MVN_ARGS...
+```
+
+These commands run the named native package manager. They are not aliases for
+`rvn pkg`. By default, `--rvn-native-config respect` leaves native registry
+selection alone, reads native config files and relevant environment variables,
+and injects short-lived Ravenstash credentials only when the invocation
+references Ravenstash registry URLs.
+
+Passing `--rvn-repo` selects a Ravenstash repository for the invocation and
+overrides native registry selection. `--rvn-native-config isolate` also disables
+native config where the underlying tool supports it, such as `PIP_CONFIG_FILE`
+for pip and `UV_NO_CONFIG` for uv. Tokens are injected through subprocess
+environment variables or temporary files and are not written to persistent
+package-manager config files.
+
+Examples:
+
+```bash
+rvn npm install @acme/widgets
+rvn npm --rvn-repo internal-npm install @acme/widgets
+rvn npm --rvn-repo internal-npm publish
+
+rvn pip install acme-utils
+rvn pip --rvn-repo internal-pypi install acme-utils
+
+rvn uv sync
+rvn uv --rvn-repo internal-pypi --rvn-native-config isolate sync
+
+rvn twine --rvn-repo internal-pypi upload dist/*
+rvn mvn --rvn-repo internal-maven deploy
+```
 
 ## `rvn repo`
 

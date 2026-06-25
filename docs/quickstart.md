@@ -138,6 +138,49 @@ rvn pkg pypi index-url --repo <customer-public-id>/<repo-name>
 Most users should pass just `<repo-name>` because the customer public ID is
 already known from the active auth profile.
 
+## `rvn pkg` vs Native Package-Manager Wrappers
+
+`rvn pkg ...` is the Ravenstash-native package workflow. It selects the
+Ravenstash repository from `--repo` or the saved default in `~/.rvn/config.toml`.
+The implementation may delegate to a native package manager or use Ravenstash
+registry adapters directly; that detail is not part of the user contract.
+
+The top-level native wrappers explicitly run the named package manager:
+
+```bash
+rvn pip install private-package
+rvn uv sync
+rvn twine upload dist/*
+rvn npm install @acme/widgets
+rvn mvn test
+```
+
+By default, the wrappers respect native config such as `.npmrc`, `pip.conf`,
+`.pypirc`, `settings.xml`, `pyproject.toml`, and `uv.toml`. If those files or
+the command arguments reference Ravenstash registry URLs, `rvn` injects a
+short-lived token only for the subprocess. It does not write tokens to
+persistent package-manager config files.
+
+Use `--rvn-repo` when the wrapper should override native registry selection for
+one invocation:
+
+```bash
+rvn npm --rvn-repo <npm-repo-name> install @acme/widgets
+rvn npm --rvn-repo <npm-repo-name> publish
+rvn pip --rvn-repo <pypi-repo-name> install private-package
+rvn uv --rvn-repo <pypi-repo-name> sync
+rvn twine --rvn-repo <pypi-repo-name> upload dist/*
+rvn mvn --rvn-repo <maven-repo-name> deploy
+```
+
+Use `--rvn-native-config isolate` for a cleaner subprocess environment where
+the native tool supports disabling persistent config:
+
+```bash
+rvn pip --rvn-repo <pypi-repo-name> --rvn-native-config isolate install private-package
+rvn uv --rvn-repo <pypi-repo-name> --rvn-native-config isolate sync
+```
+
 ## PyPI
 
 Print the private install and publish URLs:

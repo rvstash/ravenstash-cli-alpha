@@ -29,9 +29,21 @@ def test_root_help_exposes_clean_alpha_command_surface() -> None:
     result = runner.invoke(app, ["--help"])
 
     assert result.exit_code == 0
-    for command in ("auth", "runtime", "pkg", "packages", "repo", "ci"):
+    for command in (
+        "pip",
+        "uv",
+        "twine",
+        "npm",
+        "mvn",
+        "auth",
+        "runtime",
+        "pkg",
+        "packages",
+        "repo",
+        "ci",
+    ):
         assert command in result.output
-    for removed_root_command in ("pypi", "npm", "maven", "system", "sync", "tokens"):
+    for removed_root_command in ("pypi", "maven", "system", "sync", "tokens"):
         assert removed_root_command not in result.output
 
 

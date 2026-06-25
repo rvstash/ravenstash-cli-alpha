@@ -11,6 +11,11 @@ rvn auth       Authenticate and manage local profiles
 rvn runtime    Install and select local Python, Node, and Java runtimes
 rvn pkg        Manage Ravenstash package repositories and package workflows
 rvn packages   Alias for rvn pkg
+rvn pip        Run pip with ephemeral Ravenstash auth injection
+rvn uv         Run uv with ephemeral Ravenstash auth injection
+rvn twine      Run twine with ephemeral Ravenstash auth injection
+rvn npm        Run npm with ephemeral Ravenstash auth injection
+rvn mvn        Run Maven with ephemeral Ravenstash auth injection
 rvn repo       Placeholder for future Ravenstash source repositories
 rvn ci         Placeholder for future Ravenstash CI
 ```
@@ -144,6 +149,28 @@ rvn pkg maven configure --repo <repo-name>
 ```
 
 Package-token management is intentionally not part of the alpha CLI surface.
+
+Native package-manager wrappers:
+
+```bash
+rvn pip install acme-utils
+rvn uv sync
+rvn twine upload dist/*
+rvn npm install @acme/widgets
+rvn mvn test
+
+rvn npm --rvn-repo my-node-packages install @acme/widgets
+rvn pip --rvn-repo my-python-packages install acme-utils
+rvn uv --rvn-repo my-python-packages --rvn-native-config isolate sync
+```
+
+`rvn pkg ...` is Ravenstash-native: it selects the Ravenstash repository through
+`--repo` or `~/.rvn/config.toml`, and the underlying implementation may or may
+not use a native package manager. `rvn pip`, `rvn uv`, `rvn twine`, `rvn npm`,
+and `rvn mvn` are explicit native-tool passthroughs: they respect native config
+by default, detect Ravenstash registry URLs, and inject only short-lived
+credentials for the child process. They do not write tokens to `.npmrc`,
+`pip.conf`, `.pypirc`, `settings.xml`, `pyproject.toml`, or `uv.toml`.
 
 ## Installation on Ubuntu / WSL
 

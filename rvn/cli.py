@@ -6,6 +6,7 @@ import typer
 
 from .auth.commands import app as auth_app
 from .ci.commands import app as ci_app
+from .native import commands as native_commands
 from .pkg.commands import app as pkg_app
 from .repo.commands import app as repo_app
 from .runtime.commands import app as runtime_app
@@ -25,6 +26,31 @@ app.add_typer(pkg_app, name="pkg")
 app.add_typer(pkg_app, name="packages", help="Alias for `rvn pkg`.")
 app.add_typer(repo_app, name="repo")
 app.add_typer(ci_app, name="ci")
+app.command(
+    "pip",
+    context_settings=native_commands.PASSTHROUGH_CONTEXT,
+    help="Run pip with ephemeral Ravenstash auth for Ravenstash indexes.",
+)(native_commands.pip)
+app.command(
+    "uv",
+    context_settings=native_commands.PASSTHROUGH_CONTEXT,
+    help="Run uv with ephemeral Ravenstash auth for Ravenstash indexes.",
+)(native_commands.uv)
+app.command(
+    "twine",
+    context_settings=native_commands.PASSTHROUGH_CONTEXT,
+    help="Run twine with ephemeral Ravenstash auth for Ravenstash uploads.",
+)(native_commands.twine)
+app.command(
+    "npm",
+    context_settings=native_commands.PASSTHROUGH_CONTEXT,
+    help="Run npm with ephemeral Ravenstash auth for Ravenstash registries.",
+)(native_commands.npm)
+app.command(
+    "mvn",
+    context_settings=native_commands.PASSTHROUGH_CONTEXT,
+    help="Run Maven with ephemeral Ravenstash auth for Ravenstash repositories.",
+)(native_commands.mvn)
 
 
 def _version_callback(value: bool) -> None:
