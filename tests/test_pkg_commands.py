@@ -264,19 +264,19 @@ def test_pkg_package_mutations_call_expected_api_paths(monkeypatch, tmp_path: Pa
     [
         (
             ["pypi", "index-url", "--profile", "staging"],
-            f"{STAGING_API_URL}/pypi/x/custpid1/repo-pypi/simple/",
+            f"{STAGING_API_URL}/n/pypi/x/custpid1/repo-pypi/simple/",
         ),
         (
             ["pypi", "upload-url", "--profile", "staging"],
-            f"{STAGING_API_URL}/native/pypi/x/custpid1/repo-pypi/",
+            f"{STAGING_API_URL}/n/pypi/x/custpid1/repo-pypi/",
         ),
         (
             ["npm", "registry-url", "--profile", "staging"],
-            f"{STAGING_API_URL}/npm/x/custpid1/repo-npm/",
+            f"{STAGING_API_URL}/n/npm/x/custpid1/repo-npm/",
         ),
         (
             ["maven", "repo-url", "--profile", "staging"],
-            f"{STAGING_API_URL}/maven/x/custpid1/repo-maven/",
+            f"{STAGING_API_URL}/n/maven/x/custpid1/repo-maven/",
         ),
     ],
 )
@@ -334,7 +334,7 @@ def test_pypi_install_injects_authenticated_extra_index_url(
     assert result.exit_code == 0
     assert calls[0][0] == ["/bin/pip", "install", "demo"]
     assert calls[0][1]["PIP_EXTRA_INDEX_URL"] == (
-        f"https://__token__:secret-token@{STAGING_HOST}/pypi/x/custpid1/repo-pypi/simple/"
+        f"https://__token__:secret-token@{STAGING_HOST}/n/pypi/x/custpid1/repo-pypi/simple/"
     )
 
 
@@ -356,11 +356,11 @@ def test_npm_install_injects_token_for_registry_host(monkeypatch, tmp_path: Path
         "/bin/npm",
         "install",
         "--registry",
-        f"{STAGING_API_URL}/npm/x/custpid1/repo-npm/",
+        f"{STAGING_API_URL}/n/npm/x/custpid1/repo-npm/",
         "@scope/demo",
     ]
     assert (
-        calls[0][1][f"NPM_CONFIG_//{STAGING_HOST}/npm/x/custpid1/repo-npm/:_authToken"]
+        calls[0][1][f"NPM_CONFIG_//{STAGING_HOST}/n/npm/x/custpid1/repo-npm/:_authToken"]
         == "secret-token"
     )
 
@@ -407,10 +407,10 @@ def test_npm_publish_calls_registry_adapter(monkeypatch, tmp_path: Path) -> None
     assert result.exit_code == 0
     assert calls == [
         {
-            "registry_url": f"{STAGING_API_URL}/native/npm/x/custpid1/repo-npm/",
+            "registry_url": f"{STAGING_API_URL}/n/npm/x/custpid1/repo-npm/",
             "token": "secret-token",
             "package_dir": package_dir,
-            "download_registry_url": f"{STAGING_API_URL}/npm/x/custpid1/repo-npm/",
+            "download_registry_url": f"{STAGING_API_URL}/n/npm/x/custpid1/repo-npm/",
         }
     ]
 
@@ -448,7 +448,7 @@ def test_maven_deploy_checks_file_and_calls_registry_adapter(monkeypatch, tmp_pa
     assert result.exit_code == 0
     assert calls == [
         {
-            "upload_url": f"{STAGING_API_URL}/native/maven/x/custpid1/repo-maven/",
+            "upload_url": f"{STAGING_API_URL}/n/maven/x/custpid1/repo-maven/",
             "token": "secret-token",
             "group_id": "com.example",
             "artifact_id": "demo",

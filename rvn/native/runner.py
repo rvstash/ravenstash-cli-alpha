@@ -281,19 +281,16 @@ def _extract_urls(text: str) -> list[str]:
 
 def _ravenstash_url_kind(url: str) -> RegistryKind | None:
     path_parts = [part for part in urlparse(url).path.split("/") if part]
-    if len(path_parts) < 3:
+    if len(path_parts) < 5:
         return None
-    first = path_parts[0]
-    if first == "native" and len(path_parts) >= 4:
-        first = path_parts[1]
-        marker_index = 2
-    else:
-        marker_index = 1
-    if first not in {"pypi", "npm", "maven"}:
+    if path_parts[0] != "n":
         return None
-    if path_parts[marker_index] != "x":
+    kind = path_parts[1]
+    if kind not in {"pypi", "npm", "maven"}:
         return None
-    return first  # type: ignore[return-value]
+    if path_parts[2] != "x":
+        return None
+    return kind  # type: ignore[return-value]
 
 
 def _relevant_env_values(tool: NativeTool, env: dict[str, str]) -> list[str]:

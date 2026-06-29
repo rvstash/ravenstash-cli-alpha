@@ -79,6 +79,40 @@ def _capture_run(
     monkeypatch.setattr(native_runner.subprocess, "run", fake_run)
 
 
+def test_ravenstash_url_kind_only_accepts_canonical_n_routes() -> None:
+    assert (
+        native_runner._ravenstash_url_kind("https://staging.example.test/n/npm/x/custpid1/repo/")
+        == "npm"
+    )
+    assert (
+        native_runner._ravenstash_url_kind(
+            "https://staging.example.test/n/pypi/x/custpid1/repo/simple/"
+        )
+        == "pypi"
+    )
+    assert (
+        native_runner._ravenstash_url_kind(
+            "https://staging.example.test/n/maven/x/custpid1/repo/com/example/demo/"
+        )
+        == "maven"
+    )
+    assert (
+        native_runner._ravenstash_url_kind("https://staging.example.test/npm/x/custpid1/repo/")
+        is None
+    )
+    assert (
+        native_runner._ravenstash_url_kind("https://staging.example.test/v/npm/x/custpid1/repo/")
+        is None
+    )
+    assert (
+        native_runner._ravenstash_url_kind("https://staging.example.test/n/npm/r/custpid1/repo/")
+        is None
+    )
+    assert (
+        native_runner._ravenstash_url_kind("https://staging.example.test/n/npm/x/custpid1/") is None
+    )
+
+
 def test_native_npm_respects_project_npmrc_and_injects_path_scoped_auth(
     monkeypatch: Any,
     tmp_path: Path,
@@ -86,7 +120,7 @@ def test_native_npm_respects_project_npmrc_and_injects_path_scoped_auth(
     _isolate_config(monkeypatch, tmp_path)
     _mock_native_tools(monkeypatch)
     (tmp_path / ".npmrc").write_text(
-        f"@acme:registry={STAGING_API_URL}/npm/x/custpid1/repo-npm/\n",
+        f"@acme:registry={STAGING_API_URL}/n/npm/x/custpid1/repo-npm/\n",
         encoding="utf-8",
     )
     calls: list[dict[str, Any]] = []
@@ -98,7 +132,7 @@ def test_native_npm_respects_project_npmrc_and_injects_path_scoped_auth(
     assert calls[0]["cmd"] == ["/bin/npm", "install", "@acme/widgets"]
     assert "NPM_CONFIG_REGISTRY" not in calls[0]["env"]
     assert (
-        calls[0]["env"][f"NPM_CONFIG_//{STAGING_HOST}/npm/x/custpid1/repo-npm/:_authToken"]
+        calls[0]["env"][f"NPM_CONFIG_//{STAGING_HOST}/n/npm/x/custpid1/repo-npm/:_authToken"]
         == "secret-token"
     )
 
@@ -119,13 +153,13 @@ def test_native_npm_repo_override_uses_upload_registry_for_publish(
         "/bin/npm",
         "publish",
         "--registry",
-        f"{STAGING_API_URL}/native/npm/x/custpid1/repo-npm/",
+        f"{STAGING_API_URL}/n/npm/x/custpid1/repo-npm/",
     ]
     assert calls[0]["env"]["NPM_CONFIG_REGISTRY"] == (
-        f"{STAGING_API_URL}/native/npm/x/custpid1/repo-npm/"
+        f"{STAGING_API_URL}/n/npm/x/custpid1/repo-npm/"
     )
     assert (
-        calls[0]["env"][f"NPM_CONFIG_//{STAGING_HOST}/native/npm/x/custpid1/repo-npm/:_authToken"]
+        calls[0]["env"][f"NPM_CONFIG_//{STAGING_HOST}/n/npm/x/custpid1/repo-npm/:_authToken"]
         == "secret-token"
     )
 
@@ -157,7 +191,7 @@ def test_native_npm_repo_override_replaces_conflicting_registry_flag(
         "/bin/npm",
         "install",
         "--registry",
-        f"{STAGING_API_URL}/npm/x/custpid1/repo-npm/",
+        f"{STAGING_API_URL}/n/npm/x/custpid1/repo-npm/",
         "@acme/widgets",
     ]
 
@@ -168,7 +202,7 @@ def test_native_pip_respects_existing_index_and_injects_temp_netrc(
 ) -> None:
     _isolate_config(monkeypatch, tmp_path)
     _mock_native_tools(monkeypatch)
-    monkeypatch.setenv("PIP_INDEX_URL", f"{STAGING_API_URL}/pypi/x/custpid1/repo-pypi/simple/")
+    monkeypatch.setenv("PIP_INDEX_URL", f"{STAGING_API_URL}/n/pypi/x/custpid1/repo-pypi/simple/")
     calls: list[dict[str, Any]] = []
     netrc_texts: list[str] = []
 
@@ -182,7 +216,7 @@ def test_native_pip_respects_existing_index_and_injects_temp_netrc(
     assert result.exit_code == 0
     assert calls[0]["cmd"] == ["/bin/pip", "install", "demo"]
     assert calls[0]["env"]["PIP_INDEX_URL"] == (
-        f"{STAGING_API_URL}/pypi/x/custpid1/repo-pypi/simple/"
+        f"{STAGING_API_URL}/n/pypi/x/custpid1/repo-pypi/simple/"
     )
     assert netrc_texts == [f"machine {STAGING_HOST} login __token__ password secret-token\n"]
 
@@ -219,7 +253,7 @@ def test_native_pip_isolate_overrides_index_without_writing_credentials(
         "/bin/pip",
         "install",
         "--index-url",
-        f"{STAGING_API_URL}/pypi/x/custpid1/repo-pypi/simple/",
+        f"{STAGING_API_URL}/n/pypi/x/custpid1/repo-pypi/simple/",
         "demo",
     ]
     assert calls[0]["env"]["PIP_CONFIG_FILE"] == os.devnull
@@ -245,7 +279,7 @@ def test_native_pip_preserves_multi_part_pip_command_prefix(
         "pip",
         "install",
         "--index-url",
-        f"{STAGING_API_URL}/pypi/x/custpid1/repo-pypi/simple/",
+        f"{STAGING_API_URL}/n/pypi/x/custpid1/repo-pypi/simple/",
         "demo",
     ]
 
@@ -264,11 +298,9 @@ def test_native_uv_repo_override_sets_index_publish_env_and_netrc(
     assert result.exit_code == 0
     assert calls[0]["cmd"] == ["/bin/uv", "sync", "--locked"]
     assert calls[0]["env"]["UV_DEFAULT_INDEX"] == (
-        f"{STAGING_API_URL}/pypi/x/custpid1/repo-pypi/simple/"
+        f"{STAGING_API_URL}/n/pypi/x/custpid1/repo-pypi/simple/"
     )
-    assert calls[0]["env"]["UV_PUBLISH_URL"] == (
-        f"{STAGING_API_URL}/native/pypi/x/custpid1/repo-pypi/"
-    )
+    assert calls[0]["env"]["UV_PUBLISH_URL"] == (f"{STAGING_API_URL}/n/pypi/x/custpid1/repo-pypi/")
     assert calls[0]["env"]["UV_PUBLISH_USERNAME"] == "__token__"
     assert calls[0]["env"]["UV_PUBLISH_PASSWORD"] == "secret-token"
     assert "NETRC" in calls[0]["env"]
@@ -288,7 +320,7 @@ def test_native_twine_repo_override_sets_ephemeral_upload_credentials(
     assert result.exit_code == 0
     assert calls[0]["cmd"] == ["/bin/twine", "upload", "dist/demo.whl"]
     assert calls[0]["env"]["TWINE_REPOSITORY_URL"] == (
-        f"{STAGING_API_URL}/native/pypi/x/custpid1/repo-pypi/"
+        f"{STAGING_API_URL}/n/pypi/x/custpid1/repo-pypi/"
     )
     assert calls[0]["env"]["TWINE_USERNAME"] == "__token__"
     assert calls[0]["env"]["TWINE_PASSWORD"] == "secret-token"
@@ -314,7 +346,7 @@ def test_native_maven_repo_override_generates_temp_settings(
     assert result.exit_code == 0
     assert calls[0]["cmd"][0:2] == ["/bin/mvn", "--settings"]
     assert calls[0]["cmd"][-1] == (
-        f"-DaltDeploymentRepository=rvn-private::default::{STAGING_API_URL}/native/maven/x/custpid1/repo-maven/"
+        f"-DaltDeploymentRepository=rvn-private::default::{STAGING_API_URL}/n/maven/x/custpid1/repo-maven/"
     )
     assert "<id>rvn-private</id>" in settings_texts[0]
     assert "<username>__token__</username>" in settings_texts[0]

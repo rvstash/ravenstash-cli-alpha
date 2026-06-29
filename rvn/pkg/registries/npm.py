@@ -9,7 +9,7 @@ Implements the npm publish wire protocol directly:
 3. Computes SHA-1 (integrity) and SHA-512 (ssri) of the tarball.
 4. Builds the JSON publish body ``{ _id, name, dist-tags, versions:{...}, _attachments:{...} }``
    where the tarball is base64-encoded inside ``_attachments``.
-5. PUTs the payload to ``/native/npm/x/{customer_pid}/{repository_name}/{package}``.
+5. PUTs the payload to ``/n/npm/x/{customer_pid}/{repository_name}/{package}``.
 
 This means **no ``npm`` binary is required for publishing**.
 

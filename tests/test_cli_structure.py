@@ -83,7 +83,9 @@ customer_public_id = "custpid1"
     assert pkg_result.exit_code == 0
     assert packages_result.exit_code == 0
     assert packages_result.output == pkg_result.output
-    assert packages_result.output.strip() == f"{STAGING_API_URL}/pypi/x/custpid1/repo-alias/simple/"
+    assert (
+        packages_result.output.strip() == f"{STAGING_API_URL}/n/pypi/x/custpid1/repo-alias/simple/"
+    )
 
 
 @pytest.mark.parametrize(
