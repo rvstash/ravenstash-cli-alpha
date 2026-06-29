@@ -125,9 +125,7 @@ def test_native_npm_repo_override_uses_upload_registry_for_publish(
         f"{STAGING_API_URL}/native/npm/x/custpid1/repo-npm/"
     )
     assert (
-        calls[0]["env"][
-            f"NPM_CONFIG_//{STAGING_HOST}/native/npm/x/custpid1/repo-npm/:_authToken"
-        ]
+        calls[0]["env"][f"NPM_CONFIG_//{STAGING_HOST}/native/npm/x/custpid1/repo-npm/:_authToken"]
         == "secret-token"
     )
 

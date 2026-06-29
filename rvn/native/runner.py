@@ -125,7 +125,9 @@ def _build_plan(
     command_prefix = _command_prefix_for(tool)
     cmd = [*command_prefix, *argv]
     native_arg_start = len(command_prefix)
-    effective_policy = "override" if options.repo and options.native_config == "respect" else options.native_config
+    effective_policy = (
+        "override" if options.repo and options.native_config == "respect" else options.native_config
+    )
 
     if effective_policy == "respect":
         urls = _detected_ravenstash_urls(tool, argv, env)
@@ -303,9 +305,7 @@ def _relevant_env_values(tool: NativeTool, env: dict[str, str]) -> list[str]:
         "mvn": ("MAVEN_",),
     }[tool]
     return [
-        value
-        for key, value in env.items()
-        if key.startswith(prefixes) and isinstance(value, str)
+        value for key, value in env.items() if key.startswith(prefixes) and isinstance(value, str)
     ]
 
 
@@ -341,9 +341,7 @@ def _candidate_config_files(
             candidates.append(Path.home() / ".pypirc")
         case "npm":
             user_config = env.get("NPM_CONFIG_USERCONFIG") or env.get("npm_config_userconfig")
-            global_config = env.get("NPM_CONFIG_GLOBALCONFIG") or env.get(
-                "npm_config_globalconfig"
-            )
+            global_config = env.get("NPM_CONFIG_GLOBALCONFIG") or env.get("npm_config_globalconfig")
             candidates.extend(_nearest_named_files((".npmrc",)))
             if user_config:
                 candidates.append(Path(user_config).expanduser())
@@ -466,7 +464,9 @@ def _inject_override(
             )
             _replace_maven_settings_arg(cmd, settings_path, native_arg_start)
             if _maven_has_goal(cmd[native_arg_start:], "deploy"):
-                cmd.append(f"-DaltDeploymentRepository=rvn-private::default::{route.maven_upload_url}")
+                cmd.append(
+                    f"-DaltDeploymentRepository=rvn-private::default::{route.maven_upload_url}"
+                )
 
 
 def _inject_pip_override(
@@ -643,7 +643,9 @@ def _write_maven_settings(
     route: RegistryRoute | None,
 ) -> Path:
     base_settings = None if isolate else _maven_settings_arg(argv)
-    base_path = Path(base_settings).expanduser() if base_settings else Path.home() / ".m2/settings.xml"
+    base_path = (
+        Path(base_settings).expanduser() if base_settings else Path.home() / ".m2/settings.xml"
+    )
     root = _load_maven_settings(base_path) if not isolate else ET.Element("settings")
     server_ids = _maven_server_ids_for_urls(urls, argv)
     if route is not None:
