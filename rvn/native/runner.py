@@ -58,37 +58,46 @@ class NativeOptions:
 @dataclass(frozen=True)
 class RegistryRoute:
     kind: RegistryKind
-    api_url: str
+    pkg_download_url: str
+    pkg_upload_url: str
     customer_pid: str
     repository_name: str
 
     @property
     def pypi_index_url(self) -> str:
-        return _ROUTER.pypi_index_url(self.api_url, self.customer_pid, self.repository_name)
+        return _ROUTER.pypi_index_url(
+            self.pkg_download_url, self.customer_pid, self.repository_name
+        )
 
     @property
     def pypi_upload_url(self) -> str:
-        return _ROUTER.pypi_upload_url(self.api_url, self.customer_pid, self.repository_name)
+        return _ROUTER.pypi_upload_url(self.pkg_upload_url, self.customer_pid, self.repository_name)
 
     @property
     def npm_registry_url(self) -> str:
-        return _ROUTER.npm_registry_url(self.api_url, self.customer_pid, self.repository_name)
+        return _ROUTER.npm_registry_url(
+            self.pkg_download_url, self.customer_pid, self.repository_name
+        )
 
     @property
     def npm_upload_registry_url(self) -> str:
         return _ROUTER.npm_upload_registry_url(
-            self.api_url,
+            self.pkg_upload_url,
             self.customer_pid,
             self.repository_name,
         )
 
     @property
     def maven_repo_url(self) -> str:
-        return _ROUTER.maven_repo_url(self.api_url, self.customer_pid, self.repository_name)
+        return _ROUTER.maven_repo_url(
+            self.pkg_download_url, self.customer_pid, self.repository_name
+        )
 
     @property
     def maven_upload_url(self) -> str:
-        return _ROUTER.maven_upload_url(self.api_url, self.customer_pid, self.repository_name)
+        return _ROUTER.maven_upload_url(
+            self.pkg_upload_url, self.customer_pid, self.repository_name
+        )
 
 
 @dataclass
@@ -237,9 +246,11 @@ def _resolve_route(kind: RegistryKind, options: NativeOptions) -> RegistryRoute:
         )
     repo_customer_pid, repository_name = _split_repo_ref(repo_ref)
     customer_pid = repo_customer_pid or _customer_public_id(options.profile, options.customer_pid)
+    profile_cfg = _profile(options.profile)
     return RegistryRoute(
         kind=kind,
-        api_url=_profile(options.profile).api_url,
+        pkg_download_url=profile_cfg.pkg_download_url,
+        pkg_upload_url=profile_cfg.pkg_upload_url,
         customer_pid=customer_pid,
         repository_name=repository_name,
     )

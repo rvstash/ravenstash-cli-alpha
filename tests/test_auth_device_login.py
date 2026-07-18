@@ -363,6 +363,9 @@ def test_device_login_handles_slow_down_and_stores_expiring_jwt(monkeypatch) -> 
                 "refresh_expires_in": 14400,
                 "customer_id": "cus_123",
                 "customer_public_id": "custpid1",
+                "pkg_api_url": "https://app.ravenstash.com/api",
+                "pkg_download_url": "https://pkg.rvnsta.sh",
+                "pkg_upload_url": "https://pkg-push.rvnsta.sh",
             },
         ),
     ]
@@ -409,6 +412,9 @@ def test_device_login_handles_slow_down_and_stores_expiring_jwt(monkeypatch) -> 
     assert metadata_writes[-1]["api_url"] == "https://api.ravenstash.com"
     assert metadata_writes[-1]["customer_id"] == "cus_123"
     assert metadata_writes[-1]["customer_public_id"] == "custpid1"
+    assert metadata_writes[-1]["pkg_api_url"] == "https://app.ravenstash.com/api"
+    assert metadata_writes[-1]["pkg_download_url"] == "https://pkg.rvnsta.sh"
+    assert metadata_writes[-1]["pkg_upload_url"] == "https://pkg-push.rvnsta.sh"
     assert metadata_writes[-1]["credential_type"] == "expiring"
     assert metadata_writes[-1]["expires_at"]
     assert metadata_writes[-1]["refresh_expires_at"]
@@ -462,6 +468,9 @@ def test_device_login_replaces_active_profile_and_revokes_previous_refresh(
                 "refresh_expires_in": 14400,
                 "customer_id": "cus_123",
                 "customer_public_id": "custpid1",
+                "pkg_api_url": "https://app.ravenstash.com/api",
+                "pkg_download_url": "https://pkg.rvnsta.sh",
+                "pkg_upload_url": "https://pkg-push.rvnsta.sh",
             },
         ),
     ]
@@ -539,6 +548,9 @@ def test_device_login_does_not_revoke_expired_previous_refresh(
                 "refresh_expires_in": 14400,
                 "customer_id": "cus_123",
                 "customer_public_id": "custpid1",
+                "pkg_api_url": "https://app.ravenstash.com/api",
+                "pkg_download_url": "https://pkg.rvnsta.sh",
+                "pkg_upload_url": "https://pkg-push.rvnsta.sh",
             },
         ),
     ]
@@ -600,6 +612,9 @@ def test_refresh_expiring_credential_rotates_tokens(
                 "refresh_expires_in": 14400,
                 "customer_id": "cus_123",
                 "customer_public_id": "custpid1",
+                "pkg_api_url": "https://app.ravenstash.com/api",
+                "pkg_download_url": "https://pkg.rvnsta.sh",
+                "pkg_upload_url": "https://pkg-push.rvnsta.sh",
             },
         )
     ]
@@ -624,6 +639,9 @@ def test_refresh_expiring_credential_rotates_tokens(
     profile = cfg_mod.load().profiles["default"]
     assert profile.credential_type == "expiring"
     assert profile.customer_public_id == "custpid1"
+    assert profile.pkg_api_url == "https://app.ravenstash.com/api"
+    assert profile.pkg_download_url == "https://pkg.rvnsta.sh"
+    assert profile.pkg_upload_url == "https://pkg-push.rvnsta.sh"
     assert profile.refresh_expires_at is not None
 
 

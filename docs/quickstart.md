@@ -64,7 +64,9 @@ rvn auth login --profile staging
 rvn auth profile switch staging
 ```
 
-For local or staging environments, declare the API URL outside git:
+For local or staging environments, declare the DevAPI URL outside git. A
+successful device login discovers and stores the package API, download, and
+upload endpoints returned by that DevAPI environment:
 
 ```bash
 export RVN_PROFILE_STAGING_API_URL=https://<staging-devapi-host>
@@ -199,7 +201,7 @@ rvn pkg pypi install requests
 For this command, `rvn` delegates to `pip` and injects:
 
 ```text
-PIP_EXTRA_INDEX_URL=https://__token__:<token>@<api-host>/n/pypi/x/<customer-public-id>/<repo-name>/simple/
+PIP_EXTRA_INDEX_URL=https://__token__:<token>@<download-host>/n/pypi/x/<customer-public-id>/<repo-name>/simple/
 ```
 
 That environment variable is scoped to the subprocess. It is not written to a
@@ -216,7 +218,7 @@ Current behavior: `rvn pkg pypi publish` does not shell out to `twine`. It
 implements the legacy PyPI upload protocol directly and posts to:
 
 ```text
-<api-url>/n/pypi/x/<customer-public-id>/<repo-name>/
+<upload-url>/n/pypi/x/<customer-public-id>/<repo-name>/
 ```
 
 To print a pip configuration snippet instead of running an install:
@@ -242,13 +244,13 @@ rvn pkg npm install lodash
 For this command, `rvn` delegates to `npm` and runs the equivalent of:
 
 ```bash
-npm install --registry <api-url>/n/npm/x/<customer-public-id>/<repo-name>/ lodash
+npm install --registry <download-url>/n/npm/x/<customer-public-id>/<repo-name>/ lodash
 ```
 
 It injects the auth token through npm's environment-backed config key:
 
 ```text
-NPM_CONFIG_//<api-host>/n/npm/x/<customer-public-id>/<repo-name>/:_authToken=<token>
+NPM_CONFIG_//<download-host>/n/npm/x/<customer-public-id>/<repo-name>/:_authToken=<token>
 ```
 
 Publish the package in the current directory:
@@ -262,14 +264,14 @@ reads `package.json`, creates a package tarball, builds the npm publish JSON
 body, and PUTs it to:
 
 ```text
-<api-url>/n/npm/x/<customer-public-id>/<repo-name>/<package-name>
+<upload-url>/n/npm/x/<customer-public-id>/<repo-name>/<package-name>
 ```
 
 It writes package metadata with download tarball URLs pointing at the private
 download registry:
 
 ```text
-<api-url>/n/npm/x/<customer-public-id>/<repo-name>/<package-name>/-/<tarball>
+<download-url>/n/npm/x/<customer-public-id>/<repo-name>/<package-name>/-/<tarball>
 ```
 
 To print an `.npmrc` snippet:
@@ -301,7 +303,7 @@ For this command, `rvn` writes a temporary `settings.xml` containing:
 - server id `rvn-private`
 - username `__token__`
 - the active token as the password
-- repository URL `<api-url>/n/maven/x/<customer-public-id>/<repo-name>/`
+- repository URL `<download-url>/n/maven/x/<customer-public-id>/<repo-name>/`
 
 It then runs:
 
@@ -324,7 +326,7 @@ Current behavior: `rvn pkg maven deploy` does not shell out to `mvn deploy`. It
 uploads the artifact and checksum sidecars with HTTP PUTs under:
 
 ```text
-<api-url>/n/maven/x/<customer-public-id>/<repo-name>/<group-path>/<artifact>/<version>/
+<upload-url>/n/maven/x/<customer-public-id>/<repo-name>/<group-path>/<artifact>/<version>/
 ```
 
 To print a reusable Maven `settings.xml` snippet:
@@ -349,11 +351,15 @@ rvn pkg repo set-default pypi <pypi-repo-name>
 rvn pkg pypi install private-package
 ```
 
-If no profile metadata exists for the chosen profile, provide the API URL and
-customer public ID through environment/configuration:
+Production service endpoints have canonical defaults. For a non-production
+automation profile without device-login metadata, provide all service URLs and
+the customer public ID through environment/configuration:
 
 ```bash
 export RVN_PROFILE_CI_API_URL=https://api.ravenstash.com
+export RVN_PROFILE_CI_PKG_API_URL=https://app.ravenstash.com/api
+export RVN_PROFILE_CI_PKG_DOWNLOAD_URL=https://pkg.rvnsta.sh
+export RVN_PROFILE_CI_PKG_UPLOAD_URL=https://pkg-push.rvnsta.sh
 export RVN_CUSTOMER_PID=<customer-public-id>
 export RVN_TOKEN=<automation-token>
 

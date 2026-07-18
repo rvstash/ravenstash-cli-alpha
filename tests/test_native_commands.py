@@ -17,6 +17,10 @@ if TYPE_CHECKING:
 runner = CliRunner()
 STAGING_API_URL = "https://staging.example.test"
 STAGING_HOST = "staging.example.test"
+STAGING_DOWNLOAD_URL = "https://pkg-staging.example.test"
+STAGING_DOWNLOAD_HOST = "pkg-staging.example.test"
+STAGING_UPLOAD_URL = "https://pkg-push-staging.example.test"
+STAGING_UPLOAD_HOST = "pkg-push-staging.example.test"
 
 
 class _Completed:
@@ -33,6 +37,9 @@ default_profile = "staging"
 
 [profiles.staging]
 api_url = "{STAGING_API_URL}"
+pkg_api_url = "https://app-staging.example.test/api"
+pkg_download_url = "{STAGING_DOWNLOAD_URL}"
+pkg_upload_url = "{STAGING_UPLOAD_URL}"
 customer_id = "cus_staging"
 customer_public_id = "custpid1"
 
@@ -153,13 +160,13 @@ def test_native_npm_repo_override_uses_upload_registry_for_publish(
         "/bin/npm",
         "publish",
         "--registry",
-        f"{STAGING_API_URL}/n/npm/x/custpid1/repo-npm/",
+        f"{STAGING_UPLOAD_URL}/n/npm/x/custpid1/repo-npm/",
     ]
     assert calls[0]["env"]["NPM_CONFIG_REGISTRY"] == (
-        f"{STAGING_API_URL}/n/npm/x/custpid1/repo-npm/"
+        f"{STAGING_UPLOAD_URL}/n/npm/x/custpid1/repo-npm/"
     )
     assert (
-        calls[0]["env"][f"NPM_CONFIG_//{STAGING_HOST}/n/npm/x/custpid1/repo-npm/:_authToken"]
+        calls[0]["env"][f"NPM_CONFIG_//{STAGING_UPLOAD_HOST}/n/npm/x/custpid1/repo-npm/:_authToken"]
         == "secret-token"
     )
 
@@ -191,7 +198,7 @@ def test_native_npm_repo_override_replaces_conflicting_registry_flag(
         "/bin/npm",
         "install",
         "--registry",
-        f"{STAGING_API_URL}/n/npm/x/custpid1/repo-npm/",
+        f"{STAGING_DOWNLOAD_URL}/n/npm/x/custpid1/repo-npm/",
         "@acme/widgets",
     ]
 
@@ -253,11 +260,13 @@ def test_native_pip_isolate_overrides_index_without_writing_credentials(
         "/bin/pip",
         "install",
         "--index-url",
-        f"{STAGING_API_URL}/n/pypi/x/custpid1/repo-pypi/simple/",
+        f"{STAGING_DOWNLOAD_URL}/n/pypi/x/custpid1/repo-pypi/simple/",
         "demo",
     ]
     assert calls[0]["env"]["PIP_CONFIG_FILE"] == os.devnull
-    assert netrc_texts == [f"machine {STAGING_HOST} login __token__ password secret-token\n"]
+    assert netrc_texts == [
+        f"machine {STAGING_DOWNLOAD_HOST} login __token__ password secret-token\n"
+    ]
 
 
 def test_native_pip_preserves_multi_part_pip_command_prefix(
@@ -279,7 +288,7 @@ def test_native_pip_preserves_multi_part_pip_command_prefix(
         "pip",
         "install",
         "--index-url",
-        f"{STAGING_API_URL}/n/pypi/x/custpid1/repo-pypi/simple/",
+        f"{STAGING_DOWNLOAD_URL}/n/pypi/x/custpid1/repo-pypi/simple/",
         "demo",
     ]
 
@@ -298,9 +307,11 @@ def test_native_uv_repo_override_sets_index_publish_env_and_netrc(
     assert result.exit_code == 0
     assert calls[0]["cmd"] == ["/bin/uv", "sync", "--locked"]
     assert calls[0]["env"]["UV_DEFAULT_INDEX"] == (
-        f"{STAGING_API_URL}/n/pypi/x/custpid1/repo-pypi/simple/"
+        f"{STAGING_DOWNLOAD_URL}/n/pypi/x/custpid1/repo-pypi/simple/"
     )
-    assert calls[0]["env"]["UV_PUBLISH_URL"] == (f"{STAGING_API_URL}/n/pypi/x/custpid1/repo-pypi/")
+    assert calls[0]["env"]["UV_PUBLISH_URL"] == (
+        f"{STAGING_UPLOAD_URL}/n/pypi/x/custpid1/repo-pypi/"
+    )
     assert calls[0]["env"]["UV_PUBLISH_USERNAME"] == "__token__"
     assert calls[0]["env"]["UV_PUBLISH_PASSWORD"] == "secret-token"
     assert "NETRC" in calls[0]["env"]
@@ -320,7 +331,7 @@ def test_native_twine_repo_override_sets_ephemeral_upload_credentials(
     assert result.exit_code == 0
     assert calls[0]["cmd"] == ["/bin/twine", "upload", "dist/demo.whl"]
     assert calls[0]["env"]["TWINE_REPOSITORY_URL"] == (
-        f"{STAGING_API_URL}/n/pypi/x/custpid1/repo-pypi/"
+        f"{STAGING_UPLOAD_URL}/n/pypi/x/custpid1/repo-pypi/"
     )
     assert calls[0]["env"]["TWINE_USERNAME"] == "__token__"
     assert calls[0]["env"]["TWINE_PASSWORD"] == "secret-token"
@@ -346,7 +357,7 @@ def test_native_maven_repo_override_generates_temp_settings(
     assert result.exit_code == 0
     assert calls[0]["cmd"][0:2] == ["/bin/mvn", "--settings"]
     assert calls[0]["cmd"][-1] == (
-        f"-DaltDeploymentRepository=rvn-private::default::{STAGING_API_URL}/n/maven/x/custpid1/repo-maven/"
+        f"-DaltDeploymentRepository=rvn-private::default::{STAGING_UPLOAD_URL}/n/maven/x/custpid1/repo-maven/"
     )
     assert "<id>rvn-private</id>" in settings_texts[0]
     assert "<username>__token__</username>" in settings_texts[0]

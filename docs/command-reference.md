@@ -39,12 +39,19 @@ Local profiles store metadata in `~/.rvn/config.toml`. Device login access and
 refresh tokens are stored in the OS keyring. `RVN_TOKEN` is the automation path
 and overrides local credentials.
 
-Non-production profile API URLs are declared outside git through environment
-variables or an ignored env file:
+Device login discovers package endpoints from DevAPI. Non-production automation
+profiles that do not log in declare all service URLs outside git through
+environment variables or an ignored env file:
 
 ```bash
 RVN_PROFILE_STAGING_API_URL=https://<staging-devapi-host>
+RVN_PROFILE_STAGING_PKG_API_URL=https://<staging-app-host>/api
+RVN_PROFILE_STAGING_PKG_DOWNLOAD_URL=https://<staging-download-host>
+RVN_PROFILE_STAGING_PKG_UPLOAD_URL=https://<staging-upload-host>
 RVN_PROFILE_DEV_API_URL=http://<local-devapi-host>
+RVN_PROFILE_DEV_PKG_API_URL=http://<local-package-api-host>
+RVN_PROFILE_DEV_PKG_DOWNLOAD_URL=http://<local-download-host>
+RVN_PROFILE_DEV_PKG_UPLOAD_URL=http://<local-upload-host>
 ```
 
 `rvn` reads process environment variables, a nearest `.rvn.env`, `~/.rvn/profiles.env`,

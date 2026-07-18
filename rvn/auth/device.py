@@ -99,6 +99,9 @@ def _store_expiring_credential(
     refresh_token: str,
     customer_id: str | None,
     customer_public_id: str | None,
+    pkg_api_url: str | None,
+    pkg_download_url: str | None,
+    pkg_upload_url: str | None,
     expires_in: int,
     refresh_expires_in: int,
 ) -> None:
@@ -113,6 +116,9 @@ def _store_expiring_credential(
     cfg_mod.set_profile_metadata(
         profile,
         api_url=api_url,
+        pkg_api_url=pkg_api_url,
+        pkg_download_url=pkg_download_url,
+        pkg_upload_url=pkg_upload_url,
         customer_id=customer_id,
         customer_public_id=customer_public_id,
         credential_type=auth_mod.EXPIRING_CREDENTIAL_TYPE,
@@ -248,6 +254,9 @@ def perform_device_login(
                         refresh_token=payload["refresh_token"],
                         customer_id=payload.get("customer_id"),
                         customer_public_id=payload.get("customer_public_id"),
+                        pkg_api_url=payload.get("pkg_api_url"),
+                        pkg_download_url=payload.get("pkg_download_url"),
+                        pkg_upload_url=payload.get("pkg_upload_url"),
                         expires_in=int(payload.get("expires_in") or 0),
                         refresh_expires_in=int(payload.get("refresh_expires_in") or 0),
                     )

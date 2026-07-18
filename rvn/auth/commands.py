@@ -300,6 +300,9 @@ def status(
         {
             "Profile": profile_name,
             "API URL": p.api_url,
+            "Package API URL": p.pkg_api_url,
+            "Package download URL": p.pkg_download_url,
+            "Package upload URL": p.pkg_upload_url,
             "Authenticated": "yes" if token else "no",
             "Credential source": source or "none",
             "Credential type": auth_mod.display_credential_type(p.credential_type) or "unknown",
@@ -328,6 +331,9 @@ def whoami(
             "Profile": profile_name,
             "Customer": p.customer_id or "unknown",
             "API URL": p.api_url,
+            "Package API URL": p.pkg_api_url,
+            "Package download URL": p.pkg_download_url,
+            "Package upload URL": p.pkg_upload_url,
         },
         title="Current Ravenstash identity",
     )

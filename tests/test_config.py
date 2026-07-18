@@ -21,6 +21,12 @@ def _point_config(monkeypatch, tmp_path: Path) -> tuple[Path, Path]:
         "RVN_ENV_FILE",
         "RVN_PROFILE_DEV_API_URL",
         "RVN_PROFILE_STAGING_API_URL",
+        "RVN_PKG_API_URL",
+        "RVN_PKG_DOWNLOAD_URL",
+        "RVN_PKG_UPLOAD_URL",
+        "RVN_PROFILE_STAGING_PKG_API_URL",
+        "RVN_PROFILE_STAGING_PKG_DOWNLOAD_URL",
+        "RVN_PROFILE_STAGING_PKG_UPLOAD_URL",
     ):
         monkeypatch.delenv(key, raising=False)
     return config_dir, config_file
@@ -39,6 +45,9 @@ def test_load_missing_config_uses_production_default_without_profile_env(
     assert cfg.active_profile().api_url == "https://api.ravenstash.com"
     assert cfg.active_profile("dev").api_url == "https://api.ravenstash.com"
     assert cfg.active_profile("staging").api_url == "https://api.ravenstash.com"
+    assert cfg.active_profile().pkg_api_url == "https://app.ravenstash.com/api"
+    assert cfg.active_profile().pkg_download_url == "https://pkg.rvnsta.sh"
+    assert cfg.active_profile().pkg_upload_url == "https://pkg-push.rvnsta.sh"
 
 
 def test_load_uses_env_api_url_for_configured_profile_without_api_url(
@@ -83,6 +92,24 @@ RVN_PROFILE_DEV_API_URL='http://dev.example.test'
     assert cfg_mod.profile_api_url("dev") == "http://dev.example.test"
 
 
+def test_package_service_urls_can_be_declared_per_profile(monkeypatch, tmp_path: Path) -> None:
+    _point_config(monkeypatch, tmp_path)
+    (tmp_path / ".rvn.env").write_text(
+        """
+RVN_PROFILE_STAGING_PKG_API_URL=https://app.staging.example.test/api
+RVN_PROFILE_STAGING_PKG_DOWNLOAD_URL=https://pkg-staging.example.test
+RVN_PROFILE_STAGING_PKG_UPLOAD_URL=https://pkg-push-staging.example.test
+""".strip(),
+        encoding="utf-8",
+    )
+
+    profile = cfg_mod.load().active_profile("staging")
+
+    assert profile.pkg_api_url == "https://app.staging.example.test/api"
+    assert profile.pkg_download_url == "https://pkg-staging.example.test"
+    assert profile.pkg_upload_url == "https://pkg-push-staging.example.test"
+
+
 def test_explicit_rvn_env_file_overrides_local_env_file(monkeypatch, tmp_path: Path) -> None:
     _point_config(monkeypatch, tmp_path)
     (tmp_path / ".rvn.env").write_text(
@@ -120,6 +147,9 @@ def test_save_and_load_round_trips_profiles_and_registry_defaults(
         profiles={
             "work": cfg_mod.ProfileConfig(
                 api_url="https://api.work.example",
+                pkg_api_url="https://app.work.example/api",
+                pkg_download_url="https://pkg-work.example",
+                pkg_upload_url="https://pkg-push-work.example",
                 customer_id="cus_work",
                 customer_public_id="custpid1",
                 credential_type="expiring",
@@ -138,6 +168,9 @@ def test_save_and_load_round_trips_profiles_and_registry_defaults(
 
     assert loaded.default_profile == "work"
     assert loaded.profiles["work"].api_url == "https://api.work.example"
+    assert loaded.profiles["work"].pkg_api_url == "https://app.work.example/api"
+    assert loaded.profiles["work"].pkg_download_url == "https://pkg-work.example"
+    assert loaded.profiles["work"].pkg_upload_url == "https://pkg-push-work.example"
     assert loaded.profiles["work"].customer_id == "cus_work"
     assert loaded.profiles["work"].customer_public_id == "custpid1"
     assert loaded.registry_defaults("pypi").default_repo == "repo-pypi"

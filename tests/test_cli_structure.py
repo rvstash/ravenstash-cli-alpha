@@ -14,6 +14,7 @@ if TYPE_CHECKING:
 
 runner = CliRunner()
 STAGING_API_URL = "https://staging.example.test"
+STAGING_DOWNLOAD_URL = "https://pkg-staging.example.test"
 
 
 def _isolate_config(monkeypatch, tmp_path: Path, content: str = "") -> None:
@@ -63,6 +64,7 @@ def test_version_option_prints_version() -> None:
 
 def test_packages_alias_dispatches_to_pkg_commands(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setenv("RVN_PROFILE_STAGING_API_URL", STAGING_API_URL)
+    monkeypatch.setenv("RVN_PROFILE_STAGING_PKG_DOWNLOAD_URL", STAGING_DOWNLOAD_URL)
     _isolate_config(
         monkeypatch,
         tmp_path,
@@ -84,7 +86,8 @@ customer_public_id = "custpid1"
     assert packages_result.exit_code == 0
     assert packages_result.output == pkg_result.output
     assert (
-        packages_result.output.strip() == f"{STAGING_API_URL}/n/pypi/x/custpid1/repo-alias/simple/"
+        packages_result.output.strip()
+        == f"{STAGING_DOWNLOAD_URL}/n/pypi/x/custpid1/repo-alias/simple/"
     )
 
 

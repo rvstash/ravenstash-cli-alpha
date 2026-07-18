@@ -14,6 +14,9 @@ Config file shape
 
     [profiles.default]
     api_url = "https://api.ravenstash.com"
+    pkg_api_url = "https://app.ravenstash.com/api"
+    pkg_download_url = "https://pkg.rvnsta.sh"
+    pkg_upload_url = "https://pkg-push.rvnsta.sh"
     customer_id = "cus_..."
     customer_public_id = "a8f3k2mz"
     credential_type = "expiring"
@@ -52,11 +55,17 @@ PROFILE_ENV_FILE = CONFIG_DIR / "profiles.env"
 LOCAL_ENV_FILE_NAME = ".rvn.env"
 
 DEFAULT_API_URL = "https://api.ravenstash.com"
+DEFAULT_PKG_API_URL = "https://app.ravenstash.com/api"
+DEFAULT_PKG_DOWNLOAD_URL = "https://pkg.rvnsta.sh"
+DEFAULT_PKG_UPLOAD_URL = "https://pkg-push.rvnsta.sh"
 
 
 @dataclass
 class ProfileConfig:
     api_url: str = DEFAULT_API_URL
+    pkg_api_url: str = DEFAULT_PKG_API_URL
+    pkg_download_url: str = DEFAULT_PKG_DOWNLOAD_URL
+    pkg_upload_url: str = DEFAULT_PKG_UPLOAD_URL
     customer_id: str | None = None
     customer_public_id: str | None = None
     credential_type: str | None = None
@@ -92,9 +101,9 @@ def current_profile_name(cfg: RvnConfig | None = None) -> str:
 # ── Environment helpers ───────────────────────────────────────────────────────
 
 
-def _profile_env_key(profile_name: str) -> str:
+def _profile_env_key(profile_name: str, suffix: str = "API_URL") -> str:
     normalized = re.sub(r"[^A-Za-z0-9]+", "_", profile_name).strip("_").upper()
-    return f"RVN_PROFILE_{normalized}_API_URL"
+    return f"RVN_PROFILE_{normalized}_{suffix}"
 
 
 def _parse_env_value(value: str) -> str:
@@ -160,8 +169,57 @@ def profile_api_url(profile_name: str) -> str:
     return DEFAULT_API_URL
 
 
+def _profile_service_url(
+    profile_name: str,
+    *,
+    suffix: str,
+    default_env_key: str,
+    default_url: str,
+) -> str:
+    keys = [_profile_env_key(profile_name, suffix)]
+    if profile_name == "default":
+        keys.append(default_env_key)
+    for key in keys:
+        value = _env_value(key)
+        if value:
+            return value.rstrip("/")
+    return default_url
+
+
+def profile_pkg_api_url(profile_name: str) -> str:
+    return _profile_service_url(
+        profile_name,
+        suffix="PKG_API_URL",
+        default_env_key="RVN_PKG_API_URL",
+        default_url=DEFAULT_PKG_API_URL,
+    )
+
+
+def profile_pkg_download_url(profile_name: str) -> str:
+    return _profile_service_url(
+        profile_name,
+        suffix="PKG_DOWNLOAD_URL",
+        default_env_key="RVN_PKG_DOWNLOAD_URL",
+        default_url=DEFAULT_PKG_DOWNLOAD_URL,
+    )
+
+
+def profile_pkg_upload_url(profile_name: str) -> str:
+    return _profile_service_url(
+        profile_name,
+        suffix="PKG_UPLOAD_URL",
+        default_env_key="RVN_PKG_UPLOAD_URL",
+        default_url=DEFAULT_PKG_UPLOAD_URL,
+    )
+
+
 def _default_profile_config(profile_name: str) -> ProfileConfig:
-    return ProfileConfig(api_url=profile_api_url(profile_name))
+    return ProfileConfig(
+        api_url=profile_api_url(profile_name),
+        pkg_api_url=profile_pkg_api_url(profile_name),
+        pkg_download_url=profile_pkg_download_url(profile_name),
+        pkg_upload_url=profile_pkg_upload_url(profile_name),
+    )
 
 
 # ── Serialisation helpers ─────────────────────────────────────────────────────
@@ -181,6 +239,9 @@ def load() -> RvnConfig:
     for name, vals in raw.get("profiles", {}).items():
         cfg.profiles[name] = ProfileConfig(
             api_url=vals.get("api_url", profile_api_url(name)),
+            pkg_api_url=vals.get("pkg_api_url", profile_pkg_api_url(name)),
+            pkg_download_url=vals.get("pkg_download_url", profile_pkg_download_url(name)),
+            pkg_upload_url=vals.get("pkg_upload_url", profile_pkg_upload_url(name)),
             customer_id=vals.get("customer_id"),
             customer_public_id=vals.get("customer_public_id"),
             credential_type=vals.get("credential_type"),
@@ -206,6 +267,9 @@ def save(cfg: RvnConfig) -> None:
                 k: v
                 for k, v in {
                     "api_url": p.api_url,
+                    "pkg_api_url": p.pkg_api_url,
+                    "pkg_download_url": p.pkg_download_url,
+                    "pkg_upload_url": p.pkg_upload_url,
                     "customer_id": p.customer_id,
                     "customer_public_id": p.customer_public_id,
                     "credential_type": p.credential_type,
@@ -241,6 +305,9 @@ def set_profile_value(profile: str, api_url: str | None = None) -> None:
     existing = cfg.profiles.get(profile, _default_profile_config(profile))
     cfg.profiles[profile] = ProfileConfig(
         api_url=api_url if api_url is not None else existing.api_url,
+        pkg_api_url=existing.pkg_api_url,
+        pkg_download_url=existing.pkg_download_url,
+        pkg_upload_url=existing.pkg_upload_url,
         customer_id=existing.customer_id,
         customer_public_id=existing.customer_public_id,
         credential_type=existing.credential_type,
@@ -257,6 +324,9 @@ def clear_profile_credential_metadata(profile: str) -> None:
         return
     cfg.profiles[profile] = ProfileConfig(
         api_url=existing.api_url,
+        pkg_api_url=existing.pkg_api_url,
+        pkg_download_url=existing.pkg_download_url,
+        pkg_upload_url=existing.pkg_upload_url,
         customer_id=None,
         customer_public_id=None,
         credential_type=None,
@@ -270,6 +340,9 @@ def set_profile_metadata(
     profile: str,
     *,
     api_url: str | None = None,
+    pkg_api_url: str | None = None,
+    pkg_download_url: str | None = None,
+    pkg_upload_url: str | None = None,
     customer_id: str | None = None,
     customer_public_id: str | None = None,
     credential_type: str | None = None,
@@ -280,6 +353,11 @@ def set_profile_metadata(
     existing = cfg.profiles.get(profile, _default_profile_config(profile))
     cfg.profiles[profile] = ProfileConfig(
         api_url=api_url if api_url is not None else existing.api_url,
+        pkg_api_url=pkg_api_url if pkg_api_url is not None else existing.pkg_api_url,
+        pkg_download_url=pkg_download_url
+        if pkg_download_url is not None
+        else existing.pkg_download_url,
+        pkg_upload_url=pkg_upload_url if pkg_upload_url is not None else existing.pkg_upload_url,
         customer_id=customer_id if customer_id is not None else existing.customer_id,
         customer_public_id=customer_public_id
         if customer_public_id is not None

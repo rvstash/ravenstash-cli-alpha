@@ -38,13 +38,21 @@ in the OS keyring. Profile metadata lives in `~/.rvn/config.toml`. Automation
 should pass credentials with `RVN_TOKEN`; that env var takes precedence over
 local profiles and is never refreshed.
 
-Non-production API endpoints are not tracked in git. Declare them through the
-shell environment or a gitignored local `.rvn.env` file:
+Device login discovers and stores the package service endpoints returned by
+DevAPI. For non-production automation that does not perform device login,
+declare all service endpoints through the shell environment or a gitignored
+local `.rvn.env` file:
 
 ```bash
 # packages/rvn/.rvn.env, ~/.rvn/profiles.env, or a file pointed to by RVN_ENV_FILE
 RVN_PROFILE_STAGING_API_URL=https://<staging-devapi-host>
+RVN_PROFILE_STAGING_PKG_API_URL=https://<staging-app-host>/api
+RVN_PROFILE_STAGING_PKG_DOWNLOAD_URL=https://<staging-download-host>
+RVN_PROFILE_STAGING_PKG_UPLOAD_URL=https://<staging-upload-host>
 RVN_PROFILE_DEV_API_URL=http://<local-devapi-host>
+RVN_PROFILE_DEV_PKG_API_URL=http://<local-package-api-host>
+RVN_PROFILE_DEV_PKG_DOWNLOAD_URL=http://<local-download-host>
+RVN_PROFILE_DEV_PKG_UPLOAD_URL=http://<local-upload-host>
 ```
 
 Process environment variables override env-file values. `RVN_ENV_FILE` can point

@@ -67,7 +67,7 @@ class ApiClient:
             output.fatal(
                 f"No token for profile '{profile_name}'. Run: rvn auth login --profile {profile_name}"
             )
-        return cls(api_url=p.api_url, token=token, profile=profile_name)  # type: ignore[arg-type]
+        return cls(api_url=p.pkg_api_url, token=token, profile=profile_name)  # type: ignore[arg-type]
 
     # ── internal ──────────────────────────────────────────────────────────────
 

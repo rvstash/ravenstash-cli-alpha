@@ -158,9 +158,9 @@ def _require_token(profile: str | None) -> str:
     return token
 
 
-def _api_url(profile: str | None) -> str:
+def _registry_profile(profile: str | None) -> cfg_mod.ProfileConfig:
     _, p = _profile(profile)
-    return p.api_url
+    return p
 
 
 def _authed_url(url: str, token: str) -> str:
@@ -181,10 +181,10 @@ def _registry_context(
     repo: str | None,
     profile: str | None,
     customer_pid: str | None = None,
-) -> tuple[str, str, str, str | None]:
+) -> tuple[cfg_mod.ProfileConfig, str, str, str | None]:
     repo_customer_pid, repository_name = _repo_for_kind(kind, repo)
     resolved_customer_pid = repo_customer_pid or _customer_public_id(profile, customer_pid)
-    return _api_url(profile), resolved_customer_pid, repository_name, _token(profile)
+    return _registry_profile(profile), resolved_customer_pid, repository_name, _token(profile)
 
 
 # ── repo ─────────────────────────────────────────────────────────────────────
@@ -466,10 +466,10 @@ def pypi_index_url(
     ),
 ) -> None:
     """Print the private PyPI simple-index URL."""
-    api_url, customer_pid, repository_name, _ = _registry_context(
+    profile_cfg, customer_pid, repository_name, _ = _registry_context(
         "pypi", repo, profile, customer_pid
     )
-    typer.echo(_ROUTER.pypi_index_url(api_url, customer_pid, repository_name))
+    typer.echo(_ROUTER.pypi_index_url(profile_cfg.pkg_download_url, customer_pid, repository_name))
 
 
 @pypi_app.command("upload-url")
@@ -481,10 +481,10 @@ def pypi_upload_url(
     ),
 ) -> None:
     """Print the private PyPI upload URL."""
-    api_url, customer_pid, repository_name, _ = _registry_context(
+    profile_cfg, customer_pid, repository_name, _ = _registry_context(
         "pypi", repo, profile, customer_pid
     )
-    typer.echo(_ROUTER.pypi_upload_url(api_url, customer_pid, repository_name))
+    typer.echo(_ROUTER.pypi_upload_url(profile_cfg.pkg_upload_url, customer_pid, repository_name))
 
 
 @pypi_app.command("install")
@@ -497,10 +497,10 @@ def pypi_install(
     ),
 ) -> None:
     """Install Python packages using pip with Ravenstash credentials injected."""
-    api_url, customer_pid, repository_name, token = _registry_context(
+    profile_cfg, customer_pid, repository_name, token = _registry_context(
         "pypi", repo, profile, customer_pid
     )
-    index_url = _ROUTER.pypi_index_url(api_url, customer_pid, repository_name)
+    index_url = _ROUTER.pypi_index_url(profile_cfg.pkg_download_url, customer_pid, repository_name)
     env = {**os.environ}
     if token:
         env["PIP_EXTRA_INDEX_URL"] = _authed_url(index_url, token)
@@ -521,7 +521,7 @@ def pypi_publish(
     ),
 ) -> None:
     """Upload wheel and sdist files to a PyPI package repository."""
-    api_url, customer_pid, repository_name, _ = _registry_context(
+    profile_cfg, customer_pid, repository_name, _ = _registry_context(
         "pypi", repo, profile, customer_pid
     )
     token = _require_token(profile)
@@ -529,7 +529,9 @@ def pypi_publish(
     if not files:
         output.fatal(f"No .whl or .tar.gz files found in {dist_dir}")
     results = pypi_reg.publish(
-        upload_url=_ROUTER.pypi_upload_url(api_url, customer_pid, repository_name),
+        upload_url=_ROUTER.pypi_upload_url(
+            profile_cfg.pkg_upload_url, customer_pid, repository_name
+        ),
         token=token,
         files=files,
     )
@@ -553,10 +555,10 @@ def pypi_configure(
     ),
 ) -> None:
     """Print pip configuration for the private PyPI repository."""
-    api_url, customer_pid, repository_name, _ = _registry_context(
+    profile_cfg, customer_pid, repository_name, _ = _registry_context(
         "pypi", repo, profile, customer_pid
     )
-    index_url = _ROUTER.pypi_index_url(api_url, customer_pid, repository_name)
+    index_url = _ROUTER.pypi_index_url(profile_cfg.pkg_download_url, customer_pid, repository_name)
     typer.echo(f"[global]\nextra-index-url = {index_url}")
 
 
@@ -572,10 +574,12 @@ def npm_registry_url(
     ),
 ) -> None:
     """Print the private npm registry URL."""
-    api_url, customer_pid, repository_name, _ = _registry_context(
+    profile_cfg, customer_pid, repository_name, _ = _registry_context(
         "npm", repo, profile, customer_pid
     )
-    typer.echo(_ROUTER.npm_registry_url(api_url, customer_pid, repository_name))
+    typer.echo(
+        _ROUTER.npm_registry_url(profile_cfg.pkg_download_url, customer_pid, repository_name)
+    )
 
 
 @npm_app.command("npmrc")
@@ -587,10 +591,12 @@ def npmrc(
     ),
 ) -> None:
     """Print an .npmrc snippet for the private npm repository."""
-    api_url, customer_pid, repository_name, _ = _registry_context(
+    profile_cfg, customer_pid, repository_name, _ = _registry_context(
         "npm", repo, profile, customer_pid
     )
-    registry_url = _ROUTER.npm_registry_url(api_url, customer_pid, repository_name)
+    registry_url = _ROUTER.npm_registry_url(
+        profile_cfg.pkg_download_url, customer_pid, repository_name
+    )
     auth_key = _npm_auth_token_key(registry_url)
     typer.echo(f"registry={registry_url}\n{auth_key}=${{RVN_TOKEN}}")
 
@@ -605,10 +611,12 @@ def npm_install(
     ),
 ) -> None:
     """Install npm packages with Ravenstash credentials injected."""
-    api_url, customer_pid, repository_name, token = _registry_context(
+    profile_cfg, customer_pid, repository_name, token = _registry_context(
         "npm", repo, profile, customer_pid
     )
-    registry_url = _ROUTER.npm_registry_url(api_url, customer_pid, repository_name)
+    registry_url = _ROUTER.npm_registry_url(
+        profile_cfg.pkg_download_url, customer_pid, repository_name
+    )
     env = {**os.environ}
     if token:
         env[f"NPM_CONFIG_{_npm_auth_token_key(registry_url)}"] = token
@@ -629,15 +637,19 @@ def npm_publish(
     ),
 ) -> None:
     """Publish an npm package to a Ravenstash npm repository."""
-    api_url, customer_pid, repository_name, _ = _registry_context(
+    profile_cfg, customer_pid, repository_name, _ = _registry_context(
         "npm", repo, profile, customer_pid
     )
     token = _require_token(profile)
     results = npm_reg.publish(
-        registry_url=_ROUTER.npm_upload_registry_url(api_url, customer_pid, repository_name),
+        registry_url=_ROUTER.npm_upload_registry_url(
+            profile_cfg.pkg_upload_url, customer_pid, repository_name
+        ),
         token=token,
         package_dir=package_dir,
-        download_registry_url=_ROUTER.npm_registry_url(api_url, customer_pid, repository_name),
+        download_registry_url=_ROUTER.npm_registry_url(
+            profile_cfg.pkg_download_url, customer_pid, repository_name
+        ),
     )
     failed = False
     for result in results:
@@ -674,10 +686,10 @@ def maven_repo_url(
     ),
 ) -> None:
     """Print the private Maven repository URL."""
-    api_url, customer_pid, repository_name, _ = _registry_context(
+    profile_cfg, customer_pid, repository_name, _ = _registry_context(
         "maven", repo, profile, customer_pid
     )
-    typer.echo(_ROUTER.maven_repo_url(api_url, customer_pid, repository_name))
+    typer.echo(_ROUTER.maven_repo_url(profile_cfg.pkg_download_url, customer_pid, repository_name))
 
 
 def _settings_xml(repo_url: str, password_expr: str = "${env.RVN_TOKEN}") -> str:
@@ -717,10 +729,14 @@ def maven_settings(
     ),
 ) -> None:
     """Print a Maven settings.xml snippet for the private Maven repository."""
-    api_url, customer_pid, repository_name, _ = _registry_context(
+    profile_cfg, customer_pid, repository_name, _ = _registry_context(
         "maven", repo, profile, customer_pid
     )
-    typer.echo(_settings_xml(_ROUTER.maven_repo_url(api_url, customer_pid, repository_name)))
+    typer.echo(
+        _settings_xml(
+            _ROUTER.maven_repo_url(profile_cfg.pkg_download_url, customer_pid, repository_name)
+        )
+    )
 
 
 @maven_app.command("install")
@@ -733,11 +749,11 @@ def maven_install(
     ),
 ) -> None:
     """Fetch a Maven artifact into the local Maven cache."""
-    api_url, customer_pid, repository_name, _ = _registry_context(
+    profile_cfg, customer_pid, repository_name, _ = _registry_context(
         "maven", repo, profile, customer_pid
     )
     token = _require_token(profile)
-    repo_url = _ROUTER.maven_repo_url(api_url, customer_pid, repository_name)
+    repo_url = _ROUTER.maven_repo_url(profile_cfg.pkg_download_url, customer_pid, repository_name)
     settings_xml = maven_reg._build_settings_xml(repo_url, token)
     with tempfile.NamedTemporaryFile(
         mode="w", suffix=".xml", prefix="rvn-settings-", delete=False
@@ -774,12 +790,14 @@ def maven_deploy(
     """Deploy an artifact file to a Ravenstash Maven repository."""
     if not artifact_file.exists():
         output.fatal(f"Artifact file not found: {artifact_file}")
-    api_url, customer_pid, repository_name, _ = _registry_context(
+    profile_cfg, customer_pid, repository_name, _ = _registry_context(
         "maven", repo, profile, customer_pid
     )
     token = _require_token(profile)
     results = maven_reg.publish(
-        upload_url=_ROUTER.maven_upload_url(api_url, customer_pid, repository_name),
+        upload_url=_ROUTER.maven_upload_url(
+            profile_cfg.pkg_upload_url, customer_pid, repository_name
+        ),
         token=token,
         group_id=group,
         artifact_id=artifact,

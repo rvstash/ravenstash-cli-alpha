@@ -17,6 +17,9 @@ Operational guidance for the `rvn` CLI package.
   metadata lives in `~/.rvn/config.toml`.
 - Preserve native-toolchain delegation for install flows unless the task explicitly changes that contract.
 - Keep registry-specific protocol logic in `rvn/pkg/registries/{pypi,npm,maven}.py`.
+- Keep DevAPI authentication, package control API, package download, and package
+  upload URLs distinct in profile metadata; never derive registry routes from
+  the DevAPI URL.
 - Keep command modules thin and route shared behavior through common helpers.
 - Do not hardcode local, dev, or staging Ravenstash endpoints. Support them
   through user config, process environment variables, or ignored env files such
