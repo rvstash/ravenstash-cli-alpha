@@ -87,7 +87,7 @@ customer_public_id = "custpid1"
     assert packages_result.output == pkg_result.output
     assert (
         packages_result.output.strip()
-        == f"{STAGING_DOWNLOAD_URL}/n/pypi/x/custpid1/repo-alias/simple/"
+        == "https://pypi.pkg-staging.example.test/custpid1/repo-alias/simple/"
     )
 
 

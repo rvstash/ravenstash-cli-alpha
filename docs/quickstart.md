@@ -201,7 +201,7 @@ rvn pkg pypi install requests
 For this command, `rvn` delegates to `pip` and injects:
 
 ```text
-PIP_EXTRA_INDEX_URL=https://__token__:<token>@<download-host>/n/pypi/x/<customer-public-id>/<repo-name>/simple/
+PIP_EXTRA_INDEX_URL=https://__token__:<token>@pypi.<download-host>/<customer-public-id>/<repo-name>/simple/
 ```
 
 That environment variable is scoped to the subprocess. It is not written to a
@@ -218,7 +218,7 @@ Current behavior: `rvn pkg pypi publish` does not shell out to `twine`. It
 implements the legacy PyPI upload protocol directly and posts to:
 
 ```text
-<upload-url>/n/pypi/x/<customer-public-id>/<repo-name>/
+https://pypi.<upload-host>/<customer-public-id>/<repo-name>/
 ```
 
 To print a pip configuration snippet instead of running an install:
@@ -244,13 +244,13 @@ rvn pkg npm install lodash
 For this command, `rvn` delegates to `npm` and runs the equivalent of:
 
 ```bash
-npm install --registry <download-url>/n/npm/x/<customer-public-id>/<repo-name>/ lodash
+npm install --registry https://npm.<download-host>/<customer-public-id>/<repo-name>/ lodash
 ```
 
 It injects the auth token through npm's environment-backed config key:
 
 ```text
-NPM_CONFIG_//<download-host>/n/npm/x/<customer-public-id>/<repo-name>/:_authToken=<token>
+NPM_CONFIG_//npm.<download-host>/<customer-public-id>/<repo-name>/:_authToken=<token>
 ```
 
 Publish the package in the current directory:
@@ -264,14 +264,14 @@ reads `package.json`, creates a package tarball, builds the npm publish JSON
 body, and PUTs it to:
 
 ```text
-<upload-url>/n/npm/x/<customer-public-id>/<repo-name>/<package-name>
+https://npm.<upload-host>/<customer-public-id>/<repo-name>/<package-name>
 ```
 
 It writes package metadata with download tarball URLs pointing at the private
 download registry:
 
 ```text
-<download-url>/n/npm/x/<customer-public-id>/<repo-name>/<package-name>/-/<tarball>
+https://npm.<download-host>/<customer-public-id>/<repo-name>/<package-name>/-/<tarball>
 ```
 
 To print an `.npmrc` snippet:
@@ -303,7 +303,7 @@ For this command, `rvn` writes a temporary `settings.xml` containing:
 - server id `rvn-private`
 - username `__token__`
 - the active token as the password
-- repository URL `<download-url>/n/maven/x/<customer-public-id>/<repo-name>/`
+- repository URL `https://maven.<download-host>/<customer-public-id>/<repo-name>/`
 
 It then runs:
 
@@ -326,7 +326,7 @@ Current behavior: `rvn pkg maven deploy` does not shell out to `mvn deploy`. It
 uploads the artifact and checksum sidecars with HTTP PUTs under:
 
 ```text
-<upload-url>/n/maven/x/<customer-public-id>/<repo-name>/<group-path>/<artifact>/<version>/
+https://maven.<upload-host>/<customer-public-id>/<repo-name>/<group-path>/<artifact>/<version>/
 ```
 
 To print a reusable Maven `settings.xml` snippet:
@@ -359,7 +359,7 @@ the customer public ID through environment/configuration:
 export RVN_PROFILE_CI_API_URL=https://api.ravenstash.com
 export RVN_PROFILE_CI_PKG_API_URL=https://app.ravenstash.com/api
 export RVN_PROFILE_CI_PKG_DOWNLOAD_URL=https://pkg.rvnsta.sh
-export RVN_PROFILE_CI_PKG_UPLOAD_URL=https://pkg-push.rvnsta.sh
+export RVN_PROFILE_CI_PKG_UPLOAD_URL=https://push.rvnsta.sh
 export RVN_CUSTOMER_PID=<customer-public-id>
 export RVN_TOKEN=<automation-token>
 

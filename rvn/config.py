@@ -16,7 +16,7 @@ Config file shape
     api_url = "https://api.ravenstash.com"
     pkg_api_url = "https://app.ravenstash.com/api"
     pkg_download_url = "https://pkg.rvnsta.sh"
-    pkg_upload_url = "https://pkg-push.rvnsta.sh"
+    pkg_upload_url = "https://push.rvnsta.sh"
     customer_id = "cus_..."
     customer_public_id = "a8f3k2mz"
     credential_type = "expiring"
@@ -57,7 +57,7 @@ LOCAL_ENV_FILE_NAME = ".rvn.env"
 DEFAULT_API_URL = "https://api.ravenstash.com"
 DEFAULT_PKG_API_URL = "https://app.ravenstash.com/api"
 DEFAULT_PKG_DOWNLOAD_URL = "https://pkg.rvnsta.sh"
-DEFAULT_PKG_UPLOAD_URL = "https://pkg-push.rvnsta.sh"
+DEFAULT_PKG_UPLOAD_URL = "https://push.rvnsta.sh"
 
 
 @dataclass

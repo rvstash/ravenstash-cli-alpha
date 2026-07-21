@@ -291,15 +291,23 @@ def _extract_urls(text: str) -> list[str]:
 
 
 def _ravenstash_url_kind(url: str) -> RegistryKind | None:
-    path_parts = [part for part in urlparse(url).path.split("/") if part]
-    if len(path_parts) < 5:
+    parsed = urlparse(url)
+    path_parts = [part for part in parsed.path.split("/") if part]
+
+    if len(path_parts) >= 4 and path_parts[0] == "native":
+        kind = path_parts[1]
+        if kind in {"pypi", "npm", "maven"}:
+            return kind  # type: ignore[return-value]
+
+    if len(path_parts) < 2 or parsed.hostname is None:
         return None
-    if path_parts[0] != "n":
+    host_parts = parsed.hostname.split(".")
+    if len(host_parts) < 2:
         return None
-    kind = path_parts[1]
+    kind = host_parts[0]
     if kind not in {"pypi", "npm", "maven"}:
         return None
-    if path_parts[2] != "x":
+    if not (host_parts[1] == "pkg" or host_parts[1] == "push" or host_parts[1].startswith("pkg-") or host_parts[1].startswith("push-")):
         return None
     return kind  # type: ignore[return-value]
 

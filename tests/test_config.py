@@ -47,7 +47,7 @@ def test_load_missing_config_uses_production_default_without_profile_env(
     assert cfg.active_profile("staging").api_url == "https://api.ravenstash.com"
     assert cfg.active_profile().pkg_api_url == "https://app.ravenstash.com/api"
     assert cfg.active_profile().pkg_download_url == "https://pkg.rvnsta.sh"
-    assert cfg.active_profile().pkg_upload_url == "https://pkg-push.rvnsta.sh"
+    assert cfg.active_profile().pkg_upload_url == "https://push.rvnsta.sh"
 
 
 def test_load_uses_env_api_url_for_configured_profile_without_api_url(
@@ -98,7 +98,7 @@ def test_package_service_urls_can_be_declared_per_profile(monkeypatch, tmp_path:
         """
 RVN_PROFILE_STAGING_PKG_API_URL=https://app.staging.example.test/api
 RVN_PROFILE_STAGING_PKG_DOWNLOAD_URL=https://pkg-staging.example.test
-RVN_PROFILE_STAGING_PKG_UPLOAD_URL=https://pkg-push-staging.example.test
+RVN_PROFILE_STAGING_PKG_UPLOAD_URL=https://push-staging.example.test
 """.strip(),
         encoding="utf-8",
     )
@@ -107,7 +107,7 @@ RVN_PROFILE_STAGING_PKG_UPLOAD_URL=https://pkg-push-staging.example.test
 
     assert profile.pkg_api_url == "https://app.staging.example.test/api"
     assert profile.pkg_download_url == "https://pkg-staging.example.test"
-    assert profile.pkg_upload_url == "https://pkg-push-staging.example.test"
+    assert profile.pkg_upload_url == "https://push-staging.example.test"
 
 
 def test_explicit_rvn_env_file_overrides_local_env_file(monkeypatch, tmp_path: Path) -> None:

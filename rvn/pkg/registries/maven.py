@@ -7,7 +7,7 @@ POM, sources JAR, etc.) we:
 
 1. Compute the Maven repository path:
    ``{group_path}/{artifact_id}/{version}/{artifact_id}-{version}.jar``
-2. PUT the file to ``/n/maven/x/{customer_pid}/{repository_name}/{path}``
+2. PUT the file to ``/{customer_pid}/{repository_name}/{path}`` on the Maven upload host
 3. PUT the MD5 and SHA-1 checksum sidecar files.
 
 Coordinates format

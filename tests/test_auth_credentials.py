@@ -103,7 +103,7 @@ refresh_expires_at = "2099-01-02T00:00:00+00:00"
     assert profile.api_url == "https://api.ravenstash.com"
     assert profile.pkg_api_url == "https://app.ravenstash.com/api"
     assert profile.pkg_download_url == "https://pkg.rvnsta.sh"
-    assert profile.pkg_upload_url == "https://pkg-push.rvnsta.sh"
+    assert profile.pkg_upload_url == "https://push.rvnsta.sh"
     assert profile.customer_id is None
     assert profile.customer_public_id is None
     assert profile.credential_type is None
