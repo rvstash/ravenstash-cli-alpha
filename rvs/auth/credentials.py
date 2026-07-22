@@ -49,7 +49,7 @@ def display_credential_type(credential_type: str | None) -> str | None:
 
 def _rvs_user_agent() -> str:
     try:
-        return f"rvs/{importlib.metadata.version('rvs')}"
+        return f"rvs/{importlib.metadata.version('ravenstash-cli')}"
     except importlib.metadata.PackageNotFoundError:
         return "rvs/dev"
 

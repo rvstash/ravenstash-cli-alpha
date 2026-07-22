@@ -212,8 +212,9 @@ credentials for the child process. They do not write tokens to `.npmrc`,
 ## Installation on Ubuntu / WSL
 
 The supported end-user install path is a system package, not `pip install`.
-The Linux package contains a self-contained `rvs` executable and installs it at
-`/usr/bin/rvs`; user config, credentials, and managed runtimes stay in `~/.rvs`.
+The Linux package contains a self-contained CLI and installs both `/usr/bin/rvs`
+and the long-form `/usr/bin/ravenstash` alias; user config, credentials, and
+managed runtimes stay in `~/.rvs`.
 
 APT repository install:
 

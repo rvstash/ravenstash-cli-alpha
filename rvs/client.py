@@ -26,7 +26,7 @@ if TYPE_CHECKING:
 
 def _rvs_ua() -> str:
     try:
-        return f"rvs/{importlib.metadata.version('rvs')}"
+        return f"rvs/{importlib.metadata.version('ravenstash-cli')}"
     except importlib.metadata.PackageNotFoundError:
         return "rvs/dev"
 

@@ -30,7 +30,7 @@ _DURATION_RE = re.compile(
 
 def _rvs_version() -> str:
     try:
-        return importlib.metadata.version("rvs")
+        return importlib.metadata.version("ravenstash-cli")
     except importlib.metadata.PackageNotFoundError:
         return "dev"
 

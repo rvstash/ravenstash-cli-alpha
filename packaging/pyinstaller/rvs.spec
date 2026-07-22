@@ -23,8 +23,8 @@ def _submodules(package: str) -> list[str]:
 
 
 datas = []
-for package in ("rvs", "typer", "click", "rich", "httpx", "keyring"):
-    datas += _metadata(package)
+for distribution in ("ravenstash-cli", "typer", "click", "rich", "httpx", "keyring"):
+    datas += _metadata(distribution)
 
 hiddenimports = []
 hiddenimports += _submodules("keyring.backends")

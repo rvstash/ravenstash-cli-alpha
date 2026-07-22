@@ -39,6 +39,11 @@ dist/release/rvs-v<version>-linux-<arch>.tar.gz
 dist/release/rvs-v<version>-checksums.txt
 ```
 
+The frozen bundle and Debian package expose both `rvs` and the long-form
+`ravenstash` alias. During Debian installation, the post-install script reports
+an informational notice when an AMD ROCm Validation Suite `rvs` executable is
+present under `/opt/rocm*`.
+
 ## APT repository
 
 After building the `.deb`, generate static APT repository metadata:

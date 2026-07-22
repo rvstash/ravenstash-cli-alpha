@@ -61,7 +61,7 @@ def test_version_option_prints_version() -> None:
     result = runner.invoke(app, ["--version"])
 
     assert result.exit_code == 0
-    assert result.output.startswith("rvs ")
+    assert result.output.startswith("Ravenstash CLI ")
 
 
 def test_json_option_emits_structured_rvs_output(monkeypatch, tmp_path: Path) -> None:

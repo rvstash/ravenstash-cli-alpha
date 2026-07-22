@@ -21,5 +21,7 @@ mkdir -p build/pyinstaller dist/pyinstaller
   --workpath build/pyinstaller \
   packaging/pyinstaller/rvs.spec
 
+ln -sfn rvs dist/pyinstaller/rvs/ravenstash
 dist/pyinstaller/rvs/rvs --version
 dist/pyinstaller/rvs/rvs --help >/dev/null
+dist/pyinstaller/rvs/ravenstash --version

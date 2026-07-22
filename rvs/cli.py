@@ -58,10 +58,10 @@ def _version_callback(value: bool) -> None:
         from importlib.metadata import PackageNotFoundError, version
 
         try:
-            v = version("rvs")
+            v = version("ravenstash-cli")
         except PackageNotFoundError:
             v = "dev"
-        typer.echo(f"rvs {v}")
+        typer.echo(f"Ravenstash CLI {v}")
         raise typer.Exit()
 
 

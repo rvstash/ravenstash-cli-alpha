@@ -11,12 +11,17 @@ homepage: https://ravenstash.com
 license: Proprietary
 depends:
   - ca-certificates
+scripts:
+  postinstall: packaging/scripts/postinstall.sh
 contents:
   - src: dist/pyinstaller/rvs
     dst: /usr/lib/rvs
     type: tree
   - src: /usr/lib/rvs/rvs
     dst: /usr/bin/rvs
+    type: symlink
+  - src: /usr/lib/rvs/rvs
+    dst: /usr/bin/ravenstash
     type: symlink
   - src: README.md
     dst: /usr/share/doc/rvs/README.md
