@@ -7,23 +7,23 @@ cases that matter when automating workflows.
 
 ## Mental Model
 
-`rvs auth login` authenticates a profile. It stores the active customer metadata
+`rvs auth login` authenticates a profile. It stores the selected repository owner
 and short-lived credentials, but it does not select a package repository.
 
-Package commands need the active customer and a package repository name:
+Package commands need a repository owner and repository name:
 
-- customer public ID: known after login for the active profile.
-- repository name: selected per registry kind, either with `--repo` or a saved
+- repository owner: known after login for the active profile.
+- repository name: selected per ecosystem, either with `--repo` or a saved
   default.
 
 When a package command needs a repository, `rvs` resolves it in this order:
 
 1. Use `--repo`, if provided.
-2. Use `[profiles.<name>.registries.<kind>].default_repo` for the selected
+2. Use `[profiles.<name>.registries.<ecosystem>].default_repo` for the selected
    profile from `~/.rvs/config.toml`.
 3. Exit with a clear error if neither exists.
 
-Legacy `[registries.<kind>]` entries are read only as a fallback for profiles
+Legacy `[registries.<ecosystem>]` entries are read only as a fallback for profiles
 that do not yet have their own default.
 
 The error looks like this:
@@ -92,25 +92,25 @@ rvs auth whoami
 ```
 
 `whoami` verifies the identity with Ravenstash and reports the server-returned
-user and customer rather than trusting local profile metadata alone.
+user and repository owner rather than trusting local profile data alone.
 
 ## Create Or Select Repositories
 
-List repositories visible to the active customer:
+List repositories owned by the selected personal account or organization:
 
 ```bash
 rvs pkg repo list
-rvs pkg repo list --kind pypi
-rvs pkg repo list --kind npm
-rvs pkg repo list --kind maven
+rvs pkg repo list --ecosystem pypi
+rvs pkg repo list --ecosystem npm
+rvs pkg repo list --ecosystem maven
 ```
 
-Create a repository and make it the default for that registry kind:
+Create a repository and make it the default for that ecosystem:
 
 ```bash
-rvs pkg repo create my-python-packages --kind pypi --default
-rvs pkg repo create my-node-packages --kind npm --default
-rvs pkg repo create my-java-packages --kind maven --default
+rvs pkg repo create my-python-packages --ecosystem pypi --default
+rvs pkg repo create my-node-packages --ecosystem npm --default
+rvs pkg repo create my-java-packages --ecosystem maven --default
 ```
 
 Repository names use lowercase letters, numbers, and hyphens.
@@ -137,14 +137,14 @@ rvs pkg npm install lodash --repo <npm-repo-name>
 rvs pkg maven install com.example:lib:1.0.0 --repo <maven-repo-name>
 ```
 
-Use `<customer-public-id>/<repo-name>` only when you must override the customer
+Use `<owner>/<repo-name>` only when you must override the repository owner
 segment encoded in the route:
 
 ```bash
-rvs pkg pypi index-url --repo <customer-public-id>/<repo-name>
+rvs pkg pypi index-url --repo <owner>/<repo-name>
 ```
 
-Most users should pass just `<repo-name>` because the customer public ID is
+Most users should pass just `<repo-name>` because the repository owner is
 already known from the active auth profile.
 
 ## `rvs pkg` vs Native Package-Manager Wrappers
@@ -208,7 +208,7 @@ rvs pkg pypi install requests
 For this command, `rvs` delegates to `pip` and injects:
 
 ```text
-PIP_INDEX_URL=https://__token__:<token>@pypi.<download-host>/<customer-public-id>/<repo-name>/simple/
+PIP_INDEX_URL=https://__token__:<token>@pypi.<download-host>/<owner>/<repo-name>/simple/
 ```
 
 That environment variable is scoped to the subprocess. It is not written to a
@@ -227,7 +227,7 @@ Current behavior: `rvs pkg pypi publish` does not shell out to `twine`. It
 implements the legacy PyPI upload protocol directly and posts to:
 
 ```text
-https://pypi.<upload-host>/<customer-public-id>/<repo-name>/
+https://pypi.<upload-host>/<owner>/<repo-name>/
 ```
 
 To print a pip configuration snippet instead of running an install:
@@ -253,13 +253,13 @@ rvs pkg npm install lodash
 For this command, `rvs` delegates to `npm` and runs the equivalent of:
 
 ```bash
-npm install --registry https://npm.<download-host>/<customer-public-id>/<repo-name>/ lodash
+npm install --registry https://npm.<download-host>/<owner>/<repo-name>/ lodash
 ```
 
 It injects the auth token through npm's environment-backed config key:
 
 ```text
-NPM_CONFIG_//npm.<download-host>/<customer-public-id>/<repo-name>/:_authToken=<token>
+NPM_CONFIG_//npm.<download-host>/<owner>/<repo-name>/:_authToken=<token>
 ```
 
 Publish the package in the current directory:
@@ -273,14 +273,14 @@ runs native `npm pack`, reads `package.json`, builds the npm publish JSON body,
 and PUTs it to:
 
 ```text
-https://npm.<upload-host>/<customer-public-id>/<repo-name>/<package-name>
+https://npm.<upload-host>/<owner>/<repo-name>/<package-name>
 ```
 
 It writes package metadata with download tarball URLs pointing at the private
 download registry:
 
 ```text
-https://npm.<download-host>/<customer-public-id>/<repo-name>/<package-name>/-/<tarball>
+https://npm.<download-host>/<owner>/<repo-name>/<package-name>/-/<tarball>
 ```
 
 Using `npm pack` honors npm's normal packlist, lifecycle hooks, bundled
@@ -315,7 +315,7 @@ For this command, `rvs` writes a temporary `settings.xml` containing:
 - server id `rvs-private`
 - username `__token__`
 - the active token as the password
-- repository URL `https://maven.<download-host>/<customer-public-id>/<repo-name>/`
+- repository URL `https://maven.<download-host>/<owner>/<repo-name>/`
 
 It then runs:
 
@@ -338,7 +338,7 @@ Current behavior: `rvs pkg maven deploy` does not shell out to `mvn deploy`. It
 uploads the artifact and checksum sidecars with HTTP PUTs under:
 
 ```text
-https://maven.<upload-host>/<customer-public-id>/<repo-name>/<group-path>/<artifact>/<version>/
+https://maven.<upload-host>/<owner>/<repo-name>/<group-path>/<artifact>/<version>/
 ```
 
 To print a reusable Maven `settings.xml` snippet:
@@ -365,14 +365,14 @@ rvs pkg pypi install private-package
 
 Production service endpoints have canonical defaults. For a non-production
 automation profile without device-login metadata, provide all service URLs and
-the customer public ID through environment/configuration:
+the repository owner through environment/configuration:
 
 ```bash
 export RVS_PROFILE_CI_API_URL=https://api.ravenstash.com
 export RVS_PROFILE_CI_PKG_API_URL=https://app.ravenstash.com/api
 export RVS_PROFILE_CI_PKG_DOWNLOAD_URL=https://pkg.rvsta.sh
 export RVS_PROFILE_CI_PKG_UPLOAD_URL=https://push.rvsta.sh
-export RVS_CUSTOMER_PID=<customer-public-id>
+export RVS_OWNER=<owner>
 export RVS_TOKEN=<automation-token>
 
 rvs pkg pypi install private-package --repo <pypi-repo-name>
@@ -390,7 +390,7 @@ rvs pkg repo defaults
 rvs pkg repo set-default pypi <repo-name>
 ```
 
-Unknown or missing customer public ID:
+Unknown or missing repository owner:
 
 ```bash
 rvs auth status
@@ -400,7 +400,7 @@ rvs auth login
 For automation, set:
 
 ```bash
-export RVS_CUSTOMER_PID=<customer-public-id>
+export RVS_OWNER=<owner>
 ```
 
 Not authenticated:
@@ -430,9 +430,9 @@ toolchain path.
 LLM agents should follow these rules when using `rvs`:
 
 - Do not assume login selects a repository.
-- Resolve the target registry kind first: `pypi`, `npm`, or `maven`.
+- Resolve the target ecosystem first: `pypi`, `npm`, or `maven`.
 - Prefer `--repo <repo-name>` for one-off commands.
-- Use `rvs pkg repo set-default <kind> <repo-name>` only when changing persistent
+- Use `rvs pkg repo set-default <ecosystem> <repo-name>` only when changing persistent
   local CLI state is intended.
 - Treat `customer_id` and `customer_public_id` as different values. Registry
   URLs use `customer_public_id`.

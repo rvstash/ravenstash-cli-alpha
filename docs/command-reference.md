@@ -95,8 +95,8 @@ the shim was installed.
 Repository commands:
 
 ```bash
-rvs pkg repo list [--profile NAME] [--customer-id CUSTOMER] [--kind pypi|npm|maven]
-rvs pkg repo create NAME --kind pypi|npm|maven [--profile NAME] [--customer-id CUSTOMER] [--default]
+rvs pkg repo list [--profile NAME] [--owner-id OWNER_ID] [--ecosystem pypi|npm|maven]
+rvs pkg repo create NAME --ecosystem pypi|npm|maven [--profile NAME] [--owner-id OWNER_ID] [--default]
 rvs pkg repo show REPOSITORY_NAME [--profile NAME]
 rvs pkg repo rename REPOSITORY_NAME NEW_NAME [--profile NAME]
 rvs pkg repo delete REPOSITORY_NAME [--profile NAME] [--yes]
@@ -107,19 +107,19 @@ rvs pkg repo clear-upstream REPOSITORY_NAME [--profile NAME]
 ```
 
 Repository names use lowercase letters, numbers, and hyphens. Defaults are
-stored per profile under `[profiles.<name>.registries.<kind>]`; legacy
-top-level `[registries.<kind>]` values are still read as a fallback. Renaming a
+stored per profile under `[profiles.<name>.registries.<ecosystem>]`; legacy
+top-level `[registries.<ecosystem>]` values are still read as a fallback. Renaming a
 repository also updates a matching default in the selected profile.
 
-Remote upstream cache commands:
+Remote cache & proxy commands:
 
 ```bash
-rvs pkg remote list [--profile NAME] [--customer-id CUSTOMER] [--kind pypi|npm|maven]
-rvs pkg remote create --kind pypi|npm|maven [--profile NAME] [--customer-id CUSTOMER]
-rvs pkg remote show REMOTE_ID [--profile NAME]
-rvs pkg remote set-age REMOTE_ID --min-age-days DAYS [--profile NAME]
-rvs pkg remote delete REMOTE_ID [--profile NAME] [--yes]
-rvs pkg remote delete REMOTE_ID --customer-id CUSTOMER --kind pypi|npm|maven [--profile NAME] [--yes]
+rvs pkg remote-cache list [--profile NAME] [--owner-id OWNER_ID] [--ecosystem pypi|npm|maven]
+rvs pkg remote-cache create --ecosystem pypi|npm|maven [--profile NAME] [--owner-id OWNER_ID]
+rvs pkg remote-cache show CACHE_ID [--profile NAME]
+rvs pkg remote-cache set-age CACHE_ID --min-age-days DAYS [--profile NAME]
+rvs pkg remote-cache delete CACHE_ID [--profile NAME] [--yes]
+rvs pkg remote-cache delete CACHE_ID --owner-id OWNER_ID --ecosystem pypi|npm|maven [--profile NAME] [--yes]
 ```
 
 Package metadata commands:
@@ -138,11 +138,11 @@ per-version metrics plus artifact filenames, sizes, and SHA-256 digests.
 PyPI helpers:
 
 ```bash
-rvs pkg pypi index-url [--repo REPOSITORY_NAME] [--profile NAME] [--customer-pid PID]
-rvs pkg pypi upload-url [--repo REPOSITORY_NAME] [--profile NAME] [--customer-pid PID]
-rvs pkg pypi install PACKAGE... [--repo REPOSITORY_NAME] [--profile NAME] [--customer-pid PID]
-rvs pkg pypi publish [DIST_DIR] [--repo REPOSITORY_NAME] [--profile NAME] [--customer-pid PID]
-rvs pkg pypi configure [--repo REPOSITORY_NAME] [--profile NAME] [--customer-pid PID]
+rvs pkg pypi index-url [--repo REPOSITORY_NAME] [--profile NAME] [--owner OWNER]
+rvs pkg pypi upload-url [--repo REPOSITORY_NAME] [--profile NAME] [--owner OWNER]
+rvs pkg pypi install PACKAGE... [--repo REPOSITORY_NAME] [--profile NAME] [--owner OWNER]
+rvs pkg pypi publish [DIST_DIR] [--repo REPOSITORY_NAME] [--profile NAME] [--owner OWNER]
+rvs pkg pypi configure [--repo REPOSITORY_NAME] [--profile NAME] [--owner OWNER]
 ```
 
 The install helper uses Ravenstash as pip's primary `PIP_INDEX_URL`. Direct
@@ -152,11 +152,11 @@ upload protocol, including the correct wheel Python tag or `source` marker.
 npm helpers:
 
 ```bash
-rvs pkg npm registry-url [--repo REPOSITORY_NAME] [--profile NAME] [--customer-pid PID]
-rvs pkg npm npmrc [--repo REPOSITORY_NAME] [--profile NAME] [--customer-pid PID]
-rvs pkg npm install PACKAGE... [--repo REPOSITORY_NAME] [--profile NAME] [--customer-pid PID]
-rvs pkg npm publish [PACKAGE_DIR] [--repo REPOSITORY_NAME] [--profile NAME] [--customer-pid PID]
-rvs pkg npm configure [--repo REPOSITORY_NAME] [--profile NAME] [--customer-pid PID]
+rvs pkg npm registry-url [--repo REPOSITORY_NAME] [--profile NAME] [--owner OWNER]
+rvs pkg npm npmrc [--repo REPOSITORY_NAME] [--profile NAME] [--owner OWNER]
+rvs pkg npm install PACKAGE... [--repo REPOSITORY_NAME] [--profile NAME] [--owner OWNER]
+rvs pkg npm publish [PACKAGE_DIR] [--repo REPOSITORY_NAME] [--profile NAME] [--owner OWNER]
+rvs pkg npm configure [--repo REPOSITORY_NAME] [--profile NAME] [--owner OWNER]
 ```
 
 Direct publishing runs native `npm pack` before sending the npm wire payload,
@@ -165,11 +165,11 @@ so npm's packlist and lifecycle behavior apply. An `npm` executable is required.
 Maven helpers:
 
 ```bash
-rvs pkg maven repo-url [--repo REPOSITORY_NAME] [--profile NAME] [--customer-pid PID]
-rvs pkg maven settings [--repo REPOSITORY_NAME] [--profile NAME] [--customer-pid PID]
-rvs pkg maven install GROUP:ARTIFACT:VERSION [--repo REPOSITORY_NAME] [--profile NAME] [--customer-pid PID]
-rvs pkg maven deploy FILE --group GROUP --artifact ARTIFACT --version VERSION [--repo REPOSITORY_NAME] [--profile NAME] [--customer-pid PID]
-rvs pkg maven configure [--repo REPOSITORY_NAME] [--profile NAME] [--customer-pid PID]
+rvs pkg maven repo-url [--repo REPOSITORY_NAME] [--profile NAME] [--owner OWNER]
+rvs pkg maven settings [--repo REPOSITORY_NAME] [--profile NAME] [--owner OWNER]
+rvs pkg maven install GROUP:ARTIFACT:VERSION [--repo REPOSITORY_NAME] [--profile NAME] [--owner OWNER]
+rvs pkg maven deploy FILE --group GROUP --artifact ARTIFACT --version VERSION [--repo REPOSITORY_NAME] [--profile NAME] [--owner OWNER]
+rvs pkg maven configure [--repo REPOSITORY_NAME] [--profile NAME] [--owner OWNER]
 ```
 
 `maven deploy` requires a canonical artifact filename matching the artifact ID
@@ -180,11 +180,11 @@ No package-token command is exposed in the alpha CLI.
 ## Native Package-Manager Wrappers
 
 ```bash
-rvs pip [--rvs-profile NAME] [--rvs-repo REPOSITORY_NAME] [--rvs-customer-pid PID] [--rvs-native-config respect|override|isolate] PIP_ARGS...
-rvs uv [--rvs-profile NAME] [--rvs-repo REPOSITORY_NAME] [--rvs-customer-pid PID] [--rvs-native-config respect|override|isolate] UV_ARGS...
-rvs twine [--rvs-profile NAME] [--rvs-repo REPOSITORY_NAME] [--rvs-customer-pid PID] [--rvs-native-config respect|override|isolate] TWINE_ARGS...
-rvs npm [--rvs-profile NAME] [--rvs-repo REPOSITORY_NAME] [--rvs-customer-pid PID] [--rvs-native-config respect|override|isolate] NPM_ARGS...
-rvs mvn [--rvs-profile NAME] [--rvs-repo REPOSITORY_NAME] [--rvs-customer-pid PID] [--rvs-native-config respect|override|isolate] MVN_ARGS...
+rvs pip [--rvs-profile NAME] [--rvs-repo REPOSITORY_NAME] [--rvs-owner OWNER] [--rvs-native-config respect|override|isolate] PIP_ARGS...
+rvs uv [--rvs-profile NAME] [--rvs-repo REPOSITORY_NAME] [--rvs-owner OWNER] [--rvs-native-config respect|override|isolate] UV_ARGS...
+rvs twine [--rvs-profile NAME] [--rvs-repo REPOSITORY_NAME] [--rvs-owner OWNER] [--rvs-native-config respect|override|isolate] TWINE_ARGS...
+rvs npm [--rvs-profile NAME] [--rvs-repo REPOSITORY_NAME] [--rvs-owner OWNER] [--rvs-native-config respect|override|isolate] NPM_ARGS...
+rvs mvn [--rvs-profile NAME] [--rvs-repo REPOSITORY_NAME] [--rvs-owner OWNER] [--rvs-native-config respect|override|isolate] MVN_ARGS...
 ```
 
 These commands run the named native package manager. They are not aliases for

@@ -46,8 +46,8 @@ def pip(
     ),
     rvs_customer_pid: str | None = typer.Option(
         None,
-        "--rvs-customer-pid",
-        help="Customer public ID override.",
+        "--rvs-owner",
+        help="Repository owner override.",
     ),
     rvs_native_config: str = typer.Option(
         _native_config_option(),
@@ -68,8 +68,8 @@ def uv(
     ),
     rvs_customer_pid: str | None = typer.Option(
         None,
-        "--rvs-customer-pid",
-        help="Customer public ID override.",
+        "--rvs-owner",
+        help="Repository owner override.",
     ),
     rvs_native_config: str = typer.Option(
         _native_config_option(),
@@ -90,8 +90,8 @@ def twine(
     ),
     rvs_customer_pid: str | None = typer.Option(
         None,
-        "--rvs-customer-pid",
-        help="Customer public ID override.",
+        "--rvs-owner",
+        help="Repository owner override.",
     ),
     rvs_native_config: str = typer.Option(
         _native_config_option(),
@@ -112,8 +112,8 @@ def npm(
     ),
     rvs_customer_pid: str | None = typer.Option(
         None,
-        "--rvs-customer-pid",
-        help="Customer public ID override.",
+        "--rvs-owner",
+        help="Repository owner override.",
     ),
     rvs_native_config: str = typer.Option(
         _native_config_option(),
@@ -134,8 +134,8 @@ def mvn(
     ),
     rvs_customer_pid: str | None = typer.Option(
         None,
-        "--rvs-customer-pid",
-        help="Customer public ID override.",
+        "--rvs-owner",
+        help="Repository owner override.",
     ),
     rvs_native_config: str = typer.Option(
         _native_config_option(),

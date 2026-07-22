@@ -31,15 +31,15 @@ app = typer.Typer(
     no_args_is_help=True,
 )
 
-repo_app = typer.Typer(help="Manage logical Ravenstash package repositories.", no_args_is_help=True)
-remote_app = typer.Typer(help="Manage single-kind upstream caches.", no_args_is_help=True)
+repo_app = typer.Typer(help="Manage Ravenstash package repositories.", no_args_is_help=True)
+remote_app = typer.Typer(help="Manage remote caches & proxies.", no_args_is_help=True)
 package_app = typer.Typer(help="Manage packages hosted in a repository.", no_args_is_help=True)
 pypi_app = typer.Typer(help="PyPI package repository helpers.", no_args_is_help=True)
 npm_app = typer.Typer(help="npm package repository helpers.", no_args_is_help=True)
 maven_app = typer.Typer(help="Maven package repository helpers.", no_args_is_help=True)
 
 app.add_typer(repo_app, name="repo")
-app.add_typer(remote_app, name="remote")
+app.add_typer(remote_app, name="remote-cache")
 app.add_typer(package_app, name="package")
 app.add_typer(pypi_app, name="pypi")
 app.add_typer(npm_app, name="npm")
@@ -71,8 +71,8 @@ def _customer_id(profile: str | None, explicit_customer_id: str | None = None) -
     _, p = _profile(profile)
     if not p.customer_id:
         output.fatal(
-            "No customer_id is stored for this profile. "
-            "Run `rvs auth login` again or pass --customer-id."
+            "No owner ID is stored for this profile. "
+            "Run `rvs auth login` again or pass --owner-id."
         )
     return p.customer_id
 
@@ -83,7 +83,7 @@ def _customer_public_id(
 ) -> str:
     if explicit_customer_pid:
         return explicit_customer_pid
-    env_customer_pid = os.environ.get("RVS_CUSTOMER_PID") or os.environ.get(
+    env_customer_pid = os.environ.get("RVS_OWNER") or os.environ.get("RVS_CUSTOMER_PID") or os.environ.get(
         "RVS_CUSTOMER_PUBLIC_ID"
     )
     if env_customer_pid:
@@ -91,16 +91,16 @@ def _customer_public_id(
     _, p = _profile(profile)
     if not p.customer_public_id:
         output.fatal(
-            "No customer public ID is stored for this profile. "
-            "Run `rvs auth login` again, pass --customer-pid, or pass "
-            "--repo <customer-public-id>/<repository-name>."
+            "No owner is stored for this profile. "
+            "Run `rvs auth login` again, pass --owner, or pass "
+            "--repo <owner>/<repository-name>."
         )
     return p.customer_public_id
 
 
 def _require_kind(kind: str) -> cfg_mod.RegistryKind:
     if kind not in _KINDS:
-        output.fatal(f"Unknown package repository kind '{kind}'. Use: pypi, npm, maven")
+        output.fatal(f"Unknown package ecosystem '{kind}'. Use: pypi, npm, maven")
     return cast("cfg_mod.RegistryKind", kind)
 
 
@@ -115,7 +115,7 @@ def _split_repo_ref(repo_ref: str) -> tuple[str | None, str]:
     repository_name = repository_name.strip().strip("/")
     if not customer_pid or not repository_name or "/" in repository_name:
         output.fatal(
-            "Repository must be <repository-name> or <customer-public-id>/<repository-name>."
+            "Repository must be <repository-name> or <owner>/<repository-name>."
         )
     return customer_pid, repository_name
 
@@ -208,10 +208,10 @@ def _registry_context(
 @repo_app.command("list")
 def repo_list(
     profile: str | None = typer.Option(None, "--profile", "-p"),
-    customer_id: str | None = typer.Option(None, "--customer-id", help="Customer ID override."),
-    kind: str | None = typer.Option(None, "--kind", "-k", help="Filter: pypi | npm | maven"),
+    customer_id: str | None = typer.Option(None, "--owner-id", help="Owner ID override."),
+    kind: str | None = typer.Option(None, "--ecosystem", "-e", help="Filter: pypi | npm | maven"),
 ) -> None:
-    """List package repositories for the active customer."""
+    """List package repositories for the selected owner."""
     if kind:
         _require_kind(kind)
     client = _client(profile)
@@ -231,7 +231,7 @@ def repo_list(
         return
 
     output.table(
-        ["Name", "Kind", "Packages", "Storage"],
+        ["Name", "Ecosystems", "Packages", "Storage"],
         [
             [
                 _repository_name_from_response(item),
@@ -248,11 +248,11 @@ def repo_list(
 def repo_create(
     name: str = typer.Argument(..., help=_REPOSITORY_NAME_HELP),
     kind: list[str] = typer.Option(
-        ..., "--kind", "-k", help="Accepted kind; repeat for multiple lanes."
+        ..., "--ecosystem", "-e", help="Ecosystem to enable; repeat to enable more than one."
     ),
     profile: str | None = typer.Option(None, "--profile", "-p"),
-    customer_id: str | None = typer.Option(None, "--customer-id", help="Customer ID override."),
-    set_default: bool = typer.Option(False, "--default", help="Set as default for this kind."),
+    customer_id: str | None = typer.Option(None, "--owner-id", help="Owner ID override."),
+    set_default: bool = typer.Option(False, "--default", help="Set as default for each selected ecosystem."),
 ) -> None:
     """Create a package repository."""
     kinds: list[cfg_mod.RegistryKind] = list(dict.fromkeys(_require_kind(value) for value in kind))
@@ -268,7 +268,7 @@ def repo_create(
         output.fatal(str(exc))
 
     repository_name = _repository_name_from_response(repo, name)
-    output.success(f"Created package repository '{repository_name}' with {', '.join(kinds)} lanes.")
+    output.success(f"Created package repository '{repository_name}' with {', '.join(kinds)} ecosystems.")
     if set_default and repository_name:
         default_repo = _repo_ref_from_response(repo, repository_name)
         for registry_kind in kinds:
@@ -291,8 +291,7 @@ def repo_show(
     output.kv(
         {
             "Name": _repository_name_from_response(item, repo),
-            "Kinds": ", ".join(item.get("registry_kinds", [])),
-            "Lanes": str(len(item.get("lanes", []))),
+            "Ecosystems": ", ".join(item.get("registry_kinds", [])),
             "Packages": str(item.get("aggregate_package_count", item.get("package_count", "0"))),
             "Storage bytes": str(
                 item.get("aggregate_storage_bytes", item.get("storage_bytes", "0"))
@@ -354,11 +353,11 @@ def repo_rename(
 
 @repo_app.command("set-default")
 def repo_set_default(
-    kind: str = typer.Argument(..., help="Repository kind: pypi | npm | maven"),
+    kind: str = typer.Argument(..., help="Package ecosystem: pypi | npm | maven", metavar="ECOSYSTEM"),
     repo: str = typer.Argument(..., help=_REPOSITORY_NAME_HELP),
     profile: str | None = typer.Option(None, "--profile", "-p"),
 ) -> None:
-    """Set the default package repository for a kind."""
+    """Set the default package repository for an ecosystem."""
     _require_kind(kind)
     profile_name = _profile_name(profile)
     cfg_mod.set_registry_default_repo(kind, repo, profile_name)  # type: ignore[arg-type]
@@ -377,7 +376,7 @@ def repo_defaults(
         for kind in _KINDS
     ]
     output.table(
-        ["Kind", "Default repository"],
+        ["Ecosystem", "Default repository"],
         rows,
         title=f"Package repository defaults ({profile_name})",
     )
@@ -386,11 +385,11 @@ def repo_defaults(
 @repo_app.command("set-upstream")
 def repo_set_upstream(
     repo: str = typer.Argument(..., help="Private package repository name."),
-    remote: str = typer.Argument(..., help="Remote repository ID."),
+    remote: str = typer.Argument(..., help="Remote cache & proxy ID."),
     min_age_days: float = typer.Option(3, "--min-age-days", min=0),
     profile: str | None = typer.Option(None, "--profile", "-p"),
 ) -> None:
-    """Attach the official remote upstream to a private repository."""
+    """Connect a remote cache & proxy to a private repository."""
     client = _client(profile)
     try:
         client.patch(
@@ -406,7 +405,7 @@ def repo_set_upstream(
         )
     except ApiError as exc:
         output.fatal(str(exc))
-    output.success(f"Set remote upstream '{remote}' on '{repo}'.")
+    output.success(f"Connected remote cache & proxy '{remote}' to '{repo}'.")
 
 
 @repo_app.command("clear-upstream")
@@ -423,19 +422,19 @@ def repo_clear_upstream(
         )
     except ApiError as exc:
         output.fatal(str(exc))
-    output.success(f"Cleared remote upstream from '{repo}'.")
+    output.success(f"Removed the upstream connection from '{repo}'.")
 
 
-# ── remote upstream repositories ──────────────────────────────────────────────
+# ── remote caches & proxies ───────────────────────────────────────────────────
 
 
 @remote_app.command("list")
 def remote_list(
     profile: str | None = typer.Option(None, "--profile", "-p"),
-    customer_id: str | None = typer.Option(None, "--customer-id"),
-    kind: str | None = typer.Option(None, "--kind", "-k"),
+    customer_id: str | None = typer.Option(None, "--owner-id"),
+    kind: str | None = typer.Option(None, "--ecosystem", "-e"),
 ) -> None:
-    """List customer-scoped remote upstream repositories."""
+    """List remote caches & proxies for the selected owner."""
     if kind:
         _require_kind(kind)
     client = _client(profile)
@@ -449,10 +448,10 @@ def remote_list(
     if kind:
         items = [item for item in items if item.get("registry_kind") == kind]
     if not items:
-        output.info("No remote repositories found.")
+        output.info("No remote caches & proxies found.")
         return
     output.table(
-        ["ID", "Kind", "Minimum age", "Maximum age"],
+        ["ID", "Ecosystem", "Minimum package age", "Maximum age"],
         [
             [
                 str(item.get("repo_pid") or item.get("repository_public_id") or item.get("id")),
@@ -467,11 +466,11 @@ def remote_list(
 
 @remote_app.command("create")
 def remote_create(
-    kind: str = typer.Option(..., "--kind", "-k"),
+    kind: str = typer.Option(..., "--ecosystem", "-e"),
     profile: str | None = typer.Option(None, "--profile", "-p"),
-    customer_id: str | None = typer.Option(None, "--customer-id"),
+    customer_id: str | None = typer.Option(None, "--owner-id"),
 ) -> None:
-    """Create the customer remote cache for a registry kind."""
+    """Create a remote cache & proxy for an ecosystem."""
     _require_kind(kind)
     client = _client(profile)
     try:
@@ -485,15 +484,15 @@ def remote_create(
     except ApiError as exc:
         output.fatal(str(exc))
     remote_id = item.get("repo_pid") or item.get("repository_public_id") or item.get("id")
-    output.success(f"Created {kind} remote repository '{remote_id}'.")
+    output.success(f"Created {kind} remote cache & proxy '{remote_id}'.")
 
 
 @remote_app.command("show")
 def remote_show(
-    remote: str = typer.Argument(..., help="Remote repository ID."),
+    remote: str = typer.Argument(..., help="Remote cache & proxy ID."),
     profile: str | None = typer.Option(None, "--profile", "-p"),
 ) -> None:
-    """Show a remote upstream repository."""
+    """Show a remote cache & proxy."""
     client = _client(profile)
     try:
         item = client.get(f"/webapp/repository/upstream-caches/{remote}").json()
@@ -502,46 +501,46 @@ def remote_show(
     output.kv(
         {
             "ID": item.get("repo_pid") or item.get("repository_public_id") or item.get("id"),
-            "Kind": item.get("registry_kind"),
-            "Customer": item.get("customer_id"),
-            "Minimum age days": str(item.get("min_age_days", "")),
+            "Ecosystem": item.get("registry_kind"),
+            "Owner ID": item.get("customer_id"),
+            "Minimum package age (days)": str(item.get("min_age_days", "")),
             "Maximum age days": str(item.get("max_age_days", "")),
         },
-        title=f"Remote repository {remote}",
+        title=f"Remote cache & proxy {remote}",
     )
 
 
 @remote_app.command("set-age")
 def remote_set_age(
-    remote: str = typer.Argument(..., help="Remote repository ID."),
+    remote: str = typer.Argument(..., help="Remote cache & proxy ID."),
     min_age_days: float = typer.Option(..., "--min-age-days", min=0),
     profile: str | None = typer.Option(None, "--profile", "-p"),
 ) -> None:
-    """Update remote source age policy."""
+    """Update the minimum package age for direct access."""
     client = _client(profile)
     payload = {"min_age_days": min_age_days}
     try:
         client.patch(f"/webapp/repository/upstream-caches/{remote}", json=payload)
     except ApiError as exc:
         output.fatal(str(exc))
-    output.success(f"Updated remote repository '{remote}' age policy.")
+    output.success(f"Updated minimum package age for remote cache & proxy '{remote}'.")
 
 
 @remote_app.command("delete")
 def remote_delete(
-    remote: str = typer.Argument(..., help="Remote repository ID."),
+    remote: str = typer.Argument(..., help="Remote cache & proxy ID."),
     profile: str | None = typer.Option(None, "--profile", "-p"),
-    customer_id: str | None = typer.Option(None, "--customer-id"),
-    kind: str | None = typer.Option(None, "--kind", "-k"),
+    customer_id: str | None = typer.Option(None, "--owner-id"),
+    kind: str | None = typer.Option(None, "--ecosystem", "-e"),
     yes: bool = typer.Option(False, "--yes", "-y"),
 ) -> None:
-    """Delete a remote upstream repository."""
+    """Delete a remote cache & proxy."""
     if (customer_id is None) != (kind is None):
-        output.fatal("Pass both --customer-id and --kind, or neither.")
+        output.fatal("Pass both --owner-id and --ecosystem, or neither.")
     if kind:
         _require_kind(kind)
     if not yes:
-        typer.confirm(f"Delete remote repository '{remote}'?", abort=True)
+        typer.confirm(f"Delete remote cache & proxy '{remote}'?", abort=True)
     params = None
     if customer_id and kind:
         params = {"customer_id": customer_id, "registry_kind": kind}
@@ -550,7 +549,7 @@ def remote_delete(
         client.delete(f"/webapp/repository/upstream-caches/{remote}", params=params)
     except ApiError as exc:
         output.fatal(str(exc))
-    output.success(f"Deleted remote repository '{remote}'.")
+    output.success(f"Deleted remote cache & proxy '{remote}'.")
 
 
 # ── package ──────────────────────────────────────────────────────────────────
@@ -559,7 +558,7 @@ def remote_delete(
 @package_app.command("list")
 def package_list(
     repo: str = typer.Option(..., "--repo", "-r", help=_REPOSITORY_NAME_HELP),
-    kind: str = typer.Option(..., "--kind", "-k", help="Repository lane kind."),
+    kind: str = typer.Option(..., "--ecosystem", "-e", help="Package ecosystem: pypi | npm | maven."),
     profile: str | None = typer.Option(None, "--profile", "-p"),
 ) -> None:
     """List packages hosted in a package repository."""
@@ -595,7 +594,7 @@ def package_list(
 def package_show(
     name: str = typer.Argument(..., help="Package name."),
     repo: str = typer.Option(..., "--repo", "-r", help=_REPOSITORY_NAME_HELP),
-    kind: str = typer.Option(..., "--kind", "-k", help="Repository lane kind."),
+    kind: str = typer.Option(..., "--ecosystem", "-e", help="Package ecosystem: pypi | npm | maven."),
     profile: str | None = typer.Option(None, "--profile", "-p"),
 ) -> None:
     """Show package metadata and versions."""
@@ -656,7 +655,7 @@ def package_show(
 def package_delete(
     name: str = typer.Argument(..., help="Package name."),
     repo: str = typer.Option(..., "--repo", "-r", help=_REPOSITORY_NAME_HELP),
-    kind: str = typer.Option(..., "--kind", "-k", help="Repository lane kind."),
+    kind: str = typer.Option(..., "--ecosystem", "-e", help="Package ecosystem: pypi | npm | maven."),
     profile: str | None = typer.Option(None, "--profile", "-p"),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation prompt."),
 ) -> None:
@@ -676,7 +675,7 @@ def package_delete_version(
     name: str = typer.Argument(..., help="Package name."),
     version: str = typer.Argument(..., help="Version to delete."),
     repo: str = typer.Option(..., "--repo", "-r", help=_REPOSITORY_NAME_HELP),
-    kind: str = typer.Option(..., "--kind", "-k", help="Repository lane kind."),
+    kind: str = typer.Option(..., "--ecosystem", "-e", help="Package ecosystem: pypi | npm | maven."),
     profile: str | None = typer.Option(None, "--profile", "-p"),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation prompt."),
 ) -> None:
@@ -698,7 +697,7 @@ def package_yank(
     name: str = typer.Argument(..., help="Package name."),
     version: str = typer.Argument(..., help="Version to yank."),
     repo: str = typer.Option(..., "--repo", "-r", help=_REPOSITORY_NAME_HELP),
-    kind: str = typer.Option(..., "--kind", "-k", help="Repository lane kind."),
+    kind: str = typer.Option(..., "--ecosystem", "-e", help="Package ecosystem: pypi | npm | maven."),
     reason: str | None = typer.Option(None, "--reason", "-m", help="Yank reason."),
     profile: str | None = typer.Option(None, "--profile", "-p"),
 ) -> None:
@@ -723,7 +722,7 @@ def pypi_index_url(
     repo: str | None = typer.Option(None, "--repo", "-r", help=_REPOSITORY_NAME_HELP),
     profile: str | None = typer.Option(None, "--profile", "-p"),
     customer_pid: str | None = typer.Option(
-        None, "--customer-pid", help="Customer public ID override."
+        None, "--owner", help="Repository owner override."
     ),
 ) -> None:
     """Print the private PyPI simple-index URL."""
@@ -741,7 +740,7 @@ def pypi_upload_url(
     repo: str | None = typer.Option(None, "--repo", "-r", help=_REPOSITORY_NAME_HELP),
     profile: str | None = typer.Option(None, "--profile", "-p"),
     customer_pid: str | None = typer.Option(
-        None, "--customer-pid", help="Customer public ID override."
+        None, "--owner", help="Repository owner override."
     ),
 ) -> None:
     """Print the private PyPI upload URL."""
@@ -760,7 +759,7 @@ def pypi_install(
     repo: str | None = typer.Option(None, "--repo", "-r", help=_REPOSITORY_NAME_HELP),
     profile: str | None = typer.Option(None, "--profile", "-p"),
     customer_pid: str | None = typer.Option(
-        None, "--customer-pid", help="Customer public ID override."
+        None, "--owner", help="Repository owner override."
     ),
 ) -> None:
     """Install Python packages using pip with Ravenstash credentials injected."""
@@ -784,7 +783,7 @@ def pypi_publish(
     repo: str | None = typer.Option(None, "--repo", "-r", help=_REPOSITORY_NAME_HELP),
     profile: str | None = typer.Option(None, "--profile", "-p"),
     customer_pid: str | None = typer.Option(
-        None, "--customer-pid", help="Customer public ID override."
+        None, "--owner", help="Repository owner override."
     ),
 ) -> None:
     """Upload wheel and sdist files to a PyPI package repository."""
@@ -818,7 +817,7 @@ def pypi_configure(
     repo: str | None = typer.Option(None, "--repo", "-r", help=_REPOSITORY_NAME_HELP),
     profile: str | None = typer.Option(None, "--profile", "-p"),
     customer_pid: str | None = typer.Option(
-        None, "--customer-pid", help="Customer public ID override."
+        None, "--owner", help="Repository owner override."
     ),
 ) -> None:
     """Print pip configuration for the private PyPI repository."""
@@ -837,7 +836,7 @@ def npm_registry_url(
     repo: str | None = typer.Option(None, "--repo", "-r", help=_REPOSITORY_NAME_HELP),
     profile: str | None = typer.Option(None, "--profile", "-p"),
     customer_pid: str | None = typer.Option(
-        None, "--customer-pid", help="Customer public ID override."
+        None, "--owner", help="Repository owner override."
     ),
 ) -> None:
     """Print the private npm registry URL."""
@@ -855,7 +854,7 @@ def npmrc(
     repo: str | None = typer.Option(None, "--repo", "-r", help=_REPOSITORY_NAME_HELP),
     profile: str | None = typer.Option(None, "--profile", "-p"),
     customer_pid: str | None = typer.Option(
-        None, "--customer-pid", help="Customer public ID override."
+        None, "--owner", help="Repository owner override."
     ),
 ) -> None:
     """Print an .npmrc snippet for the private npm repository."""
@@ -878,7 +877,7 @@ def npm_install(
     repo: str | None = typer.Option(None, "--repo", "-r", help=_REPOSITORY_NAME_HELP),
     profile: str | None = typer.Option(None, "--profile", "-p"),
     customer_pid: str | None = typer.Option(
-        None, "--customer-pid", help="Customer public ID override."
+        None, "--owner", help="Repository owner override."
     ),
 ) -> None:
     """Install npm packages with Ravenstash credentials injected."""
@@ -904,7 +903,7 @@ def npm_publish(
     repo: str | None = typer.Option(None, "--repo", "-r", help=_REPOSITORY_NAME_HELP),
     profile: str | None = typer.Option(None, "--profile", "-p"),
     customer_pid: str | None = typer.Option(
-        None, "--customer-pid", help="Customer public ID override."
+        None, "--owner", help="Repository owner override."
     ),
 ) -> None:
     """Publish an npm package to a Ravenstash npm repository."""
@@ -938,7 +937,7 @@ def npm_configure(
     repo: str | None = typer.Option(None, "--repo", "-r", help=_REPOSITORY_NAME_HELP),
     profile: str | None = typer.Option(None, "--profile", "-p"),
     customer_pid: str | None = typer.Option(
-        None, "--customer-pid", help="Customer public ID override."
+        None, "--owner", help="Repository owner override."
     ),
 ) -> None:
     """Print .npmrc configuration for the private npm repository."""
@@ -953,7 +952,7 @@ def maven_repo_url(
     repo: str | None = typer.Option(None, "--repo", "-r", help=_REPOSITORY_NAME_HELP),
     profile: str | None = typer.Option(None, "--profile", "-p"),
     customer_pid: str | None = typer.Option(
-        None, "--customer-pid", help="Customer public ID override."
+        None, "--owner", help="Repository owner override."
     ),
 ) -> None:
     """Print the private Maven repository URL."""
@@ -999,7 +998,7 @@ def maven_settings(
     repo: str | None = typer.Option(None, "--repo", "-r", help=_REPOSITORY_NAME_HELP),
     profile: str | None = typer.Option(None, "--profile", "-p"),
     customer_pid: str | None = typer.Option(
-        None, "--customer-pid", help="Customer public ID override."
+        None, "--owner", help="Repository owner override."
     ),
 ) -> None:
     """Print a Maven settings.xml snippet for the private Maven repository."""
@@ -1020,7 +1019,7 @@ def maven_install(
     repo: str | None = typer.Option(None, "--repo", "-r", help=_REPOSITORY_NAME_HELP),
     profile: str | None = typer.Option(None, "--profile", "-p"),
     customer_pid: str | None = typer.Option(
-        None, "--customer-pid", help="Customer public ID override."
+        None, "--owner", help="Repository owner override."
     ),
 ) -> None:
     """Fetch a Maven artifact into the local Maven cache."""
@@ -1059,7 +1058,7 @@ def maven_deploy(
     repo: str | None = typer.Option(None, "--repo", "-r", help=_REPOSITORY_NAME_HELP),
     profile: str | None = typer.Option(None, "--profile", "-p"),
     customer_pid: str | None = typer.Option(
-        None, "--customer-pid", help="Customer public ID override."
+        None, "--owner", help="Repository owner override."
     ),
 ) -> None:
     """Deploy an artifact file to a Ravenstash Maven repository."""
@@ -1099,7 +1098,7 @@ def maven_configure(
     repo: str | None = typer.Option(None, "--repo", "-r", help=_REPOSITORY_NAME_HELP),
     profile: str | None = typer.Option(None, "--profile", "-p"),
     customer_pid: str | None = typer.Option(
-        None, "--customer-pid", help="Customer public ID override."
+        None, "--owner", help="Repository owner override."
     ),
 ) -> None:
     """Print Maven settings.xml configuration for the private Maven repository."""

@@ -86,7 +86,7 @@ def _refresh_shims(kind: str, base: Path) -> None:
 
 @app.command("install")
 def install(
-    kind: str = typer.Argument(..., help="Runtime kind: python | node | java"),
+    runtime: str = typer.Argument(..., help="Runtime: python | node | java", metavar="RUNTIME"),
     version: str = typer.Argument(
         ...,
         help="Version to install. Examples: 3.12, 22, 21",
@@ -99,8 +99,8 @@ def install(
     ),
 ) -> None:
     """Install a runtime into the rvs-managed store under ~/.rvs/runtimes."""
-    if kind not in _KINDS:
-        output.fatal(f"Unknown runtime kind '{kind}'. Choose from: {', '.join(_KINDS)}")
+    if runtime not in _KINDS:
+        output.fatal(f"Unknown runtime '{runtime}'. Choose from: {', '.join(_KINDS)}")
 
     _require_supported_platform()
     if not is_debian():
@@ -110,31 +110,31 @@ def install(
         )
 
     if force:
-        existing = _finder(kind)(version)
+        existing = _finder(runtime)(version)
         if existing:
             output.info(f"Removing {existing} ...")
             shutil.rmtree(existing)
 
-    _installer(kind)(version)
+    _installer(runtime)(version)
 
 
 @app.command("uninstall")
 def uninstall(
-    kind: str = typer.Argument(..., help="Runtime kind: python | node | java"),
+    runtime: str = typer.Argument(..., help="Runtime: python | node | java", metavar="RUNTIME"),
     version: str = typer.Argument(..., help="Installed version or version prefix."),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation prompt."),
 ) -> None:
     """Remove a runtime from the rvs-managed store."""
-    if kind not in _KINDS:
-        output.fatal(f"Unknown runtime kind '{kind}'. Choose from: {', '.join(_KINDS)}")
+    if runtime not in _KINDS:
+        output.fatal(f"Unknown runtime '{runtime}'. Choose from: {', '.join(_KINDS)}")
 
-    existing = _finder(kind)(version)
+    existing = _finder(runtime)(version)
     if not existing:
-        output.fatal(f"No installed {kind} runtime matches '{version}'.")
+        output.fatal(f"No installed {runtime} runtime matches '{version}'.")
     if not yes:
-        typer.confirm(f"Remove {kind} runtime at {existing}?", abort=True)
+        typer.confirm(f"Remove {runtime} runtime at {existing}?", abort=True)
     shutil.rmtree(existing)
-    output.success(f"Removed {kind} runtime '{version}'.")
+    output.success(f"Removed {runtime} runtime '{version}'.")
 
 
 @app.command("list")
@@ -146,15 +146,15 @@ def list_runtimes() -> None:
             rows.append([kind, ver, str(path)])
 
     if not rows:
-        output.info("No runtimes installed. Run: rvs runtime install <kind> <version>")
+        output.info("No runtimes installed. Run: rvs runtime install <runtime> <version>")
         return
 
-    output.table(["Kind", "Version", "Path"], rows, title="rvs-managed runtimes")
+    output.table(["Runtime", "Version", "Path"], rows, title="rvs-managed runtimes")
 
 
 @app.command("which")
 def which(
-    kind: str = typer.Argument(..., help="Runtime kind: python | node | java"),
+    runtime: str = typer.Argument(..., help="Runtime: python | node | java", metavar="RUNTIME"),
     version: str = typer.Argument("", help="Version prefix (optional)."),
     executable: str | None = typer.Option(
         None,
@@ -163,20 +163,20 @@ def which(
     ),
 ) -> None:
     """Print the binary path of an installed runtime."""
-    if kind not in _KINDS:
-        output.fatal(f"Unknown runtime kind '{kind}'. Choose from: {', '.join(_KINDS)}")
+    if runtime not in _KINDS:
+        output.fatal(f"Unknown runtime '{runtime}'. Choose from: {', '.join(_KINDS)}")
 
     default_executable = {
         "python": "bin/python3",
         "node": "bin/node",
         "java": "bin/java",
-    }[kind]
-    requested_version = version or selected_version(kind) or ""
-    base = _finder(kind)(requested_version)
+    }[runtime]
+    requested_version = version or selected_version(runtime) or ""
+    base = _finder(runtime)(requested_version)
     if base is None:
         output.fatal(
-            f"No installed {kind} matches '{requested_version}'.\n"
-            f"  Install with: rvs runtime install {kind} {requested_version or '<version>'}"
+            f"No installed {runtime} matches '{requested_version}'.\n"
+            f"  Install with: rvs runtime install {runtime} {requested_version or '<version>'}"
         )
 
     binary = base / "bin" / executable if executable else base / default_executable
@@ -185,18 +185,18 @@ def which(
 
 @app.command("use")
 def use(
-    kind: str = typer.Argument(..., help="Runtime kind: python | node | java"),
+    runtime: str = typer.Argument(..., help="Runtime: python | node | java", metavar="RUNTIME"),
     version: str = typer.Argument(..., help="Installed version or version prefix."),
 ) -> None:
     """Pin a runtime version for the current project."""
-    if kind not in _KINDS:
-        output.fatal(f"Unknown runtime kind '{kind}'. Choose from: {', '.join(_KINDS)}")
+    if runtime not in _KINDS:
+        output.fatal(f"Unknown runtime '{runtime}'. Choose from: {', '.join(_KINDS)}")
 
-    base = _finder(kind)(version)
+    base = _finder(runtime)(version)
     if base is None:
         output.fatal(
-            f"No installed {kind} matches '{version}'.\n"
-            f"  Install with: rvs runtime install {kind} {version}"
+            f"No installed {runtime} matches '{version}'.\n"
+            f"  Install with: rvs runtime install {runtime} {version}"
         )
 
     version_name = base.name
@@ -204,10 +204,10 @@ def use(
         "python": ".python-version",
         "node": ".node-version",
         "java": ".java-version",
-    }[kind]
+    }[runtime]
     Path(marker).write_text(version_name + "\n", encoding="utf-8")
-    _refresh_shims(kind, base)
-    output.success(f"Pinned {kind} {version_name} in {marker}.")
+    _refresh_shims(runtime, base)
+    output.success(f"Pinned {runtime} {version_name} in {marker}.")
 
 
 @app.command("env")

@@ -307,7 +307,7 @@ def status(
             "Authenticated": "yes" if token else "no",
             "Credential source": source or "none",
             "Credential type": auth_mod.display_credential_type(p.credential_type) or "unknown",
-            "Customer": p.customer_id or "unknown",
+            "Owner ID": p.customer_id or "unknown",
             "Access expires at": p.expires_at or "unknown",
             "Refresh expires at": p.refresh_expires_at or "unknown",
         },
@@ -335,8 +335,8 @@ def whoami(
         {
             "Profile": profile_name,
             "User": identity.get("email") or identity.get("id") or "unknown",
-            "Customer": identity.get("customer_id") or "unknown",
-            "Customer public ID": identity.get("customer_public_id") or "unknown",
+            "Owner ID": identity.get("customer_id") or "unknown",
+            "Owner": identity.get("customer_public_id") or "unknown",
             "API URL": p.api_url,
             "Package API URL": p.pkg_api_url,
             "Package download URL": p.pkg_download_url,
@@ -365,7 +365,7 @@ def profile_list() -> None:
                 auth_mod.token_source(name) or "none",
             ]
         )
-    output.table(["Profile", "API URL", "Customer", "Credential source"], rows)
+    output.table(["Profile", "API URL", "Owner ID", "Credential source"], rows)
 
 
 @profile_app.command("switch")

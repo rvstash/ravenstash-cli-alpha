@@ -19,7 +19,7 @@ system-wide or through your preferred local toolchain manager.
 
 ```bash
 rvs auth login
-rvs pkg repo create my-java-packages --kind maven --default
+rvs pkg repo create my-java-packages --ecosystem maven --default
 rvs pkg maven repo-url
 rvs pkg maven settings
 rvs pkg maven deploy target/rvs-demo-java-0.1.0.jar \

@@ -111,38 +111,40 @@ Repository commands:
 
 ```bash
 rvs pkg repo list
-rvs pkg repo list --kind pypi
-rvs pkg repo create my-python-packages --kind pypi --default
+rvs pkg repo list --ecosystem pypi
+rvs pkg repo create my-python-packages --ecosystem pypi --default
 rvs pkg repo show <repo-name>
 rvs pkg repo rename <repo-name> <new-name>
 rvs pkg repo delete <repo-name>
 rvs pkg repo set-default pypi <repo-name>
 rvs pkg repo defaults
-rvs pkg repo set-upstream <repo-name> <remote-id> --min-age-days 3
+rvs pkg repo set-upstream <repo-name> <cache-id> --min-age-days 3
 rvs pkg repo clear-upstream <repo-name>
 
-rvs pkg remote list
-rvs pkg remote create --kind pypi
-rvs pkg remote show <remote-id>
-rvs pkg remote set-age <remote-id> --min-age-days 3
-rvs pkg remote delete <remote-id>
+rvs pkg remote-cache list
+rvs pkg remote-cache create --ecosystem pypi
+rvs pkg remote-cache show <cache-id>
+rvs pkg remote-cache set-age <cache-id> --min-age-days 3
+rvs pkg remote-cache delete <cache-id>
 ```
+
+A remote cache & proxy is a special read-only repository that gives an owner a private, authenticated endpoint for a curated public registry. Use it directly with package managers or `rvs`, or connect it to a private repository. Packages are cached on demand and can be delayed with minimum package age.
 
 Repository references use the package repository name, such as
 `my-python-packages`. Repository names use lowercase letters, numbers, and
 hyphens. Commands that build package-manager URLs also accept
-`<customer-public-id>/<repo-name>` when you need to override the profile's
-stored customer public ID.
+`<owner>/<repo-name>` when you need to override the profile's
+stored repository owner.
 
 Defaults are profile-scoped under
-`[profiles.<name>.registries.<kind>]` in `~/.rvs/config.toml`. Legacy top-level
+`[profiles.<name>.registries.<ecosystem>]` in `~/.rvs/config.toml`. Legacy top-level
 registry defaults remain readable as a migration fallback.
 
 Package metadata commands:
 
 ```bash
-rvs pkg package list --repo <repo-name>
-rvs pkg package show requests --repo <repo-name>
+rvs pkg package list --repo <repo-name> --ecosystem pypi
+rvs pkg package show requests --repo <repo-name> --ecosystem pypi
 rvs pkg package delete requests --repo <repo-name>
 rvs pkg package delete-version requests 2.32.0 --repo <repo-name>
 rvs pkg package yank requests 2.32.0 --repo <repo-name> --reason "bad build"

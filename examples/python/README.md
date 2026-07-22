@@ -20,7 +20,7 @@ Use normal Python packaging tools to build distributions into `dist/`.
 
 ```bash
 rvs auth login
-rvs pkg repo create my-python-packages --kind pypi --default
+rvs pkg repo create my-python-packages --ecosystem pypi --default
 rvs pkg pypi index-url
 rvs pkg pypi configure
 rvs pkg pypi publish dist/

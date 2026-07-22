@@ -122,7 +122,7 @@ def test_pkg_repo_list_filters_by_kind_and_uses_profile_customer(
     )
     _use_fake_client(monkeypatch, fake)
 
-    result = runner.invoke(pkg_cmd.app, ["repo", "list", "--kind", "pypi"])
+    result = runner.invoke(pkg_cmd.app, ["repo", "list", "--ecosystem", "pypi"])
 
     assert result.exit_code == 0
     assert fake.calls == [("GET", "/webapp/repository/", {"customer_id": "cus_123"})]
@@ -136,7 +136,7 @@ def test_pkg_repo_create_can_set_default_repo(monkeypatch, tmp_path: Path) -> No
     _use_fake_client(monkeypatch, fake)
 
     result = runner.invoke(
-        pkg_cmd.app, ["repo", "create", "new-node", "--kind", "npm", "--default"]
+        pkg_cmd.app, ["repo", "create", "new-node", "--ecosystem", "npm", "--default"]
     )
 
     assert result.exit_code == 0
@@ -152,16 +152,16 @@ def test_pkg_repo_create_can_set_default_repo(monkeypatch, tmp_path: Path) -> No
         )
     ]
     assert cfg_mod.load().registry_defaults("npm").default_repo == "new-node"
-    assert "with npm lanes" in result.output
+    assert "with npm ecosystems" in result.output
 
 
 def test_pkg_repo_create_rejects_unknown_kind(monkeypatch, tmp_path: Path) -> None:
     _isolate_config(monkeypatch, tmp_path)
 
-    result = runner.invoke(pkg_cmd.app, ["repo", "create", "bad", "--kind", "gem"])
+    result = runner.invoke(pkg_cmd.app, ["repo", "create", "bad", "--ecosystem", "gem"])
 
     assert result.exit_code == 1
-    assert "Unknown package repository kind 'gem'" in result.stderr
+    assert "Unknown package ecosystem 'gem'" in result.stderr
 
 
 def test_pkg_repo_show_renders_repository_details(monkeypatch, tmp_path: Path) -> None:
@@ -211,7 +211,7 @@ def test_pkg_remote_management_and_upstream_configuration(monkeypatch, tmp_path:
     )
     _use_fake_client(monkeypatch, fake)
 
-    create_result = runner.invoke(pkg_cmd.app, ["remote", "create", "--kind", "pypi"])
+    create_result = runner.invoke(pkg_cmd.app, ["remote-cache", "create", "--ecosystem", "pypi"])
     upstream_result = runner.invoke(
         pkg_cmd.app,
         ["repo", "set-upstream", "repo-pypi", "pypi", "--min-age-days", "5"],
@@ -270,10 +270,10 @@ def test_pkg_package_list_and_show_use_repository_package_paths(
     _use_fake_client(monkeypatch, fake)
 
     list_result = runner.invoke(
-        pkg_cmd.app, ["package", "list", "--repo", "repo-pypi", "--kind", "pypi"]
+        pkg_cmd.app, ["package", "list", "--repo", "repo-pypi", "--ecosystem", "pypi"]
     )
     show_result = runner.invoke(
-        pkg_cmd.app, ["package", "show", "demo", "--repo", "repo-pypi", "--kind", "pypi"]
+        pkg_cmd.app, ["package", "show", "demo", "--repo", "repo-pypi", "--ecosystem", "pypi"]
     )
 
     assert list_result.exit_code == 0
@@ -293,7 +293,7 @@ def test_pkg_package_mutations_call_expected_api_paths(monkeypatch, tmp_path: Pa
 
     delete_result = runner.invoke(
         pkg_cmd.app,
-        ["package", "delete", "demo", "--repo", "repo-pypi", "--kind", "pypi", "--yes"],
+        ["package", "delete", "demo", "--repo", "repo-pypi", "--ecosystem", "pypi", "--yes"],
     )
     delete_version_result = runner.invoke(
         pkg_cmd.app,
@@ -304,7 +304,7 @@ def test_pkg_package_mutations_call_expected_api_paths(monkeypatch, tmp_path: Pa
             "1.0.0",
             "--repo",
             "repo-pypi",
-            "--kind",
+            "--ecosystem",
             "pypi",
             "--yes",
         ],
@@ -318,7 +318,7 @@ def test_pkg_package_mutations_call_expected_api_paths(monkeypatch, tmp_path: Pa
             "1.0.1",
             "--repo",
             "repo-pypi",
-            "--kind",
+            "--ecosystem",
             "pypi",
             "--reason",
             "bad build",

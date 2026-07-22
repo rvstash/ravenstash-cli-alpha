@@ -213,7 +213,7 @@ def _split_repo_ref(repo_ref: str) -> tuple[str | None, str]:
     repository_name = repository_name.strip().strip("/")
     if not customer_pid or not repository_name or "/" in repository_name:
         output.fatal(
-            "Repository must be <repository-name> or <customer-public-id>/<repository-name>."
+            "Repository must be <repository-name> or <owner>/<repository-name>."
         )
     return customer_pid, repository_name
 
@@ -221,7 +221,7 @@ def _split_repo_ref(repo_ref: str) -> tuple[str | None, str]:
 def _customer_public_id(profile: str | None, explicit_customer_pid: str | None) -> str:
     if explicit_customer_pid:
         return explicit_customer_pid
-    env_customer_pid = os.environ.get("RVS_CUSTOMER_PID") or os.environ.get(
+    env_customer_pid = os.environ.get("RVS_OWNER") or os.environ.get("RVS_CUSTOMER_PID") or os.environ.get(
         "RVS_CUSTOMER_PUBLIC_ID"
     )
     if env_customer_pid:
@@ -229,9 +229,9 @@ def _customer_public_id(profile: str | None, explicit_customer_pid: str | None) 
     profile_cfg = _profile(profile)
     if not profile_cfg.customer_public_id:
         output.fatal(
-            "No customer public ID is stored for this profile. "
-            "Run `rvs auth login` again, pass --rvs-customer-pid, or pass "
-            "--rvs-repo <customer-public-id>/<repository-name>."
+            "No repository owner is stored for this profile. "
+            "Run `rvs auth login` again, pass --rvs-owner, or pass "
+            "--rvs-repo <owner>/<repository-name>."
         )
     return profile_cfg.customer_public_id
 

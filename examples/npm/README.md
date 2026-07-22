@@ -18,7 +18,7 @@ node src/index.js versions chalk --limit 5
 
 ```bash
 rvs auth login
-rvs pkg repo create my-node-packages --kind npm --default
+rvs pkg repo create my-node-packages --ecosystem npm --default
 rvs pkg npm registry-url
 rvs pkg npm npmrc
 rvs pkg npm publish .

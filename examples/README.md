@@ -34,14 +34,14 @@ rvs runtime use java 21
 ```bash
 rvs auth login
 rvs pkg repo list
-rvs pkg repo create my-python-packages --kind pypi --default
-rvs pkg repo create my-node-packages --kind npm --default
-rvs pkg repo create my-java-packages --kind maven --default
+rvs pkg repo create my-python-packages --ecosystem pypi --default
+rvs pkg repo create my-node-packages --ecosystem npm --default
+rvs pkg repo create my-java-packages --ecosystem maven --default
 ```
 
 `rvs pkg` expects package repository names, such as `my-python-packages`.
-After a repository is set as the default for its kind, the `--repo` flag can be
-omitted for that kind.
+After a repository is set as the default for its ecosystem, the `--repo` flag can be
+omitted for that ecosystem.
 
 ## Package Helpers
 

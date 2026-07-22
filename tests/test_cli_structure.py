@@ -83,7 +83,7 @@ default_repo = "private-pypi"
     payload = json.loads(result.output)
     assert payload["title"] == "Package repository defaults (default)"
     assert payload["items"][0] == {
-        "Kind": "pypi",
+        "Ecosystem": "pypi",
         "Default repository": "private-pypi",
     }
 

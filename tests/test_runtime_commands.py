@@ -114,7 +114,7 @@ def test_runtime_install_rejects_unknown_kind() -> None:
     result = runner.invoke(runtime_cmd.app, ["install", "ruby", "3.3"])
 
     assert result.exit_code == 1
-    assert "Unknown runtime kind 'ruby'" in result.stderr
+    assert "Unknown runtime 'ruby'" in result.stderr
 
 
 def test_runtime_env_uses_patched_env_file(monkeypatch, tmp_path: Path) -> None:
