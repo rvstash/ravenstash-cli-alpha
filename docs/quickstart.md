@@ -370,8 +370,8 @@ the customer public ID through environment/configuration:
 ```bash
 export RVS_PROFILE_CI_API_URL=https://api.ravenstash.com
 export RVS_PROFILE_CI_PKG_API_URL=https://app.ravenstash.com/api
-export RVS_PROFILE_CI_PKG_DOWNLOAD_URL=https://pkg.rvnsta.sh
-export RVS_PROFILE_CI_PKG_UPLOAD_URL=https://push.rvnsta.sh
+export RVS_PROFILE_CI_PKG_DOWNLOAD_URL=https://pkg.rvsta.sh
+export RVS_PROFILE_CI_PKG_UPLOAD_URL=https://push.rvsta.sh
 export RVS_CUSTOMER_PID=<customer-public-id>
 export RVS_TOKEN=<automation-token>
 

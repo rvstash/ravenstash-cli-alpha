@@ -46,8 +46,8 @@ def test_load_missing_config_uses_production_default_without_profile_env(
     assert cfg.active_profile("dev").api_url == "https://api.ravenstash.com"
     assert cfg.active_profile("staging").api_url == "https://api.ravenstash.com"
     assert cfg.active_profile().pkg_api_url == "https://app.ravenstash.com/api"
-    assert cfg.active_profile().pkg_download_url == "https://pkg.rvnsta.sh"
-    assert cfg.active_profile().pkg_upload_url == "https://push.rvnsta.sh"
+    assert cfg.active_profile().pkg_download_url == "https://pkg.rvsta.sh"
+    assert cfg.active_profile().pkg_upload_url == "https://push.rvsta.sh"
 
 
 def test_load_uses_env_api_url_for_configured_profile_without_api_url(
