@@ -12,7 +12,7 @@ require_cmd() {
   fi
 }
 
-rvn_version() {
+rvs_version() {
   python3 - <<'PY'
 from pathlib import Path
 import tomllib
@@ -22,7 +22,7 @@ with Path("pyproject.toml").open("rb") as f:
 PY
 }
 
-rvn_arch() {
+rvs_arch() {
   case "$(uname -m)" in
     x86_64|amd64) echo "amd64" ;;
     aarch64|arm64) echo "arm64" ;;

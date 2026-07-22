@@ -4,9 +4,9 @@ from typing import Any, ClassVar
 
 import httpx
 import pytest
-from rvn import auth as auth_mod
-from rvn import config as cfg_mod
-from rvn.client import ApiClient, ApiError
+from rvs import auth as auth_mod
+from rvs import config as cfg_mod
+from rvs.client import ApiClient, ApiError
 
 
 class _FakeHttpClient:
@@ -41,7 +41,7 @@ def test_api_client_refreshes_and_retries_once(monkeypatch) -> None:
         httpx.Response(200, json={"ok": True}),
     ]
 
-    monkeypatch.setattr("rvn.client.httpx.Client", _FakeHttpClient)
+    monkeypatch.setattr("rvs.client.httpx.Client", _FakeHttpClient)
     monkeypatch.setattr(
         auth_mod,
         "refresh_expiring_credential",
@@ -68,7 +68,7 @@ def test_api_client_without_profile_does_not_refresh(monkeypatch) -> None:
     ]
     refresh_calls: list[str] = []
 
-    monkeypatch.setattr("rvn.client.httpx.Client", _FakeHttpClient)
+    monkeypatch.setattr("rvs.client.httpx.Client", _FakeHttpClient)
     monkeypatch.setattr(
         auth_mod,
         "refresh_expiring_credential",
@@ -88,8 +88,8 @@ def test_api_client_without_profile_does_not_refresh(monkeypatch) -> None:
     assert _FakeHttpClient.requests[0][2]["Authorization"] == "Bearer env-access"
 
 
-def test_api_client_from_profile_honors_rvn_profile(monkeypatch, tmp_path) -> None:
-    config_dir = tmp_path / ".rvn"
+def test_api_client_from_profile_honors_rvs_profile(monkeypatch, tmp_path) -> None:
+    config_dir = tmp_path / ".rvs"
     config_dir.mkdir()
     config_file = config_dir / "config.toml"
     config_file.write_text(
@@ -107,7 +107,7 @@ pkg_api_url = "https://app.work.example/api"
     )
     monkeypatch.setattr(cfg_mod, "CONFIG_DIR", config_dir)
     monkeypatch.setattr(cfg_mod, "CONFIG_FILE", config_file)
-    monkeypatch.setenv("RVN_PROFILE", "work")
+    monkeypatch.setenv("RVS_PROFILE", "work")
     seen_profiles: list[str] = []
     monkeypatch.setattr(
         auth_mod,
@@ -122,6 +122,43 @@ pkg_api_url = "https://app.work.example/api"
     assert seen_profiles == ["work"]
 
 
+def test_api_client_from_profile_never_refreshes_rvs_token_on_401(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    config_dir = tmp_path / ".rvs"
+    config_dir.mkdir()
+    config_file = config_dir / "config.toml"
+    config_file.write_text(
+        """
+default_profile = "default"
+
+[profiles.default]
+pkg_api_url = "https://app.example/api"
+""".strip(),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(cfg_mod, "CONFIG_DIR", config_dir)
+    monkeypatch.setattr(cfg_mod, "CONFIG_FILE", config_file)
+    monkeypatch.setenv("RVS_TOKEN", "env-token")
+    _FakeHttpClient.requests = []
+    _FakeHttpClient.responses = [httpx.Response(401, json={"detail": "rejected"})]
+    refresh_calls: list[str] = []
+    monkeypatch.setattr("rvs.client.httpx.Client", _FakeHttpClient)
+    monkeypatch.setattr(
+        auth_mod,
+        "refresh_expiring_credential",
+        lambda profile: refresh_calls.append(profile) or "local-token",
+    )
+
+    with pytest.raises(ApiError):
+        ApiClient.from_profile().get("/items")
+
+    assert refresh_calls == []
+    assert len(_FakeHttpClient.requests) == 1
+    assert _FakeHttpClient.requests[0][2]["Authorization"] == "Bearer env-token"
+
+
 def test_api_client_request_methods_pass_paths_payloads_and_params(monkeypatch) -> None:
     _FakeHttpClient.requests = []
     _FakeHttpClient.responses = [
@@ -130,7 +167,7 @@ def test_api_client_request_methods_pass_paths_payloads_and_params(monkeypatch) 
         httpx.Response(200, json={"updated": True}),
         httpx.Response(204),
     ]
-    monkeypatch.setattr("rvn.client.httpx.Client", _FakeHttpClient)
+    monkeypatch.setattr("rvs.client.httpx.Client", _FakeHttpClient)
     client = ApiClient("https://api.example/", "token")
 
     client.get("/items", params={"customer_id": "cus_123"})
@@ -152,7 +189,7 @@ def test_api_client_request_methods_pass_paths_payloads_and_params(monkeypatch) 
 def test_api_client_error_uses_json_detail(monkeypatch) -> None:
     _FakeHttpClient.requests = []
     _FakeHttpClient.responses = [httpx.Response(403, json={"detail": "forbidden"})]
-    monkeypatch.setattr("rvn.client.httpx.Client", _FakeHttpClient)
+    monkeypatch.setattr("rvs.client.httpx.Client", _FakeHttpClient)
 
     with pytest.raises(ApiError) as exc_info:
         ApiClient("https://api.example", "token").get("/private")

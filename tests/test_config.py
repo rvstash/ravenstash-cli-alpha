@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from rvn import config as cfg_mod
+from rvs import config as cfg_mod
 
 
 if TYPE_CHECKING:
@@ -10,23 +10,23 @@ if TYPE_CHECKING:
 
 
 def _point_config(monkeypatch, tmp_path: Path) -> tuple[Path, Path]:
-    config_dir = tmp_path / ".rvn"
+    config_dir = tmp_path / ".rvs"
     config_file = config_dir / "config.toml"
     monkeypatch.setattr(cfg_mod, "CONFIG_DIR", config_dir)
     monkeypatch.setattr(cfg_mod, "CONFIG_FILE", config_file)
     monkeypatch.setattr(cfg_mod, "PROFILE_ENV_FILE", config_dir / "profiles.env")
     monkeypatch.chdir(tmp_path)
     for key in (
-        "RVN_API_URL",
-        "RVN_ENV_FILE",
-        "RVN_PROFILE_DEV_API_URL",
-        "RVN_PROFILE_STAGING_API_URL",
-        "RVN_PKG_API_URL",
-        "RVN_PKG_DOWNLOAD_URL",
-        "RVN_PKG_UPLOAD_URL",
-        "RVN_PROFILE_STAGING_PKG_API_URL",
-        "RVN_PROFILE_STAGING_PKG_DOWNLOAD_URL",
-        "RVN_PROFILE_STAGING_PKG_UPLOAD_URL",
+        "RVS_API_URL",
+        "RVS_ENV_FILE",
+        "RVS_PROFILE_DEV_API_URL",
+        "RVS_PROFILE_STAGING_API_URL",
+        "RVS_PKG_API_URL",
+        "RVS_PKG_DOWNLOAD_URL",
+        "RVS_PKG_UPLOAD_URL",
+        "RVS_PROFILE_STAGING_PKG_API_URL",
+        "RVS_PROFILE_STAGING_PKG_DOWNLOAD_URL",
+        "RVS_PROFILE_STAGING_PKG_UPLOAD_URL",
     ):
         monkeypatch.delenv(key, raising=False)
     return config_dir, config_file
@@ -55,7 +55,7 @@ def test_load_uses_env_api_url_for_configured_profile_without_api_url(
     tmp_path: Path,
 ) -> None:
     config_dir, config_file = _point_config(monkeypatch, tmp_path)
-    monkeypatch.setenv("RVN_PROFILE_STAGING_API_URL", "https://staging.example.test")
+    monkeypatch.setenv("RVS_PROFILE_STAGING_API_URL", "https://staging.example.test")
     config_dir.mkdir()
     config_file.write_text(
         """
@@ -80,10 +80,10 @@ def test_profile_api_url_can_be_declared_in_gitignored_local_env_file(
     tmp_path: Path,
 ) -> None:
     _point_config(monkeypatch, tmp_path)
-    (tmp_path / ".rvn.env").write_text(
+    (tmp_path / ".rvs.env").write_text(
         """
-RVN_PROFILE_STAGING_API_URL=https://staging.example.test
-RVN_PROFILE_DEV_API_URL='http://dev.example.test'
+RVS_PROFILE_STAGING_API_URL=https://staging.example.test
+RVS_PROFILE_DEV_API_URL='http://dev.example.test'
 """.strip(),
         encoding="utf-8",
     )
@@ -94,11 +94,11 @@ RVN_PROFILE_DEV_API_URL='http://dev.example.test'
 
 def test_package_service_urls_can_be_declared_per_profile(monkeypatch, tmp_path: Path) -> None:
     _point_config(monkeypatch, tmp_path)
-    (tmp_path / ".rvn.env").write_text(
+    (tmp_path / ".rvs.env").write_text(
         """
-RVN_PROFILE_STAGING_PKG_API_URL=https://app.staging.example.test/api
-RVN_PROFILE_STAGING_PKG_DOWNLOAD_URL=https://pkg-staging.example.test
-RVN_PROFILE_STAGING_PKG_UPLOAD_URL=https://push-staging.example.test
+RVS_PROFILE_STAGING_PKG_API_URL=https://app.staging.example.test/api
+RVS_PROFILE_STAGING_PKG_DOWNLOAD_URL=https://pkg-staging.example.test
+RVS_PROFILE_STAGING_PKG_UPLOAD_URL=https://push-staging.example.test
 """.strip(),
         encoding="utf-8",
     )
@@ -110,29 +110,29 @@ RVN_PROFILE_STAGING_PKG_UPLOAD_URL=https://push-staging.example.test
     assert profile.pkg_upload_url == "https://push-staging.example.test"
 
 
-def test_explicit_rvn_env_file_overrides_local_env_file(monkeypatch, tmp_path: Path) -> None:
+def test_explicit_rvs_env_file_overrides_local_env_file(monkeypatch, tmp_path: Path) -> None:
     _point_config(monkeypatch, tmp_path)
-    (tmp_path / ".rvn.env").write_text(
-        "RVN_PROFILE_STAGING_API_URL=https://local.example.test\n",
+    (tmp_path / ".rvs.env").write_text(
+        "RVS_PROFILE_STAGING_API_URL=https://local.example.test\n",
         encoding="utf-8",
     )
     explicit_env_file = tmp_path / "explicit.env"
     explicit_env_file.write_text(
-        "export RVN_PROFILE_STAGING_API_URL=https://explicit.example.test\n",
+        "export RVS_PROFILE_STAGING_API_URL=https://explicit.example.test\n",
         encoding="utf-8",
     )
-    monkeypatch.setenv("RVN_ENV_FILE", str(explicit_env_file))
+    monkeypatch.setenv("RVS_ENV_FILE", str(explicit_env_file))
 
     assert cfg_mod.profile_api_url("staging") == "https://explicit.example.test"
 
 
 def test_process_env_overrides_env_files(monkeypatch, tmp_path: Path) -> None:
     _point_config(monkeypatch, tmp_path)
-    (tmp_path / ".rvn.env").write_text(
-        "RVN_PROFILE_STAGING_API_URL=https://local.example.test\n",
+    (tmp_path / ".rvs.env").write_text(
+        "RVS_PROFILE_STAGING_API_URL=https://local.example.test\n",
         encoding="utf-8",
     )
-    monkeypatch.setenv("RVN_PROFILE_STAGING_API_URL", "https://process.example.test")
+    monkeypatch.setenv("RVS_PROFILE_STAGING_API_URL", "https://process.example.test")
 
     assert cfg_mod.profile_api_url("staging") == "https://process.example.test"
 
@@ -142,7 +142,7 @@ def test_save_and_load_round_trips_profiles_and_registry_defaults(
     tmp_path: Path,
 ) -> None:
     _point_config(monkeypatch, tmp_path)
-    cfg = cfg_mod.RvnConfig(
+    cfg = cfg_mod.RvsConfig(
         default_profile="work",
         profiles={
             "work": cfg_mod.ProfileConfig(
@@ -179,15 +179,15 @@ def test_save_and_load_round_trips_profiles_and_registry_defaults(
 
 
 def test_current_profile_name_prefers_environment(monkeypatch) -> None:
-    monkeypatch.setenv("RVN_PROFILE", "staging")
+    monkeypatch.setenv("RVS_PROFILE", "staging")
 
-    assert cfg_mod.current_profile_name(cfg_mod.RvnConfig(default_profile="work")) == "staging"
+    assert cfg_mod.current_profile_name(cfg_mod.RvsConfig(default_profile="work")) == "staging"
 
 
 def test_set_profile_metadata_preserves_existing_values(monkeypatch, tmp_path: Path) -> None:
     _point_config(monkeypatch, tmp_path)
     cfg_mod.save(
-        cfg_mod.RvnConfig(
+        cfg_mod.RvsConfig(
             profiles={
                 "default": cfg_mod.ProfileConfig(
                     api_url="https://api.example",
@@ -211,7 +211,7 @@ def test_set_profile_metadata_preserves_existing_values(monkeypatch, tmp_path: P
 def test_delete_profile_updates_default_profile(monkeypatch, tmp_path: Path) -> None:
     _point_config(monkeypatch, tmp_path)
     cfg_mod.save(
-        cfg_mod.RvnConfig(
+        cfg_mod.RvsConfig(
             default_profile="work",
             profiles={
                 "default": cfg_mod.ProfileConfig(),
@@ -226,3 +226,29 @@ def test_delete_profile_updates_default_profile(monkeypatch, tmp_path: Path) -> 
     assert "work" not in loaded.profiles
     assert loaded.default_profile == "default"
     assert cfg_mod.delete_profile("missing") is False
+
+
+def test_registry_defaults_are_profile_scoped_with_legacy_fallback(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    _point_config(monkeypatch, tmp_path)
+    cfg_mod.save(
+        cfg_mod.RvsConfig(
+            default_profile="work",
+            profiles={
+                "work": cfg_mod.ProfileConfig(),
+                "staging": cfg_mod.ProfileConfig(),
+            },
+            registries={"pypi": cfg_mod.RegistryDefaults(default_repo="legacy")},
+        )
+    )
+
+    cfg_mod.set_registry_default_repo("pypi", "work-repo", "work")
+    cfg_mod.set_registry_default_repo("pypi", "staging-repo", "staging")
+    loaded = cfg_mod.load()
+
+    assert loaded.registry_defaults("pypi", "work").default_repo == "work-repo"
+    assert loaded.registry_defaults("pypi", "staging").default_repo == "staging-repo"
+    assert loaded.registry_defaults("npm", "work").default_repo is None
+    assert loaded.registries["pypi"].default_repo == "legacy"

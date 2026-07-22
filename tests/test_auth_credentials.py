@@ -3,8 +3,8 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import pytest
-from rvn import config as cfg_mod
-from rvn.auth import credentials as auth_mod
+from rvs import config as cfg_mod
+from rvs.auth import credentials as auth_mod
 
 
 if TYPE_CHECKING:
@@ -12,7 +12,7 @@ if TYPE_CHECKING:
 
 
 def _isolate_config(monkeypatch, tmp_path: Path, content: str) -> None:
-    config_dir = tmp_path / ".rvn"
+    config_dir = tmp_path / ".rvs"
     config_dir.mkdir()
     config_file = config_dir / "config.toml"
     config_file.write_text(content.strip(), encoding="utf-8")

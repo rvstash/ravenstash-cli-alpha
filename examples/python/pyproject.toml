@@ -3,9 +3,9 @@ requires = ["setuptools>=75"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "rvn-demo-python"
+name = "rvs-demo-python"
 version = "0.1.0"
-description = "Demo Python project for exercising rvn CLI commands"
+description = "Demo Python project for exercising rvs CLI commands"
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
@@ -36,7 +36,7 @@ dev = [
 ]
 
 [project.scripts]
-rvn-demo = "rvn_demo.main:app"
+rvs-demo = "rvs_demo.main:app"
 
 [tool.setuptools.packages.find]
 where = ["src"]

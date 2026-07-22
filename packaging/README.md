@@ -1,6 +1,6 @@
-# rvn Linux packaging
+# rvs Linux packaging
 
-This directory contains the Linux packaging path for the Ravenstash `rvn` CLI.
+This directory contains the Linux packaging path for the Ravenstash `rvs` CLI.
 The user-facing install path is a self-contained Debian package, not a global
 Python install.
 
@@ -21,7 +21,7 @@ packages. `pyinstaller` and `nfpm` are installed by the release workflow.
 
 ## Local build
 
-From `packages/rvn/`:
+From `packages/rvs/`:
 
 ```bash
 packaging/scripts/build-pyinstaller.sh
@@ -33,10 +33,10 @@ packaging/scripts/build-release-artifacts.sh
 The generated artifacts are written under `dist/`:
 
 ```text
-dist/pyinstaller/rvn/              # frozen onedir bundle
-dist/packages/rvn_<version>_<arch>.deb
-dist/release/rvn-v<version>-linux-<arch>.tar.gz
-dist/release/rvn-v<version>-checksums.txt
+dist/pyinstaller/rvs/              # frozen onedir bundle
+dist/packages/rvs_<version>_<arch>.deb
+dist/release/rvs-v<version>-linux-<arch>.tar.gz
+dist/release/rvs-v<version>-checksums.txt
 ```
 
 ## APT repository
@@ -44,8 +44,8 @@ dist/release/rvn-v<version>-checksums.txt
 After building the `.deb`, generate static APT repository metadata:
 
 ```bash
-RVN_APT_GPG_KEY_ID=<key-id> packaging/scripts/update-apt-repo.sh
+RVS_APT_GPG_KEY_ID=<key-id> packaging/scripts/update-apt-repo.sh
 ```
 
-Unsigned metadata can be generated without `RVN_APT_GPG_KEY_ID` for local
+Unsigned metadata can be generated without `RVS_APT_GPG_KEY_ID` for local
 inspection, but published repositories must be signed.

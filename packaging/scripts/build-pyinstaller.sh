@@ -19,7 +19,7 @@ mkdir -p build/pyinstaller dist/pyinstaller
   --noconfirm \
   --distpath dist/pyinstaller \
   --workpath build/pyinstaller \
-  packaging/pyinstaller/rvn.spec
+  packaging/pyinstaller/rvs.spec
 
-dist/pyinstaller/rvn/rvn --version
-dist/pyinstaller/rvn/rvn --help >/dev/null
+dist/pyinstaller/rvs/rvs --version
+dist/pyinstaller/rvs/rvs --help >/dev/null

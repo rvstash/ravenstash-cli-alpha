@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import json
 from typing import TYPE_CHECKING
 
 import pytest
-from rvn import config as cfg_mod
-from rvn.cli import app
+from rvs import config as cfg_mod
+from rvs import output
+from rvs.cli import app
 from typer.testing import CliRunner
 
 
@@ -18,7 +20,7 @@ STAGING_DOWNLOAD_URL = "https://pkg-staging.example.test"
 
 
 def _isolate_config(monkeypatch, tmp_path: Path, content: str = "") -> None:
-    config_dir = tmp_path / ".rvn"
+    config_dir = tmp_path / ".rvs"
     config_dir.mkdir()
     config_file = config_dir / "config.toml"
     config_file.write_text(content or 'default_profile = "default"\n', encoding="utf-8")
@@ -59,12 +61,36 @@ def test_version_option_prints_version() -> None:
     result = runner.invoke(app, ["--version"])
 
     assert result.exit_code == 0
-    assert result.output.startswith("rvn ")
+    assert result.output.startswith("rvs ")
+
+
+def test_json_option_emits_structured_rvs_output(monkeypatch, tmp_path: Path) -> None:
+    _isolate_config(
+        monkeypatch,
+        tmp_path,
+        """
+default_profile = "default"
+
+[profiles.default.registries.pypi]
+default_repo = "private-pypi"
+""".strip(),
+    )
+
+    result = runner.invoke(app, ["--json", "pkg", "repo", "defaults"])
+    output.set_json(False)
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["title"] == "Package repository defaults (default)"
+    assert payload["items"][0] == {
+        "Kind": "pypi",
+        "Default repository": "private-pypi",
+    }
 
 
 def test_packages_alias_dispatches_to_pkg_commands(monkeypatch, tmp_path: Path) -> None:
-    monkeypatch.setenv("RVN_PROFILE_STAGING_API_URL", STAGING_API_URL)
-    monkeypatch.setenv("RVN_PROFILE_STAGING_PKG_DOWNLOAD_URL", STAGING_DOWNLOAD_URL)
+    monkeypatch.setenv("RVS_PROFILE_STAGING_API_URL", STAGING_API_URL)
+    monkeypatch.setenv("RVS_PROFILE_STAGING_PKG_DOWNLOAD_URL", STAGING_DOWNLOAD_URL)
     _isolate_config(
         monkeypatch,
         tmp_path,
@@ -105,7 +131,7 @@ def test_repo_placeholder_commands_are_registered(args: list[str]) -> None:
     repo_result = runner.invoke(app, args)
 
     assert repo_result.exit_code == 1
-    assert "rvn repo is not implemented yet" in repo_result.stderr
+    assert "rvs repo is not implemented yet" in repo_result.stderr
 
 
 @pytest.mark.parametrize(
@@ -123,4 +149,4 @@ def test_ci_placeholder_commands_are_registered(args: list[str]) -> None:
     ci_result = runner.invoke(app, args)
 
     assert ci_result.exit_code == 1
-    assert "rvn ci is not implemented yet" in ci_result.stderr
+    assert "rvs ci is not implemented yet" in ci_result.stderr

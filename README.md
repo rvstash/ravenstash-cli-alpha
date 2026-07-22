@@ -1,113 +1,131 @@
-# rvn - Ravenstash Developer CLI
+# rvs - Ravenstash Developer CLI
 
-`rvn` is the alpha command line for Ravenstash developer products. Package
+`rvs` is the alpha command line for Ravenstash developer products. Package
 repositories are one product area; source repositories, CI, and other tooling
 will sit beside it rather than inside it.
 
 ## Command Surface
 
 ```text
-rvn auth       Authenticate and manage local profiles
-rvn runtime    Install and select local Python, Node, and Java runtimes
-rvn pkg        Manage Ravenstash package repositories and package workflows
-rvn packages   Alias for rvn pkg
-rvn pip        Run pip with ephemeral Ravenstash auth injection
-rvn uv         Run uv with ephemeral Ravenstash auth injection
-rvn twine      Run twine with ephemeral Ravenstash auth injection
-rvn npm        Run npm with ephemeral Ravenstash auth injection
-rvn mvn        Run Maven with ephemeral Ravenstash auth injection
-rvn repo       Placeholder for future Ravenstash source repositories
-rvn ci         Placeholder for future Ravenstash CI
+rvs auth       Authenticate and manage local profiles
+rvs runtime    Install and select local Python, Node, and Java runtimes
+rvs pkg        Manage Ravenstash package repositories and package workflows
+rvs packages   Alias for rvs pkg
+rvs pip        Run pip with ephemeral Ravenstash auth injection
+rvs uv         Run uv with ephemeral Ravenstash auth injection
+rvs twine      Run twine with ephemeral Ravenstash auth injection
+rvs npm        Run npm with ephemeral Ravenstash auth injection
+rvs mvn        Run Maven with ephemeral Ravenstash auth injection
+rvs repo       Placeholder for future Ravenstash source repositories
+rvs ci         Placeholder for future Ravenstash CI
 ```
 
-`rvn repo` and `rvn ci` are intentionally registered now, but their commands only
+`rvs repo` and `rvs ci` are intentionally registered now, but their commands only
 print "not implemented" until those products exist.
+
+Pass global `--json` before a command to emit rvs-owned output as newline-delimited
+JSON, for example `rvs --json pkg repo list`. Output from native passthrough tools
+remains in the native tool's format.
 
 ## Auth
 
 Interactive login uses Ravenstash device authorization:
 
 ```bash
-rvn auth login
-rvn auth login --profile staging
-rvn auth login --duration 8h
+rvs auth login
+rvs auth login --profile staging
+rvs auth login --duration 8h
 ```
 
 The CLI stores the short-lived CLI access token and profile-scoped refresh token
-in the OS keyring. Profile metadata lives in `~/.rvn/config.toml`. Automation
-should pass credentials with `RVN_TOKEN`; that env var takes precedence over
+in the OS keyring. Profile metadata lives in `~/.rvs/config.toml`. Automation
+should pass credentials with `RVS_TOKEN`; that env var takes precedence over
 local profiles and is never refreshed.
 
 Device login discovers and stores the package service endpoints returned by
 DevAPI. For non-production automation that does not perform device login,
 declare all service endpoints through the shell environment or a gitignored
-local `.rvn.env` file:
+local `.rvs.env` file:
 
 ```bash
-# packages/rvn/.rvn.env, ~/.rvn/profiles.env, or a file pointed to by RVN_ENV_FILE
-RVN_PROFILE_STAGING_API_URL=https://<staging-devapi-host>
-RVN_PROFILE_STAGING_PKG_API_URL=https://<staging-app-host>/api
-RVN_PROFILE_STAGING_PKG_DOWNLOAD_URL=https://<staging-download-host>
-RVN_PROFILE_STAGING_PKG_UPLOAD_URL=https://<staging-upload-host>
-RVN_PROFILE_DEV_API_URL=http://<local-devapi-host>
-RVN_PROFILE_DEV_PKG_API_URL=http://<local-package-api-host>
-RVN_PROFILE_DEV_PKG_DOWNLOAD_URL=http://<local-download-host>
-RVN_PROFILE_DEV_PKG_UPLOAD_URL=http://<local-upload-host>
+# packages/rvs/.rvs.env, ~/.rvs/profiles.env, or a file pointed to by RVS_ENV_FILE
+RVS_PROFILE_STAGING_API_URL=https://<staging-devapi-host>
+RVS_PROFILE_STAGING_PKG_API_URL=https://<staging-app-host>/api
+RVS_PROFILE_STAGING_PKG_DOWNLOAD_URL=https://<staging-download-host>
+RVS_PROFILE_STAGING_PKG_UPLOAD_URL=https://<staging-upload-host>
+RVS_PROFILE_DEV_API_URL=http://<local-devapi-host>
+RVS_PROFILE_DEV_PKG_API_URL=http://<local-package-api-host>
+RVS_PROFILE_DEV_PKG_DOWNLOAD_URL=http://<local-download-host>
+RVS_PROFILE_DEV_PKG_UPLOAD_URL=http://<local-upload-host>
 ```
 
-Process environment variables override env-file values. `RVN_ENV_FILE` can point
-to a specific env file when you do not want to place `.rvn.env` in the current
+Process environment variables override env-file values. `RVS_ENV_FILE` can point
+to a specific env file when you do not want to place `.rvs.env` in the current
 workspace.
 
 Profile commands:
 
 ```bash
-rvn auth status
-rvn auth whoami
-rvn auth logout
-rvn auth logout --all
-rvn auth profile list
-rvn auth profile switch work
-rvn auth profile delete work
-rvn auth profile delete --all
-rvn auth profile rename old-name new-name
+rvs auth status
+rvs auth whoami
+rvs auth logout
+rvs auth logout --all
+rvs auth profile list
+rvs auth profile switch work
+rvs auth profile delete work
+rvs auth profile delete --all
+rvs auth profile rename old-name new-name
 ```
+
+`rvs auth whoami` verifies the current identity against Ravenstash; it does not
+infer identity solely from local profile metadata.
 
 ## Runtime
 
 Runtime management is limited to local Python, Node, and Java installs:
 
 ```bash
-rvn runtime install python 3.12
-rvn runtime install node 22
-rvn runtime install java 21
-rvn runtime list
-rvn runtime which python 3.12
-rvn runtime use python 3.12
-rvn runtime env
-rvn runtime setup-shell
-rvn runtime doctor
+rvs runtime install python 3.12
+rvs runtime install node 22
+rvs runtime install java 21
+rvs runtime list
+rvs runtime which python 3.12
+rvs runtime use python 3.12
+rvs runtime env
+rvs runtime setup-shell
+rvs runtime doctor
 ```
 
-`rvn runtime use` writes a local version file such as `.python-version`,
-`.node-version`, or `.java-version`.
+`rvs runtime use` writes a local version file such as `.python-version`,
+`.node-version`, or `.java-version`. The managed shell shims resolve that marker
+at invocation time, so changing projects changes the runtime without reinstalling
+the shim. Version-prefix selection chooses the newest matching semantic version.
 
 ## Package Repositories
 
-Package repository commands are under `rvn pkg`; `rvn packages` is the same
+Package repository commands are under `rvs pkg`; `rvs packages` is the same
 command group. This area connects the local machine and native package managers
 to a remote Ravenstash package repository.
 
 Repository commands:
 
 ```bash
-rvn pkg repo list
-rvn pkg repo list --kind pypi
-rvn pkg repo create my-python-packages --kind pypi --default
-rvn pkg repo show <repo-name>
-rvn pkg repo delete <repo-name>
-rvn pkg repo set-default pypi <repo-name>
-rvn pkg repo defaults
+rvs pkg repo list
+rvs pkg repo list --kind pypi
+rvs pkg repo create my-python-packages --kind pypi --default
+rvs pkg repo show <repo-name>
+rvs pkg repo rename <repo-name> <new-name>
+rvs pkg repo delete <repo-name>
+rvs pkg repo set-default pypi <repo-name>
+rvs pkg repo defaults
+rvs pkg repo set-upstream <repo-name> <remote-id> --min-age-days 3
+rvs pkg repo clear-upstream <repo-name>
+
+rvs pkg remote list
+rvs pkg remote create --kind pypi
+rvs pkg remote show <remote-id>
+rvs pkg remote set-age <remote-id> --min-age-days 3
+rvs pkg remote delete <remote-id>
 ```
 
 Repository references use the package repository name, such as
@@ -116,44 +134,55 @@ hyphens. Commands that build package-manager URLs also accept
 `<customer-public-id>/<repo-name>` when you need to override the profile's
 stored customer public ID.
 
+Defaults are profile-scoped under
+`[profiles.<name>.registries.<kind>]` in `~/.rvs/config.toml`. Legacy top-level
+registry defaults remain readable as a migration fallback.
+
 Package metadata commands:
 
 ```bash
-rvn pkg package list --repo <repo-name>
-rvn pkg package show requests --repo <repo-name>
-rvn pkg package delete requests --repo <repo-name>
-rvn pkg package delete-version requests 2.32.0 --repo <repo-name>
-rvn pkg package yank requests 2.32.0 --repo <repo-name> --reason "bad build"
+rvs pkg package list --repo <repo-name>
+rvs pkg package show requests --repo <repo-name>
+rvs pkg package delete requests --repo <repo-name>
+rvs pkg package delete-version requests 2.32.0 --repo <repo-name>
+rvs pkg package yank requests 2.32.0 --repo <repo-name> --reason "bad build"
 ```
 
 PyPI helpers:
 
 ```bash
-rvn pkg pypi index-url --repo <repo-name>
-rvn pkg pypi upload-url --repo <repo-name>
-rvn pkg pypi install requests --repo <repo-name>
-rvn pkg pypi publish dist/ --repo <repo-name>
-rvn pkg pypi configure --repo <repo-name>
+rvs pkg pypi index-url --repo <repo-name>
+rvs pkg pypi upload-url --repo <repo-name>
+rvs pkg pypi install requests --repo <repo-name>
+rvs pkg pypi publish dist/ --repo <repo-name>
+rvs pkg pypi configure --repo <repo-name>
 ```
+
+The install helper sets Ravenstash as pip's primary `PIP_INDEX_URL`; it does not
+add a second index that could silently win dependency resolution.
 
 npm helpers:
 
 ```bash
-rvn pkg npm registry-url --repo <repo-name>
-rvn pkg npm npmrc --repo <repo-name>
-rvn pkg npm install lodash --repo <repo-name>
-rvn pkg npm publish . --repo <repo-name>
-rvn pkg npm configure --repo <repo-name>
+rvs pkg npm registry-url --repo <repo-name>
+rvs pkg npm npmrc --repo <repo-name>
+rvs pkg npm install lodash --repo <repo-name>
+rvs pkg npm publish . --repo <repo-name>
+rvs pkg npm configure --repo <repo-name>
 ```
+
+Direct npm publishing uses native `npm pack` before sending the wire payload, so
+npm packlists, lifecycle hooks, bundled dependencies, and generated files are
+honored. An `npm` executable is required.
 
 Maven helpers:
 
 ```bash
-rvn pkg maven repo-url --repo <repo-name>
-rvn pkg maven settings --repo <repo-name>
-rvn pkg maven install com.example:lib:1.0.0 --repo <repo-name>
-rvn pkg maven deploy ./target/lib.jar --group com.example --artifact lib --version 1.0.0 --repo <repo-name>
-rvn pkg maven configure --repo <repo-name>
+rvs pkg maven repo-url --repo <repo-name>
+rvs pkg maven settings --repo <repo-name>
+rvs pkg maven install com.example:lib:1.0.0 --repo <repo-name>
+rvs pkg maven deploy ./target/lib.jar --group com.example --artifact lib --version 1.0.0 --repo <repo-name>
+rvs pkg maven configure --repo <repo-name>
 ```
 
 Package-token management is intentionally not part of the alpha CLI surface.
@@ -161,21 +190,21 @@ Package-token management is intentionally not part of the alpha CLI surface.
 Native package-manager wrappers:
 
 ```bash
-rvn pip install acme-utils
-rvn uv sync
-rvn twine upload dist/*
-rvn npm install @acme/widgets
-rvn mvn test
+rvs pip install acme-utils
+rvs uv sync
+rvs twine upload dist/*
+rvs npm install @acme/widgets
+rvs mvn test
 
-rvn npm --rvn-repo my-node-packages install @acme/widgets
-rvn pip --rvn-repo my-python-packages install acme-utils
-rvn uv --rvn-repo my-python-packages --rvn-native-config isolate sync
+rvs npm --rvs-repo my-node-packages install @acme/widgets
+rvs pip --rvs-repo my-python-packages install acme-utils
+rvs uv --rvs-repo my-python-packages --rvs-native-config isolate sync
 ```
 
-`rvn pkg ...` is Ravenstash-native: it selects the Ravenstash repository through
-`--repo` or `~/.rvn/config.toml`, and the underlying implementation may or may
-not use a native package manager. `rvn pip`, `rvn uv`, `rvn twine`, `rvn npm`,
-and `rvn mvn` are explicit native-tool passthroughs: they respect native config
+`rvs pkg ...` is Ravenstash-native: it selects the Ravenstash repository through
+`--repo` or `~/.rvs/config.toml`, and the underlying implementation may or may
+not use a native package manager. `rvs pip`, `rvs uv`, `rvs twine`, `rvs npm`,
+and `rvs mvn` are explicit native-tool passthroughs: they respect native config
 by default, detect Ravenstash registry URLs, and inject only short-lived
 credentials for the child process. They do not write tokens to `.npmrc`,
 `pip.conf`, `.pypirc`, `settings.xml`, `pyproject.toml`, or `uv.toml`.
@@ -183,29 +212,29 @@ credentials for the child process. They do not write tokens to `.npmrc`,
 ## Installation on Ubuntu / WSL
 
 The supported end-user install path is a system package, not `pip install`.
-The Linux package contains a self-contained `rvn` executable and installs it at
-`/usr/bin/rvn`; user config, credentials, and managed runtimes stay in `~/.rvn`.
+The Linux package contains a self-contained `rvs` executable and installs it at
+`/usr/bin/rvs`; user config, credentials, and managed runtimes stay in `~/.rvs`.
 
 APT repository install:
 
 ```bash
 sudo install -d -m 0755 /etc/apt/keyrings
-curl -fsSL https://downloads.ravenstash.com/rvn/apt/ravenstash-rvn.gpg \
-  | sudo tee /etc/apt/keyrings/ravenstash-rvn.gpg >/dev/null
-echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/ravenstash-rvn.gpg] https://downloads.ravenstash.com/rvn/apt stable main" \
-  | sudo tee /etc/apt/sources.list.d/ravenstash-rvn.list
+curl -fsSL https://downloads.ravenstash.com/rvs/apt/ravenstash-rvs.gpg \
+  | sudo tee /etc/apt/keyrings/ravenstash-rvs.gpg >/dev/null
+echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/ravenstash-rvs.gpg] https://downloads.ravenstash.com/rvs/apt stable main" \
+  | sudo tee /etc/apt/sources.list.d/ravenstash-rvs.list
 sudo apt update
-sudo apt install rvn
+sudo apt install rvs
 ```
 
 Direct `.deb` artifacts are also published for early testing:
 
 ```bash
-sudo apt install ./rvn_<version>_amd64.deb
+sudo apt install ./rvs_<version>_amd64.deb
 ```
 
-WSL/headless note: `RVN_TOKEN` works without extra setup. Persistent
-`rvn auth login` stores access and refresh tokens in the OS keyring, so WSL
+WSL/headless note: `RVS_TOKEN` works without extra setup. Persistent
+`rvs auth login` stores access and refresh tokens in the OS keyring, so WSL
 needs a usable keyring service before local login credentials can be saved.
 
 ## Release packaging
@@ -220,7 +249,7 @@ That builds the PyInstaller bundle, Debian package, tarball, and checksum file.
 APT repository metadata is generated separately:
 
 ```bash
-RVN_APT_GPG_KEY_ID=<key-id> packaging/scripts/update-apt-repo.sh
+RVS_APT_GPG_KEY_ID=<key-id> packaging/scripts/update-apt-repo.sh
 ```
 
 ## Local Development
@@ -228,23 +257,23 @@ RVN_APT_GPG_KEY_ID=<key-id> packaging/scripts/update-apt-repo.sh
 Use the package venv directly from this folder:
 
 ```bash
-cd packages/rvn
+cd packages/rvs
 source .venv/bin/activate
 python -m pip install -e .
-rvn --help
+rvs --help
 ```
 
-Run checks from `packages/rvn/`:
+Run checks from `packages/rvs/`:
 
 ```bash
 .venv/bin/pytest
-.venv/bin/ruff check rvn tests
+.venv/bin/ruff check rvs tests
 ```
 
 ## Layout
 
 ```text
-rvn/
+rvs/
 ├── cli.py
 ├── auth/
 ├── runtime/

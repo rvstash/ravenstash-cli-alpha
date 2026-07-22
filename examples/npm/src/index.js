@@ -1,5 +1,5 @@
 /**
- * rvn-demo-npm — fetches npm package metadata from the public registry.
+ * rvs-demo-npm — fetches npm package metadata from the public registry.
  *
  * Usage:
  *   node src/index.js info lodash

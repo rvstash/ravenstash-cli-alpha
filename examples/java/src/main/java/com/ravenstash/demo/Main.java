@@ -16,8 +16,8 @@ import java.time.Duration;
  * Fetches package metadata from Maven Central REST API.
  *
  * <pre>
- *   java -jar target/rvn-demo-java-0.1.0.jar info com.fasterxml.jackson.core:jackson-databind
- *   java -jar target/rvn-demo-java-0.1.0.jar versions org.slf4j:slf4j-api
+ *   java -jar target/rvs-demo-java-0.1.0.jar info com.fasterxml.jackson.core:jackson-databind
+ *   java -jar target/rvs-demo-java-0.1.0.jar versions org.slf4j:slf4j-api
  * </pre>
  */
 public class Main {
@@ -29,8 +29,8 @@ public class Main {
     public static void main(String[] args) throws Exception {
         if (args.length < 2) {
             System.out.println("Usage:");
-            System.out.println("  rvn-demo-java info    <groupId:artifactId>");
-            System.out.println("  rvn-demo-java versions <groupId:artifactId> [--limit N]");
+            System.out.println("  rvs-demo-java info    <groupId:artifactId>");
+            System.out.println("  rvs-demo-java versions <groupId:artifactId> [--limit N]");
             return;
         }
 
@@ -99,7 +99,7 @@ public class Main {
                 .build();
         HttpRequest req = HttpRequest.newBuilder()
                 .uri(URI.create(url))
-                .header("User-Agent", "rvn-demo-java/0.1.0")
+                .header("User-Agent", "rvs-demo-java/0.1.0")
                 .GET()
                 .build();
         HttpResponse<String> resp = client.send(req, HttpResponse.BodyHandlers.ofString());

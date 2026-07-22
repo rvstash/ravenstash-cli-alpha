@@ -2,11 +2,11 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from rvn.runtime import _install
-from rvn.runtime import commands as runtime_cmd
-from rvn.runtime import java as java_rt
-from rvn.runtime import node as node_rt
-from rvn.runtime import python as python_rt
+from rvs.runtime import _install
+from rvs.runtime import commands as runtime_cmd
+from rvs.runtime import java as java_rt
+from rvs.runtime import node as node_rt
+from rvs.runtime import python as python_rt
 from typer.testing import CliRunner
 
 
@@ -75,6 +75,25 @@ def test_runtime_use_writes_marker_for_resolved_full_version(
     assert "Pinned java 21.0.3+9" in result.output
 
 
+def test_runtime_use_replaces_legacy_static_shim(monkeypatch, tmp_path: Path) -> None:
+    runtimes_dir = tmp_path / "runtimes"
+    node_bin = runtimes_dir / "node" / "24.14.1" / "bin"
+    node_bin.mkdir(parents=True)
+    (node_bin / "node").write_text("", encoding="utf-8")
+    shims_dir = tmp_path / "shims"
+    shims_dir.mkdir()
+    (shims_dir / "node").write_text('#!/bin/sh\nexec /old/node "$@"\n', encoding="utf-8")
+    _point_runtime_dirs(monkeypatch, runtimes_dir)
+    monkeypatch.setattr(_install, "SHIMS_DIR", shims_dir)
+    monkeypatch.chdir(tmp_path)
+
+    result = runner.invoke(runtime_cmd.app, ["use", "node", "24"])
+
+    assert result.exit_code == 0
+    shim = (shims_dir / "node").read_text(encoding="utf-8")
+    assert 'rvs runtime which "node" --executable "node"' in shim
+
+
 def test_runtime_uninstall_removes_matching_runtime_with_yes(
     monkeypatch,
     tmp_path: Path,
@@ -102,7 +121,7 @@ def test_runtime_env_uses_patched_env_file(monkeypatch, tmp_path: Path) -> None:
     env_file = tmp_path / "env"
 
     def write_fake_env() -> None:
-        env_file.write_text("export RVN_HOME=/tmp/rvn\n", encoding="utf-8")
+        env_file.write_text("export RVS_HOME=/tmp/rvs\n", encoding="utf-8")
 
     monkeypatch.setattr(runtime_cmd, "ENV_FILE", env_file)
     monkeypatch.setattr(runtime_cmd, "write_env_file", write_fake_env)
@@ -110,7 +129,7 @@ def test_runtime_env_uses_patched_env_file(monkeypatch, tmp_path: Path) -> None:
     result = runner.invoke(runtime_cmd.app, ["env"])
 
     assert result.exit_code == 0
-    assert result.output == "export RVN_HOME=/tmp/rvn\n"
+    assert result.output == "export RVS_HOME=/tmp/rvs\n"
 
 
 def test_runtime_doctor_reports_managed_and_system_paths(monkeypatch, tmp_path: Path) -> None:
@@ -134,11 +153,11 @@ def test_runtime_doctor_reports_managed_and_system_paths(monkeypatch, tmp_path: 
     assert captured["rows"][2] == ["java", "none", "/usr/bin/java"]
 
 
-def test_write_shim_and_env_file_use_configured_rvn_dirs(monkeypatch, tmp_path: Path) -> None:
-    rvn_dir = tmp_path / ".rvn"
-    shims_dir = rvn_dir / "shims"
-    env_file = rvn_dir / "env"
-    monkeypatch.setattr(_install, "RVN_DIR", rvn_dir)
+def test_write_shim_and_env_file_use_configured_rvs_dirs(monkeypatch, tmp_path: Path) -> None:
+    rvs_dir = tmp_path / ".rvs"
+    shims_dir = rvs_dir / "shims"
+    env_file = rvs_dir / "env"
+    monkeypatch.setattr(_install, "RVS_DIR", rvs_dir)
     monkeypatch.setattr(_install, "SHIMS_DIR", shims_dir)
     monkeypatch.setattr(_install, "ENV_FILE", env_file)
 
@@ -148,4 +167,19 @@ def test_write_shim_and_env_file_use_configured_rvn_dirs(monkeypatch, tmp_path: 
     shim = shims_dir / "python3"
     assert shim.read_text(encoding="utf-8") == f'#!/bin/sh\nexec "{tmp_path / "python3"}" "$@"\n'
     assert shim.stat().st_mode & 0o755 == 0o755
-    assert 'export RVN_HOME="$HOME/.rvn"' in env_file.read_text(encoding="utf-8")
+    assert 'export RVS_HOME="$HOME/.rvs"' in env_file.read_text(encoding="utf-8")
+
+
+def test_runtime_shim_resolves_project_pin_dynamically(monkeypatch, tmp_path: Path) -> None:
+    shims_dir = tmp_path / "shims"
+    monkeypatch.setattr(_install, "SHIMS_DIR", shims_dir)
+
+    _install.write_shim(
+        "npm",
+        tmp_path / "node" / "bin" / "npm",
+        runtime_kind="node",
+    )
+
+    shim = (shims_dir / "npm").read_text(encoding="utf-8")
+    assert 'rvs runtime which "node" --executable "npm"' in shim
+    assert 'exec "$target" "$@"' in shim

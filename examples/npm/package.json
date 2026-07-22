@@ -1,7 +1,7 @@
 {
-  "name": "rvn-demo-npm",
+  "name": "rvs-demo-npm",
   "version": "0.1.0",
-  "description": "Demo npm project for exercising rvn CLI commands",
+  "description": "Demo npm project for exercising rvs CLI commands",
   "main": "src/index.js",
   "type": "module",
   "engines": {

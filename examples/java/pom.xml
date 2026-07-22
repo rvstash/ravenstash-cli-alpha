@@ -6,12 +6,12 @@
     <modelVersion>4.0.0</modelVersion>
 
     <groupId>com.ravenstash.demo</groupId>
-    <artifactId>rvn-demo-java</artifactId>
+    <artifactId>rvs-demo-java</artifactId>
     <version>0.1.0</version>
     <packaging>jar</packaging>
 
-    <name>rvn-demo-java</name>
-    <description>Demo Maven project for exercising rvn CLI commands</description>
+    <name>rvs-demo-java</name>
+    <description>Demo Maven project for exercising rvs CLI commands</description>
     <url>https://github.com/teamRavenstash</url>
 
     <properties>

@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from rvn import config as cfg_mod
-from rvn.auth import commands as auth_cmd
+from rvs import config as cfg_mod
+from rvs.auth import commands as auth_cmd
 from typer.testing import CliRunner
 
 
@@ -23,14 +23,14 @@ def _write_config(config_dir: Path, content: str) -> Path:
 
 
 def _isolate_config(monkeypatch, tmp_path: Path, content: str) -> None:
-    config_dir = tmp_path / ".rvn"
+    config_dir = tmp_path / ".rvs"
     config_file = _write_config(config_dir, content)
     monkeypatch.setattr(cfg_mod, "CONFIG_DIR", config_dir)
     monkeypatch.setattr(cfg_mod, "CONFIG_FILE", config_file)
     monkeypatch.setattr(cfg_mod, "PROFILE_ENV_FILE", config_dir / "profiles.env")
     monkeypatch.chdir(tmp_path)
-    monkeypatch.delenv("RVN_ENV_FILE", raising=False)
-    monkeypatch.delenv("RVN_PROFILE_STAGING_API_URL", raising=False)
+    monkeypatch.delenv("RVS_ENV_FILE", raising=False)
+    monkeypatch.delenv("RVS_PROFILE_STAGING_API_URL", raising=False)
 
 
 def test_auth_status_reports_env_token_for_builtin_staging_profile(
@@ -38,8 +38,8 @@ def test_auth_status_reports_env_token_for_builtin_staging_profile(
     tmp_path: Path,
 ) -> None:
     _isolate_config(monkeypatch, tmp_path, 'default_profile = "default"')
-    monkeypatch.setenv("RVN_TOKEN", "env-token")
-    monkeypatch.setenv("RVN_PROFILE_STAGING_API_URL", STAGING_API_URL)
+    monkeypatch.setenv("RVS_TOKEN", "env-token")
+    monkeypatch.setenv("RVS_PROFILE_STAGING_API_URL", STAGING_API_URL)
 
     result = runner.invoke(auth_cmd.app, ["status", "--profile", "staging"])
 
@@ -48,13 +48,13 @@ def test_auth_status_reports_env_token_for_builtin_staging_profile(
     assert STAGING_API_URL in result.output
     assert "Authenticated" in result.output
     assert "yes" in result.output
-    assert "RVN_TOKEN" in result.output
+    assert "RVS_TOKEN" in result.output
 
 
 def test_auth_status_exits_one_when_profile_has_no_token(monkeypatch, tmp_path: Path) -> None:
     _isolate_config(monkeypatch, tmp_path, 'default_profile = "default"')
-    monkeypatch.delenv("RVN_TOKEN", raising=False)
-    monkeypatch.setenv("RVN_PROFILE_STAGING_API_URL", STAGING_API_URL)
+    monkeypatch.delenv("RVS_TOKEN", raising=False)
+    monkeypatch.setenv("RVS_PROFILE_STAGING_API_URL", STAGING_API_URL)
     monkeypatch.setattr(auth_cmd.auth_mod, "get_token", lambda profile: None)
     monkeypatch.setattr(auth_cmd.auth_mod, "token_source", lambda profile: None)
 
@@ -66,7 +66,7 @@ def test_auth_status_exits_one_when_profile_has_no_token(monkeypatch, tmp_path: 
     assert STAGING_API_URL in result.output
 
 
-def test_auth_whoami_reads_local_profile_metadata(monkeypatch, tmp_path: Path) -> None:
+def test_auth_whoami_verifies_identity_with_package_api(monkeypatch, tmp_path: Path) -> None:
     _isolate_config(
         monkeypatch,
         tmp_path,
@@ -75,15 +75,41 @@ default_profile = "work"
 
 [profiles.work]
 api_url = "https://api.work.example"
+pkg_api_url = "https://app.work.example/api"
 customer_id = "cus_work"
 """,
+    )
+    calls: list[str] = []
+
+    class _Response:
+        @staticmethod
+        def json() -> dict[str, str]:
+            return {
+                "email": "developer@example.test",
+                "customer_id": "cus_verified",
+                "customer_public_id": "custpid1",
+            }
+
+    class _Client:
+        @staticmethod
+        def get(path: str) -> _Response:
+            calls.append(path)
+            return _Response()
+
+    monkeypatch.setattr(
+        auth_cmd.ApiClient,
+        "from_profile",
+        staticmethod(lambda profile=None: _Client()),
     )
 
     result = runner.invoke(auth_cmd.app, ["whoami"])
 
     assert result.exit_code == 0
+    assert calls == ["/webapp/account/users/me"]
     assert "work" in result.output
-    assert "cus_work" in result.output
+    assert "developer@example.test" in result.output
+    assert "cus_verified" in result.output
+    assert "custpid1" in result.output
     assert "https://api.work.example" in result.output
 
 

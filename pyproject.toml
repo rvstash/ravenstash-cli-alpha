@@ -3,7 +3,7 @@ requires = ["setuptools>=75"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "rvn"
+name = "rvs"
 version = "0.1.1"
 description = "Ravenstash developer CLI"
 readme = "README.md"
@@ -17,7 +17,7 @@ dependencies = [
 ]
 
 [project.scripts]
-rvn = "rvn.cli:app"
+rvs = "rvs.cli:app"
 
 [dependency-groups]
 dev = [
@@ -29,7 +29,7 @@ dev = [
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["rvn*"]
+include = ["rvs*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -40,7 +40,7 @@ addopts = "--tb=short -q"
 [tool.ruff]
 target-version = "py312"
 line-length = 100
-src = ["rvn"]
+src = ["rvs"]
 include = ["**/*.py"]
 exclude = [".venv", "__pycache__", "*.egg-info"]
 show-fixes = true
@@ -84,6 +84,6 @@ lines-after-imports = 2
 pythonVersion = "3.12"
 venvPath = "."
 venv = ".venv"
-include = ["rvn"]
+include = ["rvs"]
 exclude = [".venv", "*.egg-info"]
 typeCheckingMode = "basic"

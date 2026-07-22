@@ -11,9 +11,9 @@ __pycache__/
 .mypy_cache/
 .pyright/
 
-# Local rvn environment overrides
-.rvn.env
-rvn.env
+# Local rvs environment overrides
+.rvs.env
+rvs.env
 *.local.env
 
 # Test and coverage output

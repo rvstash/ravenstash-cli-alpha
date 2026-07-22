@@ -40,7 +40,7 @@
 #       - name: Verify
 #         run: |
 #           .venv/bin/pytest
-#           .venv/bin/ruff check rvn tests
+#           .venv/bin/ruff check rvs tests
 #           .venv/bin/pyright
 
 #       - name: Build release artifacts
@@ -49,7 +49,7 @@
 #       - name: Upload workflow artifacts
 #         uses: actions/upload-artifact@v4
 #         with:
-#           name: rvn-linux-amd64
+#           name: rvs-linux-amd64
 #           path: dist/release/*
 
 #       - name: Publish GitHub release
@@ -60,5 +60,5 @@
 #           gh release create "$GITHUB_REF_NAME" dist/release/* \
 #             --verify-tag \
 #             --title "$GITHUB_REF_NAME" \
-#             --notes "rvn $GITHUB_REF_NAME" \
+#             --notes "rvs $GITHUB_REF_NAME" \
 #           || gh release upload "$GITHUB_REF_NAME" dist/release/* --clobber

@@ -2,11 +2,11 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from rvn.runtime import java as java_rt
-from rvn.runtime import node as node_rt
-from rvn.runtime import python as python_rt
-from rvn.runtime import tools
-from rvn.runtime.selection import selected_version
+from rvs.runtime import java as java_rt
+from rvs.runtime import node as node_rt
+from rvs.runtime import python as python_rt
+from rvs.runtime import tools
+from rvs.runtime.selection import selected_version
 
 
 if TYPE_CHECKING:
@@ -20,6 +20,25 @@ def test_python_find_without_version_returns_latest_install(monkeypatch, tmp_pat
     (runtimes_dir / "python" / "3.12.3").mkdir()
 
     assert python_rt.find("") == runtimes_dir / "python" / "3.12.3"
+
+
+def test_runtime_versions_use_semantic_order_and_latest_prefix_match(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    runtimes_dir = tmp_path / "runtimes"
+    base = runtimes_dir / "python"
+    for version in ("3.9.20", "3.12.9", "3.12.10"):
+        (base / version).mkdir(parents=True)
+    monkeypatch.setattr(python_rt, "RUNTIMES_DIR", runtimes_dir)
+
+    assert [version for version, _path in python_rt.list_installed()] == [
+        "3.9.20",
+        "3.12.9",
+        "3.12.10",
+    ]
+    assert python_rt.find("") == base / "3.12.10"
+    assert python_rt.find("3.12") == base / "3.12.10"
 
 
 def test_node_find_without_version_returns_latest_install(monkeypatch, tmp_path: Path) -> None:

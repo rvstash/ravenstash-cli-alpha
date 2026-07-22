@@ -3,9 +3,9 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 import pytest
-from rvn import config as cfg_mod
-from rvn.pkg import commands as pkg_cmd
-from rvn.pkg.registries.base import PublishResult
+from rvs import config as cfg_mod
+from rvs.pkg import commands as pkg_cmd
+from rvs.pkg.registries.base import PublishResult
 from typer.testing import CliRunner
 
 
@@ -42,13 +42,17 @@ class _FakeApiClient:
         self.calls.append(("POST", path, json if json is not None else kwargs))
         return _JsonResponse(self.responses.pop(0) if self.responses else {})
 
-    def delete(self, path: str) -> _JsonResponse:
-        self.calls.append(("DELETE", path, None))
+    def patch(self, path: str, json: Any = None) -> _JsonResponse:
+        self.calls.append(("PATCH", path, json))
+        return _JsonResponse(self.responses.pop(0) if self.responses else {})
+
+    def delete(self, path: str, params: dict[str, Any] | None = None) -> _JsonResponse:
+        self.calls.append(("DELETE", path, params))
         return _JsonResponse(self.responses.pop(0) if self.responses else {})
 
 
 def _isolate_config(monkeypatch, tmp_path: Path, content: str | None = None) -> None:
-    config_dir = tmp_path / ".rvn"
+    config_dir = tmp_path / ".rvs"
     config_dir.mkdir()
     config_file = config_dir / "config.toml"
     config_file.write_text(
@@ -80,11 +84,11 @@ default_repo = "repo-maven"
     monkeypatch.setattr(cfg_mod, "CONFIG_FILE", config_file)
     monkeypatch.setattr(cfg_mod, "PROFILE_ENV_FILE", config_dir / "profiles.env")
     monkeypatch.chdir(tmp_path)
-    monkeypatch.delenv("RVN_ENV_FILE", raising=False)
-    monkeypatch.setenv("RVN_PROFILE_STAGING_API_URL", STAGING_API_URL)
-    monkeypatch.setenv("RVN_PROFILE_STAGING_PKG_API_URL", "https://app-staging.example.test/api")
-    monkeypatch.setenv("RVN_PROFILE_STAGING_PKG_DOWNLOAD_URL", STAGING_DOWNLOAD_URL)
-    monkeypatch.setenv("RVN_PROFILE_STAGING_PKG_UPLOAD_URL", STAGING_UPLOAD_URL)
+    monkeypatch.delenv("RVS_ENV_FILE", raising=False)
+    monkeypatch.setenv("RVS_PROFILE_STAGING_API_URL", STAGING_API_URL)
+    monkeypatch.setenv("RVS_PROFILE_STAGING_PKG_API_URL", "https://app-staging.example.test/api")
+    monkeypatch.setenv("RVS_PROFILE_STAGING_PKG_DOWNLOAD_URL", STAGING_DOWNLOAD_URL)
+    monkeypatch.setenv("RVS_PROFILE_STAGING_PKG_UPLOAD_URL", STAGING_UPLOAD_URL)
 
 
 def _use_fake_client(monkeypatch, fake: _FakeApiClient) -> None:
@@ -102,16 +106,16 @@ def test_pkg_repo_list_filters_by_kind_and_uses_profile_customer(
                 {
                     "id": "repo-pypi",
                     "repo_pid": "repo-pypi",
-                    "registry_kind": "pypi",
-                    "package_count": 2,
-                    "storage_bytes": 128,
+                    "registry_kinds": ["pypi", "npm"],
+                    "aggregate_package_count": 2,
+                    "aggregate_storage_bytes": 128,
                 },
                 {
                     "id": "repo-npm",
                     "repo_pid": "repo-npm",
-                    "registry_kind": "npm",
-                    "package_count": 3,
-                    "storage_bytes": 256,
+                    "registry_kinds": ["npm"],
+                    "aggregate_package_count": 3,
+                    "aggregate_storage_bytes": 256,
                 },
             ]
         ]
@@ -143,12 +147,12 @@ def test_pkg_repo_create_can_set_default_repo(monkeypatch, tmp_path: Path) -> No
             {
                 "customer_id": "cus_123",
                 "repo_pid": "new-node",
-                "registry_kind": "npm",
+                "registry_kinds": ["npm"],
             },
         )
     ]
     assert cfg_mod.load().registry_defaults("npm").default_repo == "new-node"
-    assert "Created npm package repository" in result.output
+    assert "with npm lanes" in result.output
 
 
 def test_pkg_repo_create_rejects_unknown_kind(monkeypatch, tmp_path: Path) -> None:
@@ -167,9 +171,10 @@ def test_pkg_repo_show_renders_repository_details(monkeypatch, tmp_path: Path) -
             {
                 "id": "repo-pypi",
                 "repo_pid": "repo-pypi",
-                "registry_kind": "pypi",
-                "package_count": 7,
-                "storage_bytes": 4096,
+                "registry_kinds": ["pypi", "npm"],
+                "lanes": [{}, {}],
+                "aggregate_package_count": 7,
+                "aggregate_storage_bytes": 4096,
                 "created_at": "2026-06-20T00:00:00Z",
             }
         ]
@@ -182,6 +187,50 @@ def test_pkg_repo_show_renders_repository_details(monkeypatch, tmp_path: Path) -
     assert fake.calls == [("GET", "/webapp/repository/repo-pypi", None)]
     assert "repo-pypi" in result.output
     assert "4096" in result.output
+
+
+def test_pkg_repo_rename_updates_matching_profile_default(monkeypatch, tmp_path: Path) -> None:
+    _isolate_config(monkeypatch, tmp_path)
+    fake = _FakeApiClient([{"repo_pid": "renamed", "registry_kinds": ["pypi", "npm"]}])
+    _use_fake_client(monkeypatch, fake)
+
+    result = runner.invoke(pkg_cmd.app, ["repo", "rename", "repo-pypi", "renamed"])
+
+    assert result.exit_code == 0
+    assert fake.calls == [("PATCH", "/webapp/repository/repo-pypi", {"repo_pid": "renamed"})]
+    assert cfg_mod.load().registry_defaults("pypi", "default").default_repo == "renamed"
+
+
+def test_pkg_remote_management_and_upstream_configuration(monkeypatch, tmp_path: Path) -> None:
+    _isolate_config(monkeypatch, tmp_path)
+    fake = _FakeApiClient(
+        [
+            {"id": "remote_1", "repo_pid": "pypi", "registry_kind": "pypi"},
+            {},
+        ]
+    )
+    _use_fake_client(monkeypatch, fake)
+
+    create_result = runner.invoke(pkg_cmd.app, ["remote", "create", "--kind", "pypi"])
+    upstream_result = runner.invoke(
+        pkg_cmd.app,
+        ["repo", "set-upstream", "repo-pypi", "pypi", "--min-age-days", "5"],
+    )
+
+    assert create_result.exit_code == 0
+    assert upstream_result.exit_code == 0
+    assert fake.calls == [
+        (
+            "POST",
+            "/webapp/repository/upstream-caches",
+            {"customer_id": "cus_123", "registry_kind": "pypi"},
+        ),
+        (
+            "PATCH",
+            "/webapp/repository/repo-pypi",
+            {"upstream_configs": [{"upstream_repo_id": "pypi", "min_age_days": 5.0}]},
+        ),
+    ]
 
 
 def test_pkg_package_list_and_show_use_repository_package_paths(
@@ -220,14 +269,18 @@ def test_pkg_package_list_and_show_use_repository_package_paths(
     )
     _use_fake_client(monkeypatch, fake)
 
-    list_result = runner.invoke(pkg_cmd.app, ["package", "list", "--repo", "repo-pypi"])
-    show_result = runner.invoke(pkg_cmd.app, ["package", "show", "demo", "--repo", "repo-pypi"])
+    list_result = runner.invoke(
+        pkg_cmd.app, ["package", "list", "--repo", "repo-pypi", "--kind", "pypi"]
+    )
+    show_result = runner.invoke(
+        pkg_cmd.app, ["package", "show", "demo", "--repo", "repo-pypi", "--kind", "pypi"]
+    )
 
     assert list_result.exit_code == 0
     assert show_result.exit_code == 0
     assert fake.calls == [
-        ("GET", "/webapp/repository/repo-pypi/packages", None),
-        ("GET", "/webapp/repository/repo-pypi/packages/demo", None),
+        ("GET", "/webapp/repository/repo-pypi/lanes/pypi/packages", None),
+        ("GET", "/webapp/repository/repo-pypi/lanes/pypi/packages/demo", None),
     ]
     assert "demo" in list_result.output
     assert "1.2.3" in show_result.output
@@ -240,26 +293,47 @@ def test_pkg_package_mutations_call_expected_api_paths(monkeypatch, tmp_path: Pa
 
     delete_result = runner.invoke(
         pkg_cmd.app,
-        ["package", "delete", "demo", "--repo", "repo-pypi", "--yes"],
+        ["package", "delete", "demo", "--repo", "repo-pypi", "--kind", "pypi", "--yes"],
     )
     delete_version_result = runner.invoke(
         pkg_cmd.app,
-        ["package", "delete-version", "demo", "1.0.0", "--repo", "repo-pypi", "--yes"],
+        [
+            "package",
+            "delete-version",
+            "demo",
+            "1.0.0",
+            "--repo",
+            "repo-pypi",
+            "--kind",
+            "pypi",
+            "--yes",
+        ],
     )
     yank_result = runner.invoke(
         pkg_cmd.app,
-        ["package", "yank", "demo", "1.0.1", "--repo", "repo-pypi", "--reason", "bad build"],
+        [
+            "package",
+            "yank",
+            "demo",
+            "1.0.1",
+            "--repo",
+            "repo-pypi",
+            "--kind",
+            "pypi",
+            "--reason",
+            "bad build",
+        ],
     )
 
     assert delete_result.exit_code == 0
     assert delete_version_result.exit_code == 0
     assert yank_result.exit_code == 0
     assert fake.calls == [
-        ("DELETE", "/webapp/repository/repo-pypi/packages/demo", None),
-        ("DELETE", "/webapp/repository/repo-pypi/packages/demo/versions/1.0.0", None),
+        ("DELETE", "/webapp/repository/repo-pypi/lanes/pypi/packages/demo", None),
+        ("DELETE", "/webapp/repository/repo-pypi/lanes/pypi/packages/demo/versions/1.0.0", None),
         (
             "POST",
-            "/webapp/repository/repo-pypi/packages/demo/versions/1.0.1/yank",
+            "/webapp/repository/repo-pypi/lanes/pypi/packages/demo/versions/1.0.1/yank",
             {"reason": "bad build"},
         ),
     ]
@@ -311,22 +385,23 @@ def test_pkg_configure_snippets_are_printed_for_native_toolchains(
     maven_result = runner.invoke(pkg_cmd.app, ["maven", "configure", "--profile", "staging"])
 
     assert pypi_result.exit_code == 0
-    assert "extra-index-url" in pypi_result.output
+    assert "index-url" in pypi_result.output
+    assert "extra-index-url" not in pypi_result.output
     assert "repo-pypi" in pypi_result.output
     assert npm_result.exit_code == 0
-    assert "_authToken=${RVN_TOKEN}" in npm_result.output
+    assert "_authToken=${RVS_TOKEN}" in npm_result.output
     assert "repo-npm" in npm_result.output
     assert maven_result.exit_code == 0
     assert "<settings" in maven_result.output
     assert "repo-maven" in maven_result.output
 
 
-def test_pypi_install_injects_authenticated_extra_index_url(
+def test_pypi_install_uses_authenticated_primary_index_url(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
     _isolate_config(monkeypatch, tmp_path)
-    monkeypatch.setenv("RVN_TOKEN", "secret-token")
+    monkeypatch.setenv("RVS_TOKEN", "secret-token")
     monkeypatch.setattr(pkg_cmd.tools, "pip_cmd", lambda: ["/bin/pip"])
     calls: list[tuple[list[str], dict[str, str]]] = []
     monkeypatch.setattr(
@@ -339,14 +414,14 @@ def test_pypi_install_injects_authenticated_extra_index_url(
 
     assert result.exit_code == 0
     assert calls[0][0] == ["/bin/pip", "install", "demo"]
-    assert calls[0][1]["PIP_EXTRA_INDEX_URL"] == (
+    assert calls[0][1]["PIP_INDEX_URL"] == (
         f"https://__token__:secret-token@pypi.{STAGING_DOWNLOAD_HOST}/custpid1/repo-pypi/simple/"
     )
 
 
 def test_npm_install_injects_token_for_registry_host(monkeypatch, tmp_path: Path) -> None:
     _isolate_config(monkeypatch, tmp_path)
-    monkeypatch.setenv("RVN_TOKEN", "secret-token")
+    monkeypatch.setenv("RVS_TOKEN", "secret-token")
     monkeypatch.setattr(pkg_cmd.tools, "npm", lambda: "/bin/npm")
     calls: list[tuple[list[str], dict[str, str]]] = []
     monkeypatch.setattr(
@@ -373,7 +448,7 @@ def test_npm_install_injects_token_for_registry_host(monkeypatch, tmp_path: Path
 
 def test_pypi_publish_reports_failed_uploads(monkeypatch, tmp_path: Path) -> None:
     _isolate_config(monkeypatch, tmp_path)
-    monkeypatch.setenv("RVN_TOKEN", "secret-token")
+    monkeypatch.setenv("RVS_TOKEN", "secret-token")
     dist_dir = tmp_path / "dist"
     dist_dir.mkdir()
     (dist_dir / "demo-1.0.0.whl").write_bytes(b"wheel")
@@ -395,7 +470,7 @@ def test_pypi_publish_reports_failed_uploads(monkeypatch, tmp_path: Path) -> Non
 
 def test_npm_publish_calls_registry_adapter(monkeypatch, tmp_path: Path) -> None:
     _isolate_config(monkeypatch, tmp_path)
-    monkeypatch.setenv("RVN_TOKEN", "secret-token")
+    monkeypatch.setenv("RVS_TOKEN", "secret-token")
     package_dir = tmp_path / "package"
     package_dir.mkdir()
     calls: list[dict[str, Any]] = []
@@ -423,8 +498,8 @@ def test_npm_publish_calls_registry_adapter(monkeypatch, tmp_path: Path) -> None
 
 def test_maven_deploy_checks_file_and_calls_registry_adapter(monkeypatch, tmp_path: Path) -> None:
     _isolate_config(monkeypatch, tmp_path)
-    monkeypatch.setenv("RVN_TOKEN", "secret-token")
-    artifact = tmp_path / "demo.jar"
+    monkeypatch.setenv("RVS_TOKEN", "secret-token")
+    artifact = tmp_path / "demo-1.0.0.jar"
     artifact.write_bytes(b"jar")
     calls: list[dict[str, Any]] = []
 

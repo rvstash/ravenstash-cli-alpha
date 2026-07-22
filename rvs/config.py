@@ -1,0 +1,436 @@
+"""Config file management for rvs.
+
+Config lives at ~/.rvs/config.toml and supports multiple named profiles.
+The active profile is resolved by:
+  1. --profile CLI flag  (highest priority)
+  2. RVS_PROFILE environment variable
+  3. default_profile key in config file  (default: "default")
+
+Config file shape
+-----------------
+::
+
+    default_profile = "default"
+
+    [profiles.default]
+    api_url = "https://api.ravenstash.com"
+    pkg_api_url = "https://app.ravenstash.com/api"
+    pkg_download_url = "https://pkg.rvnsta.sh"
+    pkg_upload_url = "https://push.rvnsta.sh"
+    customer_id = "cus_..."
+    customer_public_id = "a8f3k2mz"
+    credential_type = "expiring"
+    expires_at = "2026-06-17T16:00:00+00:00"
+    refresh_expires_at = "2026-06-17T20:00:00+00:00"
+
+    [profiles.default.registries.pypi]
+    default_repo = "my-python-packages"
+
+    [profiles.default.registries.npm]
+    default_repo = "my-node-packages"
+
+Legacy top-level ``[registries.<kind>]`` defaults are still read as a fallback
+for profiles without their own setting.
+
+    [profiles.default.registries.maven]
+    default_repo = "my-java-packages"
+"""
+
+from __future__ import annotations
+
+import os
+import re
+import tomllib
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Literal
+
+import tomli_w
+
+from .paths import rvs_home
+
+
+RegistryKind = Literal["pypi", "npm", "maven"]
+
+CONFIG_DIR = rvs_home()
+CONFIG_FILE = CONFIG_DIR / "config.toml"
+PROFILE_ENV_FILE = CONFIG_DIR / "profiles.env"
+LOCAL_ENV_FILE_NAME = ".rvs.env"
+
+DEFAULT_API_URL = "https://api.ravenstash.com"
+DEFAULT_PKG_API_URL = "https://app.ravenstash.com/api"
+DEFAULT_PKG_DOWNLOAD_URL = "https://pkg.rvnsta.sh"
+DEFAULT_PKG_UPLOAD_URL = "https://push.rvnsta.sh"
+
+
+@dataclass
+class ProfileConfig:
+    api_url: str = DEFAULT_API_URL
+    pkg_api_url: str = DEFAULT_PKG_API_URL
+    pkg_download_url: str = DEFAULT_PKG_DOWNLOAD_URL
+    pkg_upload_url: str = DEFAULT_PKG_UPLOAD_URL
+    customer_id: str | None = None
+    customer_public_id: str | None = None
+    credential_type: str | None = None
+    expires_at: str | None = None
+    refresh_expires_at: str | None = None
+    registries: dict[RegistryKind, RegistryDefaults] = field(default_factory=dict)
+
+
+@dataclass
+class RegistryDefaults:
+    default_repo: str | None = None
+
+
+@dataclass
+class RvsConfig:
+    default_profile: str = "default"
+    profiles: dict[str, ProfileConfig] = field(default_factory=dict)
+    registries: dict[RegistryKind, RegistryDefaults] = field(default_factory=dict)
+
+    def active_profile(self, profile_name: str | None = None) -> ProfileConfig:
+        name = profile_name or os.environ.get("RVS_PROFILE") or self.default_profile
+        return self.profiles.get(name, _default_profile_config(name))
+
+    def registry_defaults(
+        self,
+        kind: RegistryKind,
+        profile_name: str | None = None,
+    ) -> RegistryDefaults:
+        name = profile_name or os.environ.get("RVS_PROFILE") or self.default_profile
+        profile = self.profiles.get(name)
+        if profile and kind in profile.registries:
+            return profile.registries[kind]
+        return self.registries.get(kind, RegistryDefaults())
+
+
+def current_profile_name(cfg: RvsConfig | None = None) -> str:
+    """Return the effective active profile name."""
+    resolved_cfg = cfg or load()
+    return os.environ.get("RVS_PROFILE") or resolved_cfg.default_profile
+
+
+# ── Environment helpers ───────────────────────────────────────────────────────
+
+
+def _profile_env_key(profile_name: str, suffix: str = "API_URL") -> str:
+    normalized = re.sub(r"[^A-Za-z0-9]+", "_", profile_name).strip("_").upper()
+    return f"RVS_PROFILE_{normalized}_{suffix}"
+
+
+def _parse_env_value(value: str) -> str:
+    value = value.strip()
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
+        return value[1:-1]
+    return value
+
+
+def _read_env_file(path: Path) -> dict[str, str]:
+    if not path.exists() or not path.is_file():
+        return {}
+
+    values: dict[str, str] = {}
+    for raw_line in path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("export "):
+            line = line.removeprefix("export ").strip()
+        key, sep, value = line.partition("=")
+        if not sep:
+            continue
+        key = key.strip()
+        if key:
+            values[key] = _parse_env_value(value)
+    return values
+
+
+def _nearest_local_env_file() -> Path | None:
+    current = Path.cwd()
+    for directory in (current, *current.parents):
+        candidate = directory / LOCAL_ENV_FILE_NAME
+        if candidate.exists():
+            return candidate
+    return None
+
+
+def _env_file_values() -> dict[str, str]:
+    values = _read_env_file(PROFILE_ENV_FILE)
+    local_env_file = _nearest_local_env_file()
+    if local_env_file is not None:
+        values.update(_read_env_file(local_env_file))
+    explicit_env_file = os.environ.get("RVS_ENV_FILE")
+    if explicit_env_file:
+        values.update(_read_env_file(Path(explicit_env_file).expanduser()))
+    return values
+
+
+def _env_value(name: str) -> str | None:
+    return os.environ.get(name) or _env_file_values().get(name)
+
+
+def profile_api_url(profile_name: str) -> str:
+    """Return the default API URL for *profile_name* from env/config defaults."""
+    keys = [_profile_env_key(profile_name)]
+    if profile_name == "default":
+        keys.append("RVS_API_URL")
+    for key in keys:
+        value = _env_value(key)
+        if value:
+            return value.rstrip("/")
+    return DEFAULT_API_URL
+
+
+def _profile_service_url(
+    profile_name: str,
+    *,
+    suffix: str,
+    default_env_key: str,
+    default_url: str,
+) -> str:
+    keys = [_profile_env_key(profile_name, suffix)]
+    if profile_name == "default":
+        keys.append(default_env_key)
+    for key in keys:
+        value = _env_value(key)
+        if value:
+            return value.rstrip("/")
+    return default_url
+
+
+def profile_pkg_api_url(profile_name: str) -> str:
+    return _profile_service_url(
+        profile_name,
+        suffix="PKG_API_URL",
+        default_env_key="RVS_PKG_API_URL",
+        default_url=DEFAULT_PKG_API_URL,
+    )
+
+
+def profile_pkg_download_url(profile_name: str) -> str:
+    return _profile_service_url(
+        profile_name,
+        suffix="PKG_DOWNLOAD_URL",
+        default_env_key="RVS_PKG_DOWNLOAD_URL",
+        default_url=DEFAULT_PKG_DOWNLOAD_URL,
+    )
+
+
+def profile_pkg_upload_url(profile_name: str) -> str:
+    return _profile_service_url(
+        profile_name,
+        suffix="PKG_UPLOAD_URL",
+        default_env_key="RVS_PKG_UPLOAD_URL",
+        default_url=DEFAULT_PKG_UPLOAD_URL,
+    )
+
+
+def _default_profile_config(profile_name: str) -> ProfileConfig:
+    return ProfileConfig(
+        api_url=profile_api_url(profile_name),
+        pkg_api_url=profile_pkg_api_url(profile_name),
+        pkg_download_url=profile_pkg_download_url(profile_name),
+        pkg_upload_url=profile_pkg_upload_url(profile_name),
+    )
+
+
+# ── Serialisation helpers ─────────────────────────────────────────────────────
+
+
+def _load_raw() -> dict:
+    if not CONFIG_FILE.exists():
+        return {}
+    with CONFIG_FILE.open("rb") as f:
+        return tomllib.load(f)
+
+
+def load() -> RvsConfig:
+    raw = _load_raw()
+    cfg = RvsConfig(default_profile=raw.get("default_profile", "default"))
+
+    for name, vals in raw.get("profiles", {}).items():
+        cfg.profiles[name] = ProfileConfig(
+            api_url=vals.get("api_url", profile_api_url(name)),
+            pkg_api_url=vals.get("pkg_api_url", profile_pkg_api_url(name)),
+            pkg_download_url=vals.get("pkg_download_url", profile_pkg_download_url(name)),
+            pkg_upload_url=vals.get("pkg_upload_url", profile_pkg_upload_url(name)),
+            customer_id=vals.get("customer_id"),
+            customer_public_id=vals.get("customer_public_id"),
+            credential_type=vals.get("credential_type"),
+            expires_at=vals.get("expires_at"),
+            refresh_expires_at=vals.get("refresh_expires_at"),
+            registries={
+                kind: RegistryDefaults(default_repo=defaults.get("default_repo"))
+                for kind, defaults in vals.get("registries", {}).items()
+            },
+        )
+
+    for kind, vals in raw.get("registries", {}).items():
+        cfg.registries[kind] = RegistryDefaults(  # type: ignore[index]
+            default_repo=vals.get("default_repo"),
+        )
+
+    return cfg
+
+
+def save(cfg: RvsConfig) -> None:
+    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+    raw: dict = {"default_profile": cfg.default_profile}
+
+    if cfg.profiles:
+        raw["profiles"] = {
+            name: {
+                k: v
+                for k, v in {
+                    "api_url": p.api_url,
+                    "pkg_api_url": p.pkg_api_url,
+                    "pkg_download_url": p.pkg_download_url,
+                    "pkg_upload_url": p.pkg_upload_url,
+                    "customer_id": p.customer_id,
+                    "customer_public_id": p.customer_public_id,
+                    "credential_type": p.credential_type,
+                    "expires_at": p.expires_at,
+                    "refresh_expires_at": p.refresh_expires_at,
+                    "registries": {
+                        kind: {"default_repo": defaults.default_repo}
+                        for kind, defaults in p.registries.items()
+                        if defaults.default_repo is not None
+                    }
+                    or None,
+                }.items()
+                if v is not None
+            }
+            for name, p in cfg.profiles.items()
+        }
+
+    if cfg.registries:
+        raw["registries"] = {
+            kind: {
+                k: v
+                for k, v in {
+                    "default_repo": r.default_repo,
+                }.items()
+                if v is not None
+            }
+            for kind, r in cfg.registries.items()
+        }
+
+    with CONFIG_FILE.open("wb") as f:
+        tomli_w.dump(raw, f)
+
+
+# ── Convenience setters ───────────────────────────────────────────────────────
+
+
+def set_profile_value(profile: str, api_url: str | None = None) -> None:
+    cfg = load()
+    existing = cfg.profiles.get(profile, _default_profile_config(profile))
+    cfg.profiles[profile] = ProfileConfig(
+        api_url=api_url if api_url is not None else existing.api_url,
+        pkg_api_url=existing.pkg_api_url,
+        pkg_download_url=existing.pkg_download_url,
+        pkg_upload_url=existing.pkg_upload_url,
+        customer_id=existing.customer_id,
+        customer_public_id=existing.customer_public_id,
+        credential_type=existing.credential_type,
+        expires_at=existing.expires_at,
+        refresh_expires_at=existing.refresh_expires_at,
+        registries=existing.registries,
+    )
+    save(cfg)
+
+
+def clear_profile_credential_metadata(profile: str) -> None:
+    cfg = load()
+    existing = cfg.profiles.get(profile)
+    if existing is None:
+        return
+    cfg.profiles[profile] = ProfileConfig(
+        api_url=existing.api_url,
+        pkg_api_url=existing.pkg_api_url,
+        pkg_download_url=existing.pkg_download_url,
+        pkg_upload_url=existing.pkg_upload_url,
+        customer_id=None,
+        customer_public_id=None,
+        credential_type=None,
+        expires_at=None,
+        refresh_expires_at=None,
+        registries=existing.registries,
+    )
+    save(cfg)
+
+
+def set_profile_metadata(
+    profile: str,
+    *,
+    api_url: str | None = None,
+    pkg_api_url: str | None = None,
+    pkg_download_url: str | None = None,
+    pkg_upload_url: str | None = None,
+    customer_id: str | None = None,
+    customer_public_id: str | None = None,
+    credential_type: str | None = None,
+    expires_at: str | None = None,
+    refresh_expires_at: str | None = None,
+) -> None:
+    cfg = load()
+    existing = cfg.profiles.get(profile, _default_profile_config(profile))
+    cfg.profiles[profile] = ProfileConfig(
+        api_url=api_url if api_url is not None else existing.api_url,
+        pkg_api_url=pkg_api_url if pkg_api_url is not None else existing.pkg_api_url,
+        pkg_download_url=pkg_download_url
+        if pkg_download_url is not None
+        else existing.pkg_download_url,
+        pkg_upload_url=pkg_upload_url if pkg_upload_url is not None else existing.pkg_upload_url,
+        customer_id=customer_id if customer_id is not None else existing.customer_id,
+        customer_public_id=customer_public_id
+        if customer_public_id is not None
+        else existing.customer_public_id,
+        credential_type=credential_type
+        if credential_type is not None
+        else existing.credential_type,
+        expires_at=expires_at if expires_at is not None else existing.expires_at,
+        refresh_expires_at=refresh_expires_at
+        if refresh_expires_at is not None
+        else existing.refresh_expires_at,
+        registries=existing.registries,
+    )
+    save(cfg)
+
+
+def set_default_profile(profile: str) -> None:
+    cfg = load()
+    cfg.default_profile = profile
+    save(cfg)
+
+
+def delete_profile(profile: str) -> bool:
+    cfg = load()
+    if profile not in cfg.profiles:
+        return False
+
+    del cfg.profiles[profile]
+    if cfg.default_profile == profile:
+        cfg.default_profile = next(iter(cfg.profiles), "default")
+    save(cfg)
+    return True
+
+
+def delete_all_profiles() -> None:
+    cfg = load()
+    cfg.profiles = {}
+    cfg.default_profile = "default"
+    save(cfg)
+
+
+def set_registry_default_repo(
+    kind: RegistryKind,
+    repo: str,
+    profile: str | None = None,
+) -> None:
+    cfg = load()
+    profile_name = profile or current_profile_name(cfg)
+    profile_config = cfg.profiles.get(profile_name, _default_profile_config(profile_name))
+    profile_config.registries[kind] = RegistryDefaults(default_repo=repo)
+    cfg.profiles[profile_name] = profile_config
+    save(cfg)

@@ -5,14 +5,14 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/common.sh"
 
 require_cmd nfpm
 
-VERSION="${RVN_VERSION:-$(rvn_version)}"
-ARCH="${RVN_ARCH:-$(rvn_arch)}"
+VERSION="${RVS_VERSION:-$(rvs_version)}"
+ARCH="${RVS_ARCH:-$(rvs_arch)}"
 if [[ "$ARCH" == "unsupported" ]]; then
   echo "error: unsupported architecture $(uname -m)" >&2
   exit 1
 fi
 
-if [[ ! -x dist/pyinstaller/rvn/rvn ]]; then
+if [[ ! -x dist/pyinstaller/rvs/rvs ]]; then
   packaging/scripts/build-pyinstaller.sh
 fi
 
@@ -20,9 +20,9 @@ mkdir -p build/nfpm dist/packages
 sed \
   -e "s/__VERSION__/${VERSION}/g" \
   -e "s/__ARCH__/${ARCH}/g" \
-  packaging/nfpm.yaml.in > build/nfpm/rvn.yaml
+  packaging/nfpm.yaml.in > build/nfpm/rvs.yaml
 
 nfpm package \
   --packager deb \
-  --config build/nfpm/rvn.yaml \
-  --target "dist/packages/rvn_${VERSION}_${ARCH}.deb"
+  --config build/nfpm/rvs.yaml \
+  --target "dist/packages/rvs_${VERSION}_${ARCH}.deb"

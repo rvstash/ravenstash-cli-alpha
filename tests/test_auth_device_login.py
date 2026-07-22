@@ -10,10 +10,10 @@ from typer.testing import CliRunner
 if TYPE_CHECKING:
     from pathlib import Path
 
-from rvn import config as cfg_mod
-from rvn.auth import commands as auth_cmd
-from rvn.auth import credentials as auth_mod
-from rvn.auth import device as login_mod
+from rvs import config as cfg_mod
+from rvs.auth import commands as auth_cmd
+from rvs.auth import credentials as auth_mod
+from rvs.auth import device as login_mod
 
 
 runner = CliRunner()
@@ -74,19 +74,19 @@ refresh_expires_at = "{refresh_expires_at}"
     )
 
 
-def test_rvn_token_takes_precedence_over_keyring(monkeypatch) -> None:
-    monkeypatch.setenv("RVN_TOKEN", "env-token")
+def test_rvs_token_takes_precedence_over_keyring(monkeypatch) -> None:
+    monkeypatch.setenv("RVS_TOKEN", "env-token")
     monkeypatch.setattr(auth_mod, "_keyring_available", lambda: True)
     monkeypatch.setattr(auth_mod, "_kr_get", lambda profile: "keyring-token")
 
     assert auth_mod.get_token("default") == "env-token"
-    assert auth_mod.token_source("default") == "RVN_TOKEN"
+    assert auth_mod.token_source("default") == "RVS_TOKEN"
 
 
-def test_rvn_token_prevents_expiring_refresh_attempt(monkeypatch) -> None:
+def test_rvs_token_prevents_expiring_refresh_attempt(monkeypatch) -> None:
     refreshed: list[str] = []
 
-    monkeypatch.setenv("RVN_TOKEN", "env-token")
+    monkeypatch.setenv("RVS_TOKEN", "env-token")
     monkeypatch.setattr(auth_mod, "_stored_profile_expired", lambda profile: True)
     monkeypatch.setattr(
         auth_mod,
@@ -99,7 +99,7 @@ def test_rvn_token_prevents_expiring_refresh_attempt(monkeypatch) -> None:
 
 
 def test_config_token_is_ignored(monkeypatch, tmp_path: Path) -> None:
-    config_dir = tmp_path / ".rvn"
+    config_dir = tmp_path / ".rvs"
     config_file = config_dir / "config.toml"
     config_dir.mkdir()
     config_file.write_text(
@@ -108,13 +108,13 @@ default_profile = "default"
 
 [profiles.default]
 api_url = "https://api.ravenstash.com"
-token = "rvn_tok_old"
+token = "rvs_tok_old"
 """.strip(),
         encoding="utf-8",
     )
     monkeypatch.setattr(cfg_mod, "CONFIG_DIR", config_dir)
     monkeypatch.setattr(cfg_mod, "CONFIG_FILE", config_file)
-    monkeypatch.delenv("RVN_TOKEN", raising=False)
+    monkeypatch.delenv("RVS_TOKEN", raising=False)
     monkeypatch.setattr(auth_mod, "_keyring_available", lambda: False)
 
     assert auth_mod.get_token("default") is None
@@ -122,7 +122,7 @@ token = "rvn_tok_old"
 
 
 def test_staging_profile_uses_env_api_url_when_not_configured(monkeypatch, tmp_path: Path) -> None:
-    config_dir = tmp_path / ".rvn"
+    config_dir = tmp_path / ".rvs"
     config_dir.mkdir()
     config_file = config_dir / "config.toml"
     config_file.write_text('default_profile = "default"\n', encoding="utf-8")
@@ -130,7 +130,7 @@ def test_staging_profile_uses_env_api_url_when_not_configured(monkeypatch, tmp_p
     monkeypatch.setattr(cfg_mod, "CONFIG_FILE", config_file)
     monkeypatch.setattr(cfg_mod, "PROFILE_ENV_FILE", config_dir / "profiles.env")
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setenv("RVN_PROFILE_STAGING_API_URL", "https://staging.example.test")
+    monkeypatch.setenv("RVS_PROFILE_STAGING_API_URL", "https://staging.example.test")
 
     assert cfg_mod.load().active_profile("staging").api_url == "https://staging.example.test"
 
@@ -160,7 +160,7 @@ def test_parse_duration_seconds_rejects_out_of_range_or_invalid(raw: str) -> Non
 
 
 def test_auth_switch_profile_sets_active_profile(monkeypatch, tmp_path: Path) -> None:
-    config_dir = tmp_path / ".rvn"
+    config_dir = tmp_path / ".rvs"
     _write_profiles_config(config_dir)
     monkeypatch.setattr(cfg_mod, "CONFIG_DIR", config_dir)
     monkeypatch.setattr(cfg_mod, "CONFIG_FILE", config_dir / "config.toml")
@@ -231,7 +231,7 @@ def test_auth_switch_reads_arrow_key_sequences_from_unbuffered_fd(monkeypatch) -
 
 
 def test_auth_logout_uses_current_profile(monkeypatch, tmp_path: Path) -> None:
-    config_dir = tmp_path / ".rvn"
+    config_dir = tmp_path / ".rvs"
     _write_profiles_config(config_dir, default_profile="work")
     monkeypatch.setattr(cfg_mod, "CONFIG_DIR", config_dir)
     monkeypatch.setattr(cfg_mod, "CONFIG_FILE", config_dir / "config.toml")
@@ -246,7 +246,7 @@ def test_auth_logout_uses_current_profile(monkeypatch, tmp_path: Path) -> None:
 
 
 def test_auth_logout_all_profiles(monkeypatch, tmp_path: Path) -> None:
-    config_dir = tmp_path / ".rvn"
+    config_dir = tmp_path / ".rvs"
     _write_profiles_config(config_dir)
     monkeypatch.setattr(cfg_mod, "CONFIG_DIR", config_dir)
     monkeypatch.setattr(cfg_mod, "CONFIG_FILE", config_dir / "config.toml")
@@ -261,7 +261,7 @@ def test_auth_logout_all_profiles(monkeypatch, tmp_path: Path) -> None:
 
 
 def test_auth_delete_profile_removes_config_and_token(monkeypatch, tmp_path: Path) -> None:
-    config_dir = tmp_path / ".rvn"
+    config_dir = tmp_path / ".rvs"
     _write_profiles_config(config_dir, default_profile="work")
     monkeypatch.setattr(cfg_mod, "CONFIG_DIR", config_dir)
     monkeypatch.setattr(cfg_mod, "CONFIG_FILE", config_dir / "config.toml")
@@ -279,7 +279,7 @@ def test_auth_delete_profile_removes_config_and_token(monkeypatch, tmp_path: Pat
 
 
 def test_auth_delete_all_profiles(monkeypatch, tmp_path: Path) -> None:
-    config_dir = tmp_path / ".rvn"
+    config_dir = tmp_path / ".rvs"
     _write_profiles_config(config_dir)
     monkeypatch.setattr(cfg_mod, "CONFIG_DIR", config_dir)
     monkeypatch.setattr(cfg_mod, "CONFIG_FILE", config_dir / "config.toml")
@@ -391,7 +391,7 @@ def test_device_login_handles_slow_down_and_stores_expiring_jwt(monkeypatch) -> 
         lambda profile, **kwargs: metadata_writes.append({"profile": profile, **kwargs}),
     )
     monkeypatch.setattr(login_mod.auth_mod, "has_active_expiring_session", lambda profile: False)
-    monkeypatch.setattr(login_mod, "_rvn_version", lambda: "0.1.0")
+    monkeypatch.setattr(login_mod, "_rvs_version", lambda: "0.1.0")
     monkeypatch.setattr(login_mod, "_device_platform", lambda: "linux")
     monkeypatch.setattr(login_mod.time, "sleep", lambda seconds: sleeps.append(seconds))
 
@@ -428,10 +428,10 @@ def test_device_login_handles_slow_down_and_stores_expiring_jwt(monkeypatch) -> 
     assert _FakeClient.requests[0][1]["platform"] == "linux"
     assert _FakeClient.requests[0][1]["requested_duration_seconds"] == 8 * 60 * 60
     assert [headers for _url, _payload, headers in _FakeClient.requests] == [
-        {"User-Agent": "rvn/0.1.0"},
-        {"User-Agent": "rvn/0.1.0"},
-        {"User-Agent": "rvn/0.1.0"},
-        {"User-Agent": "rvn/0.1.0"},
+        {"User-Agent": "rvs/0.1.0"},
+        {"User-Agent": "rvs/0.1.0"},
+        {"User-Agent": "rvs/0.1.0"},
+        {"User-Agent": "rvs/0.1.0"},
     ]
 
 
@@ -439,7 +439,7 @@ def test_device_login_replaces_active_profile_and_revokes_previous_refresh(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
-    config_dir = tmp_path / ".rvn"
+    config_dir = tmp_path / ".rvs"
     _write_profiles_config(config_dir)
     monkeypatch.setattr(cfg_mod, "CONFIG_DIR", config_dir)
     monkeypatch.setattr(cfg_mod, "CONFIG_FILE", config_dir / "config.toml")
@@ -496,7 +496,7 @@ def test_device_login_replaces_active_profile_and_revokes_previous_refresh(
         lambda api_url, token: revoked.append((api_url, token)) or True,
     )
     monkeypatch.setattr(login_mod.output, "info", lambda message: info_messages.append(message))
-    monkeypatch.setattr(login_mod, "_rvn_version", lambda: "0.1.0")
+    monkeypatch.setattr(login_mod, "_rvs_version", lambda: "0.1.0")
     monkeypatch.setattr(login_mod, "_device_platform", lambda: "linux")
 
     login_mod.perform_device_login(
@@ -517,7 +517,7 @@ def test_device_login_does_not_revoke_expired_previous_refresh(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
-    config_dir = tmp_path / ".rvn"
+    config_dir = tmp_path / ".rvs"
     _write_profiles_config(
         config_dir,
         refresh_expires_at="2000-01-01T00:00:00+00:00",
@@ -570,7 +570,7 @@ def test_device_login_does_not_revoke_expired_previous_refresh(
         lambda api_url, token: revoked.append((api_url, token)) or True,
     )
     monkeypatch.setattr(login_mod.output, "info", lambda message: info_messages.append(message))
-    monkeypatch.setattr(login_mod, "_rvn_version", lambda: "0.1.0")
+    monkeypatch.setattr(login_mod, "_rvs_version", lambda: "0.1.0")
     monkeypatch.setattr(login_mod, "_device_platform", lambda: "linux")
 
     login_mod.perform_device_login(
@@ -589,7 +589,7 @@ def test_refresh_expiring_credential_rotates_tokens(
     tmp_path: Path,
     credential_type: str,
 ) -> None:
-    config_dir = tmp_path / ".rvn"
+    config_dir = tmp_path / ".rvs"
     _write_profiles_config(config_dir, credential_type=credential_type)
     monkeypatch.setattr(cfg_mod, "CONFIG_DIR", config_dir)
     monkeypatch.setattr(cfg_mod, "CONFIG_FILE", config_dir / "config.toml")
@@ -620,7 +620,7 @@ def test_refresh_expiring_credential_rotates_tokens(
     ]
 
     monkeypatch.setattr(auth_mod.httpx, "Client", _FakeClient)
-    monkeypatch.setattr(auth_mod, "_rvn_user_agent", lambda: "rvn/0.1.0")
+    monkeypatch.setattr(auth_mod, "_rvs_user_agent", lambda: "rvs/0.1.0")
     monkeypatch.setattr(auth_mod, "_device_platform", lambda: "linux")
     monkeypatch.setattr(auth_mod, "_kr_set", lambda profile, token: stored.append((profile, token)))
 
@@ -633,7 +633,7 @@ def test_refresh_expiring_credential_rotates_tokens(
         (
             "https://api.ravenstash.com/v0/auth/device/refresh",
             {"refresh_token": "old-refresh", "platform": "linux"},
-            {"User-Agent": "rvn/0.1.0"},
+            {"User-Agent": "rvs/0.1.0"},
         )
     ]
     profile = cfg_mod.load().profiles["default"]
@@ -650,7 +650,7 @@ def test_revoke_device_refresh_token_posts_to_devapi(monkeypatch) -> None:
     _FakeClient.responses = [_FakeResponse(204, {})]
 
     monkeypatch.setattr(auth_mod.httpx, "Client", _FakeClient)
-    monkeypatch.setattr(auth_mod, "_rvn_user_agent", lambda: "rvn/0.1.0")
+    monkeypatch.setattr(auth_mod, "_rvs_user_agent", lambda: "rvs/0.1.0")
 
     assert auth_mod.revoke_device_refresh_token(
         "https://api.ravenstash.com",
@@ -660,13 +660,13 @@ def test_revoke_device_refresh_token_posts_to_devapi(monkeypatch) -> None:
         (
             "https://api.ravenstash.com/v0/auth/device/revoke",
             {"refresh_token": "old-refresh"},
-            {"User-Agent": "rvn/0.1.0"},
+            {"User-Agent": "rvs/0.1.0"},
         )
     ]
 
 
 def test_refresh_expiring_credential_failure_clears_profile(monkeypatch, tmp_path: Path) -> None:
-    config_dir = tmp_path / ".rvn"
+    config_dir = tmp_path / ".rvs"
     _write_profiles_config(config_dir)
     monkeypatch.setattr(cfg_mod, "CONFIG_DIR", config_dir)
     monkeypatch.setattr(cfg_mod, "CONFIG_FILE", config_dir / "config.toml")
@@ -683,7 +683,7 @@ def test_refresh_expiring_credential_failure_clears_profile(monkeypatch, tmp_pat
     ]
 
     monkeypatch.setattr(auth_mod.httpx, "Client", _FakeClient)
-    monkeypatch.setattr(auth_mod, "_rvn_user_agent", lambda: "rvn/0.1.0")
+    monkeypatch.setattr(auth_mod, "_rvs_user_agent", lambda: "rvs/0.1.0")
     monkeypatch.setattr(auth_mod, "_device_platform", lambda: "linux")
     monkeypatch.setattr(auth_mod, "delete_token", lambda profile: deleted.append(profile))
 
@@ -693,6 +693,6 @@ def test_refresh_expiring_credential_failure_clears_profile(monkeypatch, tmp_pat
         (
             "https://api.ravenstash.com/v0/auth/device/refresh",
             {"refresh_token": "old-refresh", "platform": "linux"},
-            {"User-Agent": "rvn/0.1.0"},
+            {"User-Agent": "rvs/0.1.0"},
         )
     ]

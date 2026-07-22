@@ -1,4 +1,4 @@
-name: rvn
+name: rvs
 arch: __ARCH__
 platform: linux
 version: __VERSION__
@@ -12,11 +12,11 @@ license: Proprietary
 depends:
   - ca-certificates
 contents:
-  - src: dist/pyinstaller/rvn
-    dst: /usr/lib/rvn
+  - src: dist/pyinstaller/rvs
+    dst: /usr/lib/rvs
     type: tree
-  - src: /usr/lib/rvn/rvn
-    dst: /usr/bin/rvn
+  - src: /usr/lib/rvs/rvs
+    dst: /usr/bin/rvs
     type: symlink
   - src: README.md
-    dst: /usr/share/doc/rvn/README.md
+    dst: /usr/share/doc/rvs/README.md

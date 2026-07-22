@@ -4,9 +4,9 @@ import os
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from rvn import config as cfg_mod
-from rvn.cli import app
-from rvn.native import runner as native_runner
+from rvs import config as cfg_mod
+from rvs.cli import app
+from rvs.native import runner as native_runner
 from typer.testing import CliRunner
 
 
@@ -27,7 +27,7 @@ class _Completed:
 
 
 def _isolate_config(monkeypatch: Any, tmp_path: Path) -> None:
-    config_dir = tmp_path / ".rvn"
+    config_dir = tmp_path / ".rvs"
     config_dir.mkdir()
     config_file = config_dir / "config.toml"
     config_file.write_text(
@@ -57,7 +57,7 @@ default_repo = "repo-maven"
     monkeypatch.setattr(cfg_mod, "CONFIG_FILE", config_file)
     monkeypatch.setattr(cfg_mod, "PROFILE_ENV_FILE", config_dir / "profiles.env")
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setenv("RVN_TOKEN", "secret-token")
+    monkeypatch.setenv("RVS_TOKEN", "secret-token")
 
 
 def _mock_native_tools(monkeypatch: Any) -> None:
@@ -102,21 +102,14 @@ def test_ravenstash_url_kind_accepts_public_hosts_and_local_normalized_routes() 
         )
         == "maven"
     )
-    assert (
-        native_runner._ravenstash_url_kind("https://npm.example.test/custpid1/repo/")
-        is None
-    )
+    assert native_runner._ravenstash_url_kind("https://npm.example.test/custpid1/repo/") is None
     assert (
         native_runner._ravenstash_url_kind("https://pkg-staging.example.test/custpid1/repo/")
         is None
     )
+    assert native_runner._ravenstash_url_kind("http://localhost:8788/native/npm/custpid1/") is None
     assert (
-        native_runner._ravenstash_url_kind("http://localhost:8788/native/npm/custpid1/")
-        is None
-    )
-    assert (
-        native_runner._ravenstash_url_kind("https://npm.pkg-staging.example.test/custpid1/")
-        is None
+        native_runner._ravenstash_url_kind("https://npm.pkg-staging.example.test/custpid1/") is None
     )
 
 
@@ -153,7 +146,7 @@ def test_native_npm_repo_override_uses_upload_registry_for_publish(
     calls: list[dict[str, Any]] = []
     _capture_run(monkeypatch, calls)
 
-    result = runner.invoke(app, ["npm", "--rvn-repo", "repo-npm", "publish"])
+    result = runner.invoke(app, ["npm", "--rvs-repo", "repo-npm", "publish"])
 
     assert result.exit_code == 0
     assert calls[0]["cmd"] == [
@@ -184,7 +177,7 @@ def test_native_npm_repo_override_replaces_conflicting_registry_flag(
         app,
         [
             "npm",
-            "--rvn-repo",
+            "--rvs-repo",
             "repo-npm",
             "install",
             "--registry",
@@ -251,9 +244,9 @@ def test_native_pip_isolate_overrides_index_without_writing_credentials(
         app,
         [
             "pip",
-            "--rvn-repo",
+            "--rvs-repo",
             "repo-pypi",
-            "--rvn-native-config",
+            "--rvs-native-config",
             "isolate",
             "install",
             "demo",
@@ -284,7 +277,7 @@ def test_native_pip_preserves_multi_part_pip_command_prefix(
     calls: list[dict[str, Any]] = []
     _capture_run(monkeypatch, calls)
 
-    result = runner.invoke(app, ["pip", "--rvn-repo", "repo-pypi", "install", "demo"])
+    result = runner.invoke(app, ["pip", "--rvs-repo", "repo-pypi", "install", "demo"])
 
     assert result.exit_code == 0
     assert calls[0]["cmd"] == [
@@ -307,7 +300,7 @@ def test_native_uv_repo_override_sets_index_publish_env_and_netrc(
     calls: list[dict[str, Any]] = []
     _capture_run(monkeypatch, calls)
 
-    result = runner.invoke(app, ["uv", "--rvn-repo", "repo-pypi", "sync", "--locked"])
+    result = runner.invoke(app, ["uv", "--rvs-repo", "repo-pypi", "sync", "--locked"])
 
     assert result.exit_code == 0
     assert calls[0]["cmd"] == ["/bin/uv", "sync", "--locked"]
@@ -331,7 +324,7 @@ def test_native_twine_repo_override_sets_ephemeral_upload_credentials(
     calls: list[dict[str, Any]] = []
     _capture_run(monkeypatch, calls)
 
-    result = runner.invoke(app, ["twine", "--rvn-repo", "repo-pypi", "upload", "dist/demo.whl"])
+    result = runner.invoke(app, ["twine", "--rvs-repo", "repo-pypi", "upload", "dist/demo.whl"])
 
     assert result.exit_code == 0
     assert calls[0]["cmd"] == ["/bin/twine", "upload", "dist/demo.whl"]
@@ -357,13 +350,13 @@ def test_native_maven_repo_override_generates_temp_settings(
 
     _capture_run(monkeypatch, calls, hook)
 
-    result = runner.invoke(app, ["mvn", "--rvn-repo", "repo-maven", "deploy"])
+    result = runner.invoke(app, ["mvn", "--rvs-repo", "repo-maven", "deploy"])
 
     assert result.exit_code == 0
     assert calls[0]["cmd"][0:2] == ["/bin/mvn", "--settings"]
     assert calls[0]["cmd"][-1] == (
-        f"-DaltDeploymentRepository=rvn-private::default::https://maven.{STAGING_UPLOAD_HOST}/custpid1/repo-maven/"
+        f"-DaltDeploymentRepository=rvs-private::default::https://maven.{STAGING_UPLOAD_HOST}/custpid1/repo-maven/"
     )
-    assert "<id>rvn-private</id>" in settings_texts[0]
+    assert "<id>rvs-private</id>" in settings_texts[0]
     assert "<username>__token__</username>" in settings_texts[0]
     assert "<password>secret-token</password>" in settings_texts[0]

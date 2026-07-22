@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from rvn.cli import app
+from rvs.cli import app
 
 
 if __name__ == "__main__":
