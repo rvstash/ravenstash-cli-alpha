@@ -6,7 +6,7 @@ Implements the Legacy PyPI Upload API directly (same wire protocol as twine),
 so no external tool is required.  The multipart form POST replicates what
 ``twine upload`` sends:
 
-    POST /{customer_pid}/{repository_name}/ on the PyPI upload host
+    POST /x/{workspace_unique_ref}/{repository_unique_ref}/ on the PyPI upload host
     Authorization: Basic __token__:{token}
     Content-Type: multipart/form-data
 

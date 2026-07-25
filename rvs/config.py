@@ -14,26 +14,22 @@ Config file shape
 
     [profiles.default]
     api_url = "https://api.ravenstash.com"
-    pkg_api_url = "https://app.ravenstash.com/api"
     pkg_download_url = "https://pkg.rvsta.sh"
     pkg_upload_url = "https://push.rvsta.sh"
     customer_id = "cus_..."
-    customer_public_id = "a8f3k2mz"
+    customer_unique_id = "a8f3k2mz"
     credential_type = "expiring"
     expires_at = "2026-06-17T16:00:00+00:00"
     refresh_expires_at = "2026-06-17T20:00:00+00:00"
 
     [profiles.default.registries.pypi]
-    default_repo = "my-python-packages"
+    default_repo = "_abcdefgh/_m7nk3p4q"
 
     [profiles.default.registries.npm]
-    default_repo = "my-node-packages"
-
-Legacy top-level ``[registries.<kind>]`` defaults are still read as a fallback
-for profiles without their own setting.
+    default_repo = "_abcdefgh/_n4b6v8cx"
 
     [profiles.default.registries.maven]
-    default_repo = "my-java-packages"
+    default_repo = "_abcdefgh/_p2q4r6st"
 """
 
 from __future__ import annotations
@@ -58,7 +54,6 @@ PROFILE_ENV_FILE = CONFIG_DIR / "profiles.env"
 LOCAL_ENV_FILE_NAME = ".rvs.env"
 
 DEFAULT_API_URL = "https://api.ravenstash.com"
-DEFAULT_PKG_API_URL = "https://app.ravenstash.com/api"
 DEFAULT_PKG_DOWNLOAD_URL = "https://pkg.rvsta.sh"
 DEFAULT_PKG_UPLOAD_URL = "https://push.rvsta.sh"
 
@@ -66,11 +61,10 @@ DEFAULT_PKG_UPLOAD_URL = "https://push.rvsta.sh"
 @dataclass
 class ProfileConfig:
     api_url: str = DEFAULT_API_URL
-    pkg_api_url: str = DEFAULT_PKG_API_URL
     pkg_download_url: str = DEFAULT_PKG_DOWNLOAD_URL
     pkg_upload_url: str = DEFAULT_PKG_UPLOAD_URL
     customer_id: str | None = None
-    customer_public_id: str | None = None
+    customer_unique_id: str | None = None
     credential_type: str | None = None
     expires_at: str | None = None
     refresh_expires_at: str | None = None
@@ -80,13 +74,20 @@ class ProfileConfig:
 @dataclass
 class RegistryDefaults:
     default_repo: str | None = None
+    customer_id: str | None = None
+    customer_unique_ref: str | None = None
+    workspace_id: str | None = None
+    workspace_unique_ref: str | None = None
+    workspace_name_cache: str | None = None
+    repository_id: str | None = None
+    repository_unique_ref: str | None = None
+    repository_name_cache: str | None = None
 
 
 @dataclass
 class RvsConfig:
     default_profile: str = "default"
     profiles: dict[str, ProfileConfig] = field(default_factory=dict)
-    registries: dict[RegistryKind, RegistryDefaults] = field(default_factory=dict)
 
     def active_profile(self, profile_name: str | None = None) -> ProfileConfig:
         name = profile_name or os.environ.get("RVS_PROFILE") or self.default_profile
@@ -101,7 +102,7 @@ class RvsConfig:
         profile = self.profiles.get(name)
         if profile and kind in profile.registries:
             return profile.registries[kind]
-        return self.registries.get(kind, RegistryDefaults())
+        return RegistryDefaults()
 
 
 def current_profile_name(cfg: RvsConfig | None = None) -> str:
@@ -198,15 +199,6 @@ def _profile_service_url(
     return default_url
 
 
-def profile_pkg_api_url(profile_name: str) -> str:
-    return _profile_service_url(
-        profile_name,
-        suffix="PKG_API_URL",
-        default_env_key="RVS_PKG_API_URL",
-        default_url=DEFAULT_PKG_API_URL,
-    )
-
-
 def profile_pkg_download_url(profile_name: str) -> str:
     return _profile_service_url(
         profile_name,
@@ -228,7 +220,6 @@ def profile_pkg_upload_url(profile_name: str) -> str:
 def _default_profile_config(profile_name: str) -> ProfileConfig:
     return ProfileConfig(
         api_url=profile_api_url(profile_name),
-        pkg_api_url=profile_pkg_api_url(profile_name),
         pkg_download_url=profile_pkg_download_url(profile_name),
         pkg_upload_url=profile_pkg_upload_url(profile_name),
     )
@@ -251,23 +242,27 @@ def load() -> RvsConfig:
     for name, vals in raw.get("profiles", {}).items():
         cfg.profiles[name] = ProfileConfig(
             api_url=vals.get("api_url", profile_api_url(name)),
-            pkg_api_url=vals.get("pkg_api_url", profile_pkg_api_url(name)),
             pkg_download_url=vals.get("pkg_download_url", profile_pkg_download_url(name)),
             pkg_upload_url=vals.get("pkg_upload_url", profile_pkg_upload_url(name)),
             customer_id=vals.get("customer_id"),
-            customer_public_id=vals.get("customer_public_id"),
+            customer_unique_id=vals.get("customer_unique_id"),
             credential_type=vals.get("credential_type"),
             expires_at=vals.get("expires_at"),
             refresh_expires_at=vals.get("refresh_expires_at"),
             registries={
-                kind: RegistryDefaults(default_repo=defaults.get("default_repo"))
+                kind: RegistryDefaults(
+                    default_repo=defaults.get("default_repo"),
+                    customer_id=defaults.get("customer_id"),
+                    customer_unique_ref=defaults.get("customer_unique_ref"),
+                    workspace_id=defaults.get("workspace_id"),
+                    workspace_unique_ref=defaults.get("workspace_unique_ref"),
+                    workspace_name_cache=defaults.get("workspace_name_cache"),
+                    repository_id=defaults.get("repository_id"),
+                    repository_unique_ref=defaults.get("repository_unique_ref"),
+                    repository_name_cache=defaults.get("repository_name_cache"),
+                )
                 for kind, defaults in vals.get("registries", {}).items()
             },
-        )
-
-    for kind, vals in raw.get("registries", {}).items():
-        cfg.registries[kind] = RegistryDefaults(  # type: ignore[index]
-            default_repo=vals.get("default_repo"),
         )
 
     return cfg
@@ -283,16 +278,29 @@ def save(cfg: RvsConfig) -> None:
                 k: v
                 for k, v in {
                     "api_url": p.api_url,
-                    "pkg_api_url": p.pkg_api_url,
                     "pkg_download_url": p.pkg_download_url,
                     "pkg_upload_url": p.pkg_upload_url,
                     "customer_id": p.customer_id,
-                    "customer_public_id": p.customer_public_id,
+                    "customer_unique_id": p.customer_unique_id,
                     "credential_type": p.credential_type,
                     "expires_at": p.expires_at,
                     "refresh_expires_at": p.refresh_expires_at,
                     "registries": {
-                        kind: {"default_repo": defaults.default_repo}
+                        kind: {
+                            key: value
+                            for key, value in {
+                                "default_repo": defaults.default_repo,
+                                "customer_id": defaults.customer_id,
+                                "customer_unique_ref": defaults.customer_unique_ref,
+                                "workspace_id": defaults.workspace_id,
+                                "workspace_unique_ref": defaults.workspace_unique_ref,
+                                "workspace_name_cache": defaults.workspace_name_cache,
+                                "repository_id": defaults.repository_id,
+                                "repository_unique_ref": defaults.repository_unique_ref,
+                                "repository_name_cache": defaults.repository_name_cache,
+                            }.items()
+                            if value is not None
+                        }
                         for kind, defaults in p.registries.items()
                         if defaults.default_repo is not None
                     }
@@ -301,18 +309,6 @@ def save(cfg: RvsConfig) -> None:
                 if v is not None
             }
             for name, p in cfg.profiles.items()
-        }
-
-    if cfg.registries:
-        raw["registries"] = {
-            kind: {
-                k: v
-                for k, v in {
-                    "default_repo": r.default_repo,
-                }.items()
-                if v is not None
-            }
-            for kind, r in cfg.registries.items()
         }
 
     with CONFIG_FILE.open("wb") as f:
@@ -327,11 +323,10 @@ def set_profile_value(profile: str, api_url: str | None = None) -> None:
     existing = cfg.profiles.get(profile, _default_profile_config(profile))
     cfg.profiles[profile] = ProfileConfig(
         api_url=api_url if api_url is not None else existing.api_url,
-        pkg_api_url=existing.pkg_api_url,
         pkg_download_url=existing.pkg_download_url,
         pkg_upload_url=existing.pkg_upload_url,
         customer_id=existing.customer_id,
-        customer_public_id=existing.customer_public_id,
+        customer_unique_id=existing.customer_unique_id,
         credential_type=existing.credential_type,
         expires_at=existing.expires_at,
         refresh_expires_at=existing.refresh_expires_at,
@@ -347,11 +342,10 @@ def clear_profile_credential_metadata(profile: str) -> None:
         return
     cfg.profiles[profile] = ProfileConfig(
         api_url=existing.api_url,
-        pkg_api_url=existing.pkg_api_url,
         pkg_download_url=existing.pkg_download_url,
         pkg_upload_url=existing.pkg_upload_url,
         customer_id=None,
-        customer_public_id=None,
+        customer_unique_id=None,
         credential_type=None,
         expires_at=None,
         refresh_expires_at=None,
@@ -364,11 +358,10 @@ def set_profile_metadata(
     profile: str,
     *,
     api_url: str | None = None,
-    pkg_api_url: str | None = None,
     pkg_download_url: str | None = None,
     pkg_upload_url: str | None = None,
     customer_id: str | None = None,
-    customer_public_id: str | None = None,
+    customer_unique_id: str | None = None,
     credential_type: str | None = None,
     expires_at: str | None = None,
     refresh_expires_at: str | None = None,
@@ -377,15 +370,14 @@ def set_profile_metadata(
     existing = cfg.profiles.get(profile, _default_profile_config(profile))
     cfg.profiles[profile] = ProfileConfig(
         api_url=api_url if api_url is not None else existing.api_url,
-        pkg_api_url=pkg_api_url if pkg_api_url is not None else existing.pkg_api_url,
         pkg_download_url=pkg_download_url
         if pkg_download_url is not None
         else existing.pkg_download_url,
         pkg_upload_url=pkg_upload_url if pkg_upload_url is not None else existing.pkg_upload_url,
         customer_id=customer_id if customer_id is not None else existing.customer_id,
-        customer_public_id=customer_public_id
-        if customer_public_id is not None
-        else existing.customer_public_id,
+        customer_unique_id=customer_unique_id
+        if customer_unique_id is not None
+        else existing.customer_unique_id,
         credential_type=credential_type
         if credential_type is not None
         else existing.credential_type,
@@ -432,5 +424,32 @@ def set_registry_default_repo(
     profile_name = profile or current_profile_name(cfg)
     profile_config = cfg.profiles.get(profile_name, _default_profile_config(profile_name))
     profile_config.registries[kind] = RegistryDefaults(default_repo=repo)
+    cfg.profiles[profile_name] = profile_config
+    save(cfg)
+
+
+def set_registry_default_target(
+    kind: RegistryKind,
+    *,
+    customer: dict,
+    repository: dict,
+    profile: str | None = None,
+) -> None:
+    """Persist immutable authority plus refreshable display-name caches."""
+    cfg = load()
+    profile_name = profile or current_profile_name(cfg)
+    profile_config = cfg.profiles.get(profile_name, _default_profile_config(profile_name))
+    stable_selector = f"{repository['workspace_unique_ref']}/{repository['repository_unique_ref']}"
+    profile_config.registries[kind] = RegistryDefaults(
+        default_repo=stable_selector,
+        customer_id=customer["customer_id"],
+        customer_unique_ref=customer["customer_unique_ref"],
+        workspace_id=repository["workspace_id"],
+        workspace_unique_ref=repository["workspace_unique_ref"],
+        workspace_name_cache=repository["workspace_name"],
+        repository_id=repository["id"],
+        repository_unique_ref=repository["repository_unique_ref"],
+        repository_name_cache=repository["repository_name"],
+    )
     cfg.profiles[profile_name] = profile_config
     save(cfg)

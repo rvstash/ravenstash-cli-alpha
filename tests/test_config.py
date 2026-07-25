@@ -45,7 +45,6 @@ def test_load_missing_config_uses_production_default_without_profile_env(
     assert cfg.active_profile().api_url == "https://api.ravenstash.com"
     assert cfg.active_profile("dev").api_url == "https://api.ravenstash.com"
     assert cfg.active_profile("staging").api_url == "https://api.ravenstash.com"
-    assert cfg.active_profile().pkg_api_url == "https://app.ravenstash.com/api"
     assert cfg.active_profile().pkg_download_url == "https://pkg.rvsta.sh"
     assert cfg.active_profile().pkg_upload_url == "https://push.rvsta.sh"
 
@@ -63,7 +62,7 @@ default_profile = "staging"
 
 [profiles.staging]
 customer_id = "cus_staging"
-customer_public_id = "custpid1"
+customer_unique_id = "custpid1"
 """.strip(),
         encoding="utf-8",
     )
@@ -72,7 +71,7 @@ customer_public_id = "custpid1"
 
     assert profile.api_url == "https://staging.example.test"
     assert profile.customer_id == "cus_staging"
-    assert profile.customer_public_id == "custpid1"
+    assert profile.customer_unique_id == "custpid1"
 
 
 def test_profile_api_url_can_be_declared_in_gitignored_local_env_file(
@@ -96,7 +95,6 @@ def test_package_service_urls_can_be_declared_per_profile(monkeypatch, tmp_path:
     _point_config(monkeypatch, tmp_path)
     (tmp_path / ".rvs.env").write_text(
         """
-RVS_PROFILE_STAGING_PKG_API_URL=https://app.staging.example.test/api
 RVS_PROFILE_STAGING_PKG_DOWNLOAD_URL=https://pkg-staging.example.test
 RVS_PROFILE_STAGING_PKG_UPLOAD_URL=https://push-staging.example.test
 """.strip(),
@@ -105,7 +103,6 @@ RVS_PROFILE_STAGING_PKG_UPLOAD_URL=https://push-staging.example.test
 
     profile = cfg_mod.load().active_profile("staging")
 
-    assert profile.pkg_api_url == "https://app.staging.example.test/api"
     assert profile.pkg_download_url == "https://pkg-staging.example.test"
     assert profile.pkg_upload_url == "https://push-staging.example.test"
 
@@ -147,19 +144,18 @@ def test_save_and_load_round_trips_profiles_and_registry_defaults(
         profiles={
             "work": cfg_mod.ProfileConfig(
                 api_url="https://api.work.example",
-                pkg_api_url="https://app.work.example/api",
                 pkg_download_url="https://pkg-work.example",
                 pkg_upload_url="https://pkg-push-work.example",
                 customer_id="cus_work",
-                customer_public_id="custpid1",
+                customer_unique_id="custpid1",
                 credential_type="expiring",
                 expires_at="2099-01-01T00:00:00+00:00",
                 refresh_expires_at="2099-01-02T00:00:00+00:00",
+                registries={
+                    "pypi": cfg_mod.RegistryDefaults(default_repo="_abcdefgh/_pypi0001"),
+                    "npm": cfg_mod.RegistryDefaults(default_repo="_abcdefgh/_npm00001"),
+                },
             )
-        },
-        registries={
-            "pypi": cfg_mod.RegistryDefaults(default_repo="repo-pypi"),
-            "npm": cfg_mod.RegistryDefaults(default_repo="repo-npm"),
         },
     )
 
@@ -168,13 +164,12 @@ def test_save_and_load_round_trips_profiles_and_registry_defaults(
 
     assert loaded.default_profile == "work"
     assert loaded.profiles["work"].api_url == "https://api.work.example"
-    assert loaded.profiles["work"].pkg_api_url == "https://app.work.example/api"
     assert loaded.profiles["work"].pkg_download_url == "https://pkg-work.example"
     assert loaded.profiles["work"].pkg_upload_url == "https://pkg-push-work.example"
     assert loaded.profiles["work"].customer_id == "cus_work"
-    assert loaded.profiles["work"].customer_public_id == "custpid1"
-    assert loaded.registry_defaults("pypi").default_repo == "repo-pypi"
-    assert loaded.registry_defaults("npm").default_repo == "repo-npm"
+    assert loaded.profiles["work"].customer_unique_id == "custpid1"
+    assert loaded.registry_defaults("pypi").default_repo == "_abcdefgh/_pypi0001"
+    assert loaded.registry_defaults("npm").default_repo == "_abcdefgh/_npm00001"
     assert loaded.registry_defaults("maven").default_repo is None
 
 
@@ -192,7 +187,7 @@ def test_set_profile_metadata_preserves_existing_values(monkeypatch, tmp_path: P
                 "default": cfg_mod.ProfileConfig(
                     api_url="https://api.example",
                     customer_id="cus_old",
-                    customer_public_id="oldpid1",
+                    customer_unique_id="oldpid1",
                     credential_type="expiring",
                 )
             }
@@ -204,7 +199,7 @@ def test_set_profile_metadata_preserves_existing_values(monkeypatch, tmp_path: P
 
     assert profile.api_url == "https://api.example"
     assert profile.customer_id == "cus_new"
-    assert profile.customer_public_id == "oldpid1"
+    assert profile.customer_unique_id == "oldpid1"
     assert profile.credential_type == "expiring"
 
 
@@ -228,7 +223,7 @@ def test_delete_profile_updates_default_profile(monkeypatch, tmp_path: Path) -> 
     assert cfg_mod.delete_profile("missing") is False
 
 
-def test_registry_defaults_are_profile_scoped_with_legacy_fallback(
+def test_registry_defaults_are_profile_scoped(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
@@ -240,7 +235,6 @@ def test_registry_defaults_are_profile_scoped_with_legacy_fallback(
                 "work": cfg_mod.ProfileConfig(),
                 "staging": cfg_mod.ProfileConfig(),
             },
-            registries={"pypi": cfg_mod.RegistryDefaults(default_repo="legacy")},
         )
     )
 
@@ -251,4 +245,3 @@ def test_registry_defaults_are_profile_scoped_with_legacy_fallback(
     assert loaded.registry_defaults("pypi", "work").default_repo == "work-repo"
     assert loaded.registry_defaults("pypi", "staging").default_repo == "staging-repo"
     assert loaded.registry_defaults("npm", "work").default_repo is None
-    assert loaded.registries["pypi"].default_repo == "legacy"

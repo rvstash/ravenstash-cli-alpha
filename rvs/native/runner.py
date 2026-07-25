@@ -19,9 +19,9 @@ from urllib.parse import urlparse
 
 import typer
 
-from .. import auth as auth_mod
 from .. import config as cfg_mod
 from .. import output
+from ..client import ApiClient, ApiError
 from ..pkg.routing import CanonicalRouter
 from ..runtime import tools
 
@@ -51,7 +51,7 @@ _RVS_URL_KINDS: dict[NativeTool, tuple[RegistryKind, ...]] = {
 class NativeOptions:
     profile: str | None = None
     repo: str | None = None
-    customer_pid: str | None = None
+    customer_id: str | None = None
     native_config: ConfigPolicy = "respect"
 
 
@@ -60,43 +60,56 @@ class RegistryRoute:
     kind: RegistryKind
     pkg_download_url: str
     pkg_upload_url: str
-    customer_pid: str
-    repository_name: str
+    workspace_unique_ref: str
+    repository_unique_ref: str
+    package_token: str
 
     @property
     def pypi_index_url(self) -> str:
         return _ROUTER.pypi_index_url(
-            self.pkg_download_url, self.customer_pid, self.repository_name
+            self.pkg_download_url,
+            self.workspace_unique_ref,
+            self.repository_unique_ref,
         )
 
     @property
     def pypi_upload_url(self) -> str:
-        return _ROUTER.pypi_upload_url(self.pkg_upload_url, self.customer_pid, self.repository_name)
+        return _ROUTER.pypi_upload_url(
+            self.pkg_upload_url,
+            self.workspace_unique_ref,
+            self.repository_unique_ref,
+        )
 
     @property
     def npm_registry_url(self) -> str:
         return _ROUTER.npm_registry_url(
-            self.pkg_download_url, self.customer_pid, self.repository_name
+            self.pkg_download_url,
+            self.workspace_unique_ref,
+            self.repository_unique_ref,
         )
 
     @property
     def npm_upload_registry_url(self) -> str:
         return _ROUTER.npm_upload_registry_url(
             self.pkg_upload_url,
-            self.customer_pid,
-            self.repository_name,
+            self.workspace_unique_ref,
+            self.repository_unique_ref,
         )
 
     @property
     def maven_repo_url(self) -> str:
         return _ROUTER.maven_repo_url(
-            self.pkg_download_url, self.customer_pid, self.repository_name
+            self.pkg_download_url,
+            self.workspace_unique_ref,
+            self.repository_unique_ref,
         )
 
     @property
     def maven_upload_url(self) -> str:
         return _ROUTER.maven_upload_url(
-            self.pkg_upload_url, self.customer_pid, self.repository_name
+            self.pkg_upload_url,
+            self.workspace_unique_ref,
+            self.repository_unique_ref,
         )
 
 
@@ -142,19 +155,23 @@ def _build_plan(
         urls = _detected_ravenstash_urls(tool, argv, env)
         if not urls:
             return ExecutionPlan(cmd=cmd, env=env)
-        token = _require_token(options.profile)
+        token = _package_token_for_url(
+            urls[0],
+            _kind_for_tool(tool),
+            options.profile,
+            options.customer_id,
+        )
         _inject_for_detected_urls(tool, cmd, native_arg_start, env, urls, token, temp_dir)
         return ExecutionPlan(cmd=cmd, env=env)
 
     route = _resolve_route(_kind_for_tool(tool), options)
-    token = _require_token(options.profile)
     _inject_override(
         tool,
         cmd,
         native_arg_start,
         env,
         route,
-        token,
+        route.package_token,
         temp_dir,
         isolate=effective_policy == "isolate",
     )
@@ -195,45 +212,18 @@ def _profile(profile: str | None) -> cfg_mod.ProfileConfig:
     return cfg.active_profile(profile or cfg_mod.current_profile_name(cfg))
 
 
-def _require_token(profile: str | None) -> str:
-    token = auth_mod.get_token(_profile_name(profile))
-    if not token:
-        output.fatal("Not authenticated. Run `rvs auth login` or set RVS_TOKEN.")
-    return token
-
-
 def _split_repo_ref(repo_ref: str) -> tuple[str | None, str]:
     value = repo_ref.strip().strip("/")
     if not value:
         output.fatal("Repository name cannot be empty.")
     if "/" not in value:
         return None, value
-    customer_pid, repository_name = value.split("/", 1)
-    customer_pid = customer_pid.strip()
+    workspace_selector, repository_name = value.split("/", 1)
+    workspace_selector = workspace_selector.strip()
     repository_name = repository_name.strip().strip("/")
-    if not customer_pid or not repository_name or "/" in repository_name:
-        output.fatal(
-            "Repository must be <repository-name> or <owner>/<repository-name>."
-        )
-    return customer_pid, repository_name
-
-
-def _customer_public_id(profile: str | None, explicit_customer_pid: str | None) -> str:
-    if explicit_customer_pid:
-        return explicit_customer_pid
-    env_customer_pid = os.environ.get("RVS_OWNER") or os.environ.get("RVS_CUSTOMER_PID") or os.environ.get(
-        "RVS_CUSTOMER_PUBLIC_ID"
-    )
-    if env_customer_pid:
-        return env_customer_pid
-    profile_cfg = _profile(profile)
-    if not profile_cfg.customer_public_id:
-        output.fatal(
-            "No repository owner is stored for this profile. "
-            "Run `rvs auth login` again, pass --rvs-owner, or pass "
-            "--rvs-repo <owner>/<repository-name>."
-        )
-    return profile_cfg.customer_public_id
+    if not workspace_selector or not repository_name or "/" in repository_name:
+        output.fatal("Repository must be <repository-name> or <workspace>/<repository-name>.")
+    return workspace_selector, repository_name
 
 
 def _resolve_route(kind: RegistryKind, options: NativeOptions) -> RegistryRoute:
@@ -245,16 +235,76 @@ def _resolve_route(kind: RegistryKind, options: NativeOptions) -> RegistryRoute:
             f"No {kind} package repository selected. Pass --rvs-repo or run "
             f"`rvs pkg repo set-default {kind} <repository-name>`."
         )
-    repo_customer_pid, repository_name = _split_repo_ref(repo_ref)
-    customer_pid = repo_customer_pid or _customer_public_id(options.profile, options.customer_pid)
+    workspace_selector, repository_selector = _split_repo_ref(repo_ref)
+    selector = (
+        f"{workspace_selector}/{repository_selector}" if workspace_selector else repository_selector
+    )
+    try:
+        client = ApiClient.from_profile(options.profile)
+        entry = client.get(
+            "/v0/repositories/resolve",
+            params={
+                "selector": selector,
+                "customer_id": options.customer_id,
+                "registry_kind": kind,
+            },
+        ).json()
+        repository = entry["repository"]
+        credential = client.post(
+            "/v0/package-credentials",
+            json={"repository_id": repository["id"], "registry_kind": kind},
+        ).json()
+    except (ApiError, KeyError, TypeError) as exc:
+        output.fatal(str(exc))
     profile_cfg = _profile(options.profile)
+    if options.repo is None:
+        cfg_mod.set_registry_default_target(
+            kind,
+            customer=entry["customer"],
+            repository=repository,
+            profile=profile_name,
+        )
     return RegistryRoute(
         kind=kind,
         pkg_download_url=profile_cfg.pkg_download_url,
         pkg_upload_url=profile_cfg.pkg_upload_url,
-        customer_pid=customer_pid,
-        repository_name=repository_name,
+        workspace_unique_ref=repository["workspace_unique_ref"],
+        repository_unique_ref=repository["repository_unique_ref"],
+        package_token=credential["access_token"],
     )
+
+
+def _package_token_for_url(
+    url: str,
+    kind: RegistryKind,
+    profile: str | None,
+    customer_id: str | None,
+) -> str:
+    parts = [part for part in urlparse(url).path.split("/") if part]
+    try:
+        marker = parts.index("x")
+        selector = f"{parts[marker + 1]}/{parts[marker + 2]}"
+    except (ValueError, IndexError):
+        output.fatal("Detected Ravenstash URL is not a canonical /x/<workspace>/<repository> URL.")
+    try:
+        client = ApiClient.from_profile(profile)
+        entry = client.get(
+            "/v0/repositories/resolve",
+            params={
+                "selector": selector,
+                "customer_id": customer_id,
+                "registry_kind": kind,
+            },
+        ).json()
+        return client.post(
+            "/v0/package-credentials",
+            json={
+                "repository_id": entry["repository"]["id"],
+                "registry_kind": kind,
+            },
+        ).json()["access_token"]
+    except (ApiError, KeyError, TypeError) as exc:
+        output.fatal(str(exc))
 
 
 def _detected_ravenstash_urls(
@@ -295,12 +345,24 @@ def _ravenstash_url_kind(url: str) -> RegistryKind | None:
     parsed = urlparse(url)
     path_parts = [part for part in parsed.path.split("/") if part]
 
-    if len(path_parts) >= 4 and path_parts[0] == "native":
+    if (
+        len(path_parts) >= 5
+        and path_parts[0] == "native"
+        and path_parts[2] == "x"
+        and path_parts[3].startswith("_")
+        and path_parts[4].startswith("_")
+    ):
         kind = path_parts[1]
         if kind in {"pypi", "npm", "maven"}:
             return kind  # type: ignore[return-value]
 
-    if len(path_parts) < 2 or parsed.hostname is None:
+    if (
+        len(path_parts) < 3
+        or path_parts[0] != "x"
+        or not path_parts[1].startswith("_")
+        or not path_parts[2].startswith("_")
+        or parsed.hostname is None
+    ):
         return None
     host_parts = parsed.hostname.split(".")
     if len(host_parts) < 2:

@@ -222,11 +222,10 @@ def refresh_expiring_credential(profile: str) -> str | None:
     cfg_mod.set_profile_metadata(
         profile,
         api_url=p.api_url,
-        pkg_api_url=payload.get("pkg_api_url"),
         pkg_download_url=payload.get("pkg_download_url"),
         pkg_upload_url=payload.get("pkg_upload_url"),
         customer_id=payload.get("customer_id"),
-        customer_public_id=payload.get("customer_public_id"),
+        customer_unique_id=payload.get("customer_unique_id"),
         credential_type=EXPIRING_CREDENTIAL_TYPE,
         expires_at=expires_at.isoformat(),
         refresh_expires_at=refresh_expires_at.isoformat(),

@@ -9,7 +9,7 @@ Implements the npm publish wire protocol directly:
 3. Computes SHA-1 (integrity) and SHA-512 (ssri) of the tarball.
 4. Builds the JSON publish body ``{ _id, name, dist-tags, versions:{...}, _attachments:{...} }``
    where the tarball is base64-encoded inside ``_attachments``.
-5. PUTs the payload to ``/{customer_pid}/{repository_name}/{package}`` on the npm upload host.
+5. PUTs the payload to ``/x/{workspace_unique_ref}/{repository_unique_ref}/{package}`` on the npm upload host.
 
 Using ``npm pack`` preserves npm's packlist, lifecycle hooks, bundled
 dependencies, and generated-file behavior. An ``npm`` binary is therefore

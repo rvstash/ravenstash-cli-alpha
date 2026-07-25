@@ -57,7 +57,7 @@ default_profile = "{default_profile}"
 [profiles.default]
 api_url = "https://api.ravenstash.com"
 customer_id = "cus_default"
-customer_public_id = "custpid1"
+customer_unique_id = "custpid1"
 credential_type = "{credential_type}"
 expires_at = "2099-01-01T00:00:00+00:00"
 refresh_expires_at = "{refresh_expires_at}"
@@ -65,7 +65,7 @@ refresh_expires_at = "{refresh_expires_at}"
 [profiles.work]
 api_url = "https://api.work.example"
 customer_id = "cus_work"
-customer_public_id = "workpid1"
+customer_unique_id = "workpid1"
 credential_type = "{credential_type}"
 expires_at = "2099-01-01T00:00:00+00:00"
 refresh_expires_at = "{refresh_expires_at}"
@@ -362,7 +362,7 @@ def test_device_login_handles_slow_down_and_stores_expiring_jwt(monkeypatch) -> 
                 "expires_in": 900,
                 "refresh_expires_in": 14400,
                 "customer_id": "cus_123",
-                "customer_public_id": "custpid1",
+                "customer_unique_id": "custpid1",
                 "pkg_api_url": "https://app.ravenstash.com/api",
                 "pkg_download_url": "https://pkg.rvsta.sh",
                 "pkg_upload_url": "https://push.rvsta.sh",
@@ -411,8 +411,7 @@ def test_device_login_handles_slow_down_and_stores_expiring_jwt(monkeypatch) -> 
     assert metadata_writes[-1]["profile"] == "default"
     assert metadata_writes[-1]["api_url"] == "https://api.ravenstash.com"
     assert metadata_writes[-1]["customer_id"] == "cus_123"
-    assert metadata_writes[-1]["customer_public_id"] == "custpid1"
-    assert metadata_writes[-1]["pkg_api_url"] == "https://app.ravenstash.com/api"
+    assert metadata_writes[-1]["customer_unique_id"] == "custpid1"
     assert metadata_writes[-1]["pkg_download_url"] == "https://pkg.rvsta.sh"
     assert metadata_writes[-1]["pkg_upload_url"] == "https://push.rvsta.sh"
     assert metadata_writes[-1]["credential_type"] == "expiring"
@@ -467,7 +466,7 @@ def test_device_login_replaces_active_profile_and_revokes_previous_refresh(
                 "expires_in": 900,
                 "refresh_expires_in": 14400,
                 "customer_id": "cus_123",
-                "customer_public_id": "custpid1",
+                "customer_unique_id": "custpid1",
                 "pkg_api_url": "https://app.ravenstash.com/api",
                 "pkg_download_url": "https://pkg.rvsta.sh",
                 "pkg_upload_url": "https://push.rvsta.sh",
@@ -547,7 +546,7 @@ def test_device_login_does_not_revoke_expired_previous_refresh(
                 "expires_in": 900,
                 "refresh_expires_in": 14400,
                 "customer_id": "cus_123",
-                "customer_public_id": "custpid1",
+                "customer_unique_id": "custpid1",
                 "pkg_api_url": "https://app.ravenstash.com/api",
                 "pkg_download_url": "https://pkg.rvsta.sh",
                 "pkg_upload_url": "https://push.rvsta.sh",
@@ -611,7 +610,7 @@ def test_refresh_expiring_credential_rotates_tokens(
                 "expires_in": 900,
                 "refresh_expires_in": 14400,
                 "customer_id": "cus_123",
-                "customer_public_id": "custpid1",
+                "customer_unique_id": "custpid1",
                 "pkg_api_url": "https://app.ravenstash.com/api",
                 "pkg_download_url": "https://pkg.rvsta.sh",
                 "pkg_upload_url": "https://push.rvsta.sh",
@@ -638,8 +637,7 @@ def test_refresh_expiring_credential_rotates_tokens(
     ]
     profile = cfg_mod.load().profiles["default"]
     assert profile.credential_type == "expiring"
-    assert profile.customer_public_id == "custpid1"
-    assert profile.pkg_api_url == "https://app.ravenstash.com/api"
+    assert profile.customer_unique_id == "custpid1"
     assert profile.pkg_download_url == "https://pkg.rvsta.sh"
     assert profile.pkg_upload_url == "https://push.rvsta.sh"
     assert profile.refresh_expires_at is not None

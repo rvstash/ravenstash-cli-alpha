@@ -101,7 +101,6 @@ api_url = "https://api.default.example"
 
 [profiles.work]
 api_url = "https://api.work.example"
-pkg_api_url = "https://app.work.example/api"
 """.strip(),
         encoding="utf-8",
     )
@@ -117,7 +116,7 @@ pkg_api_url = "https://app.work.example/api"
 
     client = ApiClient.from_profile()
 
-    assert client._base == "https://app.work.example/api"
+    assert client._base == "https://api.work.example"
     assert client._profile == "work"
     assert seen_profiles == ["work"]
 

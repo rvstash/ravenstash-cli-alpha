@@ -101,37 +101,26 @@ default_profile = "default"
 default_repo = "repo-alias"
 
 [profiles.staging]
-customer_public_id = "custpid1"
+customer_unique_id = "custpid1"
 """.strip(),
     )
 
-    pkg_result = runner.invoke(app, ["pkg", "pypi", "index-url", "--profile", "staging"])
-    packages_result = runner.invoke(app, ["packages", "pypi", "index-url", "--profile", "staging"])
+    pkg_result = runner.invoke(app, ["pkg", "repo", "defaults", "--profile", "staging"])
+    packages_result = runner.invoke(app, ["packages", "repo", "defaults", "--profile", "staging"])
 
     assert pkg_result.exit_code == 0
     assert packages_result.exit_code == 0
     assert packages_result.output == pkg_result.output
-    assert (
-        packages_result.output.strip()
-        == "https://pypi.pkg-staging.example.test/custpid1/repo-alias/simple/"
-    )
+    assert "Package repository defaults" in packages_result.output
+    assert "(staging)" in packages_result.output
 
 
-@pytest.mark.parametrize(
-    "args",
-    [
-        ["repo", "list"],
-        ["repo", "create", "demo"],
-        ["repo", "clone", "demo"],
-        ["repo", "show", "demo"],
-        ["repo", "delete", "demo"],
-    ],
-)
-def test_repo_placeholder_commands_are_registered(args: list[str]) -> None:
-    repo_result = runner.invoke(app, args)
+def test_repo_commands_are_registered() -> None:
+    repo_result = runner.invoke(app, ["repo", "--help"])
 
-    assert repo_result.exit_code == 1
-    assert "rvs repo is not implemented yet" in repo_result.stderr
+    assert repo_result.exit_code == 0
+    for command in ("list", "create", "show", "rename", "delete"):
+        assert command in repo_result.output
 
 
 @pytest.mark.parametrize(

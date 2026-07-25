@@ -1,4 +1,4 @@
-"""httpx-based Ravenstash Central API client.
+"""httpx-based Ravenstash DevAPI client.
 
 All requests go through this module so that auth headers, base URL, and error
 handling are consistent everywhere.
@@ -6,7 +6,7 @@ handling are consistent everywhere.
 Usage
 -----
     client = ApiClient.from_profile("default")
-    repos = client.get("/webapp/repository/").json()
+    repos = client.get("/v0/repositories").json()
 """
 
 from __future__ import annotations
@@ -70,7 +70,7 @@ class ApiClient:
                 f"No token for profile '{profile_name}'. Run: rvs auth login --profile {profile_name}"
             )
         return cls(
-            api_url=p.pkg_api_url,
+            api_url=p.api_url,
             token=token,  # type: ignore[arg-type]
             profile=profile_name,
             allow_refresh=auth_mod.token_source(profile_name) != "RVS_TOKEN",

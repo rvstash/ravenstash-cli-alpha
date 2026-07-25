@@ -1,52 +1,87 @@
-"""Placeholder `rvs repo` command group for future source repositories."""
+"""First-class repository commands backed exclusively by DevAPI."""
 
 from __future__ import annotations
 
 import typer
 
-from .. import output
+from ..pkg import commands as pkg_commands
 
 
 app = typer.Typer(
     name="repo",
-    help="Manage Ravenstash source repositories. Not implemented yet.",
+    help="List and manage Ravenstash package repositories.",
     no_args_is_help=True,
 )
 
 
-def _not_implemented() -> None:
-    output.fatal("rvs repo is not implemented yet.")
-
-
 @app.command("list")
-def list_repos() -> None:
-    """List source repositories."""
-    _not_implemented()
+def list_repos(
+    profile: str | None = typer.Option(None, "--profile", "-p"),
+    customer_id: str | None = typer.Option(None, "--customer-id"),
+    ecosystem: str | None = typer.Option(None, "--ecosystem", "-e"),
+) -> None:
+    """List authorized repositories grouped by account and workspace."""
+    pkg_commands.repo_list(
+        profile=profile,
+        customer_id=customer_id,
+        kind=ecosystem,
+    )
 
 
 @app.command("create")
-def create(name: str = typer.Argument(..., help="Repository name.")) -> None:
-    """Create a source repository."""
-    del name
-    _not_implemented()
-
-
-@app.command("clone")
-def clone(repo: str = typer.Argument(..., help="Repository name or URL.")) -> None:
-    """Clone a source repository."""
-    del repo
-    _not_implemented()
+def create(
+    name: str = typer.Argument(..., help="Repository name."),
+    ecosystem: list[str] = typer.Option(
+        ...,
+        "--ecosystem",
+        "-e",
+        help="Ecosystem to enable; repeat for multiple lanes.",
+    ),
+    profile: str | None = typer.Option(None, "--profile", "-p"),
+    customer_id: str | None = typer.Option(None, "--customer-id"),
+    set_default: bool = typer.Option(False, "--default"),
+) -> None:
+    """Create a repository in the customer's default workspace."""
+    pkg_commands.repo_create(
+        name=name,
+        kind=ecosystem,
+        profile=profile,
+        customer_id=customer_id,
+        set_default=set_default,
+    )
 
 
 @app.command("show")
-def show(repo: str = typer.Argument(..., help="Repository name.")) -> None:
-    """Show source repository details."""
-    del repo
-    _not_implemented()
+def show(
+    repository: str = typer.Argument(
+        ...,
+        help="<workspace>/<repository>, stable references, or a unique repository name.",
+    ),
+    profile: str | None = typer.Option(None, "--profile", "-p"),
+) -> None:
+    """Show stable repository and workspace identity."""
+    pkg_commands.repo_show(repo=repository, profile=profile)
+
+
+@app.command("rename")
+def rename(
+    repository: str = typer.Argument(...),
+    new_name: str = typer.Argument(...),
+    profile: str | None = typer.Option(None, "--profile", "-p"),
+) -> None:
+    """Rename a repository without changing its stable native reference."""
+    pkg_commands.repo_rename(
+        repo=repository,
+        new_name=new_name,
+        profile=profile,
+    )
 
 
 @app.command("delete")
-def delete(repo: str = typer.Argument(..., help="Repository name.")) -> None:
-    """Delete a source repository."""
-    del repo
-    _not_implemented()
+def delete(
+    repository: str = typer.Argument(...),
+    profile: str | None = typer.Option(None, "--profile", "-p"),
+    yes: bool = typer.Option(False, "--yes", "-y"),
+) -> None:
+    """Delete a repository."""
+    pkg_commands.repo_delete(repo=repository, profile=profile, yes=yes)

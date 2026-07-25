@@ -87,7 +87,7 @@ default_profile = "default"
 [profiles.default]
 api_url = "https://api.ravenstash.com"
 customer_id = "cus_123"
-customer_public_id = "custpid1"
+customer_unique_id = "custpid1"
 credential_type = "expiring"
 expires_at = "2099-01-01T00:00:00+00:00"
 refresh_expires_at = "2099-01-02T00:00:00+00:00"
@@ -101,11 +101,10 @@ refresh_expires_at = "2099-01-02T00:00:00+00:00"
 
     assert deleted == ["default", "default:refresh"]
     assert profile.api_url == "https://api.ravenstash.com"
-    assert profile.pkg_api_url == "https://app.ravenstash.com/api"
     assert profile.pkg_download_url == "https://pkg.rvsta.sh"
     assert profile.pkg_upload_url == "https://push.rvsta.sh"
     assert profile.customer_id is None
-    assert profile.customer_public_id is None
+    assert profile.customer_unique_id is None
     assert profile.credential_type is None
     assert profile.expires_at is None
     assert profile.refresh_expires_at is None

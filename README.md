@@ -42,19 +42,18 @@ in the OS keyring. Profile metadata lives in `~/.rvs/config.toml`. Automation
 should pass credentials with `RVS_TOKEN`; that env var takes precedence over
 local profiles and is never refreshed.
 
-Device login discovers and stores the package service endpoints returned by
-DevAPI. For non-production automation that does not perform device login,
-declare all service endpoints through the shell environment or a gitignored
-local `.rvs.env` file:
+Device login discovers and stores the package transfer endpoints returned by
+DevAPI. Every control-plane operation goes through DevAPI; `rvs` never calls
+Central directly. For non-production automation that does not perform device
+login, declare the DevAPI and transfer endpoints through the shell environment
+or a gitignored local `.rvs.env` file:
 
 ```bash
 # packages/rvs/.rvs.env, ~/.rvs/profiles.env, or a file pointed to by RVS_ENV_FILE
 RVS_PROFILE_STAGING_API_URL=https://<staging-devapi-host>
-RVS_PROFILE_STAGING_PKG_API_URL=https://<staging-app-host>/api
 RVS_PROFILE_STAGING_PKG_DOWNLOAD_URL=https://<staging-download-host>
 RVS_PROFILE_STAGING_PKG_UPLOAD_URL=https://<staging-upload-host>
 RVS_PROFILE_DEV_API_URL=http://<local-devapi-host>
-RVS_PROFILE_DEV_PKG_API_URL=http://<local-package-api-host>
 RVS_PROFILE_DEV_PKG_DOWNLOAD_URL=http://<local-download-host>
 RVS_PROFILE_DEV_PKG_UPLOAD_URL=http://<local-upload-host>
 ```
@@ -128,13 +127,17 @@ rvs pkg remote-cache set-age <cache-id> --min-age-days 3
 rvs pkg remote-cache delete <cache-id>
 ```
 
-A remote cache & proxy is a special read-only repository that gives an owner a private, authenticated endpoint for a curated public registry. Use it directly with package managers or `rvs`, or connect it to a private repository. Packages are cached on demand and can be delayed with minimum package age.
+A remote cache & proxy is a customer-owned read-only binding to a curated
+public registry. Use it directly with package managers or connect it to a
+private repository. Packages are cached on demand and can be delayed with
+minimum package age.
 
 Repository references use the package repository name, such as
 `my-python-packages`. Repository names use lowercase letters, numbers, and
-hyphens. Commands that build package-manager URLs also accept
-`<owner>/<repo-name>` when you need to override the profile's
-stored repository owner.
+hyphens. When a name is ambiguous across authorized workspaces, use
+`<workspace>/<repo-name>` or pass `--customer-id`. After resolving the target,
+the CLI always builds native package URLs from the immutable
+`<workspace_unique_ref>/<repository_unique_ref>` pair.
 
 Defaults are profile-scoped under
 `[profiles.<name>.registries.<ecosystem>]` in `~/.rvs/config.toml`. Legacy top-level

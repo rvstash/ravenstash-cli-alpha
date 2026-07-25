@@ -87,7 +87,7 @@ customer_id = "cus_work"
             return {
                 "email": "developer@example.test",
                 "customer_id": "cus_verified",
-                "customer_public_id": "custpid1",
+                "customer_unique_id": "custpid1",
             }
 
     class _Client:
@@ -105,7 +105,7 @@ customer_id = "cus_work"
     result = runner.invoke(auth_cmd.app, ["whoami"])
 
     assert result.exit_code == 0
-    assert calls == ["/webapp/account/users/me"]
+    assert calls == ["/v0/me"]
     assert "work" in result.output
     assert "developer@example.test" in result.output
     assert "cus_verified" in result.output

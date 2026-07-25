@@ -301,7 +301,6 @@ def status(
         {
             "Profile": profile_name,
             "API URL": p.api_url,
-            "Package API URL": p.pkg_api_url,
             "Package download URL": p.pkg_download_url,
             "Package upload URL": p.pkg_upload_url,
             "Authenticated": "yes" if token else "no",
@@ -328,7 +327,7 @@ def whoami(
     profile_name = _target_profile(profile, cfg)
     p = cfg.active_profile(profile_name)
     try:
-        identity = ApiClient.from_profile(profile_name).get("/webapp/account/users/me").json()
+        identity = ApiClient.from_profile(profile_name).get("/v0/me").json()
     except ApiError as exc:
         output.fatal(f"Could not verify the current identity: {exc}")
     output.kv(
@@ -336,9 +335,8 @@ def whoami(
             "Profile": profile_name,
             "User": identity.get("email") or identity.get("id") or "unknown",
             "Owner ID": identity.get("customer_id") or "unknown",
-            "Owner": identity.get("customer_public_id") or "unknown",
+            "Owner": identity.get("customer_unique_id") or "unknown",
             "API URL": p.api_url,
-            "Package API URL": p.pkg_api_url,
             "Package download URL": p.pkg_download_url,
             "Package upload URL": p.pkg_upload_url,
         },

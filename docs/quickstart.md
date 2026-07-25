@@ -7,14 +7,16 @@ cases that matter when automating workflows.
 
 ## Mental Model
 
-`rvs auth login` authenticates a profile. It stores the selected repository owner
-and short-lived credentials, but it does not select a package repository.
+`rvs auth login` authenticates a profile with DevAPI. One device session can
+see the user's personal customer and every organization the user may access,
+but it does not select a package repository.
 
-Package commands need a repository owner and repository name:
+Package commands resolve a repository selector through DevAPI:
 
-- repository owner: known after login for the active profile.
-- repository name: selected per ecosystem, either with `--repo` or a saved
-  default.
+- a bare repository name works when it matches exactly one authorized object;
+- `<workspace>/<repository-name>` disambiguates mutable names;
+- saved defaults contain immutable
+  `<workspace_unique_ref>/<repository_unique_ref>` pairs.
 
 When a package command needs a repository, `rvs` resolves it in this order:
 
@@ -22,9 +24,6 @@ When a package command needs a repository, `rvs` resolves it in this order:
 2. Use `[profiles.<name>.registries.<ecosystem>].default_repo` for the selected
    profile from `~/.rvs/config.toml`.
 3. Exit with a clear error if neither exists.
-
-Legacy `[registries.<ecosystem>]` entries are read only as a fallback for profiles
-that do not yet have their own default.
 
 The error looks like this:
 
@@ -69,8 +68,8 @@ rvs auth profile switch staging
 ```
 
 For local or staging environments, declare the DevAPI URL outside git. A
-successful device login discovers and stores the package API, download, and
-upload endpoints returned by that DevAPI environment:
+successful device login stores the download and upload endpoints returned by
+that DevAPI environment; every control-plane request continues through DevAPI:
 
 ```bash
 export RVS_PROFILE_STAGING_API_URL=https://<staging-devapi-host>
@@ -91,8 +90,8 @@ rvs auth status
 rvs auth whoami
 ```
 
-`whoami` verifies the identity with Ravenstash and reports the server-returned
-user and repository owner rather than trusting local profile data alone.
+`whoami` verifies the identity with DevAPI and reports the server-returned user
+and current customer default rather than trusting local profile data alone.
 
 ## Create Or Select Repositories
 
@@ -137,15 +136,20 @@ rvs pkg npm install lodash --repo <npm-repo-name>
 rvs pkg maven install com.example:lib:1.0.0 --repo <maven-repo-name>
 ```
 
-Use `<owner>/<repo-name>` only when you must override the repository owner
-segment encoded in the route:
+Use `<workspace>/<repo-name>` to disambiguate equal repository names:
 
 ```bash
-rvs pkg pypi index-url --repo <owner>/<repo-name>
+rvs pkg pypi index-url --repo <workspace>/<repo-name>
 ```
 
-Most users should pass just `<repo-name>` because the repository owner is
-already known from the active auth profile.
+The CLI resolves that selector, saves immutable references for persistent
+defaults, and always generates native package URLs in this stable form:
+
+```text
+/x/_abcdefgh/_m7nk3p4q/
+```
+
+Workspace and repository renames therefore do not break CLI defaults.
 
 ## `rvs pkg` vs Native Package-Manager Wrappers
 
@@ -208,7 +212,7 @@ rvs pkg pypi install requests
 For this command, `rvs` delegates to `pip` and injects:
 
 ```text
-PIP_INDEX_URL=https://__token__:<token>@pypi.<download-host>/<owner>/<repo-name>/simple/
+PIP_INDEX_URL=https://__token__:<token>@pypi.<download-host>/x/<workspace_unique_ref>/<repository_unique_ref>/simple/
 ```
 
 That environment variable is scoped to the subprocess. It is not written to a
@@ -227,7 +231,7 @@ Current behavior: `rvs pkg pypi publish` does not shell out to `twine`. It
 implements the legacy PyPI upload protocol directly and posts to:
 
 ```text
-https://pypi.<upload-host>/<owner>/<repo-name>/
+https://pypi.<upload-host>/x/<workspace_unique_ref>/<repository_unique_ref>/
 ```
 
 To print a pip configuration snippet instead of running an install:
@@ -253,13 +257,13 @@ rvs pkg npm install lodash
 For this command, `rvs` delegates to `npm` and runs the equivalent of:
 
 ```bash
-npm install --registry https://npm.<download-host>/<owner>/<repo-name>/ lodash
+npm install --registry https://npm.<download-host>/x/<workspace_unique_ref>/<repository_unique_ref>/ lodash
 ```
 
 It injects the auth token through npm's environment-backed config key:
 
 ```text
-NPM_CONFIG_//npm.<download-host>/<owner>/<repo-name>/:_authToken=<token>
+NPM_CONFIG_//npm.<download-host>/x/<workspace_unique_ref>/<repository_unique_ref>/:_authToken=<token>
 ```
 
 Publish the package in the current directory:
@@ -273,14 +277,14 @@ runs native `npm pack`, reads `package.json`, builds the npm publish JSON body,
 and PUTs it to:
 
 ```text
-https://npm.<upload-host>/<owner>/<repo-name>/<package-name>
+https://npm.<upload-host>/x/<workspace_unique_ref>/<repository_unique_ref>/<package-name>
 ```
 
 It writes package metadata with download tarball URLs pointing at the private
 download registry:
 
 ```text
-https://npm.<download-host>/<owner>/<repo-name>/<package-name>/-/<tarball>
+https://npm.<download-host>/x/<workspace_unique_ref>/<repository_unique_ref>/<package-name>/-/<tarball>
 ```
 
 Using `npm pack` honors npm's normal packlist, lifecycle hooks, bundled
@@ -315,7 +319,8 @@ For this command, `rvs` writes a temporary `settings.xml` containing:
 - server id `rvs-private`
 - username `__token__`
 - the active token as the password
-- repository URL `https://maven.<download-host>/<owner>/<repo-name>/`
+- repository URL
+  `https://maven.<download-host>/x/<workspace_unique_ref>/<repository_unique_ref>/`
 
 It then runs:
 
@@ -338,7 +343,7 @@ Current behavior: `rvs pkg maven deploy` does not shell out to `mvn deploy`. It
 uploads the artifact and checksum sidecars with HTTP PUTs under:
 
 ```text
-https://maven.<upload-host>/<owner>/<repo-name>/<group-path>/<artifact>/<version>/
+https://maven.<upload-host>/x/<workspace_unique_ref>/<repository_unique_ref>/<group-path>/<artifact>/<version>/
 ```
 
 To print a reusable Maven `settings.xml` snippet:
@@ -364,15 +369,13 @@ rvs pkg pypi install private-package
 ```
 
 Production service endpoints have canonical defaults. For a non-production
-automation profile without device-login metadata, provide all service URLs and
-the repository owner through environment/configuration:
+automation profile, point `rvs` at that environment's DevAPI and provide the
+package transfer hosts when they differ from production:
 
 ```bash
 export RVS_PROFILE_CI_API_URL=https://api.ravenstash.com
-export RVS_PROFILE_CI_PKG_API_URL=https://app.ravenstash.com/api
 export RVS_PROFILE_CI_PKG_DOWNLOAD_URL=https://pkg.rvsta.sh
 export RVS_PROFILE_CI_PKG_UPLOAD_URL=https://push.rvsta.sh
-export RVS_OWNER=<owner>
 export RVS_TOKEN=<automation-token>
 
 rvs pkg pypi install private-package --repo <pypi-repo-name>
@@ -390,18 +393,16 @@ rvs pkg repo defaults
 rvs pkg repo set-default pypi <repo-name>
 ```
 
-Unknown or missing repository owner:
+Unknown or ambiguous repository:
 
 ```bash
+rvs pkg repo list
 rvs auth status
 rvs auth login
 ```
 
-For automation, set:
-
-```bash
-export RVS_OWNER=<owner>
-```
+Pass `<workspace>/<repo-name>` or the immutable underscore pair shown by
+`rvs pkg repo list` when equal names exist in several authorized scopes.
 
 Not authenticated:
 
@@ -434,8 +435,12 @@ LLM agents should follow these rules when using `rvs`:
 - Prefer `--repo <repo-name>` for one-off commands.
 - Use `rvs pkg repo set-default <ecosystem> <repo-name>` only when changing persistent
   local CLI state is intended.
-- Treat `customer_id` and `customer_public_id` as different values. Registry
-  URLs use `customer_public_id`.
+- Treat customer, workspace, and repository internal IDs as different from
+  their immutable generated references.
+- Private registry URLs always use
+  `/x/<workspace_unique_ref>/<repository_unique_ref>`; never construct them
+  from a customer identifier.
+- The CLI control plane is DevAPI. Do not configure or call Central directly.
 - Use `RVS_TOKEN` for CI/headless flows.
 - Never write real tokens into committed files.
 - Remember that install flows delegate to native tools. Publish flows use `rvs`
