@@ -19,6 +19,7 @@ from urllib.parse import urlparse
 
 import typer
 
+from .. import auth as auth_mod
 from .. import config as cfg_mod
 from .. import output
 from ..client import ApiClient, ApiError
@@ -281,6 +282,15 @@ def _package_token_for_url(
     customer_id: str | None,
 ) -> str:
     parts = [part for part in urlparse(url).path.split("/") if part]
+    route_parts = parts[2:] if len(parts) >= 3 and parts[0] == "native" else parts
+    if route_parts and route_parts[0] == "r":
+        token = auth_mod.get_token(_profile_name(profile))
+        if not token:
+            output.fatal(
+                f"No token for profile '{_profile_name(profile)}'. "
+                f"Run: rvs auth login --profile {_profile_name(profile)}"
+            )
+        return token
     try:
         marker = parts.index("x")
         selector = f"{parts[marker + 1]}/{parts[marker + 2]}"
@@ -345,24 +355,12 @@ def _ravenstash_url_kind(url: str) -> RegistryKind | None:
     parsed = urlparse(url)
     path_parts = [part for part in parsed.path.split("/") if part]
 
-    if (
-        len(path_parts) >= 5
-        and path_parts[0] == "native"
-        and path_parts[2] == "x"
-        and path_parts[3].startswith("_")
-        and path_parts[4].startswith("_")
-    ):
+    if len(path_parts) >= 3 and path_parts[0] == "native":
         kind = path_parts[1]
-        if kind in {"pypi", "npm", "maven"}:
+        if kind in {"pypi", "npm", "maven"} and _valid_registry_route(path_parts[2:]):
             return kind  # type: ignore[return-value]
 
-    if (
-        len(path_parts) < 3
-        or path_parts[0] != "x"
-        or not path_parts[1].startswith("_")
-        or not path_parts[2].startswith("_")
-        or parsed.hostname is None
-    ):
+    if not _valid_registry_route(path_parts) or parsed.hostname is None:
         return None
     host_parts = parsed.hostname.split(".")
     if len(host_parts) < 2:
@@ -378,6 +376,21 @@ def _ravenstash_url_kind(url: str) -> RegistryKind | None:
     ):
         return None
     return kind  # type: ignore[return-value]
+
+
+def _valid_registry_route(path_parts: list[str]) -> bool:
+    if (
+        len(path_parts) >= 3
+        and path_parts[0] == "x"
+        and path_parts[1].startswith("_")
+        and path_parts[2].startswith("_")
+    ):
+        return True
+    if len(path_parts) < 3 or path_parts[0] != "r":
+        return False
+    if path_parts[1] == "o":
+        return bool(path_parts[2]) and not path_parts[2].startswith("_")
+    return path_parts[1].startswith("_") and bool(path_parts[2])
 
 
 def _relevant_env_values(tool: NativeTool, env: dict[str, str]) -> list[str]:
@@ -707,7 +720,13 @@ def _write_netrc(
     token: str,
     temp_dir: Path,
 ) -> None:
-    hosts = sorted({urlparse(url).netloc for url in urls if urlparse(url).netloc})
+    hosts = sorted(
+        {
+            host
+            for url in urls
+            if (host := urlparse(url).hostname) is not None
+        }
+    )
     if not hosts:
         return
     netrc_path = temp_dir / "netrc"

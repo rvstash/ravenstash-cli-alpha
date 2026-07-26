@@ -142,6 +142,24 @@ def test_ravenstash_url_kind_accepts_public_hosts_and_local_normalized_routes() 
         == "maven"
     )
     assert (
+        native_runner._ravenstash_url_kind(
+            "http://localhost:8788/native/pypi/r/_abcdefgh/piwheels/simple/"
+        )
+        == "pypi"
+    )
+    assert (
+        native_runner._ravenstash_url_kind(
+            "https://pypi.pkg-staging.example.test/r/o/pypiorg/simple/"
+        )
+        == "pypi"
+    )
+    assert (
+        native_runner._ravenstash_url_kind(
+            "https://npm.pkg-staging.example.test/r/_abcdefgh/_xyzabcde/"
+        )
+        == "npm"
+    )
+    assert (
         native_runner._ravenstash_url_kind("https://npm.example.test/x/_abcdefgh/_xyzabcde/")
         is None
     )
@@ -156,6 +174,12 @@ def test_ravenstash_url_kind_accepts_public_hosts_and_local_normalized_routes() 
     )
     assert (
         native_runner._ravenstash_url_kind("https://npm.pkg-staging.example.test/x/_abcdefgh/")
+        is None
+    )
+    assert (
+        native_runner._ravenstash_url_kind(
+            "https://pypi.pkg-staging.example.test/r/_abcdefgh/"
+        )
         is None
     )
 
@@ -273,6 +297,63 @@ def test_native_pip_respects_existing_index_and_injects_temp_netrc(
     assert netrc_texts == [
         f"machine pypi.{STAGING_DOWNLOAD_HOST} login __token__ password secret-token\n"
     ]
+
+
+def test_native_pip_respects_custom_remote_cache_and_uses_profile_token(
+    monkeypatch: Any,
+    tmp_path: Path,
+) -> None:
+    _isolate_config(monkeypatch, tmp_path)
+    _mock_native_tools(monkeypatch)
+    index_url = (
+        f"https://pypi.{STAGING_DOWNLOAD_HOST}/r/_custpid1/piwheels/simple/"
+    )
+    monkeypatch.setenv("PIP_INDEX_URL", index_url)
+    calls: list[dict[str, Any]] = []
+    netrc_texts: list[str] = []
+
+    def hook(_cmd: list[str], env: dict[str, str]) -> None:
+        netrc_texts.append(Path(env["NETRC"]).read_text(encoding="utf-8"))
+
+    _capture_run(monkeypatch, calls, hook)
+
+    result = runner.invoke(app, ["pip", "download", "--no-deps", "simple-range==0.0.3"])
+
+    assert result.exit_code == 0
+    assert calls[0]["cmd"] == [
+        "/bin/pip",
+        "download",
+        "--no-deps",
+        "simple-range==0.0.3",
+    ]
+    assert calls[0]["env"]["PIP_INDEX_URL"] == index_url
+    assert netrc_texts == [
+        f"machine pypi.{STAGING_DOWNLOAD_HOST} login __token__ password secret-token\n"
+    ]
+
+
+def test_native_pip_local_remote_cache_netrc_uses_hostname_without_port(
+    monkeypatch: Any,
+    tmp_path: Path,
+) -> None:
+    _isolate_config(monkeypatch, tmp_path)
+    _mock_native_tools(monkeypatch)
+    monkeypatch.setenv(
+        "PIP_INDEX_URL",
+        "http://localhost:8788/native/pypi/r/_custpid1/piwheels/simple/",
+    )
+    calls: list[dict[str, Any]] = []
+    netrc_texts: list[str] = []
+
+    def hook(_cmd: list[str], env: dict[str, str]) -> None:
+        netrc_texts.append(Path(env["NETRC"]).read_text(encoding="utf-8"))
+
+    _capture_run(monkeypatch, calls, hook)
+
+    result = runner.invoke(app, ["pip", "download", "--no-deps", "simple-range==0.0.3"])
+
+    assert result.exit_code == 0
+    assert netrc_texts == ["machine localhost login __token__ password secret-token\n"]
 
 
 def test_native_pip_isolate_overrides_index_without_writing_credentials(
