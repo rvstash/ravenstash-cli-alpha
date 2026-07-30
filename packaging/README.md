@@ -87,7 +87,6 @@ Only the private release orchestrator defines these Actions values:
 | secret | `R2_APT_SECRET_ACCESS_KEY` | Bucket-scoped R2 write credential |
 | variable | `R2_APT_ACCOUNT_ID` | Cloudflare account ID |
 | secret | `CLI_SOURCE_TOKEN` | Read-only exact-SHA source checkout |
-| secret | `CLI_RELEASE_TOKEN` | Source tag and immutable draft-release publication |
 
 The secret values must originate in Ravenstash's production Infisical project;
 do not commit them or create independent unmanaged copies. The R2 bucket must
@@ -97,6 +96,8 @@ bucket-scoped token are infrastructure prerequisites, not responsibilities of
 this source repository.
 
 The source repository contains no QA, staging, production, GPG, R2, or release
-token. Releases are manual exact-SHA dispatches. GitHub releases are created as
-drafts, populated once, and only then published under repository release
-immutability.
+token. Releases are manual exact-SHA dispatches. Alpha GitHub releases live in
+the private orchestrator, where its built-in token creates a draft, populates it
+once, and publishes it under repository release immutability. The eventual
+public repository should use a dedicated least-privilege GitHub App for
+cross-repository publication.
