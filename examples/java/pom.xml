@@ -12,7 +12,7 @@
 
     <name>rvs-demo-java</name>
     <description>Demo Maven project for exercising rvs CLI commands</description>
-    <url>https://github.com/teamRavenstash</url>
+    <url>https://ravenstash.com</url>
 
     <properties>
         <maven.compiler.source>21</maven.compiler.source>

@@ -8,6 +8,7 @@ import pytest
 
 
 POSTINSTALL = Path(__file__).parents[1] / "packaging" / "scripts" / "postinstall.sh"
+ROOT = Path(__file__).parents[1]
 
 
 def _run_postinstall(rocm_root: Path) -> subprocess.CompletedProcess[str]:
@@ -44,3 +45,20 @@ def test_postinstall_reports_rocm_rvs_and_ravenstash_alias(
     assert f"AMD ROCm Validation Suite was detected at {rocm_rvs}." in result.stdout
     assert "Both tools provide the 'rvs' shortcut" in result.stdout
     assert "'ravenstash' command" in result.stdout
+
+
+def test_release_metadata_uses_mit_license() -> None:
+    assert (ROOT / "LICENSE").read_text(encoding="utf-8").startswith("MIT License\n")
+    assert 'license = "MIT"' in (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    assert "license: MIT" in (ROOT / "packaging" / "nfpm.yaml.in").read_text(
+        encoding="utf-8"
+    )
+
+
+def test_apt_repository_script_exports_installable_public_key() -> None:
+    script = (ROOT / "packaging" / "scripts" / "update-apt-repo.sh").read_text(
+        encoding="utf-8"
+    )
+
+    assert '--export "$RVS_APT_GPG_KEY_ID"' in script
+    assert '"${APT_REPO_DIR}/ravenstash-rvs.gpg"' in script

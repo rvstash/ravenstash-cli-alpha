@@ -8,7 +8,7 @@ maintainer: Ravenstash <support@ravenstash.com>
 description: Ravenstash developer CLI.
 vendor: Ravenstash
 homepage: https://ravenstash.com
-license: Proprietary
+license: MIT
 depends:
   - ca-certificates
 scripts:

@@ -4,6 +4,11 @@
 repositories are one product area; source repositories, CI, and other tooling
 will sit beside it rather than inside it.
 
+This work-in-progress alpha is developed privately in
+`rvstash/ravenstash-cli-alpha`. The first public beta will start a clean public
+history in `rvstash/ravenstash-cli`. The CLI is licensed under the
+[MIT License](LICENSE).
+
 ## Command Surface
 
 ```text
@@ -252,11 +257,16 @@ packaging/scripts/build-release-artifacts.sh
 ```
 
 That builds the PyInstaller bundle, Debian package, tarball, and checksum file.
-APT repository metadata is generated separately:
+APT repository metadata is generated and signed separately:
 
 ```bash
 RVS_APT_GPG_KEY_ID=<key-id> packaging/scripts/update-apt-repo.sh
 ```
+
+Version tags publish both a GitHub release and the signed static APT repository.
+See [`packaging/README.md`](packaging/README.md) for the release environment and
+hosting prerequisites. Real DevAPI integration tests remain in Ravenstash's
+private QA systems rather than this repository.
 
 ## Local Development
 

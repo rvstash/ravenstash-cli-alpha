@@ -49,12 +49,24 @@ apt-ftparchive \
 
 if [[ -n "${RVS_APT_GPG_KEY_ID:-}" ]]; then
   require_cmd gpg
-  gpg --batch --yes --local-user "$RVS_APT_GPG_KEY_ID" \
+  GPG_ARGS=(--batch --yes --local-user "$RVS_APT_GPG_KEY_ID")
+  if [[ -n "${RVS_APT_GPG_PASSPHRASE_FILE:-}" ]]; then
+    if [[ ! -f "$RVS_APT_GPG_PASSPHRASE_FILE" ]]; then
+      echo "error: GPG passphrase file not found: $RVS_APT_GPG_PASSPHRASE_FILE" >&2
+      exit 1
+    fi
+    GPG_ARGS+=(--pinentry-mode loopback --passphrase-file "$RVS_APT_GPG_PASSPHRASE_FILE")
+  fi
+
+  gpg "${GPG_ARGS[@]}" \
     --output "${APT_REPO_DIR}/dists/${CODENAME}/InRelease" \
     --clearsign "${APT_REPO_DIR}/dists/${CODENAME}/Release"
-  gpg --batch --yes --local-user "$RVS_APT_GPG_KEY_ID" \
+  gpg "${GPG_ARGS[@]}" \
     --output "${APT_REPO_DIR}/dists/${CODENAME}/Release.gpg" \
     --detach-sign "${APT_REPO_DIR}/dists/${CODENAME}/Release"
+  gpg --batch --yes \
+    --output "${APT_REPO_DIR}/ravenstash-rvs.gpg" \
+    --export "$RVS_APT_GPG_KEY_ID"
 else
   echo "warning: RVS_APT_GPG_KEY_ID not set; APT repo metadata is unsigned" >&2
 fi
