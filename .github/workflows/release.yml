@@ -87,7 +87,6 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/')
     needs: build-linux-amd64
     runs-on: ubuntu-22.04
-    environment: release
     env:
       AWS_ACCESS_KEY_ID: ${{ secrets.R2_APT_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_APT_SECRET_ACCESS_KEY }}

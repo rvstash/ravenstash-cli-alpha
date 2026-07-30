@@ -63,7 +63,7 @@ The tag release workflow publishes this static repository to the
 prefix so old package versions remain available, then uploads package objects
 before replacing the signed indexes.
 
-The GitHub `release` environment must define:
+The private alpha repository must define these repository-level Actions values:
 
 | Kind | Name | Purpose |
 | --- | --- | --- |
@@ -80,3 +80,9 @@ be publicly readable through `downloads.ravenstash.com` while its S3 write API
 remains private. Connecting that custom domain and provisioning the
 bucket-scoped token are infrastructure prerequisites, not responsibilities of
 this source repository.
+
+GitHub Free does not provide deployment environments to private organization
+repositories, so the alpha uses tag-gated repository secrets. When the clean
+public `ravenstash-cli` repository is created for beta, move these values into a
+protected `release` environment and add that environment back to the publish
+job.
