@@ -76,7 +76,7 @@ The private alpha repository must define these repository-level Actions values:
 
 The secret values must originate in Ravenstash's production Infisical project;
 do not commit them or create independent unmanaged copies. The R2 bucket must
-be publicly readable through `downloads.ravenstash.com` while its S3 write API
+be publicly readable through `releases.ravenstash.com` while its S3 write API
 remains private. Connecting that custom domain and provisioning the
 bucket-scoped token are infrastructure prerequisites, not responsibilities of
 this source repository.

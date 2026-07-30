@@ -230,9 +230,9 @@ APT repository install:
 
 ```bash
 sudo install -d -m 0755 /etc/apt/keyrings
-curl -fsSL https://downloads.ravenstash.com/rvs/apt/ravenstash-rvs.gpg \
+curl -fsSL https://releases.ravenstash.com/rvs/apt/ravenstash-rvs.gpg \
   | sudo tee /etc/apt/keyrings/ravenstash-rvs.gpg >/dev/null
-echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/ravenstash-rvs.gpg] https://downloads.ravenstash.com/rvs/apt stable main" \
+echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/ravenstash-rvs.gpg] https://releases.ravenstash.com/rvs/apt stable main" \
   | sudo tee /etc/apt/sources.list.d/ravenstash-rvs.list
 sudo apt update
 sudo apt install rvs
