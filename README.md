@@ -226,17 +226,17 @@ The Linux package contains a self-contained CLI and installs both `/usr/bin/rvs`
 and the long-form `/usr/bin/ravenstash` alias; user config, credentials, and
 managed runtimes stay in `~/.rvs`.
 
-APT repository install:
+Install the current stable Linux package:
 
 ```bash
-sudo install -d -m 0755 /etc/apt/keyrings
-curl -fsSL https://releases.ravenstash.com/rvs/apt/ravenstash-rvs.gpg \
-  | sudo tee /etc/apt/keyrings/ravenstash-rvs.gpg >/dev/null
-echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/ravenstash-rvs.gpg] https://releases.ravenstash.com/rvs/apt stable main" \
-  | sudo tee /etc/apt/sources.list.d/ravenstash-rvs.list
-sudo apt update
-sudo apt install rvs
+curl -fsSL https://ravenstash.com/install.sh | bash
 ```
+
+The installer supports Debian and Ubuntu on Linux `amd64`. It verifies the
+published APT signing-key fingerprint before configuring
+`releases.ravenstash.com` and running `apt install rvs`. Review the installer
+source at <https://ravenstash.com/install.sh> before running it if required by
+your environment.
 
 Direct `.deb` artifacts are also published for early testing:
 
