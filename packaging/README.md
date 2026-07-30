@@ -63,6 +63,12 @@ The tag release workflow publishes this static repository to the
 prefix so old package versions remain available, then uploads package objects
 before replacing the signed indexes.
 
+The public website hosts the user-facing installer at
+`https://ravenstash.com/install.sh`. That script verifies the expected signing
+key fingerprint, configures this APT repository, and installs `rvs`. Its source
+lives in the private website repository so the script and the
+`ravenstash.com` deployment are released together.
+
 The private alpha repository must define these repository-level Actions values:
 
 | Kind | Name | Purpose |
