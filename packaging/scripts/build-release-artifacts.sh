@@ -17,6 +17,7 @@ RVS_VERSION="$VERSION" RVS_ARCH="$ARCH" packaging/scripts/build-tarball.sh
 
 mkdir -p dist/release
 cp "dist/packages/rvs_${VERSION}_${ARCH}.deb" dist/release/
+install -m 0755 packaging/install.sh dist/release/install.sh
 uv export \
   --frozen \
   --no-dev \

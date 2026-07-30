@@ -68,7 +68,7 @@ def verify_expiry(release: str) -> None:
     valid_until = email.utils.parsedate_to_datetime(release_field(release, "Valid-Until"))
     if valid_until.tzinfo is None:
         fail("Valid-Until has no timezone")
-    now = dt.datetime.now(dt.timezone.utc)
+    now = dt.datetime.now(dt.UTC)
     if valid_until <= now:
         fail("APT repository metadata has expired")
     if valid_until > now + dt.timedelta(days=8):

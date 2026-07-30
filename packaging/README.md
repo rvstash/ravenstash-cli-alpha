@@ -71,11 +71,14 @@ of unlisted pool objects before a separate signing job sees the tree. A
 different job uploads immutable pool/by-hash objects first and `InRelease`
 last. A daily split-credential workflow refreshes the seven-day `Valid-Until`.
 
-The public website hosts the user-facing installer at
-`https://ravenstash.com/install.sh`. That script verifies the expected signing
-key fingerprint, configures this APT repository, and installs `rvs`. Its source
-lives in the private website repository so the script and the
-`ravenstash.com` deployment are released together.
+The canonical user-facing installer source is `packaging/install.sh`. It
+verifies the expected signing-key fingerprint, configures this APT repository,
+and installs `rvs`. The build includes it in the checksummed and attested release
+artifacts. The private release orchestrator publishes a digest-addressed copy
+and promotes `https://releases.ravenstash.com/rvs/install.sh` only after the APT
+repository passes a clean installation check. Cloudflare redirects
+`https://ravenstash.com/install.sh` to that release-owned object; the frontend
+website repository contains no installer implementation.
 
 Only the private release orchestrator defines these Actions values:
 

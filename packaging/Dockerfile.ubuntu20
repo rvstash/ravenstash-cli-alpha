@@ -20,6 +20,7 @@ RUN apt-get update \
         dpkg-dev \
         gpgv \
         gzip \
+        shellcheck \
         tar \
     && rm -rf /var/lib/apt/lists/*
 

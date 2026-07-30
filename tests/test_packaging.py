@@ -8,6 +8,7 @@ import pytest
 
 
 POSTINSTALL = Path(__file__).parents[1] / "packaging" / "scripts" / "postinstall.sh"
+INSTALLER = Path(__file__).parents[1] / "packaging" / "install.sh"
 ROOT = Path(__file__).parents[1]
 
 
@@ -63,3 +64,12 @@ def test_debian_package_installs_node_signature_verifier() -> None:
     manifest = (ROOT / "packaging" / "scripts" / "build-deb.sh").read_text(encoding="utf-8")
 
     assert "Depends: ca-certificates, gpgv" in manifest
+
+
+def test_installer_is_owned_by_cli_packaging_and_pins_release_identity() -> None:
+    source = INSTALLER.read_text(encoding="utf-8")
+
+    assert INSTALLER.stat().st_mode & 0o111
+    assert "https://releases.ravenstash.com/rvs/apt" in source
+    assert "3B7C20FC370D1A7C813DF3A2E9679F951AD8BAA0" in source
+    assert "--proto '=https' --proto-redir '=https' --tlsv1.2" in source

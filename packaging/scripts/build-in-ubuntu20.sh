@@ -19,6 +19,8 @@ docker run --rm \
   --env SOURCE_DATE_EPOCH="${SOURCE_DATE_EPOCH:-}" \
   "$BUILDER_IMAGE" \
   "set -euo pipefail; \
+   shellcheck packaging/install.sh; \
+   bash -n packaging/install.sh; \
    export UV_PROJECT_ENVIRONMENT=/tmp/rvs-build-venv; \
    uv sync --frozen --python 3.14 --group release; \
    export PATH=/tmp/rvs-build-venv/bin:\$PATH; \
