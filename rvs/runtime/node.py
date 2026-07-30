@@ -7,6 +7,8 @@ Installs to: ~/.rvs/runtimes/node/<full_version>/
 
 from __future__ import annotations
 
+import shutil
+import subprocess
 import tempfile
 from pathlib import Path
 from typing import Any
@@ -26,6 +28,13 @@ from .versions import version_key
 
 
 _INDEX_URL = "https://nodejs.org/dist/index.json"
+_RELEASE_KEYS_COMMIT = "b28073028e6d6855cfb53bf7fa0137599c01f967"
+_RELEASE_KEYRING_SHA256 = "8e6f89521a0694e445f42decd022f48369c634f1b5bcb5975135b69c88629ae8"
+_RELEASE_KEYRING_URL = (
+    "https://raw.githubusercontent.com/nodejs/release-keys/"
+    f"{_RELEASE_KEYS_COMMIT}/gpg-only-active-keys/pubring.kbx"
+)
+_MAX_SIGNED_MANIFEST_BYTES = 16 * 1024 * 1024
 
 # nodejs.org arch strings
 _ARCH_MAP = {"x64": "x64", "aarch64": "arm64"}
@@ -62,6 +71,50 @@ def _resolve_full_version(version: str) -> str:
     output.fatal(f"No Node.js release found for '{version}'.")
 
 
+def _verified_archive_digest(version: str, archive_name: str, temp_dir: Path) -> str:
+    gpgv = shutil.which("gpgv")
+    if not gpgv:
+        output.fatal("Node.js installation requires gpgv to verify the signed release manifest.")
+    keyring = temp_dir / "nodejs-release-keyring.kbx"
+    checksums_signed = temp_dir / "SHASUMS256.txt.asc"
+    checksums = temp_dir / "SHASUMS256.txt"
+    download(
+        _RELEASE_KEYRING_URL,
+        keyring,
+        expected_sha256=_RELEASE_KEYRING_SHA256,
+    )
+    download_url = f"https://nodejs.org/dist/v{version}/SHASUMS256.txt.asc"
+    with httpx.stream("GET", download_url, follow_redirects=True, timeout=30.0) as response:
+        response.raise_for_status()
+        if response.url.scheme != "https":
+            output.fatal("Node.js checksum manifest redirected to a non-HTTPS URL.")
+        downloaded = 0
+        with checksums_signed.open("wb") as target:
+            for chunk in response.iter_bytes(65536):
+                downloaded += len(chunk)
+                if downloaded > _MAX_SIGNED_MANIFEST_BYTES:
+                    output.fatal("Node.js checksum manifest exceeds the safety limit.")
+                target.write(chunk)
+    verification = subprocess.run(
+        [
+            gpgv,
+            f"--keyring={keyring}",
+            f"--output={checksums}",
+            str(checksums_signed),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if verification.returncode != 0:
+        output.fatal("Node.js release signature verification failed.")
+    for line in checksums.read_text(encoding="utf-8").splitlines():
+        digest, separator, filename = line.partition("  ")
+        if separator and filename == archive_name:
+            return digest
+    output.fatal(f"Node.js signed manifest does not contain {archive_name}.")
+
+
 def install(version: str) -> Path:
     """Download and install Node.js *version* to ``~/.rvs/runtimes/node/``.
 
@@ -83,9 +136,12 @@ def install(version: str) -> Path:
 
     url = f"https://nodejs.org/dist/v{full_ver}/node-v{full_ver}-linux-{arch}.tar.xz"
     with tempfile.TemporaryDirectory() as tmp:
-        archive = Path(tmp) / url.split("/")[-1]
-        download(url, archive)
-        extract(archive, dest)
+        temp_dir = Path(tmp)
+        archive_name = url.split("/")[-1]
+        archive = temp_dir / archive_name
+        expected_sha256 = _verified_archive_digest(full_ver, archive_name, temp_dir)
+        download(url, archive, expected_sha256=expected_sha256)
+        extract(archive, dest, required_paths=("bin/node",))
 
     bin_dir = dest / "bin"
     for exe in ("node", "npm", "npx", "corepack"):

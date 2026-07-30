@@ -23,5 +23,12 @@ cp -a dist/pyinstaller/rvs/. "$STAGING/"
 cp README.md "$STAGING/README.md"
 
 mkdir -p dist/release
-tar -C build/release -czf "dist/release/rvs-v${VERSION}-linux-${ARCH}.tar.gz" \
+tar \
+  --sort=name \
+  --mtime="@${SOURCE_DATE_EPOCH:-0}" \
+  --owner=0 \
+  --group=0 \
+  --numeric-owner \
+  -C build/release \
+  -czf "dist/release/rvs-v${VERSION}-linux-${ARCH}.tar.gz" \
   "rvs-v${VERSION}-linux-${ARCH}"

@@ -23,6 +23,7 @@ rvs npm        Run npm with ephemeral Ravenstash auth injection
 rvs mvn        Run Maven with ephemeral Ravenstash auth injection
 rvs repo       Placeholder for future Ravenstash source repositories
 rvs ci         Placeholder for future Ravenstash CI
+rvs update     Check or apply signed APT updates
 ```
 
 `rvs repo` and `rvs ci` are intentionally registered now, but their commands only
@@ -89,12 +90,12 @@ infer identity solely from local profile metadata.
 Runtime management is limited to local Python, Node, and Java installs:
 
 ```bash
-rvs runtime install python 3.12
+rvs runtime install python 3.14
 rvs runtime install node 22
 rvs runtime install java 21
 rvs runtime list
-rvs runtime which python 3.12
-rvs runtime use python 3.12
+rvs runtime which python 3.14
+rvs runtime use python 3.14
 rvs runtime env
 rvs runtime setup-shell
 rvs runtime doctor
@@ -147,6 +148,13 @@ the CLI always builds native package URLs from the immutable
 Defaults are profile-scoped under
 `[profiles.<name>.registries.<ecosystem>]` in `~/.rvs/config.toml`. Legacy top-level
 registry defaults remain readable as a migration fallback.
+
+Saved defaults store immutable workspace and repository references as identity
+and keep names only as display hints. A later workspace or repository rename
+therefore requires no local migration: list and resolve calls return the current
+name while native URLs continue using the same stable references. Remote-cache
+commands use immutable public cache IDs returned by DevAPI and do not persist a
+mutable cache name as local identity.
 
 Package metadata commands:
 
@@ -229,11 +237,13 @@ managed runtimes stay in `~/.rvs`.
 Install the current stable Linux package:
 
 ```bash
-curl -fsSL https://ravenstash.com/install.sh | bash
+curl --proto '=https' --proto-redir '=https' --tlsv1.2 \
+  -fsSL https://ravenstash.com/install.sh | bash
 ```
 
-The installer supports Debian and Ubuntu on Linux `amd64`. It verifies the
-published APT signing-key fingerprint before configuring
+The installer supports Ubuntu 20.04+ and Debian 11+ on Linux `amd64`. The
+package embeds Python 3.14 and does not depend on the system Python. It verifies
+the published APT signing-key fingerprint before configuring
 `releases.ravenstash.com` and running `apt install rvs`. Review the installer
 source at <https://ravenstash.com/install.sh> before running it if required by
 your environment.
@@ -243,6 +253,16 @@ Direct `.deb` artifacts are also published for early testing:
 ```bash
 sudo apt install ./rvs_<version>_amd64.deb
 ```
+
+APT remains the update authority:
+
+```bash
+rvs update                 # compare installed and signed candidate versions
+rvs update --apply         # refresh APT metadata and install the candidate
+sudo apt upgrade           # standard system updates work too
+```
+
+The CLI never downloads over and replaces its own executable.
 
 WSL/headless note: `RVS_TOKEN` works without extra setup. Persistent
 `rvs auth login` stores access and refresh tokens in the OS keyring, so WSL
@@ -256,17 +276,24 @@ Linux package scaffolding lives under `packaging/`. From this folder:
 packaging/scripts/build-release-artifacts.sh
 ```
 
-That builds the PyInstaller bundle, Debian package, tarball, and checksum file.
+The canonical compatibility build runs inside the pinned Ubuntu 20.04 builder:
+
+```bash
+packaging/scripts/build-in-ubuntu20.sh
+```
+
+That builds the Python 3.14 PyInstaller bundle, Debian package, tarball,
+CycloneDX SBOM, and checksum file.
 APT repository metadata is generated and signed separately:
 
 ```bash
 RVS_APT_GPG_KEY_ID=<key-id> packaging/scripts/update-apt-repo.sh
 ```
 
-Version tags publish both a GitHub release and the signed static APT repository.
-See [`packaging/README.md`](packaging/README.md) for the release environment and
-hosting prerequisites. Real DevAPI integration tests remain in Ravenstash's
-private QA systems rather than this repository.
+This source repository never signs or publishes. Exact approved commits are
+rebuilt, attested, tested against real DevAPI environments, signed, and
+published by the private `rvstash/ravenstash-cli-release` orchestrator. See
+[`packaging/README.md`](packaging/README.md) for the trust boundary.
 
 ## Local Development
 
@@ -274,8 +301,8 @@ Use the package venv directly from this folder:
 
 ```bash
 cd packages/rvs
+uv sync --python 3.14
 source .venv/bin/activate
-python -m pip install -e .
 rvs --help
 ```
 

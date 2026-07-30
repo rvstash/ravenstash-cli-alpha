@@ -13,6 +13,7 @@ from __future__ import annotations
 import tempfile
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 import httpx
 
@@ -29,6 +30,11 @@ from .versions import version_key
 
 
 _ADOPTIUM = "https://api.adoptium.net/v3"
+_ALLOWED_DOWNLOAD_HOSTS = {
+    "github.com",
+    "objects.githubusercontent.com",
+    "release-assets.githubusercontent.com",
+}
 
 # Adoptium arch strings
 _ARCH_MAP = {"x64": "x64", "aarch64": "aarch64"}
@@ -74,6 +80,14 @@ def install(version: str) -> Path:
     dl_url: str = pkg.get("link", "")
     checksum: str | None = pkg.get("checksum")
     semver: str = release.get("version", {}).get("semver", version)
+    parsed_download = urlsplit(dl_url)
+    if (
+        parsed_download.scheme != "https"
+        or parsed_download.hostname not in _ALLOWED_DOWNLOAD_HOSTS
+        or parsed_download.username is not None
+        or parsed_download.password is not None
+    ):
+        output.fatal("Temurin release metadata returned an untrusted download URL.")
 
     dest = RUNTIMES_DIR / "java" / semver
     if dest.exists():
@@ -81,10 +95,12 @@ def install(version: str) -> Path:
         return dest
 
     with tempfile.TemporaryDirectory() as tmp:
+        if not checksum:
+            output.fatal("Temurin release metadata did not provide a SHA-256 digest.")
         fname = dl_url.split("/")[-1].split("?")[0] or f"jdk-{semver}.tar.gz"
         archive = Path(tmp) / fname
         download(dl_url, archive, expected_sha256=checksum)
-        extract(archive, dest)
+        extract(archive, dest, required_paths=("bin/java",))
 
     bin_dir = dest / "bin"
     for exe in ("java", "javac", "jar", "javadoc"):

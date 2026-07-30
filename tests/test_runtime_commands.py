@@ -1,7 +1,11 @@
 from __future__ import annotations
 
+import hashlib
+import io
+import tarfile
 from typing import TYPE_CHECKING
 
+import pytest
 from rvs.runtime import _install
 from rvs.runtime import commands as runtime_cmd
 from rvs.runtime import java as java_rt
@@ -183,3 +187,67 @@ def test_runtime_shim_resolves_project_pin_dynamically(monkeypatch, tmp_path: Pa
     shim = (shims_dir / "npm").read_text(encoding="utf-8")
     assert 'rvs runtime which "node" --executable "npm"' in shim
     assert 'exec "$target" "$@"' in shim
+
+
+def test_extract_rejects_parent_path_and_leaves_no_destination(tmp_path: Path) -> None:
+    archive = tmp_path / "unsafe.tar.gz"
+    with tarfile.open(archive, "w:gz") as tf:
+        payload = b"owned"
+        member = tarfile.TarInfo("../outside")
+        member.size = len(payload)
+        tf.addfile(member, io.BytesIO(payload))
+
+    with pytest.raises(SystemExit):
+        _install.extract(archive, tmp_path / "runtime")
+
+    assert not (tmp_path / "outside").exists()
+    assert not (tmp_path / "runtime").exists()
+
+
+def test_extract_validates_layout_before_atomic_install(tmp_path: Path) -> None:
+    archive = tmp_path / "runtime.tar.gz"
+    with tarfile.open(archive, "w:gz") as tf:
+        payload = b"binary"
+        member = tarfile.TarInfo("runtime/bin/node")
+        member.mode = 0o755
+        member.size = len(payload)
+        tf.addfile(member, io.BytesIO(payload))
+
+    destination = tmp_path / "installed" / "24.0.0"
+    _install.extract(archive, destination, required_paths=("bin/node",))
+
+    assert (destination / "bin/node").read_bytes() == b"binary"
+
+
+def test_download_rejects_checksum_mismatch(httpx_mock, tmp_path: Path) -> None:
+    httpx_mock.add_response(
+        url="https://releases.example.test/runtime.tar.gz",
+        content=b"archive",
+    )
+    destination = tmp_path / "runtime.tar.gz"
+
+    with pytest.raises(SystemExit):
+        _install.download(
+            "https://releases.example.test/runtime.tar.gz",
+            destination,
+            expected_sha256="0" * 64,
+        )
+
+    assert not destination.exists()
+
+
+def test_download_accepts_matching_checksum(httpx_mock, tmp_path: Path) -> None:
+    content = b"archive"
+    httpx_mock.add_response(
+        url="https://releases.example.test/runtime.tar.gz",
+        content=content,
+    )
+    destination = tmp_path / "runtime.tar.gz"
+
+    _install.download(
+        "https://releases.example.test/runtime.tar.gz",
+        destination,
+        expected_sha256=hashlib.sha256(content).hexdigest(),
+    )
+
+    assert destination.read_bytes() == content

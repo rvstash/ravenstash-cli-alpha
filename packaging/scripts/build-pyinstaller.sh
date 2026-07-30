@@ -14,7 +14,7 @@ if ! command -v "$PYINSTALLER_BIN" >/dev/null 2>&1; then
 fi
 
 mkdir -p build/pyinstaller dist/pyinstaller
-"$PYINSTALLER_BIN" \
+SOURCE_DATE_EPOCH="${SOURCE_DATE_EPOCH:-0}" PYTHONHASHSEED=1 "$PYINSTALLER_BIN" \
   --clean \
   --noconfirm \
   --distpath dist/pyinstaller \
@@ -25,3 +25,9 @@ ln -sfn rvs dist/pyinstaller/rvs/ravenstash
 dist/pyinstaller/rvs/rvs --version
 dist/pyinstaller/rvs/rvs --help >/dev/null
 dist/pyinstaller/rvs/ravenstash --version
+
+if ! find dist/pyinstaller/rvs -maxdepth 2 -type f -name 'libpython3.14.so*' \
+  -print -quit | grep -q .; then
+  echo "error: frozen launcher does not identify a Python 3.14 runtime" >&2
+  exit 1
+fi

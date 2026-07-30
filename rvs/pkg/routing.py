@@ -15,7 +15,7 @@ from __future__ import annotations
 from urllib.parse import urlsplit, urlunsplit
 
 
-def _native_base_url(service_url: str, kind: str) -> str:
+def native_base_url(service_url: str, kind: str) -> str:
     base = service_url.rstrip("/")
     parsed = urlsplit(base)
     if parsed.scheme != "https":
@@ -42,26 +42,24 @@ class CanonicalRouter:
 
     @staticmethod
     def pypi_index_url(download_url: str, workspace_ref: str, repository_ref: str) -> str:
-        return (
-            f"{_native_base_url(download_url, 'pypi')}/x/{workspace_ref}/{repository_ref}/simple/"
-        )
+        return f"{native_base_url(download_url, 'pypi')}/x/{workspace_ref}/{repository_ref}/simple/"
 
     @staticmethod
     def pypi_upload_url(upload_url: str, workspace_ref: str, repository_ref: str) -> str:
-        return f"{_native_base_url(upload_url, 'pypi')}/x/{workspace_ref}/{repository_ref}/"
+        return f"{native_base_url(upload_url, 'pypi')}/x/{workspace_ref}/{repository_ref}/"
 
     @staticmethod
     def npm_registry_url(download_url: str, workspace_ref: str, repository_ref: str) -> str:
-        return f"{_native_base_url(download_url, 'npm')}/x/{workspace_ref}/{repository_ref}/"
+        return f"{native_base_url(download_url, 'npm')}/x/{workspace_ref}/{repository_ref}/"
 
     @staticmethod
     def npm_upload_registry_url(upload_url: str, workspace_ref: str, repository_ref: str) -> str:
-        return f"{_native_base_url(upload_url, 'npm')}/x/{workspace_ref}/{repository_ref}/"
+        return f"{native_base_url(upload_url, 'npm')}/x/{workspace_ref}/{repository_ref}/"
 
     @staticmethod
     def maven_repo_url(download_url: str, workspace_ref: str, repository_ref: str) -> str:
-        return f"{_native_base_url(download_url, 'maven')}/x/{workspace_ref}/{repository_ref}/"
+        return f"{native_base_url(download_url, 'maven')}/x/{workspace_ref}/{repository_ref}/"
 
     @staticmethod
     def maven_upload_url(upload_url: str, workspace_ref: str, repository_ref: str) -> str:
-        return f"{_native_base_url(upload_url, 'maven')}/x/{workspace_ref}/{repository_ref}/"
+        return f"{native_base_url(upload_url, 'maven')}/x/{workspace_ref}/{repository_ref}/"

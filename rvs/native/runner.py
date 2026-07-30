@@ -15,15 +15,14 @@ import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urlsplit
 
 import typer
 
-from .. import auth as auth_mod
 from .. import config as cfg_mod
 from .. import output
 from ..client import ApiClient, ApiError
-from ..pkg.routing import CanonicalRouter
+from ..pkg.routing import CanonicalRouter, native_base_url
 from ..runtime import tools
 
 
@@ -153,9 +152,21 @@ def _build_plan(
     )
 
     if effective_policy == "respect":
-        urls = _detected_ravenstash_urls(tool, argv, env)
+        profile_config = _profile(options.profile)
+        urls = _detected_ravenstash_urls(
+            tool,
+            argv,
+            env,
+            profile_config=profile_config,
+        )
         if not urls:
             return ExecutionPlan(cmd=cmd, env=env)
+        route_scopes = {_credential_route(url) for url in urls}
+        if len(route_scopes) != 1:
+            output.fatal(
+                "Native configuration references multiple Ravenstash repositories. "
+                "Select one with --rvs-repo or use --rvs-native-config isolate."
+            )
         token = _package_token_for_url(
             urls[0],
             _kind_for_tool(tool),
@@ -201,11 +212,6 @@ def _kind_for_tool(tool: NativeTool) -> RegistryKind:
             return "npm"
         case "mvn":
             return "maven"
-
-
-def _profile_name(profile: str | None) -> str:
-    cfg = cfg_mod.load()
-    return profile or cfg_mod.current_profile_name(cfg)
 
 
 def _profile(profile: str | None) -> cfg_mod.ProfileConfig:
@@ -284,17 +290,43 @@ def _package_token_for_url(
     parts = [part for part in urlparse(url).path.split("/") if part]
     route_parts = parts[2:] if len(parts) >= 3 and parts[0] == "native" else parts
     if route_parts and route_parts[0] == "r":
-        token = auth_mod.get_token(_profile_name(profile))
-        if not token:
-            output.fatal(
-                f"No token for profile '{_profile_name(profile)}'. "
-                f"Run: rvs auth login --profile {_profile_name(profile)}"
-            )
-        return token
+        try:
+            workspace_reference, repository_reference, route_kind = _remote_route_scope(route_parts)
+            client = ApiClient.from_profile(profile)
+            effective_customer_id = customer_id or _profile(profile).customer_id
+            if route_kind == "remote_custom":
+                customers = client.get("/v0/customers").json()
+                matching_customer = next(
+                    (
+                        customer
+                        for customer in customers
+                        if customer.get("customer_unique_ref") == workspace_reference
+                    ),
+                    None,
+                )
+                if matching_customer is None:
+                    output.fatal("Remote cache customer is not authorized for this profile.")
+                effective_customer_id = matching_customer["customer_id"]
+            if not effective_customer_id:
+                output.fatal(
+                    "A customer is required for direct remote-cache access. Pass --rvs-customer-id."
+                )
+            return client.post(
+                "/v0/remote-package-credentials",
+                json={
+                    "customer_id": effective_customer_id,
+                    "route_kind": route_kind,
+                    "workspace_reference": workspace_reference,
+                    "repository_reference": repository_reference,
+                    "registry_kind": kind,
+                },
+            ).json()["access_token"]
+        except (ApiError, KeyError, TypeError) as exc:
+            output.fatal(str(exc))
     try:
         marker = parts.index("x")
         selector = f"{parts[marker + 1]}/{parts[marker + 2]}"
-    except (ValueError, IndexError):
+    except ValueError, IndexError:
         output.fatal("Detected Ravenstash URL is not a canonical /x/<workspace>/<repository> URL.")
     try:
         client = ApiClient.from_profile(profile)
@@ -317,10 +349,34 @@ def _package_token_for_url(
         output.fatal(str(exc))
 
 
+def _credential_route(url: str) -> tuple[str, str | None, str]:
+    parts = [part for part in urlparse(url).path.split("/") if part]
+    if len(parts) >= 3 and parts[0] == "native":
+        parts = parts[2:]
+    if not parts:
+        output.fatal("Detected Ravenstash URL has no repository route.")
+    if parts[0] == "x" and len(parts) >= 3:
+        return ("x", parts[1], parts[2])
+    if parts[0] == "r":
+        workspace_reference, repository_reference, route_kind = _remote_route_scope(parts)
+        return (route_kind, workspace_reference, repository_reference)
+    output.fatal("Detected Ravenstash URL has an invalid repository route.")
+
+
+def _remote_route_scope(parts: list[str]) -> tuple[str | None, str, str]:
+    if len(parts) < 3 or parts[0] != "r":
+        output.fatal("Detected Ravenstash remote-cache URL is invalid.")
+    if parts[1] == "o":
+        return None, parts[2], "remote_official"
+    return parts[1], parts[2], "remote_custom"
+
+
 def _detected_ravenstash_urls(
     tool: NativeTool,
     argv: list[str],
     env: dict[str, str],
+    *,
+    profile_config: cfg_mod.ProfileConfig,
 ) -> list[str]:
     candidate_texts: list[str] = [" ".join(argv)]
     candidate_texts.extend(_relevant_env_values(tool, env))
@@ -337,7 +393,11 @@ def _detected_ravenstash_urls(
         for url in _extract_urls(text):
             if url in seen:
                 continue
-            kind = _ravenstash_url_kind(url)
+            kind = _ravenstash_url_kind(
+                url,
+                download_url=profile_config.pkg_download_url,
+                upload_url=profile_config.pkg_upload_url,
+            )
             if kind in allowed_kinds:
                 seen.add(url)
                 urls.append(url)
@@ -351,31 +411,49 @@ def _extract_urls(text: str) -> list[str]:
     return urls
 
 
-def _ravenstash_url_kind(url: str) -> RegistryKind | None:
+def _same_origin(left: str, right: str) -> bool:
+    first = urlsplit(left)
+    second = urlsplit(right)
+    try:
+        return (
+            first.scheme.lower(),
+            first.hostname.rstrip(".").lower() if first.hostname else None,
+            first.port or (443 if first.scheme.lower() == "https" else 80),
+        ) == (
+            second.scheme.lower(),
+            second.hostname.rstrip(".").lower() if second.hostname else None,
+            second.port or (443 if second.scheme.lower() == "https" else 80),
+        )
+    except ValueError:
+        return False
+
+
+def _ravenstash_url_kind(
+    url: str,
+    *,
+    download_url: str,
+    upload_url: str,
+) -> RegistryKind | None:
     parsed = urlparse(url)
-    path_parts = [part for part in parsed.path.split("/") if part]
-
-    if len(path_parts) >= 3 and path_parts[0] == "native":
-        kind = path_parts[1]
-        if kind in {"pypi", "npm", "maven"} and _valid_registry_route(path_parts[2:]):
-            return kind  # type: ignore[return-value]
-
-    if not _valid_registry_route(path_parts) or parsed.hostname is None:
-        return None
-    host_parts = parsed.hostname.split(".")
-    if len(host_parts) < 2:
-        return None
-    kind = host_parts[0]
-    if kind not in {"pypi", "npm", "maven"}:
-        return None
-    if not (
-        host_parts[1] == "pkg"
-        or host_parts[1] == "push"
-        or host_parts[1].startswith("pkg-")
-        or host_parts[1].startswith("push-")
+    if (
+        parsed.scheme not in {"http", "https"}
+        or parsed.hostname is None
+        or parsed.username is not None
+        or parsed.password is not None
     ):
         return None
-    return kind  # type: ignore[return-value]
+    for kind in ("pypi", "npm", "maven"):
+        for service_url in (download_url, upload_url):
+            base = native_base_url(service_url, kind)
+            if not _same_origin(url, base):
+                continue
+            base_parts = [part for part in urlparse(base).path.split("/") if part]
+            path_parts = [part for part in parsed.path.split("/") if part]
+            if path_parts[: len(base_parts)] != base_parts:
+                continue
+            if _valid_registry_route(path_parts[len(base_parts) :]):
+                return kind  # type: ignore[return-value]
+    return None
 
 
 def _valid_registry_route(path_parts: list[str]) -> bool:
@@ -720,13 +798,7 @@ def _write_netrc(
     token: str,
     temp_dir: Path,
 ) -> None:
-    hosts = sorted(
-        {
-            host
-            for url in urls
-            if (host := urlparse(url).hostname) is not None
-        }
-    )
+    hosts = sorted({host for url in urls if (host := urlparse(url).hostname) is not None})
     if not hosts:
         return
     netrc_path = temp_dir / "netrc"
@@ -762,6 +834,7 @@ def _write_maven_settings(
 
     settings_path = temp_dir / "settings.xml"
     ET.ElementTree(root).write(settings_path, encoding="utf-8", xml_declaration=True)
+    settings_path.chmod(0o600)
     return settings_path
 
 
@@ -781,7 +854,7 @@ def _maven_server_ids_for_urls(urls: list[str], argv: list[str]) -> set[str]:
             continue
         try:
             root = ET.parse(path).getroot()
-        except (OSError, ET.ParseError):
+        except OSError, ET.ParseError:
             continue
         for element in root.iter():
             if _local_name(element.tag) not in {

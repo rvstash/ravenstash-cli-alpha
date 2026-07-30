@@ -4,7 +4,9 @@ set -euo pipefail
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/common.sh"
 
 require_cmd apt-ftparchive
+require_cmd dpkg-deb
 require_cmd gzip
+require_cmd sha256sum
 
 VERSION="${RVS_VERSION:-$(rvs_version)}"
 ARCH="${RVS_ARCH:-$(rvs_arch)}"
@@ -25,10 +27,38 @@ APT_REPO_DIR="$(cd "$APT_REPO_DIR" && pwd)"
 POOL_DIR="${APT_REPO_DIR}/pool/${COMPONENT}/r/rvs"
 BINARY_DIR="${APT_REPO_DIR}/dists/${CODENAME}/${COMPONENT}/binary-${ARCH}"
 mkdir -p "$POOL_DIR" "$BINARY_DIR"
-cp "$DEB" "$POOL_DIR/"
+DEB_SHA256="$(sha256sum "$DEB" | awk '{print $1}')"
+DEB_TARGET="${POOL_DIR}/rvs_${VERSION}_${ARCH}_${DEB_SHA256:0:16}.deb"
+mapfile -t SAME_VERSION < <(
+  find "$POOL_DIR" -maxdepth 1 -type f -name "rvs_${VERSION}_${ARCH}_*.deb" -print
+)
+for existing in "${SAME_VERSION[@]}"; do
+  if [[ "$existing" != "$DEB_TARGET" ]]; then
+    echo "error: version ${VERSION} already exists with a different digest" >&2
+    exit 1
+  fi
+done
+if [[ -e "$DEB_TARGET" ]]; then
+  test "$(sha256sum "$DEB_TARGET" | awk '{print $1}')" = "$DEB_SHA256"
+else
+  cp "$DEB" "$DEB_TARGET"
+fi
 
 (cd "$APT_REPO_DIR" && apt-ftparchive packages pool) > "${BINARY_DIR}/Packages"
-gzip -kf "${BINARY_DIR}/Packages"
+gzip -9n < "${BINARY_DIR}/Packages" > "${BINARY_DIR}/Packages.gz"
+
+for index in Packages Packages.gz; do
+  digest="$(sha256sum "${BINARY_DIR}/${index}" | awk '{print $1}')"
+  by_hash="${BINARY_DIR}/by-hash/SHA256/${digest}"
+  mkdir -p "$(dirname "$by_hash")"
+  if [[ ! -e "$by_hash" ]]; then
+    cp "${BINARY_DIR}/${index}" "$by_hash"
+  fi
+done
+
+VALID_UNTIL="$(
+  date --utc --date="+${RVS_APT_VALID_DAYS:-7} days" --rfc-email
+)"
 
 cat > "${APT_REPO_DIR}/apt-ftparchive-release.conf" <<EOF
 APT::FTPArchive::Release {
@@ -39,16 +69,38 @@ APT::FTPArchive::Release {
   Architectures "${ARCH}";
   Components "${COMPONENT}";
   Description "Ravenstash rvs CLI packages";
+  Acquire-By-Hash "yes";
+  Valid-Until "${VALID_UNTIL}";
 };
 EOF
 
+rm -f \
+  "${APT_REPO_DIR}/dists/${CODENAME}/InRelease" \
+  "${APT_REPO_DIR}/dists/${CODENAME}/Release" \
+  "${APT_REPO_DIR}/dists/${CODENAME}/Release.gpg"
+RELEASE_UNSIGNED="${APT_REPO_DIR}/Release.unsigned"
 apt-ftparchive \
   -c "${APT_REPO_DIR}/apt-ftparchive-release.conf" \
   release "${APT_REPO_DIR}/dists/${CODENAME}" \
+  > "$RELEASE_UNSIGNED"
+sed "/^Date:/a Valid-Until: ${VALID_UNTIL}" "$RELEASE_UNSIGNED" \
   > "${APT_REPO_DIR}/dists/${CODENAME}/Release"
+rm -f "$RELEASE_UNSIGNED"
 
 if [[ -n "${RVS_APT_GPG_KEY_ID:-}" ]]; then
   require_cmd gpg
+  if [[ -z "${RVS_APT_GPG_FINGERPRINT:-}" ]]; then
+    echo "error: RVS_APT_GPG_FINGERPRINT is required for signing" >&2
+    exit 1
+  fi
+  actual_fingerprint="$(
+    gpg --batch --with-colons --fingerprint "$RVS_APT_GPG_KEY_ID" \
+      | awk -F: '$1 == "fpr" { print $10; exit }'
+  )"
+  if [[ "$actual_fingerprint" != "$RVS_APT_GPG_FINGERPRINT" ]]; then
+    echo "error: signing-key fingerprint does not match the approved fingerprint" >&2
+    exit 1
+  fi
   GPG_ARGS=(--batch --yes --local-user "$RVS_APT_GPG_KEY_ID")
   if [[ -n "${RVS_APT_GPG_PASSPHRASE_FILE:-}" ]]; then
     if [[ ! -f "$RVS_APT_GPG_PASSPHRASE_FILE" ]]; then
@@ -59,9 +111,11 @@ if [[ -n "${RVS_APT_GPG_KEY_ID:-}" ]]; then
   fi
 
   gpg "${GPG_ARGS[@]}" \
+    --digest-algo SHA512 \
     --output "${APT_REPO_DIR}/dists/${CODENAME}/InRelease" \
     --clearsign "${APT_REPO_DIR}/dists/${CODENAME}/Release"
   gpg "${GPG_ARGS[@]}" \
+    --digest-algo SHA512 \
     --output "${APT_REPO_DIR}/dists/${CODENAME}/Release.gpg" \
     --detach-sign "${APT_REPO_DIR}/dists/${CODENAME}/Release"
   gpg --batch --yes \

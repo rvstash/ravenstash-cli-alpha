@@ -41,8 +41,8 @@ def _gh_headers() -> dict[str, str]:
     }
 
 
-def _find_asset(version_prefix: str, arch: str) -> tuple[str, str]:
-    """Return (full_version, download_url) for the best matching PBS asset."""
+def _find_asset(version_prefix: str, arch: str) -> tuple[str, str, str]:
+    """Return (full_version, download_url, sha256) for an immutable PBS asset."""
     suffix = f"{arch}-unknown-linux-gnu-install_only.tar.gz"
     pattern = re.compile(r"cpython-(\d+\.\d+\.\d+)\+\d+-" + re.escape(suffix))
     # Search up to 5 pages of releases
@@ -58,6 +58,8 @@ def _find_asset(version_prefix: str, arch: str) -> tuple[str, str]:
         if not releases:
             break
         for release in releases:
+            if release.get("immutable") is not True:
+                continue
             for asset in release.get("assets", []):
                 name: str = asset["name"]
                 m = pattern.match(name)
@@ -67,7 +69,10 @@ def _find_asset(version_prefix: str, arch: str) -> tuple[str, str]:
                 # Match if full_ver starts with the requested prefix
                 vp = version_prefix.rstrip(".")
                 if full_ver == vp or full_ver.startswith(vp + "."):
-                    return full_ver, asset["browser_download_url"]
+                    digest = asset.get("digest")
+                    if not isinstance(digest, str) or not digest.startswith("sha256:"):
+                        continue
+                    return full_ver, asset["browser_download_url"], digest
     output.fatal(
         f"No Python {version_prefix} build found for linux/{arch}.\n"
         f"Check: https://github.com/{_REPO}/releases"
@@ -84,7 +89,7 @@ def install(version: str) -> Path:
     arch = _ARCH_MAP.get(arch_raw, arch_raw)
 
     output.info(f"Resolving Python {version} (python-build-standalone) ...")
-    full_ver, url = _find_asset(version, arch)
+    full_ver, url, expected_sha256 = _find_asset(version, arch)
 
     dest = RUNTIMES_DIR / "python" / full_ver
     if dest.exists():
@@ -93,8 +98,8 @@ def install(version: str) -> Path:
 
     with tempfile.TemporaryDirectory() as tmp:
         archive = Path(tmp) / url.split("/")[-1].split("?")[0]
-        download(url, archive)
-        extract(archive, dest)
+        download(url, archive, expected_sha256=expected_sha256)
+        extract(archive, dest, required_paths=("bin/python3",))
 
     # Write shims for python3 / python3.x
     bin_dir = dest / "bin"

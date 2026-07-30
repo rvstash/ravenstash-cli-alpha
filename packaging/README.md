@@ -9,15 +9,17 @@ Python install.
 Required commands:
 
 ```bash
-pyinstaller
-nfpm
+docker
+dpkg-deb
 apt-ftparchive
 gpg
+gpgv
 sha256sum
 ```
 
-`apt-ftparchive`, `gpg`, and `sha256sum` are normally provided by Ubuntu system
-packages. `pyinstaller` and `nfpm` are installed by the release workflow.
+The canonical build uses `packaging/Dockerfile.ubuntu20`, whose Ubuntu and uv
+images are selected by immutable manifest digests. It installs the exact
+PyInstaller version from `uv.lock`.
 
 ## Local build
 
@@ -28,6 +30,7 @@ packaging/scripts/build-pyinstaller.sh
 packaging/scripts/build-deb.sh
 packaging/scripts/build-tarball.sh
 packaging/scripts/build-release-artifacts.sh
+packaging/scripts/build-in-ubuntu20.sh
 ```
 
 The generated artifacts are written under `dist/`:
@@ -36,6 +39,7 @@ The generated artifacts are written under `dist/`:
 dist/pyinstaller/rvs/              # frozen onedir bundle
 dist/packages/rvs_<version>_<arch>.deb
 dist/release/rvs-v<version>-linux-<arch>.tar.gz
+dist/release/rvs-v<version>-sbom.cdx.json
 dist/release/rvs-v<version>-checksums.txt
 ```
 
@@ -49,7 +53,9 @@ present under `/opt/rocm*`.
 After building the `.deb`, generate static APT repository metadata:
 
 ```bash
-RVS_APT_GPG_KEY_ID=<key-id> packaging/scripts/update-apt-repo.sh
+RVS_APT_GPG_KEY_ID=<key-id> \
+RVS_APT_GPG_FINGERPRINT=<full-fingerprint> \
+  packaging/scripts/update-apt-repo.sh
 ```
 
 Unsigned metadata can be generated without `RVS_APT_GPG_KEY_ID` for local
@@ -58,10 +64,12 @@ key can be used by setting `RVS_APT_GPG_PASSPHRASE_FILE` to a mode-`0600` file.
 The generated repository includes the binary public key
 `dist/apt/ravenstash-rvs.gpg`.
 
-The tag release workflow publishes this static repository to the
-`rvs/apt/` prefix of a Cloudflare R2 bucket. It first downloads the existing
-prefix so old package versions remain available, then uploads package objects
-before replacing the signed indexes.
+Published signing and storage logic does not run here. The private
+`rvstash/ravenstash-cli-release` repository authenticates the prior
+`InRelease`, every metadata digest, every listed package digest, and the absence
+of unlisted pool objects before a separate signing job sees the tree. A
+different job uploads immutable pool/by-hash objects first and `InRelease`
+last. A daily split-credential workflow refreshes the seven-day `Valid-Until`.
 
 The public website hosts the user-facing installer at
 `https://ravenstash.com/install.sh`. That script verifies the expected signing
@@ -69,7 +77,7 @@ key fingerprint, configures this APT repository, and installs `rvs`. Its source
 lives in the private website repository so the script and the
 `ravenstash.com` deployment are released together.
 
-The private alpha repository must define these repository-level Actions values:
+Only the private release orchestrator defines these Actions values:
 
 | Kind | Name | Purpose |
 | --- | --- | --- |
@@ -78,7 +86,8 @@ The private alpha repository must define these repository-level Actions values:
 | secret | `R2_APT_ACCESS_KEY_ID` | Bucket-scoped R2 write credential |
 | secret | `R2_APT_SECRET_ACCESS_KEY` | Bucket-scoped R2 write credential |
 | variable | `R2_APT_ACCOUNT_ID` | Cloudflare account ID |
-| variable | `R2_APT_BUCKET` | APT release bucket name |
+| secret | `CLI_SOURCE_TOKEN` | Read-only exact-SHA source checkout |
+| secret | `CLI_RELEASE_TOKEN` | Source tag and immutable draft-release publication |
 
 The secret values must originate in Ravenstash's production Infisical project;
 do not commit them or create independent unmanaged copies. The R2 bucket must
@@ -87,8 +96,7 @@ remains private. Connecting that custom domain and provisioning the
 bucket-scoped token are infrastructure prerequisites, not responsibilities of
 this source repository.
 
-GitHub Free does not provide deployment environments to private organization
-repositories, so the alpha uses tag-gated repository secrets. When the clean
-public `ravenstash-cli` repository is created for beta, move these values into a
-protected `release` environment and add that environment back to the publish
-job.
+The source repository contains no QA, staging, production, GPG, R2, or release
+token. Releases are manual exact-SHA dispatches. GitHub releases are created as
+drafts, populated once, and only then published under repository release
+immutability.

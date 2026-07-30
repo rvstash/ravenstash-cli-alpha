@@ -1,0 +1,64 @@
+name: source-ci
+
+on:
+  push:
+    branches:
+      - dev
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: source-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify-python-314:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out exact source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+
+      - name: Set up pinned uv
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78
+        with:
+          version: "0.11.24"
+          enable-cache: false
+
+      - name: Verify with Python 3.14
+        run: |
+          uv sync --frozen --python 3.14
+          .venv/bin/pytest
+          .venv/bin/ruff format --check rvs tests
+          .venv/bin/ruff check rvs tests
+          .venv/bin/pyright
+
+  ubuntu-2004-package-compatibility:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out exact source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+
+      - name: Build in the pinned Ubuntu 20.04 environment
+        run: packaging/scripts/build-in-ubuntu20.sh
+
+      - name: Install and exercise the package on Ubuntu 20.04
+        run: |
+          docker run --rm \
+            --volume "$PWD/dist/release:/release:ro" \
+            ubuntu@sha256:8feb4d8ca5354def3d8fce243717141ce31e2c428701f6682bd2fafe15388214 \
+            /bin/bash -euc '
+              apt-get update
+              apt-get install --yes /release/rvs_*_amd64.deb
+              rvs --version
+              rvs --help >/dev/null
+              ravenstash --version
+              test -x /usr/lib/rvs/rvs
+              test -e /usr/lib/rvs/_internal/libpython3.14.so.1.0
+            '

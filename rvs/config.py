@@ -36,10 +36,13 @@ from __future__ import annotations
 
 import os
 import re
+import tempfile
 import tomllib
 from dataclasses import dataclass, field
+from ipaddress import ip_address
 from pathlib import Path
 from typing import Literal
+from urllib.parse import urlsplit, urlunsplit
 
 import tomli_w
 
@@ -56,6 +59,42 @@ LOCAL_ENV_FILE_NAME = ".rvs.env"
 DEFAULT_API_URL = "https://api.ravenstash.com"
 DEFAULT_PKG_DOWNLOAD_URL = "https://pkg.rvsta.sh"
 DEFAULT_PKG_UPLOAD_URL = "https://push.rvsta.sh"
+
+
+def _is_loopback_host(hostname: str) -> bool:
+    normalized = hostname.rstrip(".").lower()
+    if normalized == "localhost":
+        return True
+    try:
+        return ip_address(normalized).is_loopback
+    except ValueError:
+        return False
+
+
+def validate_service_url(value: str, *, label: str) -> str:
+    """Validate and normalize a credential-bearing Ravenstash service URL."""
+    candidate = value.strip().rstrip("/")
+    parsed = urlsplit(candidate)
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+        raise ValueError(f"{label} must be an absolute HTTP(S) URL")
+    if parsed.username is not None or parsed.password is not None:
+        raise ValueError(f"{label} must not contain user information")
+    if parsed.query or parsed.fragment:
+        raise ValueError(f"{label} must not contain a query string or fragment")
+    if parsed.scheme == "http" and not _is_loopback_host(parsed.hostname):
+        raise ValueError(f"{label} must use HTTPS unless it targets loopback")
+
+    hostname = parsed.hostname.rstrip(".").lower()
+    if ":" in hostname:
+        host = f"[{hostname}]"
+    else:
+        host = hostname
+    if parsed.port is not None:
+        default_port = 443 if parsed.scheme == "https" else 80
+        if parsed.port != default_port:
+            host = f"{host}:{parsed.port}"
+    path = parsed.path.rstrip("/")
+    return urlunsplit((parsed.scheme.lower(), host, path, "", ""))
 
 
 @dataclass
@@ -178,7 +217,7 @@ def profile_api_url(profile_name: str) -> str:
     for key in keys:
         value = _env_value(key)
         if value:
-            return value.rstrip("/")
+            return validate_service_url(value, label=f"{profile_name} API URL")
     return DEFAULT_API_URL
 
 
@@ -195,8 +234,8 @@ def _profile_service_url(
     for key in keys:
         value = _env_value(key)
         if value:
-            return value.rstrip("/")
-    return default_url
+            return validate_service_url(value, label=f"{profile_name} {suffix.lower()} URL")
+    return validate_service_url(default_url, label=f"{profile_name} {suffix.lower()} URL")
 
 
 def profile_pkg_download_url(profile_name: str) -> str:
@@ -241,9 +280,18 @@ def load() -> RvsConfig:
 
     for name, vals in raw.get("profiles", {}).items():
         cfg.profiles[name] = ProfileConfig(
-            api_url=vals.get("api_url", profile_api_url(name)),
-            pkg_download_url=vals.get("pkg_download_url", profile_pkg_download_url(name)),
-            pkg_upload_url=vals.get("pkg_upload_url", profile_pkg_upload_url(name)),
+            api_url=validate_service_url(
+                vals.get("api_url", profile_api_url(name)),
+                label=f"{name} API URL",
+            ),
+            pkg_download_url=validate_service_url(
+                vals.get("pkg_download_url", profile_pkg_download_url(name)),
+                label=f"{name} package download URL",
+            ),
+            pkg_upload_url=validate_service_url(
+                vals.get("pkg_upload_url", profile_pkg_upload_url(name)),
+                label=f"{name} package upload URL",
+            ),
             customer_id=vals.get("customer_id"),
             customer_unique_id=vals.get("customer_unique_id"),
             credential_type=vals.get("credential_type"),
@@ -269,7 +317,8 @@ def load() -> RvsConfig:
 
 
 def save(cfg: RvsConfig) -> None:
-    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+    CONFIG_DIR.mkdir(mode=0o700, parents=True, exist_ok=True)
+    CONFIG_DIR.chmod(0o700)
     raw: dict = {"default_profile": cfg.default_profile}
 
     if cfg.profiles:
@@ -311,8 +360,25 @@ def save(cfg: RvsConfig) -> None:
             for name, p in cfg.profiles.items()
         }
 
-    with CONFIG_FILE.open("wb") as f:
-        tomli_w.dump(raw, f)
+    temporary_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="wb",
+            dir=CONFIG_DIR,
+            prefix=".config.",
+            suffix=".tmp",
+            delete=False,
+        ) as temporary:
+            temporary_path = Path(temporary.name)
+            os.fchmod(temporary.fileno(), 0o600)
+            tomli_w.dump(raw, temporary)
+            temporary.flush()
+            os.fsync(temporary.fileno())
+        os.replace(temporary_path, CONFIG_FILE)
+        CONFIG_FILE.chmod(0o600)
+    finally:
+        if temporary_path is not None:
+            temporary_path.unlink(missing_ok=True)
 
 
 # ── Convenience setters ───────────────────────────────────────────────────────
@@ -322,7 +388,9 @@ def set_profile_value(profile: str, api_url: str | None = None) -> None:
     cfg = load()
     existing = cfg.profiles.get(profile, _default_profile_config(profile))
     cfg.profiles[profile] = ProfileConfig(
-        api_url=api_url if api_url is not None else existing.api_url,
+        api_url=validate_service_url(api_url, label=f"{profile} API URL")
+        if api_url is not None
+        else existing.api_url,
         pkg_download_url=existing.pkg_download_url,
         pkg_upload_url=existing.pkg_upload_url,
         customer_id=existing.customer_id,
@@ -369,11 +437,25 @@ def set_profile_metadata(
     cfg = load()
     existing = cfg.profiles.get(profile, _default_profile_config(profile))
     cfg.profiles[profile] = ProfileConfig(
-        api_url=api_url if api_url is not None else existing.api_url,
-        pkg_download_url=pkg_download_url
-        if pkg_download_url is not None
-        else existing.pkg_download_url,
-        pkg_upload_url=pkg_upload_url if pkg_upload_url is not None else existing.pkg_upload_url,
+        api_url=validate_service_url(api_url, label=f"{profile} API URL")
+        if api_url is not None
+        else existing.api_url,
+        pkg_download_url=(
+            validate_service_url(
+                pkg_download_url,
+                label=f"{profile} package download URL",
+            )
+            if pkg_download_url is not None
+            else existing.pkg_download_url
+        ),
+        pkg_upload_url=(
+            validate_service_url(
+                pkg_upload_url,
+                label=f"{profile} package upload URL",
+            )
+            if pkg_upload_url is not None
+            else existing.pkg_upload_url
+        ),
         customer_id=customer_id if customer_id is not None else existing.customer_id,
         customer_unique_id=customer_unique_id
         if customer_unique_id is not None

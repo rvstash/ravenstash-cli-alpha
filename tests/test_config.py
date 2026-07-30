@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import stat
 from typing import TYPE_CHECKING
 
+import pytest
 from rvs import config as cfg_mod
 
 
@@ -82,13 +84,21 @@ def test_profile_api_url_can_be_declared_in_gitignored_local_env_file(
     (tmp_path / ".rvs.env").write_text(
         """
 RVS_PROFILE_STAGING_API_URL=https://staging.example.test
-RVS_PROFILE_DEV_API_URL='http://dev.example.test'
+RVS_PROFILE_DEV_API_URL='http://localhost:8000'
 """.strip(),
         encoding="utf-8",
     )
 
     assert cfg_mod.profile_api_url("staging") == "https://staging.example.test"
-    assert cfg_mod.profile_api_url("dev") == "http://dev.example.test"
+    assert cfg_mod.profile_api_url("dev") == "http://localhost:8000"
+
+
+def test_profile_api_url_rejects_non_loopback_plain_http(monkeypatch, tmp_path: Path) -> None:
+    _point_config(monkeypatch, tmp_path)
+    monkeypatch.setenv("RVS_PROFILE_DEV_API_URL", "http://dev.example.test")
+
+    with pytest.raises(ValueError, match="must use HTTPS"):
+        cfg_mod.profile_api_url("dev")
 
 
 def test_package_service_urls_can_be_declared_per_profile(monkeypatch, tmp_path: Path) -> None:
@@ -121,6 +131,23 @@ def test_explicit_rvs_env_file_overrides_local_env_file(monkeypatch, tmp_path: P
     monkeypatch.setenv("RVS_ENV_FILE", str(explicit_env_file))
 
     assert cfg_mod.profile_api_url("staging") == "https://explicit.example.test"
+
+
+def test_save_uses_private_modes_and_atomic_replacement(monkeypatch, tmp_path: Path) -> None:
+    config_dir, config_file = _point_config(monkeypatch, tmp_path)
+    cfg = cfg_mod.RvsConfig(
+        profiles={"default": cfg_mod.ProfileConfig()},
+    )
+
+    cfg_mod.save(cfg)
+    first_inode = config_file.stat().st_ino
+    cfg.default_profile = "work"
+    cfg_mod.save(cfg)
+
+    assert stat.S_IMODE(config_dir.stat().st_mode) == 0o700
+    assert stat.S_IMODE(config_file.stat().st_mode) == 0o600
+    assert config_file.stat().st_ino != first_inode
+    assert not list(config_dir.glob(".config.*.tmp"))
 
 
 def test_process_env_overrides_env_files(monkeypatch, tmp_path: Path) -> None:

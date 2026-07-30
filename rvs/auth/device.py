@@ -47,7 +47,10 @@ def _resolve_api_url(profile: str, api_url: str | None) -> str:
     cfg = cfg_mod.load()
     existing_profile = cfg.profiles.get(profile)
     if api_url:
-        return api_url.rstrip("/")
+        try:
+            return cfg_mod.validate_service_url(api_url, label=f"{profile} API URL")
+        except ValueError as exc:
+            output.fatal(str(exc))
     if existing_profile:
         return existing_profile.api_url.rstrip("/")
     return cfg_mod.profile_api_url(profile)

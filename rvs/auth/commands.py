@@ -75,7 +75,7 @@ def _raw_terminal() -> Iterator[None]:
         fd = sys.stdin.fileno()
         old_settings = termios.tcgetattr(fd)
         tty.setcbreak(fd)
-    except (OSError, termios.error):
+    except OSError, termios.error:
         yield
         return
 
@@ -133,7 +133,7 @@ def _read_escape_sequence(first_char: str) -> str:
 def _stdin_fileno() -> int | None:
     try:
         return sys.stdin.fileno()
-    except (AttributeError, OSError):
+    except AttributeError, OSError:
         return None
 
 

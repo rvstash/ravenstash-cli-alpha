@@ -36,6 +36,15 @@ class _JsonResponse:
 
 class _FakeDevApi:
     def get(self, path: str, params=None) -> _JsonResponse:
+        if path == "/v0/customers":
+            return _JsonResponse(
+                [
+                    {
+                        "customer_id": "cus_staging",
+                        "customer_unique_ref": "_custpid1",
+                    }
+                ]
+            )
         assert path == "/v0/repositories/resolve"
         return _JsonResponse(
             {
@@ -55,6 +64,11 @@ class _FakeDevApi:
         )
 
     def post(self, path: str, json=None) -> _JsonResponse:
+        if path == "/v0/remote-package-credentials":
+            assert json["customer_id"] == "cus_staging"
+            assert json["registry_kind"] == "pypi"
+            assert json["route_kind"] in {"remote_custom", "remote_official"}
+            return _JsonResponse({"access_token": "remote-secret-token"})
         assert path == "/v0/package-credentials"
         return _JsonResponse({"access_token": "secret-token"})
 
@@ -123,65 +137,66 @@ def _capture_run(
 
 
 def test_ravenstash_url_kind_accepts_public_hosts_and_local_normalized_routes() -> None:
-    assert (
-        native_runner._ravenstash_url_kind(
-            "https://npm.pkg-staging.example.test/x/_abcdefgh/_xyzabcde/"
+    def url_kind(
+        url: str,
+        *,
+        download_url: str = STAGING_DOWNLOAD_URL,
+        upload_url: str = STAGING_UPLOAD_URL,
+    ) -> str | None:
+        return native_runner._ravenstash_url_kind(
+            url,
+            download_url=download_url,
+            upload_url=upload_url,
         )
-        == "npm"
-    )
+
+    assert url_kind("https://npm.pkg-staging.example.test/x/_abcdefgh/_xyzabcde/") == "npm"
+    assert url_kind("https://pypi.pkg-staging.example.test/x/_abcdefgh/_xyzabcde/simple/") == "pypi"
     assert (
-        native_runner._ravenstash_url_kind(
-            "https://pypi.pkg-staging.example.test/x/_abcdefgh/_xyzabcde/simple/"
-        )
-        == "pypi"
-    )
-    assert (
-        native_runner._ravenstash_url_kind(
-            "http://localhost:8788/native/maven/x/_abcdefgh/_xyzabcde/com/example/demo/"
+        url_kind(
+            "http://localhost:8788/native/maven/x/_abcdefgh/_xyzabcde/com/example/demo/",
+            download_url="http://localhost:8788",
+            upload_url="http://localhost:8789",
         )
         == "maven"
     )
     assert (
-        native_runner._ravenstash_url_kind(
-            "http://localhost:8788/native/pypi/r/_abcdefgh/piwheels/simple/"
+        url_kind(
+            "http://localhost:8788/native/pypi/r/_abcdefgh/piwheels/simple/",
+            download_url="http://localhost:8788",
+            upload_url="http://localhost:8789",
         )
         == "pypi"
     )
-    assert (
-        native_runner._ravenstash_url_kind(
-            "https://pypi.pkg-staging.example.test/r/o/pypiorg/simple/"
+    assert url_kind("https://pypi.pkg-staging.example.test/r/o/pypiorg/simple/") == "pypi"
+    assert url_kind("https://npm.pkg-staging.example.test/r/_abcdefgh/_xyzabcde/") == "npm"
+    assert url_kind("https://npm.example.test/x/_abcdefgh/_xyzabcde/") is None
+    assert url_kind("https://pkg-staging.example.test/x/_abcdefgh/_xyzabcde/") is None
+    assert url_kind("http://localhost:8788/native/npm/x/_abcdefgh/") is None
+    assert url_kind("https://npm.pkg-staging.example.test/x/_abcdefgh/") is None
+    assert url_kind("https://pypi.pkg-staging.example.test/r/_abcdefgh/") is None
+
+
+def test_ravenstash_url_kind_rejects_attacker_lookalike_origins() -> None:
+    def url_kind(url: str) -> str | None:
+        return native_runner._ravenstash_url_kind(
+            url,
+            download_url=STAGING_DOWNLOAD_URL,
+            upload_url=STAGING_UPLOAD_URL,
         )
-        == "pypi"
-    )
+
+    assert url_kind("https://npm.pkg.attacker.example/x/_abcdefgh/_xyzabcde/") is None
+    assert url_kind("https://attacker.example/native/pypi/r/_customer/cache/simple/") is None
     assert (
-        native_runner._ravenstash_url_kind(
-            "https://npm.pkg-staging.example.test/r/_abcdefgh/_xyzabcde/"
-        )
-        == "npm"
-    )
-    assert (
-        native_runner._ravenstash_url_kind("https://npm.example.test/x/_abcdefgh/_xyzabcde/")
+        url_kind("https://npm.pkg-staging.example.test.attacker.example/x/_abcdefgh/_xyzabcde/")
         is None
     )
     assert (
-        native_runner._ravenstash_url_kind(
-            "https://pkg-staging.example.test/x/_abcdefgh/_xyzabcde/"
-        )
+        url_kind("https://npm.pkg-staging.example.test@attacker.example/x/_abcdefgh/_xyzabcde/")
         is None
     )
-    assert (
-        native_runner._ravenstash_url_kind("http://localhost:8788/native/npm/x/_abcdefgh/") is None
-    )
-    assert (
-        native_runner._ravenstash_url_kind("https://npm.pkg-staging.example.test/x/_abcdefgh/")
-        is None
-    )
-    assert (
-        native_runner._ravenstash_url_kind(
-            "https://pypi.pkg-staging.example.test/r/_abcdefgh/"
-        )
-        is None
-    )
+    assert url_kind("http://npm.pkg-staging.example.test/x/_abcdefgh/_xyzabcde/") is None
+    assert url_kind("https://npm.pkg-staging.example.test:444/x/_abcdefgh/_xyzabcde/") is None
+    assert url_kind("https://npm.pkg-staging.example.test:bad/x/_abcdefgh/_xyzabcde/") is None
 
 
 def test_native_npm_respects_project_npmrc_and_injects_path_scoped_auth(
@@ -299,15 +314,13 @@ def test_native_pip_respects_existing_index_and_injects_temp_netrc(
     ]
 
 
-def test_native_pip_respects_custom_remote_cache_and_uses_profile_token(
+def test_native_pip_exchanges_profile_token_for_scoped_remote_credential(
     monkeypatch: Any,
     tmp_path: Path,
 ) -> None:
     _isolate_config(monkeypatch, tmp_path)
     _mock_native_tools(monkeypatch)
-    index_url = (
-        f"https://pypi.{STAGING_DOWNLOAD_HOST}/r/_custpid1/piwheels/simple/"
-    )
+    index_url = f"https://pypi.{STAGING_DOWNLOAD_HOST}/r/_custpid1/piwheels/simple/"
     monkeypatch.setenv("PIP_INDEX_URL", index_url)
     calls: list[dict[str, Any]] = []
     netrc_texts: list[str] = []
@@ -328,7 +341,7 @@ def test_native_pip_respects_custom_remote_cache_and_uses_profile_token(
     ]
     assert calls[0]["env"]["PIP_INDEX_URL"] == index_url
     assert netrc_texts == [
-        f"machine pypi.{STAGING_DOWNLOAD_HOST} login __token__ password secret-token\n"
+        f"machine pypi.{STAGING_DOWNLOAD_HOST} login __token__ password remote-secret-token\n"
     ]
 
 
@@ -338,6 +351,14 @@ def test_native_pip_local_remote_cache_netrc_uses_hostname_without_port(
 ) -> None:
     _isolate_config(monkeypatch, tmp_path)
     _mock_native_tools(monkeypatch)
+    config_path = cfg_mod.CONFIG_FILE
+    config_path.write_text(
+        config_path.read_text(encoding="utf-8").replace(
+            STAGING_DOWNLOAD_URL,
+            "http://localhost:8788",
+        ),
+        encoding="utf-8",
+    )
     monkeypatch.setenv(
         "PIP_INDEX_URL",
         "http://localhost:8788/native/pypi/r/_custpid1/piwheels/simple/",
@@ -353,7 +374,32 @@ def test_native_pip_local_remote_cache_netrc_uses_hostname_without_port(
     result = runner.invoke(app, ["pip", "download", "--no-deps", "simple-range==0.0.3"])
 
     assert result.exit_code == 0
-    assert netrc_texts == ["machine localhost login __token__ password secret-token\n"]
+    assert netrc_texts == ["machine localhost login __token__ password remote-secret-token\n"]
+
+
+def test_native_pip_exchanges_official_remote_credential(
+    monkeypatch: Any,
+    tmp_path: Path,
+) -> None:
+    _isolate_config(monkeypatch, tmp_path)
+    _mock_native_tools(monkeypatch)
+    monkeypatch.setenv(
+        "PIP_INDEX_URL",
+        f"https://pypi.{STAGING_DOWNLOAD_HOST}/r/o/pypiorg/simple/",
+    )
+    captured: list[str] = []
+
+    def hook(_cmd: list[str], env: dict[str, str]) -> None:
+        captured.append(Path(env["NETRC"]).read_text(encoding="utf-8"))
+
+    _capture_run(monkeypatch, [], hook)
+
+    result = runner.invoke(app, ["pip", "download", "demo"])
+
+    assert result.exit_code == 0
+    assert captured == [
+        f"machine pypi.{STAGING_DOWNLOAD_HOST} login __token__ password remote-secret-token\n"
+    ]
 
 
 def test_native_pip_isolate_overrides_index_without_writing_credentials(

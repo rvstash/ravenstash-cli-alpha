@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import os
 import platform
 import shutil
 import tarfile
@@ -53,26 +54,42 @@ def is_debian() -> bool:
 # ── Download ───────────────────────────────────────────────────────────────────
 
 
-def download(url: str, dest: Path, *, expected_sha256: str | None = None) -> None:
+_MAX_DOWNLOAD_BYTES = 2 * 1024 * 1024 * 1024
+_MAX_ARCHIVE_MEMBERS = 200_000
+_MAX_EXTRACTED_BYTES = 8 * 1024 * 1024 * 1024
+
+
+def download(url: str, dest: Path, *, expected_sha256: str) -> None:
     """Download *url* to *dest* with a simple progress indicator.
 
-    If *expected_sha256* is provided the download is verified and
-    :func:`sys.exit` is called on mismatch.
+    The expected SHA-256 digest is mandatory. Runtime archives are executable
+    supply-chain inputs and must never be accepted based on HTTPS alone.
     """
+    normalized_digest = expected_sha256.removeprefix("sha256:").lower()
+    if len(normalized_digest) != 64 or any(
+        character not in "0123456789abcdef" for character in normalized_digest
+    ):
+        output.fatal("Runtime archive is missing a valid SHA-256 digest.")
     dest.parent.mkdir(parents=True, exist_ok=True)
     fname = url.split("/")[-1].split("?")[0]
     output.info(f"Downloading {fname} ...")
-    digest = hashlib.sha256() if expected_sha256 else None
+    digest = hashlib.sha256()
     with httpx.stream("GET", url, follow_redirects=True, timeout=180.0) as resp:
         resp.raise_for_status()
+        if resp.url.scheme != "https":
+            output.fatal("Runtime archive redirected to a non-HTTPS URL.")
         total = int(resp.headers.get("content-length", 0))
+        if total > _MAX_DOWNLOAD_BYTES:
+            output.fatal(f"Runtime archive exceeds {_MAX_DOWNLOAD_BYTES} bytes.")
         downloaded = 0
         with dest.open("wb") as fh:
             for chunk in resp.iter_bytes(65536):
                 fh.write(chunk)
-                if digest:
-                    digest.update(chunk)
+                digest.update(chunk)
                 downloaded += len(chunk)
+                if downloaded > _MAX_DOWNLOAD_BYTES:
+                    dest.unlink(missing_ok=True)
+                    output.fatal(f"Runtime archive exceeds {_MAX_DOWNLOAD_BYTES} bytes.")
                 if total and not output.is_json():
                     pct = downloaded * 100 // total
                     mb_done = downloaded // (1024 * 1024)
@@ -80,37 +97,64 @@ def download(url: str, dest: Path, *, expected_sha256: str | None = None) -> Non
                     print(f"\r  {pct:3d}%  {mb_done} / {mb_total} MB  ", end="", flush=True)
     if total and not output.is_json():
         print()  # newline after progress bar
-    if digest and expected_sha256:
-        actual = digest.hexdigest()
-        if actual != expected_sha256:
-            dest.unlink(missing_ok=True)
-            output.fatal(
-                f"Checksum mismatch for {fname}:\n  expected {expected_sha256}\n  got      {actual}"
-            )
+    actual = digest.hexdigest()
+    if actual != normalized_digest:
+        dest.unlink(missing_ok=True)
+        output.fatal(
+            f"Checksum mismatch for {fname}:\n  expected {normalized_digest}\n  got      {actual}"
+        )
 
 
 # ── Extract ────────────────────────────────────────────────────────────────────
 
 
-def extract(archive: Path, dest: Path, *, strip_root: bool = True) -> None:
+def extract(
+    archive: Path,
+    dest: Path,
+    *,
+    strip_root: bool = True,
+    required_paths: tuple[str, ...] = (),
+) -> None:
     """Extract a .tar.gz / .tar.xz archive to *dest*.
 
     When *strip_root* is True (default) the single top-level directory inside
     the archive is stripped so that ``dest/bin/`` contains binaries directly.
     """
-    dest.mkdir(parents=True, exist_ok=True)
+    dest.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
     output.info(f"Extracting to {dest} ...")
-    with tempfile.TemporaryDirectory() as tmp:
+    with tempfile.TemporaryDirectory(prefix=".rvs-extract-", dir=dest.parent) as tmp:
         tmp_path = Path(tmp)
-        with tarfile.open(archive) as tf:
-            tf.extractall(tmp_path)
-        roots = list(tmp_path.iterdir())
-        src = roots[0] if strip_root and len(roots) == 1 and roots[0].is_dir() else tmp_path
+        extracted_path = tmp_path / "archive"
+        extracted_path.mkdir()
+        try:
+            with tarfile.open(archive) as tf:
+                members = tf.getmembers()
+                if len(members) > _MAX_ARCHIVE_MEMBERS:
+                    output.fatal("Runtime archive contains too many entries.")
+                extracted_bytes = sum(member.size for member in members if member.isfile())
+                if extracted_bytes > _MAX_EXTRACTED_BYTES:
+                    output.fatal("Runtime archive expands beyond the safety limit.")
+                tf.extractall(extracted_path, members=members, filter="data")
+        except (tarfile.TarError, OSError) as exc:
+            output.fatal(f"Runtime archive extraction was rejected: {exc}")
+        roots = list(extracted_path.iterdir())
+        src = roots[0] if strip_root and len(roots) == 1 and roots[0].is_dir() else extracted_path
+        prepared = tmp_path / "prepared"
+        prepared.mkdir()
         for child in src.iterdir():
-            target = dest / child.name
-            if target.exists():
-                shutil.rmtree(target) if target.is_dir() else target.unlink()
-            shutil.move(str(child), str(dest))
+            shutil.move(str(child), str(prepared))
+        prepared_root = prepared.resolve()
+        for relative_path in required_paths:
+            candidate = prepared / relative_path
+            try:
+                resolved = candidate.resolve(strict=True)
+            except OSError:
+                output.fatal(f"Runtime archive is missing required file: {relative_path}")
+            if not resolved.is_relative_to(prepared_root) or not resolved.is_file():
+                output.fatal(f"Runtime archive has an unsafe required file: {relative_path}")
+        if dest.exists():
+            output.fatal(f"Runtime destination appeared during installation: {dest}")
+        os.replace(prepared, dest)
 
 
 # ── Shim ──────────────────────────────────────────────────────────────────────

@@ -1,0 +1,28 @@
+# Ubuntu 20.04 is the oldest supported runtime target. Both image identities are
+# immutable, reviewed digests; Renovate may propose digest-only updates.
+FROM ghcr.io/astral-sh/uv@sha256:99ea34acedc870ba4ad11a1f540a1c04267c9f30aadc465a94406f52dfda2c36 AS uv
+FROM ubuntu@sha256:8feb4d8ca5354def3d8fce243717141ce31e2c428701f6682bd2fafe15388214
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    LANG=C.UTF-8 \
+    LC_ALL=C.UTF-8 \
+    PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+    UV_LINK_MODE=copy \
+    UV_PYTHON_DOWNLOADS=automatic
+
+COPY --from=uv /uv /uvx /usr/local/bin/
+
+RUN apt-get update \
+    && apt-get install --yes --no-install-recommends \
+        apt-utils \
+        binutils \
+        ca-certificates \
+        dpkg-dev \
+        gpgv \
+        gzip \
+        tar \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /workspace
+
+ENTRYPOINT ["/bin/bash", "-lc"]
