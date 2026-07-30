@@ -74,11 +74,11 @@ last. A daily split-credential workflow refreshes the seven-day `Valid-Until`.
 The canonical user-facing installer source is `packaging/install.sh`. It
 verifies the expected signing-key fingerprint, configures this APT repository,
 and installs `rvs`. The build includes it in the checksummed and attested release
-artifacts. The private release orchestrator publishes a digest-addressed copy
-and promotes `https://releases.ravenstash.com/rvs/install.sh` only after the APT
-repository passes a clean installation check. Cloudflare redirects
-`https://ravenstash.com/install.sh` to that release-owned object; the frontend
-website repository contains no installer implementation.
+artifacts. After the APT repository passes a clean installation check, the
+private release orchestrator embeds the exact attested bytes in a dedicated
+Cloudflare Worker at `https://ravenstash.com/install.sh`. The Worker does not
+fetch executable shell code from R2, and the frontend website repository
+contains no installer implementation.
 
 Only the private release orchestrator defines these Actions values:
 
@@ -89,7 +89,7 @@ Only the private release orchestrator defines these Actions values:
 | secret | `R2_APT_ACCESS_KEY_ID` | Bucket-scoped R2 write credential |
 | secret | `R2_APT_SECRET_ACCESS_KEY` | Bucket-scoped R2 write credential |
 | variable | `R2_APT_ACCOUNT_ID` | Cloudflare account ID |
-| secret | `CLI_SOURCE_TOKEN` | Read-only exact-SHA source checkout |
+| secret | `CLI_SOURCE_TOKEN` | Fine-grained read-only exact-SHA source checkout |
 
 The secret values must originate in Ravenstash's production Infisical project;
 do not commit them or create independent unmanaged copies. The R2 bucket must
