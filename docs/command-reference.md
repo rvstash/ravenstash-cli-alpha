@@ -89,6 +89,18 @@ shell shims resolve `.python-version`, `.node-version`, and `.java-version` at
 invocation time, so project pins written by `runtime use` are effective after
 the shim was installed.
 
+## CLI updates
+
+`rvs update` checks only the signed candidate in the currently configured APT
+compatibility channel. `rvs update --apply` refreshes APT metadata and installs
+that compatible candidate. It never changes channels.
+
+Use `rvs upgrade --to 0.4` (or a later channel) to make a breaking compatibility
+transition explicit. The command authenticates Ravenstash's signed channel
+manifest, shows the migration notes, asks for confirmation, changes the APT
+source atomically, and restores the prior source if authentication or candidate
+validation fails.
+
 ## `rvs pkg` / `rvs packages`
 
 Repository commands:

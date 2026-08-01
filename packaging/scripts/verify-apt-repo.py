@@ -12,6 +12,8 @@ import subprocess
 import tempfile
 from pathlib import Path, PurePosixPath
 
+from rvs.apt_channels import normalize_channel, version_matches_channel
+
 
 def fail(message: str) -> None:
     raise SystemExit(f"error: {message}")
@@ -93,7 +95,7 @@ def package_stanzas(text: str) -> list[dict[str, str]]:
     return stanzas
 
 
-def verify_packages(repo: Path, packages_file: Path) -> None:
+def verify_packages(repo: Path, packages_file: Path, channel: str) -> set[PurePosixPath]:
     listed: set[PurePosixPath] = set()
     for stanza in package_stanzas(packages_file.read_text(encoding="utf-8")):
         required = {"Package", "Version", "Architecture", "Filename", "Size", "SHA256"}
@@ -101,6 +103,8 @@ def verify_packages(repo: Path, packages_file: Path) -> None:
             fail(f"Packages stanza is missing: {', '.join(sorted(missing))}")
         if stanza["Package"] != "rvs":
             fail(f"unexpected package in repository: {stanza['Package']}")
+        if not version_matches_channel(stanza["Version"], channel):
+            fail(f"package version {stanza['Version']} is outside channel {channel}")
         relative = safe_relative(stanza["Filename"])
         if relative in listed or relative.suffix != ".deb":
             fail(f"invalid or duplicate package path: {relative}")
@@ -134,25 +138,17 @@ def verify_packages(repo: Path, packages_file: Path) -> None:
             fail(f"Debian control metadata mismatch: {relative}")
         listed.add(relative)
 
-    present = {
-        PurePosixPath(path.relative_to(repo).as_posix()) for path in (repo / "pool").rglob("*.deb")
-    }
-    if present != listed:
-        extras = sorted(str(path) for path in present - listed)
-        missing = sorted(str(path) for path in listed - present)
-        fail(f"pool inventory mismatch; unlisted={extras}, missing={missing}")
+    return listed
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("repository", type=Path)
-    parser.add_argument("trusted_keyring", type=Path)
-    args = parser.parse_args()
-    repo = args.repository.resolve()
-    keyring = args.trusted_keyring.resolve()
-    in_release = repo / "dists/stable/InRelease"
-    if not keyring.is_file() or not in_release.is_file():
-        fail("trusted keyring or InRelease is missing")
+def verify_distribution(
+    repo: Path, keyring: Path, distribution: str
+) -> set[PurePosixPath]:
+    channel = "v0.3" if distribution == "stable" else normalize_channel(distribution)
+    dist_root = repo / "dists" / distribution
+    in_release = dist_root / "InRelease"
+    if not in_release.is_file():
+        fail(f"InRelease is missing for {distribution}")
 
     with tempfile.TemporaryDirectory(prefix="rvs-apt-verify-") as temp_dir:
         release_path = Path(temp_dir) / "Release"
@@ -172,6 +168,12 @@ def main() -> None:
         release = release_path.read_text(encoding="utf-8")
 
     verify_expiry(release)
+    if release_field(release, "Suite") != distribution:
+        fail(f"Release Suite does not match {distribution}")
+    if release_field(release, "Codename") != distribution:
+        fail(f"Release Codename does not match {distribution}")
+    if release_field(release, "Ravenstash-Compatibility-Channel") != channel:
+        fail(f"Release compatibility channel does not match {channel}")
     entries = release_hashes(release)
     required_metadata = {
         PurePosixPath("main/binary-amd64/Packages"),
@@ -179,7 +181,6 @@ def main() -> None:
     }
     if not required_metadata.issubset(entries):
         fail("Release does not cover the required package indexes")
-    dist_root = repo / "dists/stable"
     for relative, (digest, size) in entries.items():
         target = dist_root.joinpath(*relative.parts)
         if not target.is_file():
@@ -192,7 +193,36 @@ def main() -> None:
     with gzip.open(compressed, "rt", encoding="utf-8") as stream:
         if stream.read() != packages.read_text(encoding="utf-8"):
             fail("Packages.gz does not expand to Packages")
-    verify_packages(repo, packages)
+    return verify_packages(repo, packages, channel)
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("repository", type=Path)
+    parser.add_argument("trusted_keyring", type=Path)
+    args = parser.parse_args()
+    repo = args.repository.resolve()
+    keyring = args.trusted_keyring.resolve()
+    if not keyring.is_file():
+        fail("trusted keyring is missing")
+    distributions = sorted(
+        path.name
+        for path in (repo / "dists").iterdir()
+        if path.is_dir() and (path / "InRelease").is_file()
+    )
+    if not distributions:
+        fail("repository has no signed distributions")
+    listed: set[PurePosixPath] = set()
+    for distribution in distributions:
+        listed.update(verify_distribution(repo, keyring, distribution))
+    present = {
+        PurePosixPath(path.relative_to(repo).as_posix())
+        for path in (repo / "pool").rglob("*.deb")
+    }
+    if present != listed:
+        extras = sorted(str(path) for path in present - listed)
+        missing = sorted(str(path) for path in listed - present)
+        fail(f"pool inventory mismatch; unlisted={extras}, missing={missing}")
     print("APT repository verification passed.")
 
 

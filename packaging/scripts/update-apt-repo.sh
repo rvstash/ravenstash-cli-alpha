@@ -6,14 +6,18 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/common.sh"
 require_cmd apt-ftparchive
 require_cmd dpkg-deb
 require_cmd gzip
+require_cmd python3
 require_cmd sha256sum
 
 VERSION="${RVS_VERSION:-$(rvs_version)}"
 ARCH="${RVS_ARCH:-$(rvs_arch)}"
 APT_REPO_DIR="${APT_REPO_DIR:-dist/apt}"
-CODENAME="${RVS_APT_CODENAME:-stable}"
+POLICY_SCRIPT="packaging/scripts/apt-channel-policy.py"
+DEFAULT_CHANNEL="$(python3 "$POLICY_SCRIPT" channel-for-version "$VERSION")"
+CODENAME="${RVS_APT_CHANNEL:-$DEFAULT_CHANNEL}"
 COMPONENT="${RVS_APT_COMPONENT:-main}"
 DEB="dist/packages/rvs_${VERSION}_${ARCH}.deb"
+python3 "$POLICY_SCRIPT" validate "$VERSION" "$CODENAME"
 
 if [[ ! -f "$DEB" ]]; then
   echo "error: package not found: $DEB" >&2
@@ -44,7 +48,9 @@ else
   cp "$DEB" "$DEB_TARGET"
 fi
 
-(cd "$APT_REPO_DIR" && apt-ftparchive packages pool) > "${BINARY_DIR}/Packages"
+(cd "$APT_REPO_DIR" && apt-ftparchive packages pool) \
+  | python3 "$POLICY_SCRIPT" filter "$CODENAME" \
+  > "${BINARY_DIR}/Packages"
 gzip -9n < "${BINARY_DIR}/Packages" > "${BINARY_DIR}/Packages.gz"
 
 for index in Packages Packages.gz; do
@@ -84,6 +90,7 @@ apt-ftparchive \
   release "${APT_REPO_DIR}/dists/${CODENAME}" \
   > "$RELEASE_UNSIGNED"
 sed "/^Date:/a Valid-Until: ${VALID_UNTIL}" "$RELEASE_UNSIGNED" \
+  | sed "/^Date:/a Ravenstash-Compatibility-Channel: ${CODENAME}" \
   > "${APT_REPO_DIR}/dists/${CODENAME}/Release"
 rm -f "$RELEASE_UNSIGNED"
 

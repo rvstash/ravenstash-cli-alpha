@@ -50,11 +50,14 @@ present under `/opt/rocm*`.
 
 ## APT repository
 
-After building the `.deb`, generate static APT repository metadata:
+After building the `.deb`, generate static APT repository metadata. The channel
+is derived from the package version (`0.3.x` -> `v0.3`, `1.x` -> `v1`) and an
+explicit override must match that policy:
 
 ```bash
 RVS_APT_GPG_KEY_ID=<key-id> \
 RVS_APT_GPG_FINGERPRINT=<full-fingerprint> \
+RVS_APT_CHANNEL=v0.3 \
   packaging/scripts/update-apt-repo.sh
 ```
 
@@ -70,6 +73,12 @@ Published signing and storage logic does not run here. The private
 of unlisted pool objects before a separate signing job sees the tree. A
 different job uploads immutable pool/by-hash objects first and `InRelease`
 last. A daily split-credential workflow refreshes the seven-day `Valid-Until`.
+
+APT suites are compatibility boundaries, not rolling maturity labels. Before
+`1.0`, every minor series has its own suite (`v0.3`, `v0.4`); from `1.0` onward,
+every major series has one (`v1`, `v2`). Routine APT upgrades never cross that
+boundary. The legacy `stable` suite remains a permanent alias for `v0.3` so the
+initial alpha install cannot later roll into an incompatible release.
 
 The canonical user-facing installer source is `packaging/install.sh`. It
 verifies the expected signing-key fingerprint, configures this APT repository,

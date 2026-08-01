@@ -234,7 +234,7 @@ The Linux package contains a self-contained CLI and installs both `/usr/bin/rvs`
 and the long-form `/usr/bin/ravenstash` alias; user config, credentials, and
 managed runtimes stay in `~/.rvs`.
 
-Install the current stable Linux package:
+Install the current recommended Linux compatibility channel:
 
 ```bash
 curl --proto '=https' --proto-redir '=https' --tlsv1.2 \
@@ -257,12 +257,17 @@ sudo apt install ./rvs_<version>_amd64.deb
 APT remains the update authority:
 
 ```bash
-rvs update                 # compare installed and signed candidate versions
-rvs update --apply         # refresh APT metadata and install the candidate
-sudo apt upgrade           # standard system updates work too
+rvs update                 # check compatible updates in the current channel
+rvs update --apply         # refresh APT metadata and install a compatible update
+rvs upgrade --to 0.4       # explicitly accept a newer compatibility channel
+sudo apt upgrade           # updates only within the configured channel
 ```
 
-The CLI never downloads over and replaces its own executable.
+Before `1.0`, each `v0.Y` APT suite is a compatibility boundary: `0.Y.Z`
+patches may update normally, while moving to another minor channel is explicit.
+Starting with `1.0`, the major version is the boundary (`v1`, `v2`, and so on).
+The CLI authenticates the signed channel manifest before offering or applying a
+channel change. It never downloads over and replaces its own executable.
 
 WSL/headless note: `RVS_TOKEN` works without extra setup. Persistent
 `rvs auth login` stores access and refresh tokens in the OS keyring, so WSL

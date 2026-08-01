@@ -10,7 +10,7 @@ from .native import commands as native_commands
 from .pkg.commands import app as pkg_app
 from .repo.commands import app as repo_app
 from .runtime.commands import app as runtime_app
-from .update import update
+from .update import update, upgrade
 
 
 app = typer.Typer(
@@ -28,6 +28,7 @@ app.add_typer(pkg_app, name="packages", help="Alias for `rvs pkg`.")
 app.add_typer(repo_app, name="repo")
 app.add_typer(ci_app, name="ci")
 app.command("update")(update)
+app.command("upgrade")(upgrade)
 app.command(
     "pip",
     context_settings=native_commands.PASSTHROUGH_CONTEXT,
