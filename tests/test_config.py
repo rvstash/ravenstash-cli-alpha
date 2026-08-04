@@ -200,6 +200,36 @@ def test_save_and_load_round_trips_profiles_and_registry_defaults(
     assert loaded.registry_defaults("maven").default_repo is None
 
 
+def test_saved_target_retains_identity_when_authority_marks_it_unavailable(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    _point_config(monkeypatch, tmp_path)
+    cfg_mod.save(
+        cfg_mod.RvsConfig(
+            profiles={
+                "default": cfg_mod.ProfileConfig(
+                    registries={
+                        "pypi": cfg_mod.RegistryDefaults(
+                            default_repo="_abcdefgh/_pypi0001",
+                            repository_id="repository-1",
+                            authority_revision=4,
+                        )
+                    }
+                )
+            }
+        )
+    )
+
+    cfg_mod.mark_registry_default_unavailable("pypi")
+    saved = cfg_mod.load().registry_defaults("pypi")
+
+    assert saved.default_repo == "_abcdefgh/_pypi0001"
+    assert saved.repository_id == "repository-1"
+    assert saved.authority_revision == 4
+    assert saved.is_available is False
+
+
 def test_current_profile_name_prefers_environment(monkeypatch) -> None:
     monkeypatch.setenv("RVS_PROFILE", "staging")
 

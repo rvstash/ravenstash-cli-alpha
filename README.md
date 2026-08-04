@@ -156,6 +156,12 @@ name while native URLs continue using the same stable references. Remote-cache
 commands use immutable public cache IDs returned by DevAPI and do not persist a
 mutable cache name as local identity.
 
+Saved customer defaults also retain the current organization role and member
+authority revision. If refresh or resolution reports that an immutable target
+was removed or is no longer assigned, `rvs` preserves that target identity but
+marks it unavailable. It never rebinds the profile to a same-named object and
+never retries another customer credential after an authorization failure.
+
 Package metadata commands:
 
 ```bash

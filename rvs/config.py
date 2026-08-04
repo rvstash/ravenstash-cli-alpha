@@ -121,6 +121,9 @@ class RegistryDefaults:
     repository_id: str | None = None
     repository_unique_ref: str | None = None
     repository_name_cache: str | None = None
+    organization_role: str | None = None
+    authority_revision: int | None = None
+    is_available: bool = True
 
 
 @dataclass
@@ -308,6 +311,9 @@ def load() -> RvsConfig:
                     repository_id=defaults.get("repository_id"),
                     repository_unique_ref=defaults.get("repository_unique_ref"),
                     repository_name_cache=defaults.get("repository_name_cache"),
+                    organization_role=defaults.get("organization_role"),
+                    authority_revision=defaults.get("authority_revision"),
+                    is_available=defaults.get("is_available", True),
                 )
                 for kind, defaults in vals.get("registries", {}).items()
             },
@@ -347,6 +353,9 @@ def save(cfg: RvsConfig) -> None:
                                 "repository_id": defaults.repository_id,
                                 "repository_unique_ref": defaults.repository_unique_ref,
                                 "repository_name_cache": defaults.repository_name_cache,
+                                "organization_role": defaults.organization_role,
+                                "authority_revision": defaults.authority_revision,
+                                "is_available": (None if defaults.is_available else False),
                             }.items()
                             if value is not None
                         }
@@ -532,6 +541,20 @@ def set_registry_default_target(
         repository_id=repository["id"],
         repository_unique_ref=repository["repository_unique_ref"],
         repository_name_cache=repository["repository_name"],
+        organization_role=customer.get("organization_role"),
+        authority_revision=customer.get("authority_revision"),
+        is_available=True,
     )
     cfg.profiles[profile_name] = profile_config
+    save(cfg)
+
+
+def mark_registry_default_unavailable(kind: RegistryKind, profile: str | None = None) -> None:
+    """Keep an immutable saved target but record that current authority denied it."""
+    cfg = load()
+    profile_name = profile or current_profile_name(cfg)
+    profile_config = cfg.profiles.get(profile_name)
+    if profile_config is None or kind not in profile_config.registries:
+        return
+    profile_config.registries[kind].is_available = False
     save(cfg)

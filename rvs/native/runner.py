@@ -261,7 +261,11 @@ def _resolve_route(kind: RegistryKind, options: NativeOptions) -> RegistryRoute:
             "/v0/package-credentials",
             json={"repository_id": repository["id"], "registry_kind": kind},
         ).json()
-    except (ApiError, KeyError, TypeError) as exc:
+    except ApiError as exc:
+        if options.repo is None and exc.status_code in {403, 404}:
+            cfg_mod.mark_registry_default_unavailable(kind, profile_name)
+        output.fatal(str(exc))
+    except (KeyError, TypeError) as exc:
         output.fatal(str(exc))
     profile_cfg = _profile(options.profile)
     if options.repo is None:
