@@ -27,10 +27,10 @@ class _Completed:
 
 
 class _JsonResponse:
-    def __init__(self, payload: dict[str, Any]) -> None:
+    def __init__(self, payload: Any) -> None:
         self.payload = payload
 
-    def json(self) -> dict[str, Any]:
+    def json(self) -> Any:
         return self.payload
 
 
@@ -63,8 +63,9 @@ class _FakeDevApi:
             }
         )
 
-    def post(self, path: str, json=None) -> _JsonResponse:
+    def post(self, path: str, json: dict[str, Any] | None = None) -> _JsonResponse:
         if path == "/v0/remote-package-credentials":
+            assert json is not None
             assert json["customer_id"] == "cus_staging"
             assert json["registry_kind"] == "pypi"
             assert json["route_kind"] in {"remote_custom", "remote_official"}

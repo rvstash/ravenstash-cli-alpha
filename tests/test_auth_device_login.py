@@ -424,8 +424,10 @@ def test_device_login_handles_slow_down_and_stores_expiring_jwt(monkeypatch) -> 
         "https://api.ravenstash.com/v0/auth/device/token",
         "https://api.ravenstash.com/v0/auth/device/token",
     ]
-    assert _FakeClient.requests[0][1]["platform"] == "linux"
-    assert _FakeClient.requests[0][1]["requested_duration_seconds"] == 8 * 60 * 60
+    first_payload = _FakeClient.requests[0][1]
+    assert first_payload is not None
+    assert first_payload["platform"] == "linux"
+    assert first_payload["requested_duration_seconds"] == 8 * 60 * 60
     assert [headers for _url, _payload, headers in _FakeClient.requests] == [
         {"User-Agent": "rvs/0.1.0"},
         {"User-Agent": "rvs/0.1.0"},
