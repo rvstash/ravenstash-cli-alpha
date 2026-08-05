@@ -159,7 +159,7 @@ def _channel_manifest() -> dict[str, Any] | None:
             if verified.returncode != 0:
                 return None
             payload = json.loads(manifest_path.read_text(encoding="utf-8"))
-    except (OSError, ValueError, httpx.HTTPError):
+    except OSError, ValueError, httpx.HTTPError:
         return None
 
     if payload.get("schema") != 1 or not isinstance(payload.get("channels"), dict):
@@ -174,7 +174,7 @@ def _channel_manifest() -> dict[str, Any] | None:
                 return None
         if recommended not in payload["channels"]:
             return None
-    except (KeyError, TypeError, ValueError):
+    except KeyError, TypeError, ValueError:
         return None
     return payload
 
@@ -203,9 +203,7 @@ def _install_source(source: str) -> bool:
         stream.write(source.encode("utf-8"))
     temporary.chmod(0o600)
     try:
-        installed = _run_visible(
-            [str(_INSTALL), "-m", "0644", str(temporary), str(_APT_SOURCE)]
-        )
+        installed = _run_visible([str(_INSTALL), "-m", "0644", str(temporary), str(_APT_SOURCE)])
         return installed.returncode == 0
     finally:
         temporary.unlink(missing_ok=True)
@@ -268,9 +266,7 @@ def update(
 
     if _run_visible([str(_APT_GET), "update"]).returncode != 0:
         output.fatal("APT metadata refresh failed.")
-    if _run_visible(
-        [str(_APT_GET), "install", "--only-upgrade", "--yes", "rvs"]
-    ).returncode != 0:
+    if _run_visible([str(_APT_GET), "install", "--only-upgrade", "--yes", "rvs"]).returncode != 0:
         output.fatal("APT could not install the rvs update.")
     output.success(f"Updated rvs to {candidate}.")
 
@@ -303,8 +299,7 @@ def upgrade(
     target_version = channel_data["latest"]
     notes = channel_data.get(
         "migration_notes",
-        "https://docs.ravenstash.com/cli/releases/"
-        f"{target.removeprefix('v').replace('.', '-')}/",
+        f"https://docs.ravenstash.com/cli/releases/{target.removeprefix('v').replace('.', '-')}/",
     )
     output.warn(
         f"This changes compatibility channel {current} to {target} and may include breaking changes."
@@ -322,15 +317,19 @@ def upgrade(
         output.fatal("Could not change the Ravenstash APT compatibility channel.")
     if _run_visible([str(_APT_GET), "update"]).returncode != 0:
         _restore_source(previous_source)
-        output.fatal("The target channel could not be authenticated; the prior channel was restored.")
+        output.fatal(
+            "The target channel could not be authenticated; the prior channel was restored."
+        )
 
     _installed_after_refresh, candidate = _apt_versions()
     if candidate is None or not version_matches_channel(candidate, target):
         _restore_source(previous_source)
-        output.fatal("The target channel returned an incompatible candidate; the prior channel was restored.")
-    if _run_visible(
-        [str(_APT_GET), "install", "--only-upgrade", "--yes", "rvs"]
-    ).returncode != 0:
+        output.fatal(
+            "The target channel returned an incompatible candidate; the prior channel was restored."
+        )
+    if _run_visible([str(_APT_GET), "install", "--only-upgrade", "--yes", "rvs"]).returncode != 0:
         _restore_source(previous_source)
-        output.fatal("APT could not install the compatibility upgrade; the prior channel was restored.")
+        output.fatal(
+            "APT could not install the compatibility upgrade; the prior channel was restored."
+        )
     output.success(f"Updated rvs to {candidate} on compatibility channel {target}.")
