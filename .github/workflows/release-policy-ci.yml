@@ -1,0 +1,49 @@
+name: release-policy-ci
+
+on:
+  push:
+    branches:
+      - dev
+  pull_request:
+    branches:
+      - dev
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out release policy
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+      - name: Set up Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: packaging/installer-worker/package-lock.json
+      - name: Validate GitHub Actions policy
+        run: |
+          docker run --rm \
+            --volume "$PWD:/repo:ro" \
+            --workdir /repo \
+            rhysd/actionlint@sha256:887a259a5a534f3c4f36cb02dca341673c6089431057242cdc931e9f133147e9
+      - name: Validate shell and Python policy tools
+        run: |
+          shellcheck packaging/repository/*.sh packaging/install.sh
+          bash -n packaging/repository/*.sh packaging/install.sh
+          python3 -m compileall -q packaging/repository
+          python3 -m unittest discover -s packaging/repository/tests
+      - name: Validate pinned APT public key
+        run: packaging/repository/prepare_keyring.sh
+      - name: Validate installer Worker without deployment credentials
+        working-directory: packaging/installer-worker
+        run: |
+          npm ci --ignore-scripts
+          npm audit --audit-level=high
+          npm test
+          install -m 0644 ../install.sh src/install.sh
+          npm run check

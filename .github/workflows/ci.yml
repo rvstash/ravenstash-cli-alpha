@@ -33,8 +33,8 @@ jobs:
         run: |
           uv sync --frozen --python 3.14
           .venv/bin/pytest
-          .venv/bin/ruff format --check rvs tests
-          .venv/bin/ruff check rvs tests
+          .venv/bin/ruff format --check rvs tests packaging/repository
+          .venv/bin/ruff check rvs tests packaging/repository
           .venv/bin/pyright
 
   ubuntu-2004-package-compatibility:

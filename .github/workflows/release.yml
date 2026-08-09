@@ -1,0 +1,458 @@
+name: release
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_sha:
+        description: Exact 40-character commit SHA from the dev branch
+        type: string
+        required: true
+      version:
+        description: Exact semantic version without v prefix
+        type: string
+        required: true
+      channel:
+        description: Exact compatibility channel (v0.Y before 1.0, vMAJOR afterwards)
+        type: string
+        required: true
+      promote_channel:
+        description: Make this channel the new-install default and deploy its installer
+        type: boolean
+        required: true
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rvs-release
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Check out exact release source
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          ref: ${{ inputs.source_sha }}
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Validate release source and inputs
+        env:
+          SOURCE_SHA: ${{ inputs.source_sha }}
+          VERSION: ${{ inputs.version }}
+          CHANNEL: ${{ inputs.channel }}
+        run: |
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+([~+.-][A-Za-z0-9.-]+)?$ ]]
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          git merge-base --is-ancestor "$SOURCE_SHA" refs/remotes/origin/dev
+          python3 packaging/repository/channel_policy.py validate "$VERSION" "$CHANNEL"
+          project_version="$(sed -n 's/^version = "\([^"]*\)"/\1/p' pyproject.toml)"
+          test "$project_version" = "$VERSION"
+          grep -Fx "readonly compatibility_channel=\"${CHANNEL}\"" packaging/install.sh
+          test -z "$(git status --porcelain)"
+
+      - name: Build and test in the pinned Ubuntu 20.04 environment
+        run: packaging/scripts/build-in-ubuntu20.sh
+
+      - name: Install and exercise on a clean Ubuntu 20.04 system
+        run: |
+          docker run --rm \
+            --volume "$PWD/dist/release:/release:ro" \
+            ubuntu@sha256:8feb4d8ca5354def3d8fce243717141ce31e2c428701f6682bd2fafe15388214 \
+            /bin/bash -euc '
+              apt-get update
+              apt-get install --yes /release/rvs_*_amd64.deb
+              rvs --version
+              rvs --help >/dev/null
+              ravenstash --version
+              test -e /usr/lib/rvs/_internal/libpython3.14.so.1.0
+            '
+
+      - name: Record exact source identity
+        env:
+          SOURCE_SHA: ${{ inputs.source_sha }}
+          VERSION: ${{ inputs.version }}
+          CHANNEL: ${{ inputs.channel }}
+          PROMOTE_CHANNEL: ${{ inputs.promote_channel }}
+        run: |
+          printf 'source_repository=%s\nsource_sha=%s\nversion=%s\nchannel=%s\npromote_channel=%s\n' \
+            "$GITHUB_REPOSITORY" "$SOURCE_SHA" "$VERSION" \
+            "$CHANNEL" "$PROMOTE_CHANNEL" \
+            > dist/release/source-identity.txt
+          (
+            cd dist/release
+            sha256sum source-identity.txt >> "rvs-v${VERSION}-checksums.txt"
+          )
+
+      - name: Install pinned Sigstore verifier
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6
+        with:
+          cosign-release: v3.0.6
+
+      - name: Sign the complete artifact inventory with GitHub OIDC
+        env:
+          VERSION: ${{ inputs.version }}
+        working-directory: dist/release
+        run: |
+          cosign sign-blob --yes \
+            --bundle "rvs-v${VERSION}-checksums.sigstore.json" \
+            "rvs-v${VERSION}-checksums.txt"
+
+      - name: Upload immutable build handoff
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: rvs-build-${{ inputs.source_sha }}
+          path: dist/release/*
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
+
+  restore:
+    runs-on: ubuntu-24.04
+    environment: apt-storage
+    steps:
+      - name: Check out release policy
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+
+      - name: Install restore verification tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes dpkg-dev gnupg gpgv
+          aws --version
+
+      - name: Materialize and pin trusted keyring
+        run: packaging/repository/prepare_keyring.sh
+
+      - name: Restore and authenticate previous APT state
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_APT_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_APT_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          R2_ACCOUNT_ID: ${{ vars.R2_APT_ACCOUNT_ID }}
+        run: |
+          mkdir -p prior
+          aws s3 sync \
+            "s3://ravenstash-cli-releases/rvs/apt/" prior/ \
+            --endpoint-url "https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com" \
+            --no-progress
+          python3 packaging/repository/verify_apt.py \
+            prior packaging/repository/keys/ravenstash-rvs.gpg
+
+      - name: Upload authenticated prior state
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: authenticated-prior-apt
+          path: prior/
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 1
+
+  sign:
+    needs:
+      - build
+      - restore
+    runs-on: ubuntu-24.04
+    environment: apt-signing
+    permissions:
+      contents: read
+    steps:
+      - name: Check out signing policy
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+
+      - name: Install pinned Sigstore verifier
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6
+        with:
+          cosign-release: v3.0.6
+
+      - name: Install signing tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes apt-utils dpkg-dev gnupg gpgv
+
+      - name: Materialize and pin trusted keyring
+        run: packaging/repository/prepare_keyring.sh
+
+      - name: Download attested build
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: rvs-build-${{ inputs.source_sha }}
+          path: build
+
+      - name: Download authenticated prior state
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: authenticated-prior-apt
+          path: prior
+
+      - name: Verify provenance and build inventory before exposing signer
+        env:
+          VERSION: ${{ inputs.version }}
+          SOURCE_SHA: ${{ inputs.source_sha }}
+          SIGNER_IDENTITY: https://github.com/${{ github.repository }}/.github/workflows/release.yml@${{ github.ref }}
+        run: |
+          cosign verify-blob \
+            --bundle "build/rvs-v${VERSION}-checksums.sigstore.json" \
+            --certificate-identity "$SIGNER_IDENTITY" \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+            "build/rvs-v${VERSION}-checksums.txt"
+          (
+            cd build
+            sha256sum --check --strict "rvs-v${VERSION}-checksums.txt"
+          )
+          grep -Fx "source_repository=${GITHUB_REPOSITORY}" build/source-identity.txt
+          grep -Fx "source_sha=${SOURCE_SHA}" build/source-identity.txt
+          test "$(find build -maxdepth 1 -type f -name "rvs_${VERSION}_amd64.deb" | wc -l)" = 1
+          python3 packaging/repository/verify_apt.py \
+            prior packaging/repository/keys/ravenstash-rvs.gpg
+
+      - name: Import key and sign the authenticated repository
+        env:
+          RVS_APT_GPG_PRIVATE_KEY: ${{ secrets.RVS_APT_GPG_PRIVATE_KEY }}
+          RVS_APT_GPG_PASSPHRASE: ${{ secrets.RVS_APT_GPG_PASSPHRASE }}
+          VERSION: ${{ inputs.version }}
+          CHANNEL: ${{ inputs.channel }}
+          PROMOTE_CHANNEL: ${{ inputs.promote_channel }}
+        run: |
+          export GNUPGHOME="$RUNNER_TEMP/rvs-apt-signing"
+          install -d -m 0700 "$GNUPGHOME"
+          printf '%s' "$RVS_APT_GPG_PRIVATE_KEY" | gpg --batch --import
+          key_id="$(
+            gpg --batch --with-colons --list-secret-keys \
+              | awk -F: '$1 == "fpr" { print $10; exit }'
+          )"
+          test -n "$key_id"
+          passphrase_file="$RUNNER_TEMP/rvs-apt-passphrase"
+          printf '%s' "$RVS_APT_GPG_PASSPHRASE" > "$passphrase_file"
+          chmod 0600 "$passphrase_file"
+          RVS_APT_GPG_KEY_ID="$key_id" \
+          RVS_APT_GPG_FINGERPRINT="$(tr -d '[:space:]' < packaging/repository/keys/fingerprint.txt)" \
+          RVS_APT_GPG_PASSPHRASE_FILE="$passphrase_file" \
+          RVS_APT_CHANNEL="$CHANNEL" \
+          RVS_APT_PROMOTE_CHANNEL="$([[ "$PROMOTE_CHANNEL" == "true" ]] && printf 1 || printf 0)" \
+            packaging/repository/append_and_sign_apt.sh \
+              prior \
+              "build/rvs_${VERSION}_amd64.deb" \
+              signed \
+              packaging/repository/keys/ravenstash-rvs.gpg
+          rm -f "$passphrase_file"
+          rm -rf "$GNUPGHOME"
+
+      - name: Upload signed handoff
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: signed-apt-${{ inputs.source_sha }}
+          path: signed/
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 1
+
+  publish-apt:
+    needs: sign
+    runs-on: ubuntu-24.04
+    environment: apt-storage
+    permissions:
+      contents: read
+    steps:
+      - name: Check out publication policy
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+
+      - name: Install publication verification tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes dpkg-dev gnupg gpgv
+          aws --version
+
+      - name: Materialize and pin trusted keyring
+        run: packaging/repository/prepare_keyring.sh
+
+      - name: Download signed handoff
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: signed-apt-${{ inputs.source_sha }}
+          path: signed
+
+      - name: Authenticate complete signed handoff before exposing storage key
+        run: >-
+          python3 packaging/repository/verify_apt.py
+          signed packaging/repository/keys/ravenstash-rvs.gpg
+
+      - name: Publish with InRelease last
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_APT_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_APT_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          R2_ACCOUNT_ID: ${{ vars.R2_APT_ACCOUNT_ID }}
+        run: |
+          packaging/repository/publish_apt.sh \
+            signed \
+            "https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com" \
+            ravenstash-cli-releases
+
+      - name: Verify public repository and Ubuntu 20.04 installation
+        env:
+          EXPECTED_VERSION: ${{ inputs.version }}
+          CHANNEL: ${{ inputs.channel }}
+        run: |
+          for _attempt in 1 2 3 4 5; do
+            if curl --proto '=https' --proto-redir '=https' --tlsv1.2 \
+              -fsS "https://releases.ravenstash.com/rvs/apt/dists/${CHANNEL}/InRelease" \
+              -o public-InRelease; then
+              break
+            fi
+            sleep 5
+          done
+          gpgv --keyring packaging/repository/keys/ravenstash-rvs.gpg public-InRelease
+          docker run --rm \
+            --env EXPECTED_VERSION \
+            --env CHANNEL \
+            --volume "$PWD/packaging/repository/keys/ravenstash-rvs.gpg:/usr/share/keyrings/ravenstash-rvs.gpg:ro" \
+            ubuntu@sha256:8feb4d8ca5354def3d8fce243717141ce31e2c428701f6682bd2fafe15388214 \
+            /bin/bash -euc '
+              apt-get update
+              apt-get install --yes ca-certificates
+              printf "%s\n" \
+                "deb [arch=amd64 signed-by=/usr/share/keyrings/ravenstash-rvs.gpg] https://releases.ravenstash.com/rvs/apt ${CHANNEL} main" \
+                > /etc/apt/sources.list.d/ravenstash-rvs.list
+              apt-get update
+              apt-get install --yes rvs
+              test "$(dpkg-query -W -f="\${Version}" rvs)" = "$EXPECTED_VERSION"
+              rvs --version
+            '
+
+  deploy-installer:
+    needs:
+      - build
+      - publish-apt
+    runs-on: ubuntu-24.04
+    environment: installer-delivery
+    permissions:
+      contents: read
+    steps:
+      - name: Check out installer delivery policy
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: packaging/installer-worker/package-lock.json
+
+      - name: Install pinned Sigstore verifier
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6
+        with:
+          cosign-release: v3.0.6
+
+      - name: Download attested release artifacts
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: rvs-build-${{ inputs.source_sha }}
+          path: release-build
+
+      - name: Authenticate the exact installer before exposing deploy credentials
+        env:
+          VERSION: ${{ inputs.version }}
+          SIGNER_IDENTITY: https://github.com/${{ github.repository }}/.github/workflows/release.yml@${{ github.ref }}
+        run: |
+          cosign verify-blob \
+            --bundle "release-build/rvs-v${VERSION}-checksums.sigstore.json" \
+            --certificate-identity "$SIGNER_IDENTITY" \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+            "release-build/rvs-v${VERSION}-checksums.txt"
+          (
+            cd release-build
+            sha256sum --check --strict "rvs-v${VERSION}-checksums.txt"
+          )
+          bash -n release-build/install.sh
+          install -m 0644 release-build/install.sh packaging/installer-worker/src/install.sh
+
+      - name: Install and validate the dedicated installer Worker
+        working-directory: packaging/installer-worker
+        run: |
+          npm ci --ignore-scripts
+          npm audit --audit-level=high
+          npm test
+          npm run check
+
+      - name: Deploy the validated installer Worker
+        if: inputs.promote_channel
+        working-directory: packaging/installer-worker
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: npm run deploy
+
+      - name: Verify exact live bytes and security headers
+        if: inputs.promote_channel
+        env:
+          EXPECTED_INSTALLER: release-build/install.sh
+        run: |
+          curl --proto '=https' --proto-redir '=https' --tlsv1.2 \
+            --max-redirs 0 -fsS \
+            --dump-header installer-headers.txt \
+            https://ravenstash.com/install.sh \
+            --output live-install.sh
+          cmp "$EXPECTED_INSTALLER" live-install.sh
+          bash -n live-install.sh
+          grep -Eiq '^content-type: text/plain([;[:space:]]|$)' installer-headers.txt
+          grep -Eiq '^cache-control: no-store' installer-headers.txt
+          grep -Eiq '^strict-transport-security: max-age=31536000; includeSubDomains' installer-headers.txt
+          grep -Eiq '^x-content-type-options: nosniff' installer-headers.txt
+
+      - name: Keep the current installer for a maintenance-only channel release
+        if: ${{ !inputs.promote_channel }}
+        run: echo "Compatibility channel published without changing the new-install default."
+
+  publish-github-release:
+    needs:
+      - build
+      - publish-apt
+      - deploy-installer
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - name: Check out release repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+
+      - name: Download attested build
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: rvs-build-${{ inputs.source_sha }}
+          path: build
+
+      - name: Create immutable-source draft, upload once, then publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_SHA: ${{ inputs.source_sha }}
+          VERSION: ${{ inputs.version }}
+          CHANNEL: ${{ inputs.channel }}
+        run: |
+          tag="v${VERSION}"
+          gh release create "$tag" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$SOURCE_SHA" \
+            --draft \
+            --title "$tag" \
+            --notes "Ravenstash CLI alpha ${tag} on ${CHANNEL}; exact source ${GITHUB_REPOSITORY}@${SOURCE_SHA}." \
+            build/*
+          gh release edit "$tag" \
+            --repo "$GITHUB_REPOSITORY" \
+            --draft=false
