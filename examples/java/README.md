@@ -26,11 +26,11 @@ rvs pkg maven deploy target/rvs-demo-java-0.1.0.jar \
   --group com.ravenstash.demo \
   --artifact rvs-demo-java \
   --version 0.1.0
-rvs pkg package list --repo <repository-id>
+rvs pkg package list --repo <repo-name>
 ```
 
 To fetch from a private Ravenstash Maven repository:
 
 ```bash
-rvs pkg maven install com.ravenstash.demo:rvs-demo-java:0.1.0 --repo <repository-id>
+rvs pkg maven install com.ravenstash.demo:rvs-demo-java:0.1.0 --repo <repo-name>
 ```

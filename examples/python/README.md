@@ -24,11 +24,11 @@ rvs pkg repo create my-python-packages --ecosystem pypi --default
 rvs pkg pypi index-url
 rvs pkg pypi configure
 rvs pkg pypi publish dist/
-rvs pkg package list --repo <repository-id>
+rvs pkg package list --repo <repo-name>
 ```
 
 To install from a private Ravenstash PyPI repository:
 
 ```bash
-rvs pkg pypi install rvs-demo-python --repo <repository-id>
+rvs pkg pypi install rvs-demo-python --repo <repo-name>
 ```

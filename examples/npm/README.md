@@ -22,11 +22,11 @@ rvs pkg repo create my-node-packages --ecosystem npm --default
 rvs pkg npm registry-url
 rvs pkg npm npmrc
 rvs pkg npm publish .
-rvs pkg package list --repo <repository-id>
+rvs pkg package list --repo <repo-name>
 ```
 
 To install from a private Ravenstash npm repository:
 
 ```bash
-rvs pkg npm install rvs-demo-npm --repo <repository-id>
+rvs pkg npm install rvs-demo-npm --repo <repo-name>
 ```
