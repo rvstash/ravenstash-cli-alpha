@@ -24,6 +24,14 @@ Operational guidance for the `rvs` CLI package.
 - Do not hardcode local, dev, or staging Ravenstash endpoints. Support them
   through user config, process environment variables, or ignored env files such
   as `.rvs.env` and `~/.rvs/profiles.env`.
+- Keep packaging, APT publication policy, the installer Worker, and release
+  workflows reviewable in this repository. Secret values belong only in the
+  documented GitHub environments and originate in production Infisical.
+- Never add destructive APT reset behavior. Published versions and repository
+  objects are append-only; corrections use a new patch version.
+- Keep real-environment integration tests and their tokens in the separate
+  private integration repository. It must not receive signing, storage-write,
+  or installer-deployment credentials.
 
 ## Verification
 
@@ -32,4 +40,5 @@ Run from `packages/rvs/` after code changes:
 ```bash
 .venv/bin/pytest
 .venv/bin/ruff check rvs tests
+.venv/bin/pyright
 ```

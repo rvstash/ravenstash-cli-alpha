@@ -24,6 +24,11 @@ htmlcov/
 # Packaging and build artifacts
 build/
 dist/
+packaging/repository/keys/ravenstash-rvs.gpg
+packaging/installer-worker/node_modules/
+packaging/installer-worker/src/install.generated.js
+packaging/installer-worker/src/install.sh
+packaging/.installer-worker-check/
 *.egg-info/
 *.deb
 *.rpm
@@ -40,5 +45,6 @@ dist/
 *.sha256
 *.sig
 *.asc
+!packaging/repository/keys/ravenstash-rvs.asc
 *.buildinfo
 *.changes

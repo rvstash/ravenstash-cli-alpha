@@ -12,7 +12,7 @@ require_cmd sha256sum
 VERSION="${RVS_VERSION:-$(rvs_version)}"
 ARCH="${RVS_ARCH:-$(rvs_arch)}"
 APT_REPO_DIR="${APT_REPO_DIR:-dist/apt}"
-POLICY_SCRIPT="packaging/scripts/apt-channel-policy.py"
+POLICY_SCRIPT="packaging/repository/channel_policy.py"
 DEFAULT_CHANNEL="$(python3 "$POLICY_SCRIPT" channel-for-version "$VERSION")"
 CODENAME="${RVS_APT_CHANNEL:-$DEFAULT_CHANNEL}"
 COMPONENT="${RVS_APT_COMPONENT:-main}"

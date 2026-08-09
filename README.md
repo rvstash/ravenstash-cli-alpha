@@ -301,10 +301,12 @@ APT repository metadata is generated and signed separately:
 RVS_APT_GPG_KEY_ID=<key-id> packaging/scripts/update-apt-repo.sh
 ```
 
-This source repository never signs or publishes. Exact approved commits are
-rebuilt, attested, tested against real DevAPI environments, signed, and
-published by the private `rvstash/ravenstash-cli-release` orchestrator. See
-[`packaging/README.md`](packaging/README.md) for the trust boundary.
+This private alpha repository owns the complete, reviewable packaging and
+release policy. Exact approved commits are rebuilt, attested, signed, installed
+on Ubuntu 20.04, and published through split GitHub environments. Real DevAPI
+integration tests remain in a separate private repository with no publishing
+credentials. See [`packaging/README.md`](packaging/README.md) and
+[`RELEASING.md`](RELEASING.md) for the trust boundaries and release procedure.
 
 ## Local Development
 
