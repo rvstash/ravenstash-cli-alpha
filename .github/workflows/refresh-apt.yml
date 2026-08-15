@@ -121,6 +121,9 @@ jobs:
     needs: sign
     runs-on: ubuntu-24.04
     environment: apt-storage
+    permissions:
+      actions: write
+      contents: read
     steps:
       - name: Check out publication policy
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
@@ -153,3 +156,16 @@ jobs:
             signed \
             "https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com" \
             ravenstash-cli-releases
+      - name: Delete temporary handoff artifacts after publication
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mapfile -t artifact_ids < <(
+            gh api --paginate \
+              "/repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/artifacts?per_page=100" \
+              --jq '.artifacts[].id'
+          )
+          for artifact_id in "${artifact_ids[@]}"; do
+            gh api --method DELETE \
+              "/repos/${GITHUB_REPOSITORY}/actions/artifacts/${artifact_id}"
+          done
