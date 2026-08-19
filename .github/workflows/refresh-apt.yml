@@ -2,7 +2,7 @@ name: refresh-apt-metadata
 
 on:
   schedule:
-    - cron: "17 3 * * *"
+    - cron: "17 3 * * 1,4"
   workflow_dispatch:
 
 permissions:
@@ -13,48 +13,11 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  restore:
-    runs-on: ubuntu-24.04
-    environment: apt-storage
-    steps:
-      - name: Check out release policy
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
-        with:
-          persist-credentials: false
-      - name: Install restore verification tools
-        run: |
-          sudo apt-get update
-          sudo apt-get install --yes dpkg-dev gnupg gpgv
-          aws --version
-      - name: Materialize and pin trusted keyring
-        run: packaging/repository/prepare_keyring.sh
-      - name: Restore and authenticate APT state
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.R2_APT_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_APT_SECRET_ACCESS_KEY }}
-          AWS_DEFAULT_REGION: auto
-          R2_ACCOUNT_ID: ${{ vars.R2_APT_ACCOUNT_ID }}
-        run: |
-          mkdir prior
-          aws s3 sync \
-            "s3://ravenstash-cli-releases/rvs/apt/" prior/ \
-            --endpoint-url "https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com" \
-            --no-progress
-          python3 packaging/repository/verify_apt.py \
-            prior packaging/repository/keys/ravenstash-rvs.gpg
-      - name: Upload authenticated state
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
-        with:
-          name: refresh-authenticated-apt
-          path: prior/
-          if-no-files-found: error
-          compression-level: 0
-          retention-days: 1
-
   sign:
-    needs: restore
     runs-on: ubuntu-24.04
     environment: apt-signing
+    outputs:
+      signed_metadata: ${{ steps.handoff.outputs.signed_metadata }}
     steps:
       - name: Check out signing policy
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
@@ -66,15 +29,12 @@ jobs:
           sudo apt-get install --yes apt-utils dpkg-dev gnupg gpgv
       - name: Materialize and pin trusted keyring
         run: packaging/repository/prepare_keyring.sh
-      - name: Download authenticated state
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
-        with:
-          name: refresh-authenticated-apt
-          path: prior
-      - name: Re-verify before exposing signer
-        run: >-
-          python3 packaging/repository/verify_apt.py
-          prior packaging/repository/keys/ravenstash-rvs.gpg
+      - name: Restore and authenticate public APT state before exposing signer
+        run: |
+          python3 packaging/repository/restore_public_apt.py \
+            https://releases.ravenstash.com/rvs/apt \
+            prior \
+            packaging/repository/keys/ravenstash-rvs.gpg
       - name: Refresh and sign metadata
         env:
           RVS_APT_GPG_PRIVATE_KEY: ${{ secrets.RVS_APT_GPG_PRIVATE_KEY }}
@@ -108,21 +68,24 @@ jobs:
               prior "$package" signed packaging/repository/keys/ravenstash-rvs.gpg
           rm -f "$passphrase_file"
           rm -rf "$GNUPGHOME"
-      - name: Upload refreshed signed state
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
-        with:
-          name: refresh-signed-apt
-          path: signed/
-          if-no-files-found: error
-          compression-level: 0
-          retention-days: 1
+      - name: Create bounded signed metadata handoff
+        id: handoff
+        run: |
+          python3 packaging/repository/refresh_handoff.py \
+            create prior signed "$RUNNER_TEMP/refresh-metadata.tar.gz"
+          test "$(stat --format=%s "$RUNNER_TEMP/refresh-metadata.tar.gz")" -le 100000
+          encoded="$(
+            python3 -c \
+              'import pathlib, sys; print(" ".join(map(str, pathlib.Path(sys.argv[1]).read_bytes())))' \
+              "$RUNNER_TEMP/refresh-metadata.tar.gz"
+          )"
+          printf 'signed_metadata=%s\n' "$encoded" >> "$GITHUB_OUTPUT"
 
   publish:
     needs: sign
     runs-on: ubuntu-24.04
     environment: apt-storage
     permissions:
-      actions: write
       contents: read
     steps:
       - name: Check out publication policy
@@ -136,11 +99,30 @@ jobs:
           aws --version
       - name: Materialize and pin trusted keyring
         run: packaging/repository/prepare_keyring.sh
-      - name: Download refreshed signed state
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
-        with:
-          name: refresh-signed-apt
-          path: signed
+      - name: Restore and authenticate canonical APT state
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_APT_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_APT_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          R2_ACCOUNT_ID: ${{ vars.R2_APT_ACCOUNT_ID }}
+        run: |
+          mkdir signed
+          aws s3 sync \
+            "s3://ravenstash-cli-releases/rvs/apt/" signed/ \
+            --endpoint-url "https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com" \
+            --no-progress
+          python3 packaging/repository/verify_apt.py \
+            signed packaging/repository/keys/ravenstash-rvs.gpg
+      - name: Apply refreshed signed metadata
+        env:
+          SIGNED_METADATA: ${{ needs.sign.outputs.signed_metadata }}
+        run: |
+          test -n "$SIGNED_METADATA"
+          python3 -c \
+            'import os, pathlib, sys; pathlib.Path(sys.argv[1]).write_bytes(bytes(map(int, os.environ["SIGNED_METADATA"].split())))' \
+            "$RUNNER_TEMP/refresh-metadata.tar.gz"
+          python3 packaging/repository/refresh_handoff.py \
+            apply signed "$RUNNER_TEMP/refresh-metadata.tar.gz"
       - name: Authenticate signed handoff
         run: >-
           python3 packaging/repository/verify_apt.py
@@ -156,16 +138,3 @@ jobs:
             signed \
             "https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com" \
             ravenstash-cli-releases
-      - name: Delete temporary handoff artifacts after publication
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          mapfile -t artifact_ids < <(
-            gh api --paginate \
-              "/repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/artifacts?per_page=100" \
-              --jq '.artifacts[].id'
-          )
-          for artifact_id in "${artifact_ids[@]}"; do
-            gh api --method DELETE \
-              "/repos/${GITHUB_REPOSITORY}/actions/artifacts/${artifact_id}"
-          done

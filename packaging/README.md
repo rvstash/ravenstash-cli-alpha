@@ -71,8 +71,12 @@ Production publishing is owned by this repository. The release workflow
 authenticates the prior `InRelease`, every metadata digest, every listed package
 digest, and the absence of unlisted pool objects before a separate signing job
 sees the tree. A different job uploads immutable pool/by-hash objects first and
-`InRelease` last. A daily split-credential workflow refreshes the seven-day
-`Valid-Until`.
+`InRelease` last. A twice-weekly split-credential workflow refreshes the
+seven-day `Valid-Until`, leaving at least three days between scheduled runs.
+The refresh restores the read-only public tree under the signing environment,
+passes only bounded signed metadata between jobs, and restores the canonical
+tree again under the storage environment. It does not consume GitHub Actions
+artifact storage.
 
 APT suites are compatibility boundaries, not rolling maturity labels. Before
 `1.0`, every minor series has its own suite (`v0.3`, `v0.4`); from `1.0` onward,

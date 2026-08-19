@@ -23,8 +23,6 @@ jobs:
         uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
         with:
           node-version: "24"
-          cache: npm
-          cache-dependency-path: packaging/installer-worker/package-lock.json
       - name: Validate GitHub Actions policy
         run: |
           docker run --rm \

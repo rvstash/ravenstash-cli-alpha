@@ -1,0 +1,155 @@
+#!/usr/bin/env python3
+"""Restore the complete authenticated APT tree from its public endpoint."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import shutil
+import time
+import urllib.error
+import urllib.parse
+import urllib.request
+from collections.abc import Callable
+from pathlib import Path, PurePosixPath
+
+from channel_policy import LEGACY_ALIASES, normalize_channel, stanza_fields, stanzas
+from verify_apt import fail, relative, release_entries, verify, verify_signature
+
+
+Fetcher = Callable[[str, Path], None]
+
+
+def public_fetcher(base_url: str) -> Fetcher:
+    parsed = urllib.parse.urlsplit(base_url)
+    if parsed.scheme != "https" or not parsed.netloc or parsed.query or parsed.fragment:
+        raise ValueError("public APT base URL must be an HTTPS origin or path")
+    normalized_base = base_url.rstrip("/") + "/"
+
+    def fetch(path: str, destination: Path) -> None:
+        safe_path = relative(path)
+        encoded_path = urllib.parse.quote(safe_path.as_posix(), safe="/")
+        request = urllib.request.Request(
+            urllib.parse.urljoin(normalized_base, encoded_path),
+            headers={
+                "Cache-Control": "no-cache",
+                "User-Agent": "Ravenstash-APT-Metadata-Refresh/1.0",
+            },
+        )
+        last_error: OSError | urllib.error.URLError | None = None
+        for attempt in range(3):
+            try:
+                with urllib.request.urlopen(request, timeout=30) as response:
+                    final_url = urllib.parse.urlsplit(response.geturl())
+                    if final_url.scheme != "https":
+                        fail(f"public APT download left HTTPS: {safe_path}")
+                    destination.parent.mkdir(parents=True, exist_ok=True)
+                    with destination.open("wb") as output:
+                        shutil.copyfileobj(response, output)
+                return
+            except (OSError, urllib.error.URLError) as exc:
+                last_error = exc
+                if attempt < 2:
+                    time.sleep(2**attempt)
+        fail(f"cannot download public APT path {safe_path}: {last_error}")
+
+    return fetch
+
+
+def authenticated_distributions(
+    manifest_path: Path, signature_path: Path, keyring: Path
+) -> set[str]:
+    verify_signature(keyring, signature_path, manifest_path)
+    try:
+        payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+        if payload["schema"] != 1 or not isinstance(payload["channels"], dict):
+            raise ValueError("unsupported channel manifest schema")
+        channels = set(payload["channels"])
+        if not channels or any(normalize_channel(channel) != channel for channel in channels):
+            raise ValueError("channel manifest contains an invalid channel")
+        if normalize_channel(payload["recommended"]) not in channels:
+            raise ValueError("recommended channel is not published")
+    except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+        fail(f"invalid authenticated channel manifest: {exc}")
+    return channels | {alias for alias, channel in LEGACY_ALIASES.items() if channel in channels}
+
+
+def package_paths(packages: str) -> set[PurePosixPath]:
+    paths: set[PurePosixPath] = set()
+    for stanza in stanzas(packages):
+        fields = stanza_fields(stanza)
+        if fields.get("Package") != "rvs" or "Filename" not in fields:
+            fail("public APT Packages contains an invalid package stanza")
+        path = relative(fields["Filename"])
+        if path.suffix != ".deb":
+            fail(f"public APT package is not a Debian archive: {path}")
+        paths.add(path)
+    if not paths:
+        fail("public APT Packages contains no rvs packages")
+    return paths
+
+
+def restore_public_repository(
+    destination: Path,
+    trusted_keyring: Path,
+    fetch: Fetcher,
+) -> None:
+    if destination.exists() and any(destination.iterdir()):
+        fail(f"restore destination is not empty: {destination}")
+    destination.mkdir(parents=True, exist_ok=True)
+
+    for path in ("channels.json", "channels.json.gpg"):
+        fetch(path, destination / path)
+    distributions = authenticated_distributions(
+        destination / "channels.json",
+        destination / "channels.json.gpg",
+        trusted_keyring,
+    )
+
+    packages_to_fetch: set[PurePosixPath] = set()
+    for distribution in sorted(distributions):
+        prefix = PurePosixPath("dists") / distribution
+        for name in ("InRelease", "Release", "Release.gpg"):
+            path = prefix / name
+            fetch(path.as_posix(), destination.joinpath(*path.parts))
+
+        inrelease = destination.joinpath(*prefix.parts, "InRelease")
+        release = destination.joinpath(*prefix.parts, "Release")
+        release_signature = destination.joinpath(*prefix.parts, "Release.gpg")
+        authenticated_release = verify_signature(trusted_keyring, inrelease)
+        detached_release = verify_signature(trusted_keyring, release_signature, release)
+        if authenticated_release != detached_release:
+            fail(f"InRelease and Release disagree for {distribution}")
+
+        entries = release_entries(authenticated_release.decode("utf-8"))
+        for index, (digest, _size) in entries.items():
+            index_path = prefix / index
+            fetch(index_path.as_posix(), destination.joinpath(*index_path.parts))
+            by_hash = index_path.parent / "by-hash" / "SHA256" / digest
+            fetch(by_hash.as_posix(), destination.joinpath(*by_hash.parts))
+
+        packages = destination.joinpath(*prefix.parts, "main", "binary-amd64", "Packages")
+        packages_to_fetch.update(package_paths(packages.read_text(encoding="utf-8")))
+
+    for package in sorted(packages_to_fetch):
+        fetch(package.as_posix(), destination.joinpath(*package.parts))
+    shutil.copyfile(trusted_keyring, destination / "ravenstash-rvs.gpg")
+    verify(destination, trusted_keyring)
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("base_url")
+    parser.add_argument("destination", type=Path)
+    parser.add_argument("trusted_keyring", type=Path)
+    arguments = parser.parse_args()
+    try:
+        fetch = public_fetcher(arguments.base_url)
+    except ValueError as exc:
+        raise SystemExit(f"error: {exc}") from exc
+    restore_public_repository(arguments.destination, arguments.trusted_keyring, fetch)
+    print("Authenticated public APT repository restored.")
+
+
+if __name__ == "__main__":
+    main()
