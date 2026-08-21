@@ -148,7 +148,7 @@ def test_pkg_repo_list_filters_by_kind_and_uses_profile_customer(
     )
     _use_fake_client(monkeypatch, fake)
 
-    result = runner.invoke(pkg_cmd.app, ["repo", "list", "--ecosystem", "pypi"])
+    result = runner.invoke(pkg_cmd.app, ["repo", "list", "--registry-kind", "pypi"])
 
     assert result.exit_code == 0
     assert fake.calls == [
@@ -167,7 +167,8 @@ def test_pkg_repo_create_can_set_default_repo(monkeypatch, tmp_path: Path) -> No
     _use_fake_client(monkeypatch, fake)
 
     result = runner.invoke(
-        pkg_cmd.app, ["repo", "create", "new-node", "--ecosystem", "npm", "--default"]
+        pkg_cmd.app,
+        ["repo", "create", "new-node", "--registry-kind", "npm", "--default"],
     )
 
     assert result.exit_code == 0
@@ -183,16 +184,16 @@ def test_pkg_repo_create_can_set_default_repo(monkeypatch, tmp_path: Path) -> No
         )
     ]
     assert cfg_mod.load().registry_defaults("npm").default_repo == "_abcdefgh/_xyzabcde"
-    assert "with npm ecosystems" in result.output
+    assert "with registry kinds: npm" in result.output
 
 
 def test_pkg_repo_create_rejects_unknown_kind(monkeypatch, tmp_path: Path) -> None:
     _isolate_config(monkeypatch, tmp_path)
 
-    result = runner.invoke(pkg_cmd.app, ["repo", "create", "bad", "--ecosystem", "gem"])
+    result = runner.invoke(pkg_cmd.app, ["repo", "create", "bad", "--registry-kind", "gem"])
 
     assert result.exit_code == 1
-    assert "Unknown package ecosystem 'gem'" in result.stderr
+    assert "Unknown registry kind 'gem'" in result.stderr
 
 
 def test_pkg_repo_show_renders_repository_details(monkeypatch, tmp_path: Path) -> None:
@@ -284,7 +285,9 @@ def test_pkg_remote_management_and_upstream_configuration(monkeypatch, tmp_path:
     )
     _use_fake_client(monkeypatch, fake)
 
-    create_result = runner.invoke(pkg_cmd.app, ["remote-cache", "create", "--ecosystem", "pypi"])
+    create_result = runner.invoke(
+        pkg_cmd.app, ["remote-cache", "create", "--registry-kind", "pypi"]
+    )
     upstream_result = runner.invoke(
         pkg_cmd.app,
         ["repo", "set-upstream", "repo-pypi", "pypi", "--min-age-days", "5"],

@@ -106,8 +106,8 @@ validation fails.
 Repository commands:
 
 ```bash
-rvs pkg repo list [--profile NAME] [--customer-id CUSTOMER_ID] [--ecosystem pypi|npm|maven]
-rvs pkg repo create NAME --ecosystem pypi|npm|maven [--profile NAME] [--customer-id CUSTOMER_ID] [--default]
+rvs pkg repo list [--profile NAME] [--customer-id CUSTOMER_ID] [--registry-kind pypi|npm|maven]
+rvs pkg repo create NAME --registry-kind pypi|npm|maven [--profile NAME] [--customer-id CUSTOMER_ID] [--default]
 rvs pkg repo show REPOSITORY_NAME [--profile NAME]
 rvs pkg repo rename REPOSITORY_NAME NEW_NAME [--profile NAME]
 rvs pkg repo delete REPOSITORY_NAME [--profile NAME] [--yes]
@@ -117,30 +117,33 @@ rvs pkg repo set-upstream REPOSITORY_NAME REMOTE_ID [--min-age-days DAYS] [--pro
 rvs pkg repo clear-upstream REPOSITORY_NAME [--profile NAME]
 ```
 
+`--registry-kind` (short form `-k`) is the canonical selector. The former
+`--ecosystem`/`-e` spelling remains accepted as a compatibility alias.
+
 Repository names use lowercase letters, numbers, and hyphens. Defaults are
-stored per profile under `[profiles.<name>.registries.<ecosystem>]`; legacy
-top-level `[registries.<ecosystem>]` values are still read as a fallback. Renaming a
+stored per profile under `[profiles.<name>.registries.<registry-kind>]`; legacy
+top-level `[registries.<registry-kind>]` values are still read as a fallback. Renaming a
 repository also updates a matching default in the selected profile.
 
 Remote cache & proxy commands:
 
 ```bash
-rvs pkg remote-cache list [--profile NAME] [--customer-id CUSTOMER_ID] [--ecosystem pypi|npm|maven]
-rvs pkg remote-cache create --ecosystem pypi|npm|maven [--profile NAME] [--customer-id CUSTOMER_ID]
+rvs pkg remote-cache list [--profile NAME] [--customer-id CUSTOMER_ID] [--registry-kind pypi|npm|maven]
+rvs pkg remote-cache create --registry-kind pypi|npm|maven [--profile NAME] [--customer-id CUSTOMER_ID]
 rvs pkg remote-cache show CACHE_ID [--profile NAME]
 rvs pkg remote-cache set-age CACHE_ID --min-age-days DAYS [--profile NAME]
 rvs pkg remote-cache delete CACHE_ID [--profile NAME] [--yes]
-rvs pkg remote-cache delete CACHE_ID --customer-id CUSTOMER_ID --ecosystem pypi|npm|maven [--profile NAME] [--yes]
+rvs pkg remote-cache delete CACHE_ID --customer-id CUSTOMER_ID --registry-kind pypi|npm|maven [--profile NAME] [--yes]
 ```
 
 Package metadata commands:
 
 ```bash
-rvs pkg package list --repo REPOSITORY_NAME [--profile NAME]
-rvs pkg package show NAME --repo REPOSITORY_NAME [--profile NAME]
-rvs pkg package delete NAME --repo REPOSITORY_NAME [--profile NAME] [--yes]
-rvs pkg package delete-version NAME VERSION --repo REPOSITORY_NAME [--profile NAME] [--yes]
-rvs pkg package yank NAME VERSION --repo REPOSITORY_NAME [--reason TEXT] [--profile NAME]
+rvs pkg package list --repo REPOSITORY_NAME --registry-kind pypi|npm|maven [--profile NAME]
+rvs pkg package show NAME --repo REPOSITORY_NAME --registry-kind pypi|npm|maven [--profile NAME]
+rvs pkg package delete NAME --repo REPOSITORY_NAME --registry-kind pypi|npm|maven [--profile NAME] [--yes]
+rvs pkg package delete-version NAME VERSION --repo REPOSITORY_NAME --registry-kind pypi|npm|maven [--profile NAME] [--yes]
+rvs pkg package yank NAME VERSION --repo REPOSITORY_NAME --registry-kind pypi|npm|maven [--reason TEXT] [--profile NAME]
 ```
 
 Package listings include download and bandwidth totals. `package show` includes

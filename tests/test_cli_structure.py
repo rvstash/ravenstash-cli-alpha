@@ -83,7 +83,7 @@ default_repo = "private-pypi"
     payload = json.loads(result.output)
     assert payload["title"] == "Package repository defaults (default)"
     assert payload["items"][0] == {
-        "Ecosystem": "pypi",
+        "Registry kind": "pypi",
         "Default repository": "private-pypi",
     }
 
@@ -121,6 +121,14 @@ def test_repo_commands_are_registered() -> None:
     assert repo_result.exit_code == 0
     for command in ("list", "create", "show", "rename", "delete"):
         assert command in repo_result.output
+
+
+def test_registry_kind_is_canonical_and_ecosystem_is_a_compatible_alias() -> None:
+    result = runner.invoke(app, ["pkg", "repo", "list", "--help"])
+
+    assert result.exit_code == 0
+    assert "--registry-kind" in result.output
+    assert "--ecosystem" in result.output
 
 
 @pytest.mark.parametrize(

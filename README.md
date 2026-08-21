@@ -116,8 +116,8 @@ Repository commands:
 
 ```bash
 rvs pkg repo list
-rvs pkg repo list --ecosystem pypi
-rvs pkg repo create my-python-packages --ecosystem pypi --default
+rvs pkg repo list --registry-kind pypi
+rvs pkg repo create my-python-packages --registry-kind pypi --default
 rvs pkg repo show <repo-name>
 rvs pkg repo rename <repo-name> <new-name>
 rvs pkg repo delete <repo-name>
@@ -127,7 +127,7 @@ rvs pkg repo set-upstream <repo-name> <cache-id> --min-age-days 3
 rvs pkg repo clear-upstream <repo-name>
 
 rvs pkg remote-cache list
-rvs pkg remote-cache create --ecosystem pypi
+rvs pkg remote-cache create --registry-kind pypi
 rvs pkg remote-cache show <cache-id>
 rvs pkg remote-cache set-age <cache-id> --min-age-days 3
 rvs pkg remote-cache delete <cache-id>
@@ -146,7 +146,7 @@ the CLI always builds native package URLs from the immutable
 `<workspace_unique_ref>/<repository_unique_ref>` pair.
 
 Defaults are profile-scoped under
-`[profiles.<name>.registries.<ecosystem>]` in `~/.rvs/config.toml`. Legacy top-level
+`[profiles.<name>.registries.<registry-kind>]` in `~/.rvs/config.toml`. Legacy top-level
 registry defaults remain readable as a migration fallback.
 
 Saved defaults store immutable workspace and repository references as identity
@@ -165,8 +165,8 @@ never retries another customer credential after an authorization failure.
 Package metadata commands:
 
 ```bash
-rvs pkg package list --repo <repo-name> --ecosystem pypi
-rvs pkg package show requests --repo <repo-name> --ecosystem pypi
+rvs pkg package list --repo <repo-name> --registry-kind pypi
+rvs pkg package show requests --repo <repo-name> --registry-kind pypi
 rvs pkg package delete requests --repo <repo-name>
 rvs pkg package delete-version requests 2.32.0 --repo <repo-name>
 rvs pkg package yank requests 2.32.0 --repo <repo-name> --reason "bad build"

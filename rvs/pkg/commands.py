@@ -79,7 +79,7 @@ def _customer_id(profile: str | None, explicit_customer_id: str | None = None) -
 
 def _require_kind(kind: str) -> cfg_mod.RegistryKind:
     if kind not in _KINDS:
-        output.fatal(f"Unknown package ecosystem '{kind}'. Use: pypi, npm, maven")
+        output.fatal(f"Unknown registry kind '{kind}'. Use: pypi, npm, maven")
     return cast("cfg_mod.RegistryKind", kind)
 
 
@@ -246,7 +246,14 @@ def _resolved_repository_id(
 def repo_list(
     profile: str | None = typer.Option(None, "--profile", "-p"),
     customer_id: str | None = typer.Option(None, "--customer-id", help="Customer filter."),
-    kind: str | None = typer.Option(None, "--ecosystem", "-e", help="Filter: pypi | npm | maven"),
+    kind: str | None = typer.Option(
+        None,
+        "--registry-kind",
+        "-k",
+        "--ecosystem",
+        "-e",
+        help="Registry-kind filter: pypi | npm | maven.",
+    ),
 ) -> None:
     """List repositories across every authorized customer and workspace."""
     if kind:
@@ -267,7 +274,7 @@ def repo_list(
         return
 
     output.table(
-        ["Account", "Workspace", "Repository", "Stable reference", "Ecosystems"],
+        ["Account", "Workspace", "Repository", "Stable reference", "Registry kinds"],
         [
             [
                 entry["customer"]["account_label"],
@@ -285,12 +292,17 @@ def repo_list(
 def repo_create(
     name: str = typer.Argument(..., help=_REPOSITORY_NAME_HELP),
     kind: list[str] = typer.Option(
-        ..., "--ecosystem", "-e", help="Ecosystem to enable; repeat to enable more than one."
+        ...,
+        "--registry-kind",
+        "-k",
+        "--ecosystem",
+        "-e",
+        help="Registry kind to enable; repeat to enable more than one.",
     ),
     profile: str | None = typer.Option(None, "--profile", "-p"),
     customer_id: str | None = typer.Option(None, "--customer-id", help="Owning customer ID."),
     set_default: bool = typer.Option(
-        False, "--default", help="Set as default for each selected ecosystem."
+        False, "--default", help="Set as default for each selected registry kind."
     ),
 ) -> None:
     """Create a package repository."""
@@ -309,7 +321,7 @@ def repo_create(
 
     repository_name = _repository_name_from_response(repo, name)
     output.success(
-        f"Created package repository '{repository_name}' with {', '.join(kinds)} ecosystems."
+        f"Created package repository '{repository_name}' with registry kinds: {', '.join(kinds)}."
     )
     if set_default and repository_name:
         default_repo = _repo_ref_from_response(repo, repository_name)
@@ -342,7 +354,7 @@ def repo_show(
             "Workspace": item["workspace_name"],
             "Workspace reference": item["workspace_unique_ref"],
             "Repository reference": item["repository_unique_ref"],
-            "Ecosystems": ", ".join(item.get("registry_kinds", [])),
+            "Registry kinds": ", ".join(item.get("registry_kinds", [])),
             "Packages": str(item.get("aggregate_package_count", item.get("package_count", "0"))),
             "Storage bytes": str(
                 item.get("aggregate_storage_bytes", item.get("storage_bytes", "0"))
@@ -395,12 +407,14 @@ def repo_rename(
 @repo_app.command("set-default")
 def repo_set_default(
     kind: str = typer.Argument(
-        ..., help="Package ecosystem: pypi | npm | maven", metavar="ECOSYSTEM"
+        ...,
+        help="Registry kind: pypi | npm | maven",
+        metavar="REGISTRY_KIND",
     ),
     repo: str = typer.Argument(..., help=_REPOSITORY_NAME_HELP),
     profile: str | None = typer.Option(None, "--profile", "-p"),
 ) -> None:
-    """Set the default package repository for an ecosystem."""
+    """Set the default package repository for a registry kind."""
     registry_kind = _require_kind(kind)
     profile_name = _profile_name(profile)
     entry = _resolve_repository_entry(repo, profile, kind=kind)
@@ -429,7 +443,7 @@ def repo_defaults(
         for kind in _KINDS
     ]
     output.table(
-        ["Ecosystem", "Default repository"],
+        ["Registry kind", "Default repository"],
         rows,
         title=f"Package repository defaults ({profile_name})",
     )
@@ -488,7 +502,7 @@ def repo_clear_upstream(
 def remote_list(
     profile: str | None = typer.Option(None, "--profile", "-p"),
     customer_id: str | None = typer.Option(None, "--customer-id"),
-    kind: str | None = typer.Option(None, "--ecosystem", "-e"),
+    kind: str | None = typer.Option(None, "--registry-kind", "-k", "--ecosystem", "-e"),
 ) -> None:
     """List remote caches & proxies for the selected customer."""
     if kind:
@@ -512,7 +526,7 @@ def remote_list(
         output.info("No remote caches & proxies found.")
         return
     output.table(
-        ["ID", "Ecosystem", "Minimum package age", "Maximum age"],
+        ["ID", "Registry kind", "Minimum package age", "Maximum age"],
         [
             [
                 str(item["public_id"]),
@@ -528,11 +542,11 @@ def remote_list(
 
 @remote_app.command("create")
 def remote_create(
-    kind: str = typer.Option(..., "--ecosystem", "-e"),
+    kind: str = typer.Option(..., "--registry-kind", "-k", "--ecosystem", "-e"),
     profile: str | None = typer.Option(None, "--profile", "-p"),
     customer_id: str | None = typer.Option(None, "--customer-id"),
 ) -> None:
-    """Create a remote cache & proxy for an ecosystem."""
+    """Create a remote cache & proxy for a registry kind."""
     _require_kind(kind)
     client = _client(profile)
     try:
@@ -563,7 +577,7 @@ def remote_show(
     output.kv(
         {
             "ID": item["public_id"],
-            "Ecosystem": item.get("registry_kind"),
+            "Registry kind": item.get("registry_kind"),
             "Owner ID": item.get("customer_id"),
             "Minimum package age (days)": str(item.get("min_age_days", "")),
             "Maximum age days": str(item.get("max_age_days", "")),
@@ -593,12 +607,12 @@ def remote_delete(
     remote: str = typer.Argument(..., help="Remote cache & proxy ID."),
     profile: str | None = typer.Option(None, "--profile", "-p"),
     customer_id: str | None = typer.Option(None, "--customer-id"),
-    kind: str | None = typer.Option(None, "--ecosystem", "-e"),
+    kind: str | None = typer.Option(None, "--registry-kind", "-k", "--ecosystem", "-e"),
     yes: bool = typer.Option(False, "--yes", "-y"),
 ) -> None:
     """Delete a remote cache & proxy."""
     if (customer_id is None) != (kind is None):
-        output.fatal("Pass both --customer-id and --ecosystem, or neither.")
+        output.fatal("Pass both --customer-id and --registry-kind, or neither.")
     if kind:
         _require_kind(kind)
     if not yes:
@@ -621,7 +635,12 @@ def remote_delete(
 def package_list(
     repo: str = typer.Option(..., "--repo", "-r", help=_REPOSITORY_NAME_HELP),
     kind: str = typer.Option(
-        ..., "--ecosystem", "-e", help="Package ecosystem: pypi | npm | maven."
+        ...,
+        "--registry-kind",
+        "-k",
+        "--ecosystem",
+        "-e",
+        help="Registry kind: pypi | npm | maven.",
     ),
     profile: str | None = typer.Option(None, "--profile", "-p"),
 ) -> None:
@@ -661,7 +680,12 @@ def package_show(
     name: str = typer.Argument(..., help="Package name."),
     repo: str = typer.Option(..., "--repo", "-r", help=_REPOSITORY_NAME_HELP),
     kind: str = typer.Option(
-        ..., "--ecosystem", "-e", help="Package ecosystem: pypi | npm | maven."
+        ...,
+        "--registry-kind",
+        "-k",
+        "--ecosystem",
+        "-e",
+        help="Registry kind: pypi | npm | maven.",
     ),
     profile: str | None = typer.Option(None, "--profile", "-p"),
 ) -> None:
@@ -727,7 +751,12 @@ def package_delete(
     name: str = typer.Argument(..., help="Package name."),
     repo: str = typer.Option(..., "--repo", "-r", help=_REPOSITORY_NAME_HELP),
     kind: str = typer.Option(
-        ..., "--ecosystem", "-e", help="Package ecosystem: pypi | npm | maven."
+        ...,
+        "--registry-kind",
+        "-k",
+        "--ecosystem",
+        "-e",
+        help="Registry kind: pypi | npm | maven.",
     ),
     profile: str | None = typer.Option(None, "--profile", "-p"),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation prompt."),
@@ -754,7 +783,12 @@ def package_delete_version(
     version: str = typer.Argument(..., help="Version to delete."),
     repo: str = typer.Option(..., "--repo", "-r", help=_REPOSITORY_NAME_HELP),
     kind: str = typer.Option(
-        ..., "--ecosystem", "-e", help="Package ecosystem: pypi | npm | maven."
+        ...,
+        "--registry-kind",
+        "-k",
+        "--ecosystem",
+        "-e",
+        help="Registry kind: pypi | npm | maven.",
     ),
     profile: str | None = typer.Option(None, "--profile", "-p"),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation prompt."),
@@ -781,7 +815,12 @@ def package_yank(
     version: str = typer.Argument(..., help="Version to yank."),
     repo: str = typer.Option(..., "--repo", "-r", help=_REPOSITORY_NAME_HELP),
     kind: str = typer.Option(
-        ..., "--ecosystem", "-e", help="Package ecosystem: pypi | npm | maven."
+        ...,
+        "--registry-kind",
+        "-k",
+        "--ecosystem",
+        "-e",
+        help="Registry kind: pypi | npm | maven.",
     ),
     reason: str | None = typer.Option(None, "--reason", "-m", help="Yank reason."),
     profile: str | None = typer.Option(None, "--profile", "-p"),

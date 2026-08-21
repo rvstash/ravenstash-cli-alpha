@@ -21,7 +21,7 @@ Package commands resolve a repository selector through DevAPI:
 When a package command needs a repository, `rvs` resolves it in this order:
 
 1. Use `--repo`, if provided.
-2. Use `[profiles.<name>.registries.<ecosystem>].default_repo` for the selected
+2. Use `[profiles.<name>.registries.<registry-kind>].default_repo` for the selected
    profile from `~/.rvs/config.toml`.
 3. Exit with a clear error if neither exists.
 
@@ -99,17 +99,17 @@ List repositories owned by the selected personal account or organization:
 
 ```bash
 rvs pkg repo list
-rvs pkg repo list --ecosystem pypi
-rvs pkg repo list --ecosystem npm
-rvs pkg repo list --ecosystem maven
+rvs pkg repo list --registry-kind pypi
+rvs pkg repo list --registry-kind npm
+rvs pkg repo list --registry-kind maven
 ```
 
-Create a repository and make it the default for that ecosystem:
+Create a repository and make it the default for that registry kind:
 
 ```bash
-rvs pkg repo create my-python-packages --ecosystem pypi --default
-rvs pkg repo create my-node-packages --ecosystem npm --default
-rvs pkg repo create my-java-packages --ecosystem maven --default
+rvs pkg repo create my-python-packages --registry-kind pypi --default
+rvs pkg repo create my-node-packages --registry-kind npm --default
+rvs pkg repo create my-java-packages --registry-kind maven --default
 ```
 
 Repository names use lowercase letters, numbers, and hyphens.
@@ -431,9 +431,9 @@ toolchain path.
 LLM agents should follow these rules when using `rvs`:
 
 - Do not assume login selects a repository.
-- Resolve the target ecosystem first: `pypi`, `npm`, or `maven`.
+- Resolve the target registry kind first: `pypi`, `npm`, or `maven`.
 - Prefer `--repo <repo-name>` for one-off commands.
-- Use `rvs pkg repo set-default <ecosystem> <repo-name>` only when changing persistent
+- Use `rvs pkg repo set-default <registry-kind> <repo-name>` only when changing persistent
   local CLI state is intended.
 - Treat customer, workspace, and repository internal IDs as different from
   their immutable generated references.

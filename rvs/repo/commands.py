@@ -18,24 +18,26 @@ app = typer.Typer(
 def list_repos(
     profile: str | None = typer.Option(None, "--profile", "-p"),
     customer_id: str | None = typer.Option(None, "--customer-id"),
-    ecosystem: str | None = typer.Option(None, "--ecosystem", "-e"),
+    registry_kind: str | None = typer.Option(None, "--registry-kind", "-k", "--ecosystem", "-e"),
 ) -> None:
     """List authorized repositories grouped by account and workspace."""
     pkg_commands.repo_list(
         profile=profile,
         customer_id=customer_id,
-        kind=ecosystem,
+        kind=registry_kind,
     )
 
 
 @app.command("create")
 def create(
     name: str = typer.Argument(..., help="Repository name."),
-    ecosystem: list[str] = typer.Option(
+    registry_kind: list[str] = typer.Option(
         ...,
+        "--registry-kind",
+        "-k",
         "--ecosystem",
         "-e",
-        help="Ecosystem to enable; repeat for multiple lanes.",
+        help="Registry kind to enable; repeat for multiple lanes.",
     ),
     profile: str | None = typer.Option(None, "--profile", "-p"),
     customer_id: str | None = typer.Option(None, "--customer-id"),
@@ -44,7 +46,7 @@ def create(
     """Create a repository in the customer's default workspace."""
     pkg_commands.repo_create(
         name=name,
-        kind=ecosystem,
+        kind=registry_kind,
         profile=profile,
         customer_id=customer_id,
         set_default=set_default,
