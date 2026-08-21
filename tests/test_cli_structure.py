@@ -4,6 +4,7 @@ import json
 from typing import TYPE_CHECKING
 
 import pytest
+from click import unstyle
 from rvs import config as cfg_mod
 from rvs import output
 from rvs.cli import app
@@ -127,8 +128,9 @@ def test_registry_kind_is_canonical_and_ecosystem_is_a_compatible_alias() -> Non
     result = runner.invoke(app, ["pkg", "repo", "list", "--help"])
 
     assert result.exit_code == 0
-    assert "--registry-kind" in result.output
-    assert "--ecosystem" in result.output
+    help_output = unstyle(result.output)
+    assert "--registry-kind" in help_output
+    assert "--ecosystem" in help_output
 
 
 @pytest.mark.parametrize(
