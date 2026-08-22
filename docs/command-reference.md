@@ -106,12 +106,12 @@ validation fails.
 Repository commands:
 
 ```bash
-rvs pkg repo list [--profile NAME] [--customer-id CUSTOMER_ID] [--registry-kind pypi|npm|maven]
-rvs pkg repo create NAME --registry-kind pypi|npm|maven [--profile NAME] [--customer-id CUSTOMER_ID] [--default]
+rvs pkg repo list [--profile NAME] [--customer-id CUSTOMER_ID] [--registry-kind pypi|npm|maven|container|helm]
+rvs pkg repo create NAME --registry-kind pypi|npm|maven|container|helm [--profile NAME] [--customer-id CUSTOMER_ID] [--default]
 rvs pkg repo show REPOSITORY_NAME [--profile NAME]
 rvs pkg repo rename REPOSITORY_NAME NEW_NAME [--profile NAME]
 rvs pkg repo delete REPOSITORY_NAME [--profile NAME] [--yes]
-rvs pkg repo set-default pypi|npm|maven REPOSITORY_NAME [--profile NAME]
+rvs pkg repo set-default pypi|npm|maven|container|helm REPOSITORY_NAME [--profile NAME]
 rvs pkg repo defaults [--profile NAME]
 rvs pkg repo set-upstream REPOSITORY_NAME REMOTE_ID [--min-age-days DAYS] [--profile NAME]
 rvs pkg repo clear-upstream REPOSITORY_NAME [--profile NAME]
@@ -124,6 +124,10 @@ Repository names use lowercase letters, numbers, and hyphens. Defaults are
 stored per profile under `[profiles.<name>.registries.<registry-kind>]`; legacy
 top-level `[registries.<registry-kind>]` values are still read as a fallback. Renaming a
 repository also updates a matching default in the selected profile.
+
+Container and Helm are OCI-native private lanes. They do not support upstream
+attachments or remote caches. Classic non-OCI Helm repositories are not
+supported.
 
 Remote cache & proxy commands:
 
@@ -199,6 +203,10 @@ rvs uv [--rvs-profile NAME] [--rvs-repo REPOSITORY_NAME] [--rvs-customer-id CUST
 rvs twine [--rvs-profile NAME] [--rvs-repo REPOSITORY_NAME] [--rvs-customer-id CUSTOMER_ID] [--rvs-native-config respect|override|isolate] TWINE_ARGS...
 rvs npm [--rvs-profile NAME] [--rvs-repo REPOSITORY_NAME] [--rvs-customer-id CUSTOMER_ID] [--rvs-native-config respect|override|isolate] NPM_ARGS...
 rvs mvn [--rvs-profile NAME] [--rvs-repo REPOSITORY_NAME] [--rvs-customer-id CUSTOMER_ID] [--rvs-native-config respect|override|isolate] MVN_ARGS...
+rvs docker [--rvs-profile NAME] [--rvs-repo REPOSITORY_NAME] [--rvs-customer-id CUSTOMER_ID] DOCKER_ARGS...
+rvs helm [--rvs-profile NAME] [--rvs-repo REPOSITORY_NAME] [--rvs-customer-id CUSTOMER_ID] HELM_ARGS...
+rvs oras --rvs-kind container|helm [--rvs-profile NAME] [--rvs-repo REPOSITORY_NAME] [--rvs-customer-id CUSTOMER_ID] ORAS_ARGS...
+rvs oci-reference --kind container|helm [--repo REPOSITORY_NAME] [--oci-path PATH] [--reference TAG_OR_DIGEST] [--profile NAME] [--customer-id CUSTOMER_ID]
 ```
 
 These commands run the named native package manager. They are not aliases for
@@ -229,7 +237,20 @@ rvs uv --rvs-repo internal-pypi --rvs-native-config isolate sync
 
 rvs twine --rvs-repo internal-pypi upload dist/*
 rvs mvn --rvs-repo internal-maven deploy
+
+rvs docker --rvs-repo runtime-images pull oci.rvsta.sh/x/w_abcdefgh/r_23456789/api:latest
+rvs helm --rvs-repo deployment-charts show chart oci://oci.rvsta.sh/x/w_abcdefgh/r_3456789a/charts/api --version 1.2.3
+rvs oras --rvs-kind container --rvs-repo runtime-images discover oci.rvsta.sh/x/w_abcdefgh/r_23456789/api:latest
+rvs oci-reference --kind container --repo runtime-images --oci-path api --reference latest
 ```
+
+The OCI wrappers always scope one invocation to one exact logical repository.
+They obtain a short-lived Container or Helm capability through DevAPI, preserve
+unrelated native registry credentials in an ephemeral config copy, and install
+an exact-host `docker-credential-rvs` helper only in that copy. Secrets are not
+placed in argv and the user's Docker or Helm config is never rewritten. Docker,
+Helm, and ORAS share `oci.rvsta.sh`; `/v2/` is protocol plumbing used by the
+native clients and is not part of the documented repository reference.
 
 ## `rvs repo`
 

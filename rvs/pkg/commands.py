@@ -45,7 +45,8 @@ app.add_typer(pypi_app, name="pypi")
 app.add_typer(npm_app, name="npm")
 app.add_typer(maven_app, name="maven")
 
-_KINDS = ("pypi", "npm", "maven")
+_KINDS = ("pypi", "npm", "maven", "container", "helm")
+_PACKAGE_KINDS = ("pypi", "npm", "maven")
 _ROUTER = CanonicalRouter()
 _REPOSITORY_NAME_HELP = "Package repository name: lowercase letters, numbers, and hyphens."
 
@@ -79,7 +80,16 @@ def _customer_id(profile: str | None, explicit_customer_id: str | None = None) -
 
 def _require_kind(kind: str) -> cfg_mod.RegistryKind:
     if kind not in _KINDS:
-        output.fatal(f"Unknown registry kind '{kind}'. Use: pypi, npm, maven")
+        output.fatal(f"Unknown registry kind '{kind}'. Use: pypi, npm, maven, container, helm")
+    return cast("cfg_mod.RegistryKind", kind)
+
+
+def _require_package_kind(kind: str) -> cfg_mod.RegistryKind:
+    if kind not in _PACKAGE_KINDS:
+        output.fatal(
+            "Package/version commands and remote caches support only pypi, npm, "
+            "and maven. Use rvs docker, rvs helm, or rvs oras for OCI content."
+        )
     return cast("cfg_mod.RegistryKind", kind)
 
 
@@ -252,7 +262,7 @@ def repo_list(
         "-k",
         "--ecosystem",
         "-e",
-        help="Registry-kind filter: pypi | npm | maven.",
+        help="Registry-kind filter: pypi | npm | maven | container | helm.",
     ),
 ) -> None:
     """List repositories across every authorized customer and workspace."""
@@ -408,7 +418,7 @@ def repo_rename(
 def repo_set_default(
     kind: str = typer.Argument(
         ...,
-        help="Registry kind: pypi | npm | maven",
+        help="Registry kind: pypi | npm | maven | container | helm",
         metavar="REGISTRY_KIND",
     ),
     repo: str = typer.Argument(..., help=_REPOSITORY_NAME_HELP),
@@ -486,6 +496,8 @@ def repo_clear_upstream(
         entry = _resolve_repository_entry(repo, profile)
         repository = entry["repository"]
         for registry_kind in repository["registry_kinds"]:
+            if registry_kind not in _PACKAGE_KINDS:
+                continue
             path = f"/v0/repositories/{repository['id']}/lanes/{registry_kind}/remote-upstreams"
             attachments = client.get(path).json()
             for attachment in attachments:
@@ -506,7 +518,7 @@ def remote_list(
 ) -> None:
     """List remote caches & proxies for the selected customer."""
     if kind:
-        _require_kind(kind)
+        _require_package_kind(kind)
     client = _client(profile)
     try:
         items = client.get(
@@ -547,7 +559,7 @@ def remote_create(
     customer_id: str | None = typer.Option(None, "--customer-id"),
 ) -> None:
     """Create a remote cache & proxy for a registry kind."""
-    _require_kind(kind)
+    _require_package_kind(kind)
     client = _client(profile)
     try:
         item = client.post(
@@ -614,7 +626,7 @@ def remote_delete(
     if (customer_id is None) != (kind is None):
         output.fatal("Pass both --customer-id and --registry-kind, or neither.")
     if kind:
-        _require_kind(kind)
+        _require_package_kind(kind)
     if not yes:
         typer.confirm(f"Delete remote cache & proxy '{remote}'?", abort=True)
     params = None
@@ -645,9 +657,9 @@ def package_list(
     profile: str | None = typer.Option(None, "--profile", "-p"),
 ) -> None:
     """List packages hosted in a package repository."""
+    registry_kind = _require_package_kind(kind)
     client = _client(profile)
     try:
-        registry_kind = _require_kind(kind)
         repository_id = _resolved_repository_id(repo, profile, kind=registry_kind)
         data = client.get(f"/v0/repositories/{repository_id}/lanes/{registry_kind}/packages").json()
     except ApiError as exc:
@@ -690,9 +702,9 @@ def package_show(
     profile: str | None = typer.Option(None, "--profile", "-p"),
 ) -> None:
     """Show package metadata and versions."""
+    registry_kind = _require_package_kind(kind)
     client = _client(profile)
     try:
-        registry_kind = _require_kind(kind)
         repository_id = _resolved_repository_id(repo, profile, kind=registry_kind)
         item = client.get(
             f"/v0/repositories/{repository_id}/lanes/{registry_kind}/package",
@@ -764,9 +776,9 @@ def package_delete(
     """Delete a package and all of its versions."""
     if not yes:
         typer.confirm(f"Delete package '{name}' from '{repo}'?", abort=True)
+    registry_kind = _require_package_kind(kind)
     client = _client(profile)
     try:
-        registry_kind = _require_kind(kind)
         repository_id = _resolved_repository_id(repo, profile, kind=registry_kind)
         client.delete(
             f"/v0/repositories/{repository_id}/lanes/{registry_kind}/package",
@@ -796,9 +808,9 @@ def package_delete_version(
     """Delete one package version."""
     if not yes:
         typer.confirm(f"Delete {name}@{version} from '{repo}'?", abort=True)
+    registry_kind = _require_package_kind(kind)
     client = _client(profile)
     try:
-        registry_kind = _require_kind(kind)
         repository_id = _resolved_repository_id(repo, profile, kind=registry_kind)
         client.delete(
             f"/v0/repositories/{repository_id}/lanes/{registry_kind}/package-version",
@@ -826,10 +838,10 @@ def package_yank(
     profile: str | None = typer.Option(None, "--profile", "-p"),
 ) -> None:
     """Mark a package version as yanked."""
+    registry_kind = _require_package_kind(kind)
     client = _client(profile)
     body = {"reason": reason} if reason else None
     try:
-        registry_kind = _require_kind(kind)
         repository_id = _resolved_repository_id(repo, profile, kind=registry_kind)
         client.post(
             f"/v0/repositories/{repository_id}/lanes/{registry_kind}/package-version/yank",

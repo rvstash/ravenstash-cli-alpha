@@ -49,7 +49,7 @@ import tomli_w
 from .paths import rvs_home
 
 
-RegistryKind = Literal["pypi", "npm", "maven"]
+RegistryKind = Literal["pypi", "npm", "maven", "container", "helm"]
 
 CONFIG_DIR = rvs_home()
 CONFIG_FILE = CONFIG_DIR / "config.toml"

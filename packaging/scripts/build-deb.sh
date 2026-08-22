@@ -26,6 +26,7 @@ mkdir -p \
 cp -a dist/pyinstaller/rvs/. "$STAGING/usr/lib/rvs/"
 ln -s ../lib/rvs/rvs "$STAGING/usr/bin/rvs"
 ln -s ../lib/rvs/rvs "$STAGING/usr/bin/ravenstash"
+ln -s ../lib/rvs/docker-credential-rvs "$STAGING/usr/bin/docker-credential-rvs"
 cp README.md "$STAGING/usr/share/doc/rvs/README.md"
 install -m 0755 packaging/scripts/postinstall.sh "$STAGING/DEBIAN/postinst"
 cat > "$STAGING/DEBIAN/control" <<EOF

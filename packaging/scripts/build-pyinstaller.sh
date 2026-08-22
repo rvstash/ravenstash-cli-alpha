@@ -22,9 +22,11 @@ SOURCE_DATE_EPOCH="${SOURCE_DATE_EPOCH:-0}" PYTHONHASHSEED=1 "$PYINSTALLER_BIN" 
   packaging/pyinstaller/rvs.spec
 
 ln -sfn rvs dist/pyinstaller/rvs/ravenstash
+ln -sfn rvs dist/pyinstaller/rvs/docker-credential-rvs
 dist/pyinstaller/rvs/rvs --version
 dist/pyinstaller/rvs/rvs --help >/dev/null
 dist/pyinstaller/rvs/ravenstash --version
+test -x dist/pyinstaller/rvs/docker-credential-rvs
 
 if ! find dist/pyinstaller/rvs -maxdepth 2 -type f -name 'libpython3.14.so*' \
   -print -quit | grep -q .; then

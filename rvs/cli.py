@@ -7,6 +7,7 @@ import typer
 from .auth.commands import app as auth_app
 from .ci.commands import app as ci_app
 from .native import commands as native_commands
+from .oci import commands as oci_commands
 from .pkg.commands import app as pkg_app
 from .repo.commands import app as repo_app
 from .runtime.commands import app as runtime_app
@@ -54,6 +55,22 @@ app.command(
     context_settings=native_commands.PASSTHROUGH_CONTEXT,
     help="Run Maven with ephemeral Ravenstash auth for Ravenstash repositories.",
 )(native_commands.mvn)
+app.command(
+    "docker",
+    context_settings=oci_commands.PASSTHROUGH_CONTEXT,
+    help="Run Docker with an exact ephemeral Ravenstash Container credential.",
+)(oci_commands.docker)
+app.command(
+    "helm",
+    context_settings=oci_commands.PASSTHROUGH_CONTEXT,
+    help="Run Helm with an exact ephemeral Ravenstash OCI chart credential.",
+)(oci_commands.helm)
+app.command(
+    "oras",
+    context_settings=oci_commands.PASSTHROUGH_CONTEXT,
+    help="Run ORAS with an exact Container or Helm Ravenstash credential.",
+)(oci_commands.oras)
+app.command("oci-reference")(oci_commands.oci_reference)
 
 
 def _version_callback(value: bool) -> None:

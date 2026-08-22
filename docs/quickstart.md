@@ -102,6 +102,8 @@ rvs pkg repo list
 rvs pkg repo list --registry-kind pypi
 rvs pkg repo list --registry-kind npm
 rvs pkg repo list --registry-kind maven
+rvs pkg repo list --registry-kind container
+rvs pkg repo list --registry-kind helm
 ```
 
 Create a repository and make it the default for that registry kind:
@@ -110,6 +112,8 @@ Create a repository and make it the default for that registry kind:
 rvs pkg repo create my-python-packages --registry-kind pypi --default
 rvs pkg repo create my-node-packages --registry-kind npm --default
 rvs pkg repo create my-java-packages --registry-kind maven --default
+rvs pkg repo create runtime-images --registry-kind container --default
+rvs pkg repo create deployment-charts --registry-kind helm --default
 ```
 
 Repository names use lowercase letters, numbers, and hyphens.
@@ -120,6 +124,8 @@ Or set defaults for existing repositories:
 rvs pkg repo set-default pypi <pypi-repo-name>
 rvs pkg repo set-default npm <npm-repo-name>
 rvs pkg repo set-default maven <maven-repo-name>
+rvs pkg repo set-default container <container-repo-name>
+rvs pkg repo set-default helm <helm-repo-name>
 ```
 
 Check defaults:
@@ -166,6 +172,9 @@ rvs uv sync
 rvs twine upload dist/*
 rvs npm install @acme/widgets
 rvs mvn test
+rvs docker --rvs-repo <container-repo-name> pull oci.rvsta.sh/x/w_abcdefgh/r_23456789/api:latest
+rvs helm --rvs-repo <helm-repo-name> show chart oci://oci.rvsta.sh/x/w_abcdefgh/r_3456789a/charts/api --version 1.2.3
+rvs oras --rvs-kind container --rvs-repo <container-repo-name> discover oci.rvsta.sh/x/w_abcdefgh/r_23456789/api:latest
 ```
 
 By default, the wrappers respect native config such as `.npmrc`, `pip.conf`,
@@ -173,6 +182,14 @@ By default, the wrappers respect native config such as `.npmrc`, `pip.conf`,
 the command arguments reference Ravenstash registry URLs, `rvs` injects a
 short-lived token only for the subprocess. It does not write tokens to
 persistent package-manager config files.
+
+Docker, Helm, and ORAS share Ravenstash's OCI endpoint. Their wrappers select
+one exact repository, request a scoped ephemeral credential, and overlay the
+`docker-credential-rvs` helper on a temporary copy of the native registry
+config. Existing credentials for other hosts are preserved and no Ravenstash
+secret is written to the user's config or command line. Use
+`rvs oci-reference --kind container|helm` to print a stable customer-facing
+reference; the clients' internal `/v2/` requests are intentionally hidden.
 
 Use `--rvs-repo` when the wrapper should override native registry selection for
 one invocation:

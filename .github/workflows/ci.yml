@@ -59,6 +59,8 @@ jobs:
               rvs --version
               rvs --help >/dev/null
               ravenstash --version
+              test -x /usr/bin/docker-credential-rvs
               test -x /usr/lib/rvs/rvs
+              test -x /usr/lib/rvs/docker-credential-rvs
               test -e /usr/lib/rvs/_internal/libpython3.14.so.1.0
             '

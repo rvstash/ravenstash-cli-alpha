@@ -118,6 +118,8 @@ Repository commands:
 rvs pkg repo list
 rvs pkg repo list --registry-kind pypi
 rvs pkg repo create my-python-packages --registry-kind pypi --default
+rvs pkg repo create runtime-images --registry-kind container --default
+rvs pkg repo create deployment-charts --registry-kind helm --default
 rvs pkg repo show <repo-name>
 rvs pkg repo rename <repo-name> <new-name>
 rvs pkg repo delete <repo-name>
@@ -136,7 +138,8 @@ rvs pkg remote-cache delete <cache-id>
 A remote cache & proxy is a customer-owned read-only binding to a curated
 public registry. Use it directly with package managers or connect it to a
 private repository. Packages are cached on demand and can be delayed with
-minimum package age.
+minimum package age. Remote caches and upstream attachments are currently
+available only for PyPI, npm, and Maven; Container and Helm are private-only.
 
 Repository references use the package repository name, such as
 `my-python-packages`. Repository names use lowercase letters, numbers, and
@@ -219,6 +222,10 @@ rvs uv sync
 rvs twine upload dist/*
 rvs npm install @acme/widgets
 rvs mvn test
+rvs docker --rvs-repo runtime-images pull oci.rvsta.sh/x/w_abcdefgh/r_23456789/api:latest
+rvs helm --rvs-repo deployment-charts show chart oci://oci.rvsta.sh/x/w_abcdefgh/r_3456789a/charts/api --version 1.2.3
+rvs oras --rvs-kind container --rvs-repo runtime-images discover oci.rvsta.sh/x/w_abcdefgh/r_23456789/api:latest
+rvs oci-reference --kind container --repo runtime-images --oci-path api --reference latest
 
 rvs npm --rvs-repo my-node-packages install @acme/widgets
 rvs pip --rvs-repo my-python-packages install acme-utils
@@ -228,10 +235,20 @@ rvs uv --rvs-repo my-python-packages --rvs-native-config isolate sync
 `rvs pkg ...` is Ravenstash-native: it selects the Ravenstash repository through
 `--repo` or `~/.rvs/config.toml`, and the underlying implementation may or may
 not use a native package manager. `rvs pip`, `rvs uv`, `rvs twine`, `rvs npm`,
-and `rvs mvn` are explicit native-tool passthroughs: they respect native config
+`rvs mvn`, `rvs docker`, `rvs helm`, and `rvs oras` are explicit native-tool passthroughs. The
+package-release wrappers respect native config
 by default, detect Ravenstash registry URLs, and inject only short-lived
 credentials for the child process. They do not write tokens to `.npmrc`,
 `pip.conf`, `.pypirc`, `settings.xml`, `pyproject.toml`, or `uv.toml`.
+
+The OCI wrappers resolve one exact Container or Helm lane, request a scoped
+capability, and overlay an ephemeral `docker-credential-rvs` entry on a copy of
+the native registry config. Existing credentials for other registries are
+preserved; stale Ravenstash auth entries are removed from the copy. The token is
+never placed in argv or written to the user's Docker or Helm config. Docker,
+Helm, and ORAS all use the same `oci.rvsta.sh` host and the stable
+`/x/<workspace-ref>/<repository-ref>/...` namespace. `rvs oras` requires
+`--rvs-kind container` or `--rvs-kind helm` because ORAS supports both lanes.
 
 ## Installation on Ubuntu / WSL
 

@@ -64,6 +64,15 @@ def test_debian_package_installs_node_signature_verifier() -> None:
     manifest = (ROOT / "packaging" / "scripts" / "build-deb.sh").read_text(encoding="utf-8")
 
     assert "Depends: ca-certificates, gpgv" in manifest
+    assert '"$STAGING/usr/bin/docker-credential-rvs"' in manifest
+
+
+def test_frozen_bundle_dispatches_docker_credential_helper() -> None:
+    entrypoint = (ROOT / "packaging" / "pyinstaller" / "entrypoint.py").read_text(encoding="utf-8")
+    build = (ROOT / "packaging" / "scripts" / "build-pyinstaller.sh").read_text(encoding="utf-8")
+
+    assert 'Path(sys.argv[0]).name == "docker-credential-rvs"' in entrypoint
+    assert "dist/pyinstaller/rvs/docker-credential-rvs" in build
 
 
 def test_installer_is_owned_by_cli_packaging_and_pins_release_identity() -> None:
