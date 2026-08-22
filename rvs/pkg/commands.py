@@ -366,6 +366,9 @@ def repo_show(
             "Repository reference": item["repository_unique_ref"],
             "Registry kinds": ", ".join(item.get("registry_kinds", [])),
             "Packages": str(item.get("aggregate_package_count", item.get("package_count", "0"))),
+            "Versions": str(item.get("aggregate_version_count", item.get("version_count", "0"))),
+            "OCI paths": str(item.get("aggregate_oci_repository_count", "0")),
+            "Manifests": str(item.get("aggregate_manifest_count", "0")),
             "Storage bytes": str(
                 item.get("aggregate_storage_bytes", item.get("storage_bytes", "0"))
             ),

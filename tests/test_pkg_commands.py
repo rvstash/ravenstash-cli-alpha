@@ -207,6 +207,9 @@ def test_pkg_repo_show_renders_repository_details(monkeypatch, tmp_path: Path) -
                     "registry_kinds": ["pypi", "npm"],
                     "lanes": [{}, {}],
                     "aggregate_package_count": 7,
+                    "aggregate_version_count": 13,
+                    "aggregate_oci_repository_count": 2,
+                    "aggregate_manifest_count": 5,
                     "aggregate_storage_bytes": 4096,
                     "created_at": "2026-06-20T00:00:00Z",
                 },
@@ -230,6 +233,14 @@ def test_pkg_repo_show_renders_repository_details(monkeypatch, tmp_path: Path) -
         )
     ]
     assert "repo-pypi" in result.output
+    assert "Packages" in result.output
+    assert "7" in result.output
+    assert "Versions" in result.output
+    assert "13" in result.output
+    assert "OCI paths" in result.output
+    assert "2" in result.output
+    assert "Manifests" in result.output
+    assert "5" in result.output
     assert "4096" in result.output
 
 
