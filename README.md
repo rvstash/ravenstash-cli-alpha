@@ -260,8 +260,7 @@ managed runtimes stay in `~/.rvs`.
 Install the current recommended Linux compatibility channel:
 
 ```bash
-curl --proto '=https' --proto-redir '=https' --tlsv1.2 \
-  -fsSL https://ravenstash.com/install.sh | bash
+curl -fsSL https://ravenstash.com/install.sh | bash
 ```
 
 The installer supports Ubuntu 20.04+ and Debian 11+ on Linux `amd64`. The

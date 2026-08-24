@@ -233,8 +233,7 @@ def update(
         output.info(f"Ravenstash CLI {_cli_version()} is not managed by the rvs APT package.")
         output.info(
             "Install or migrate with: "
-            "curl --proto '=https' --proto-redir '=https' --tlsv1.2 "
-            "-fsSL https://ravenstash.com/install.sh | bash"
+            "curl -fsSL https://ravenstash.com/install.sh | bash"
         )
         return
     if candidate is None:
