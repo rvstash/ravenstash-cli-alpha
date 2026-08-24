@@ -100,6 +100,7 @@ def resolve_route(tool: OciTool, options: OciOptions) -> OciRoute:
         )
     workspace, repository = _split_repo_ref(repo_ref)
     selector = f"{workspace}/{repository}" if workspace else repository
+    expected_target = cfg_mod.registry_target_expectation(kind, selector, profile_name)
     resolve_params = {
         "selector": selector,
         "registry_kind": kind,
@@ -113,15 +114,21 @@ def resolve_route(tool: OciTool, options: OciOptions) -> OciRoute:
             params=resolve_params,
         ).json()
         repository_row = entry["repository"]
+        credential_body: dict[str, object] = {
+            "repository_id": repository_row["id"],
+            "registry_kind": kind,
+            "expected_target": expected_target
+            or cfg_mod.repository_target_snapshot(repository_row),
+        }
         credential = client.post(
             "/v0/package-credentials",
-            json={"repository_id": repository_row["id"], "registry_kind": kind},
+            json=credential_body,
         ).json()
         token = credential["access_token"]
         native_path = credential["native_path"]
     except ApiError as exc:
         output.fatal(str(exc))
-    except (KeyError, TypeError) as exc:
+    except (KeyError, TypeError, ValueError) as exc:
         output.fatal(f"Invalid OCI capability response: {exc}")
     if not isinstance(native_path, str) or _OCI_NATIVE_PATH.fullmatch(native_path) is None:
         output.fatal("Invalid OCI capability response: native_path is not canonical.")

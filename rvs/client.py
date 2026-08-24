@@ -34,10 +34,33 @@ def _rvs_ua() -> str:
 class ApiError(Exception):
     """Raised when the API returns a non-2xx response."""
 
-    def __init__(self, status_code: int, detail: str) -> None:
+    def __init__(self, status_code: int, detail: Any) -> None:
         self.status_code = status_code
         self.detail = detail
-        super().__init__(f"HTTP {status_code}: {detail}")
+        super().__init__(self._message())
+
+    def _message(self) -> str:
+        if isinstance(self.detail, dict) and self.detail.get("code") == "RepositoryTargetChanged":
+            expected = self.detail.get("expected")
+            current = self.detail.get("current")
+            if isinstance(expected, dict) and isinstance(current, dict):
+                expected_name = "/".join(
+                    str(expected.get(key) or "?") for key in ("workspace_name", "repository_name")
+                )
+                current_name = "/".join(
+                    str(current.get(key) or "?") for key in ("workspace_name", "repository_name")
+                )
+                stable = "/".join(
+                    str(current.get(key) or expected.get(key) or "?")
+                    for key in ("workspace_unique_ref", "repository_unique_ref")
+                )
+                return (
+                    "Repository target changed; no package operation was attempted. "
+                    f"Expected {expected_name}, current {current_name}, identity {stable}. "
+                    "Use `rvs pkg repo set-default` to explicitly re-select the stable "
+                    "identity, or the repository currently using the former name."
+                )
+        return f"HTTP {self.status_code}: {self.detail}"
 
 
 class ApiClient:
@@ -95,7 +118,7 @@ class ApiClient:
             detail = resp.json().get("detail", resp.text)
         except Exception:
             detail = resp.text or resp.reason_phrase
-        raise ApiError(resp.status_code, str(detail))
+        raise ApiError(resp.status_code, detail)
 
     def _refresh(self) -> bool:
         if not self._profile or not self._allow_refresh:

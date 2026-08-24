@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING, Any
 
 import pytest
 from rvs import config as cfg_mod
+from rvs.client import ApiError
 from rvs.pkg import commands as pkg_cmd
 from rvs.pkg.registries.base import PublishResult
 from typer.testing import CliRunner
@@ -268,7 +269,11 @@ def test_pkg_repo_rename_updates_matching_profile_default(monkeypatch, tmp_path:
             {"repository_name": "renamed"},
         ),
     ]
-    assert cfg_mod.load().registry_defaults("pypi", "default").default_repo == "_abcdefgh/_xyzabcde"
+    saved = cfg_mod.load().registry_defaults("pypi", "default")
+    assert saved.default_repo == "_abcdefgh/_xyzabcde"
+    assert saved.workspace_name_cache == "test-account"
+    assert saved.repository_name_cache == "renamed"
+    assert saved.repository_id == "repository-1"
 
 
 def test_pkg_remote_management_and_upstream_configuration(monkeypatch, tmp_path: Path) -> None:
@@ -584,6 +589,52 @@ def test_pypi_install_uses_authenticated_primary_index_url(
     assert calls[0][1]["PIP_INDEX_URL"] == (
         f"https://__token__:secret-token@pypi.{STAGING_DOWNLOAD_HOST}/x/_abcdefgh/_xyzabcde/simple/"
     )
+
+
+def test_pypi_install_holds_when_saved_target_name_changed(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    _isolate_config(monkeypatch, tmp_path)
+    cfg_mod.set_registry_default_target(
+        "pypi",
+        customer=_repository_entry("old-name")["customer"],
+        repository=_repository_entry("old-name")["repository"],
+        profile="staging",
+    )
+
+    class ChangedTargetClient(_FakeApiClient):
+        def post(self, path: str, json: Any = None, **kwargs: Any) -> _JsonResponse:
+            self.calls.append(("POST", path, json if json is not None else kwargs))
+            assert json["expected_target"]["repository_name"] == "old-name"
+            raise ApiError(
+                409,
+                {
+                    "code": "RepositoryTargetChanged",
+                    "expected": json["expected_target"],
+                    "current": {
+                        **json["expected_target"],
+                        "repository_name": "new-name",
+                    },
+                },
+            )
+
+    fake = ChangedTargetClient([_repository_entry("new-name")])
+    _use_fake_client(monkeypatch, fake)
+    monkeypatch.setattr(pkg_cmd.tools, "pip_cmd", lambda: ["/bin/pip"])
+    native_calls: list[list[str]] = []
+    monkeypatch.setattr(
+        pkg_cmd.subprocess,
+        "run",
+        lambda cmd, **kwargs: native_calls.append(cmd),
+    )
+
+    result = runner.invoke(pkg_cmd.app, ["pypi", "install", "demo", "--profile", "staging"])
+
+    assert result.exit_code == 1
+    assert native_calls == []
+    assert "no package operation was attempted" in result.output
+    assert cfg_mod.load().registry_defaults("pypi", "staging").repository_name_cache == "old-name"
 
 
 def test_npm_install_injects_token_for_registry_host(monkeypatch, tmp_path: Path) -> None:

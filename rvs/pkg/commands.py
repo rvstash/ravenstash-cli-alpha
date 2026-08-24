@@ -180,6 +180,10 @@ def _registry_context(
     selector = (
         f"{workspace_selector}/{repository_selector}" if workspace_selector else repository_selector
     )
+    profile_name = _profile_name(profile)
+    expected_target = cfg_mod.registry_target_expectation(
+        _require_kind(kind), selector, profile_name
+    )
     client = _client(profile)
     try:
         entry = client.get(
@@ -191,11 +195,16 @@ def _registry_context(
             },
         ).json()
         repository = entry["repository"]
+        credential_body: dict[str, object] = {
+            "repository_id": repository["id"],
+            "registry_kind": kind,
+            "expected_target": expected_target or cfg_mod.repository_target_snapshot(repository),
+        }
         credential = client.post(
             "/v0/package-credentials",
-            json={"repository_id": repository["id"], "registry_kind": kind},
+            json=credential_body,
         ).json()
-    except (ApiError, KeyError, TypeError) as exc:
+    except (ApiError, KeyError, TypeError, ValueError) as exc:
         output.fatal(str(exc))
     if repo is None:
         cfg_mod.set_registry_default_target(
@@ -413,6 +422,11 @@ def repo_rename(
         item = updated["repository"]
     except ApiError as exc:
         output.fatal(str(exc))
+    cfg_mod.refresh_matching_registry_targets(
+        customer=entry["customer"],
+        repository=item,
+        profile=profile,
+    )
     renamed = _repository_name_from_response(item, new_name)
     output.success(f"Renamed package repository '{repo}' to '{renamed}'.")
 

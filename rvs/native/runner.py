@@ -246,6 +246,7 @@ def _resolve_route(kind: RegistryKind, options: NativeOptions) -> RegistryRoute:
     selector = (
         f"{workspace_selector}/{repository_selector}" if workspace_selector else repository_selector
     )
+    expected_target = cfg_mod.registry_target_expectation(kind, selector, profile_name)
     try:
         client = ApiClient.from_profile(options.profile)
         entry = client.get(
@@ -257,15 +258,20 @@ def _resolve_route(kind: RegistryKind, options: NativeOptions) -> RegistryRoute:
             },
         ).json()
         repository = entry["repository"]
+        credential_body: dict[str, object] = {
+            "repository_id": repository["id"],
+            "registry_kind": kind,
+            "expected_target": expected_target or cfg_mod.repository_target_snapshot(repository),
+        }
         credential = client.post(
             "/v0/package-credentials",
-            json={"repository_id": repository["id"], "registry_kind": kind},
+            json=credential_body,
         ).json()
     except ApiError as exc:
         if options.repo is None and exc.status_code in {403, 404}:
             cfg_mod.mark_registry_default_unavailable(kind, profile_name)
         output.fatal(str(exc))
-    except (KeyError, TypeError) as exc:
+    except (KeyError, TypeError, ValueError) as exc:
         output.fatal(str(exc))
     profile_cfg = _profile(options.profile)
     if options.repo is None:
@@ -334,6 +340,8 @@ def _package_token_for_url(
         output.fatal("Detected Ravenstash URL is not a canonical /x/<workspace>/<repository> URL.")
     try:
         client = ApiClient.from_profile(profile)
+        profile_name = profile or cfg_mod.current_profile_name(cfg_mod.load())
+        expected_target = cfg_mod.registry_target_expectation(kind, selector, profile_name)
         entry = client.get(
             "/v0/repositories/resolve",
             params={
@@ -342,14 +350,17 @@ def _package_token_for_url(
                 "registry_kind": kind,
             },
         ).json()
+        credential_body: dict[str, object] = {
+            "repository_id": entry["repository"]["id"],
+            "registry_kind": kind,
+            "expected_target": expected_target
+            or cfg_mod.repository_target_snapshot(entry["repository"]),
+        }
         return client.post(
             "/v0/package-credentials",
-            json={
-                "repository_id": entry["repository"]["id"],
-                "registry_kind": kind,
-            },
+            json=credential_body,
         ).json()["access_token"]
-    except (ApiError, KeyError, TypeError) as exc:
+    except (ApiError, KeyError, TypeError, ValueError) as exc:
         output.fatal(str(exc))
 
 

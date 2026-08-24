@@ -88,6 +88,33 @@ def test_api_client_without_profile_does_not_refresh(monkeypatch) -> None:
     assert _FakeHttpClient.requests[0][2]["Authorization"] == "Bearer env-access"
 
 
+def test_repository_target_conflict_has_an_actionable_message() -> None:
+    error = ApiError(
+        409,
+        {
+            "code": "RepositoryTargetChanged",
+            "expected": {
+                "workspace_name": "old-workspace",
+                "repository_name": "old-repository",
+                "workspace_unique_ref": "_workspace",
+                "repository_unique_ref": "_repository",
+            },
+            "current": {
+                "workspace_name": "new-workspace",
+                "repository_name": "new-repository",
+                "workspace_unique_ref": "_workspace",
+                "repository_unique_ref": "_repository",
+            },
+        },
+    )
+
+    assert "no package operation was attempted" in str(error)
+    assert "old-workspace/old-repository" in str(error)
+    assert "new-workspace/new-repository" in str(error)
+    assert "_workspace/_repository" in str(error)
+    assert "rvs pkg repo set-default" in str(error)
+
+
 def test_api_client_from_profile_honors_rvs_profile(monkeypatch, tmp_path) -> None:
     config_dir = tmp_path / ".rvs"
     config_dir.mkdir()

@@ -41,7 +41,7 @@ import tomllib
 from dataclasses import dataclass, field
 from ipaddress import ip_address
 from pathlib import Path
-from typing import Literal
+from typing import Literal, cast
 from urllib.parse import urlsplit, urlunsplit
 
 import tomli_w
@@ -545,6 +545,90 @@ def set_registry_default_target(
         authority_revision=customer.get("authority_revision"),
         is_available=True,
     )
+    cfg.profiles[profile_name] = profile_config
+    save(cfg)
+
+
+def registry_target_expectation(
+    kind: RegistryKind,
+    selector: str,
+    profile: str | None = None,
+) -> dict[str, str] | None:
+    """Return a complete saved identity/name guard for the selected stable target."""
+    cfg = load()
+    profile_name = profile or current_profile_name(cfg)
+    target = cfg.registry_defaults(kind, profile_name)
+    stable_selector = (
+        f"{target.workspace_unique_ref}/{target.repository_unique_ref}"
+        if target.workspace_unique_ref and target.repository_unique_ref
+        else None
+    )
+    if selector != stable_selector:
+        return None
+    expected = {
+        "workspace_id": target.workspace_id,
+        "workspace_unique_ref": target.workspace_unique_ref,
+        "workspace_name": target.workspace_name_cache,
+        "repository_id": target.repository_id,
+        "repository_unique_ref": target.repository_unique_ref,
+        "repository_name": target.repository_name_cache,
+    }
+    if not all(isinstance(value, str) and value for value in expected.values()):
+        return None
+    return {key: value for key, value in expected.items() if isinstance(value, str)}
+
+
+def repository_target_snapshot(repository: dict) -> dict[str, str]:
+    """Build the identity/name guard returned by repository resolution."""
+    keys = (
+        "workspace_id",
+        "workspace_unique_ref",
+        "workspace_name",
+        "id",
+        "repository_unique_ref",
+        "repository_name",
+    )
+    values = {key: repository.get(key) for key in keys}
+    if not all(isinstance(value, str) and value for value in values.values()):
+        raise ValueError("Repository resolution omitted target identity or name metadata")
+    return {
+        "workspace_id": cast("str", values["workspace_id"]),
+        "workspace_unique_ref": cast("str", values["workspace_unique_ref"]),
+        "workspace_name": cast("str", values["workspace_name"]),
+        "repository_id": cast("str", values["id"]),
+        "repository_unique_ref": cast("str", values["repository_unique_ref"]),
+        "repository_name": cast("str", values["repository_name"]),
+    }
+
+
+def refresh_matching_registry_targets(
+    *,
+    customer: dict,
+    repository: dict,
+    profile: str | None = None,
+) -> None:
+    """Refresh saved names after an explicit CLI rename of the same identity."""
+    cfg = load()
+    profile_name = profile or current_profile_name(cfg)
+    profile_config = cfg.profiles.get(profile_name, _default_profile_config(profile_name))
+    stable_selector = f"{repository['workspace_unique_ref']}/{repository['repository_unique_ref']}"
+    for kind, target in tuple(profile_config.registries.items()):
+        if target.default_repo != stable_selector:
+            continue
+        profile_config.registries[kind] = RegistryDefaults(
+            default_repo=stable_selector,
+            customer_id=customer["customer_id"],
+            customer_unique_ref=customer["customer_unique_ref"],
+            workspace_id=repository["workspace_id"],
+            workspace_unique_ref=repository["workspace_unique_ref"],
+            workspace_name_cache=repository["workspace_name"],
+            repository_id=repository["id"],
+            repository_unique_ref=repository["repository_unique_ref"],
+            repository_name_cache=repository["repository_name"],
+            organization_role=customer.get("organization_role"),
+            authority_revision=customer.get("authority_revision"),
+            is_available=True,
+        )
     cfg.profiles[profile_name] = profile_config
     save(cfg)
 

@@ -36,6 +36,9 @@ class _Api:
                 "customer": {"customer_id": "customer-1"},
                 "repository": {
                     "id": "repository-1",
+                    "repository_name": "images",
+                    "workspace_id": "workspace-1",
+                    "workspace_name": "main",
                     "workspace_unique_ref": "_abcdefgh",
                     "repository_unique_ref": "_xyzabcde",
                 },
@@ -44,6 +47,14 @@ class _Api:
 
     def post(self, path: str, json=None) -> _Response:
         assert path == "/v0/package-credentials"
+        assert json["expected_target"] == {
+            "workspace_id": "workspace-1",
+            "workspace_unique_ref": "_abcdefgh",
+            "workspace_name": "main",
+            "repository_id": "repository-1",
+            "repository_unique_ref": "_xyzabcde",
+            "repository_name": "images",
+        }
         return _Response(
             {
                 "access_token": "exact-secret-capability",
