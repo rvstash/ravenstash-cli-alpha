@@ -25,7 +25,7 @@ OciTool = Literal["docker", "helm", "oras"]
 OciRegistryKind = Literal["container", "helm"]
 _OCI_COMPONENT = re.compile(r"^[a-z0-9]+(?:(?:[._]|__|-+)[a-z0-9]+)*$")
 _OCI_NATIVE_PATH = re.compile(
-    r"^/x/w_[23456789abcdefghijkmnpqrstuvwxyz]{8}/"
+    r"^/w_[23456789abcdefghijkmnpqrstuvwxyz]{8}/"
     r"r_[23456789abcdefghijkmnpqrstuvwxyz]{8}$"
 )
 
@@ -59,8 +59,8 @@ def _split_repo_ref(repo_ref: str) -> tuple[str | None, str]:
     return workspace, repository
 
 
-def _registry_url() -> tuple[str, str]:
-    raw = os.environ.get("RVS_OCI_REGISTRY_URL", "https://oci.rvsta.sh")
+def _registry_url(profile: cfg_mod.ProfileConfig) -> tuple[str, str]:
+    raw = profile.native_registries.oci_registry_base_url
     try:
         value = cfg_mod.validate_service_url(raw, label="OCI registry URL")
         parsed = urlsplit(value)
@@ -139,7 +139,7 @@ def resolve_route(tool: OciTool, options: OciOptions) -> OciRoute:
             repository=repository_row,
             profile=profile_name,
         )
-    registry_url, registry_host = _registry_url()
+    registry_url, registry_host = _registry_url(config.active_profile(profile_name))
     return OciRoute(
         kind=kind,
         registry_url=registry_url,
@@ -158,15 +158,15 @@ def _ravenstash_routes(argv: list[str], registry_host: str) -> set[str]:
             suffix = argument[index + len(marker) :]
             candidate = re.split(r"[\s,;\]\[(){}]", suffix, maxsplit=1)[0]
             parts = candidate.split("/")
-            if len(parts) >= 3 and parts[0] == "x":
-                routes.add("/".join(parts[:3]))
+            if len(parts) >= 2 and parts[0].startswith("w_") and parts[1].startswith("r_"):
+                routes.add("/".join(parts[:2]))
             start = index + len(marker)
     return routes
 
 
 def _assert_exact_targets(argv: list[str], route: OciRoute) -> None:
     observed = _ravenstash_routes(argv, route.registry_host)
-    expected = "/".join(route.native_root.split("/")[-3:])
+    expected = "/".join(route.native_root.split("/")[-2:])
     if any(value != expected for value in observed):
         output.fatal(
             "This invocation references another Ravenstash logical repository. "

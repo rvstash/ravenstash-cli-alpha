@@ -16,10 +16,28 @@ if TYPE_CHECKING:
 
 runner = CliRunner()
 STAGING_API_URL = "https://staging.example.test"
-STAGING_DOWNLOAD_URL = "https://pkg-staging.example.test"
-STAGING_DOWNLOAD_HOST = "pkg-staging.example.test"
-STAGING_UPLOAD_URL = "https://push-staging.example.test"
-STAGING_UPLOAD_HOST = "push-staging.example.test"
+PYPI_READ_URL = "https://pypi-staging.example.test"
+PYPI_PUSH_URL = "https://push.pypi-staging.example.test"
+PYPI_CACHE_URL = "https://cache.pypi-staging.example.test"
+NPM_READ_URL = "https://npm-staging.example.test"
+NPM_PUSH_URL = "https://push.npm-staging.example.test"
+NPM_CACHE_URL = "https://cache.npm-staging.example.test"
+MAVEN_READ_URL = "https://maven-staging.example.test"
+MAVEN_PUSH_URL = "https://push.maven-staging.example.test"
+MAVEN_CACHE_URL = "https://cache.maven-staging.example.test"
+PYPI_READ_HOST = "pypi-staging.example.test"
+PYPI_CACHE_HOST = "cache.pypi-staging.example.test"
+NPM_READ_HOST = "npm-staging.example.test"
+NPM_PUSH_HOST = "push.npm-staging.example.test"
+
+
+def _native_endpoints() -> cfg_mod.NativeRegistryEndpoints:
+    return cfg_mod.NativeRegistryEndpoints(
+        pypi=cfg_mod.PackageRegistryEndpoints(PYPI_READ_URL, PYPI_PUSH_URL, PYPI_CACHE_URL),
+        npm=cfg_mod.PackageRegistryEndpoints(NPM_READ_URL, NPM_PUSH_URL, NPM_CACHE_URL),
+        maven=cfg_mod.PackageRegistryEndpoints(MAVEN_READ_URL, MAVEN_PUSH_URL, MAVEN_CACHE_URL),
+        oci_registry_base_url="https://oci-staging.example.test",
+    )
 
 
 class _Completed:
@@ -84,10 +102,26 @@ default_profile = "staging"
 
 [profiles.staging]
 api_url = "{STAGING_API_URL}"
-pkg_download_url = "{STAGING_DOWNLOAD_URL}"
-pkg_upload_url = "{STAGING_UPLOAD_URL}"
 customer_id = "cus_staging"
 customer_unique_id = "custpid1"
+
+[profiles.staging.native_registries.pypi]
+read_base_url = "{PYPI_READ_URL}"
+push_base_url = "{PYPI_PUSH_URL}"
+cache_base_url = "{PYPI_CACHE_URL}"
+
+[profiles.staging.native_registries.npm]
+read_base_url = "{NPM_READ_URL}"
+push_base_url = "{NPM_PUSH_URL}"
+cache_base_url = "{NPM_CACHE_URL}"
+
+[profiles.staging.native_registries.maven]
+read_base_url = "{MAVEN_READ_URL}"
+push_base_url = "{MAVEN_PUSH_URL}"
+cache_base_url = "{MAVEN_CACHE_URL}"
+
+[profiles.staging.native_registries.oci]
+registry_base_url = "https://oci-staging.example.test"
 
 [profiles.staging.registries.pypi]
 default_repo = "_abcdefgh/_xyzabcde"
@@ -138,66 +172,76 @@ def _capture_run(
 
 
 def test_ravenstash_url_kind_accepts_public_hosts_and_local_normalized_routes() -> None:
-    def url_kind(
-        url: str,
-        *,
-        download_url: str = STAGING_DOWNLOAD_URL,
-        upload_url: str = STAGING_UPLOAD_URL,
-    ) -> str | None:
+    def url_kind(url: str, *, endpoints=None) -> str | None:
         return native_runner._ravenstash_url_kind(
             url,
-            download_url=download_url,
-            upload_url=upload_url,
+            native_registries=endpoints or _native_endpoints(),
         )
 
-    assert url_kind("https://npm.pkg-staging.example.test/x/_abcdefgh/_xyzabcde/") == "npm"
-    assert url_kind("https://pypi.pkg-staging.example.test/x/_abcdefgh/_xyzabcde/simple/") == "pypi"
+    assert url_kind(f"{NPM_READ_URL}/_abcdefgh/_xyzabcde/") == "npm"
+    assert url_kind(f"{PYPI_READ_URL}/_abcdefgh/_xyzabcde/simple/") == "pypi"
     assert (
         url_kind(
-            "http://localhost:8788/native/maven/x/_abcdefgh/_xyzabcde/com/example/demo/",
-            download_url="http://localhost:8788",
-            upload_url="http://localhost:8789",
+            "http://localhost:8788/native/maven/_abcdefgh/_xyzabcde/com/example/demo/",
+            endpoints=cfg_mod.NativeRegistryEndpoints(
+                pypi=cfg_mod.PackageRegistryEndpoints(
+                    "http://localhost:8788/native/pypi",
+                    "http://localhost:8789/native/pypi",
+                    "http://localhost:8788/native/pypi",
+                ),
+                npm=cfg_mod.PackageRegistryEndpoints(
+                    "http://localhost:8788/native/npm",
+                    "http://localhost:8789/native/npm",
+                    "http://localhost:8788/native/npm",
+                ),
+                maven=cfg_mod.PackageRegistryEndpoints(
+                    "http://localhost:8788/native/maven",
+                    "http://localhost:8789/native/maven",
+                    "http://localhost:8788/native/maven",
+                ),
+                oci_registry_base_url="http://localhost:8788",
+            ),
         )
         == "maven"
     )
     assert (
         url_kind(
-            "http://localhost:8788/native/pypi/r/_abcdefgh/piwheels/simple/",
-            download_url="http://localhost:8788",
-            upload_url="http://localhost:8789",
+            f"{PYPI_CACHE_URL}/c/piwheels/simple/",
         )
         == "pypi"
     )
-    assert url_kind("https://pypi.pkg-staging.example.test/r/o/pypiorg/simple/") == "pypi"
-    assert url_kind("https://npm.pkg-staging.example.test/r/_abcdefgh/_xyzabcde/") == "npm"
-    assert url_kind("https://npm.example.test/x/_abcdefgh/_xyzabcde/") is None
-    assert url_kind("https://pkg-staging.example.test/x/_abcdefgh/_xyzabcde/") is None
-    assert url_kind("http://localhost:8788/native/npm/x/_abcdefgh/") is None
-    assert url_kind("https://npm.pkg-staging.example.test/x/_abcdefgh/") is None
-    assert url_kind("https://pypi.pkg-staging.example.test/r/_abcdefgh/") is None
+    assert url_kind(f"{PYPI_CACHE_URL}/o/pypiorg/simple/") == "pypi"
+    assert url_kind(f"{NPM_CACHE_URL}/c/_xyzabcde/") == "npm"
+    assert url_kind("https://npm.example.test/_abcdefgh/_xyzabcde/") is None
+    assert url_kind("https://pkg-staging.example.test/_abcdefgh/_xyzabcde/") is None
+    assert url_kind(f"{NPM_READ_URL}/x/_abcdefgh/_xyzabcde/") is None
+    assert url_kind(f"{NPM_READ_URL}/o/npmjs/") is None
+    assert url_kind(f"{NPM_READ_URL}/c/private-upstream/") is None
+    assert url_kind(f"{NPM_CACHE_URL}/_abcdefgh/_xyzabcde/") is None
+    assert url_kind(f"{NPM_READ_URL}/_abcdefgh/") is None
+    assert url_kind(f"{PYPI_CACHE_URL}/r/_abcdefgh/") is None
 
 
 def test_ravenstash_url_kind_rejects_attacker_lookalike_origins() -> None:
     def url_kind(url: str) -> str | None:
         return native_runner._ravenstash_url_kind(
             url,
-            download_url=STAGING_DOWNLOAD_URL,
-            upload_url=STAGING_UPLOAD_URL,
+            native_registries=_native_endpoints(),
         )
 
-    assert url_kind("https://npm.pkg.attacker.example/x/_abcdefgh/_xyzabcde/") is None
+    assert url_kind("https://npm.pkg.attacker.example/_abcdefgh/_xyzabcde/") is None
     assert url_kind("https://attacker.example/native/pypi/r/_customer/cache/simple/") is None
     assert (
-        url_kind("https://npm.pkg-staging.example.test.attacker.example/x/_abcdefgh/_xyzabcde/")
+        url_kind("https://npm.pkg-staging.example.test.attacker.example/_abcdefgh/_xyzabcde/")
         is None
     )
     assert (
-        url_kind("https://npm.pkg-staging.example.test@attacker.example/x/_abcdefgh/_xyzabcde/")
+        url_kind("https://npm.pkg-staging.example.test@attacker.example/_abcdefgh/_xyzabcde/")
         is None
     )
-    assert url_kind("http://npm.pkg-staging.example.test/x/_abcdefgh/_xyzabcde/") is None
-    assert url_kind("https://npm.pkg-staging.example.test:444/x/_abcdefgh/_xyzabcde/") is None
-    assert url_kind("https://npm.pkg-staging.example.test:bad/x/_abcdefgh/_xyzabcde/") is None
+    assert url_kind("http://npm.pkg-staging.example.test/_abcdefgh/_xyzabcde/") is None
+    assert url_kind("https://npm.pkg-staging.example.test:444/_abcdefgh/_xyzabcde/") is None
+    assert url_kind("https://npm.pkg-staging.example.test:bad/_abcdefgh/_xyzabcde/") is None
 
 
 def test_native_npm_respects_project_npmrc_and_injects_path_scoped_auth(
@@ -207,7 +251,7 @@ def test_native_npm_respects_project_npmrc_and_injects_path_scoped_auth(
     _isolate_config(monkeypatch, tmp_path)
     _mock_native_tools(monkeypatch)
     (tmp_path / ".npmrc").write_text(
-        f"@acme:registry=https://npm.{STAGING_DOWNLOAD_HOST}/x/_abcdefgh/_xyzabcde/\n",
+        f"@acme:registry={NPM_READ_URL}/_abcdefgh/_xyzabcde/\n",
         encoding="utf-8",
     )
     calls: list[dict[str, Any]] = []
@@ -219,9 +263,7 @@ def test_native_npm_respects_project_npmrc_and_injects_path_scoped_auth(
     assert calls[0]["cmd"] == ["/bin/npm", "install", "@acme/widgets"]
     assert "NPM_CONFIG_REGISTRY" not in calls[0]["env"]
     assert (
-        calls[0]["env"][
-            f"NPM_CONFIG_//npm.{STAGING_DOWNLOAD_HOST}/x/_abcdefgh/_xyzabcde/:_authToken"
-        ]
+        calls[0]["env"][f"NPM_CONFIG_//{NPM_READ_HOST}/_abcdefgh/_xyzabcde/:_authToken"]
         == "secret-token"
     )
 
@@ -242,13 +284,11 @@ def test_native_npm_repo_override_uses_upload_registry_for_publish(
         "/bin/npm",
         "publish",
         "--registry",
-        f"https://npm.{STAGING_UPLOAD_HOST}/x/_abcdefgh/_xyzabcde/",
+        f"{NPM_PUSH_URL}/_abcdefgh/_xyzabcde/",
     ]
-    assert calls[0]["env"]["NPM_CONFIG_REGISTRY"] == (
-        f"https://npm.{STAGING_UPLOAD_HOST}/x/_abcdefgh/_xyzabcde/"
-    )
+    assert calls[0]["env"]["NPM_CONFIG_REGISTRY"] == (f"{NPM_PUSH_URL}/_abcdefgh/_xyzabcde/")
     assert (
-        calls[0]["env"][f"NPM_CONFIG_//npm.{STAGING_UPLOAD_HOST}/x/_abcdefgh/_xyzabcde/:_authToken"]
+        calls[0]["env"][f"NPM_CONFIG_//{NPM_PUSH_HOST}/_abcdefgh/_xyzabcde/:_authToken"]
         == "secret-token"
     )
 
@@ -280,7 +320,7 @@ def test_native_npm_repo_override_replaces_conflicting_registry_flag(
         "/bin/npm",
         "install",
         "--registry",
-        f"https://npm.{STAGING_DOWNLOAD_HOST}/x/_abcdefgh/_xyzabcde/",
+        f"{NPM_READ_URL}/_abcdefgh/_xyzabcde/",
         "@acme/widgets",
     ]
 
@@ -293,7 +333,7 @@ def test_native_pip_respects_existing_index_and_injects_temp_netrc(
     _mock_native_tools(monkeypatch)
     monkeypatch.setenv(
         "PIP_INDEX_URL",
-        f"https://pypi.{STAGING_DOWNLOAD_HOST}/x/_abcdefgh/_xyzabcde/simple/",
+        f"{PYPI_READ_URL}/_abcdefgh/_xyzabcde/simple/",
     )
     calls: list[dict[str, Any]] = []
     netrc_texts: list[str] = []
@@ -307,12 +347,8 @@ def test_native_pip_respects_existing_index_and_injects_temp_netrc(
 
     assert result.exit_code == 0
     assert calls[0]["cmd"] == ["/bin/pip", "install", "demo"]
-    assert calls[0]["env"]["PIP_INDEX_URL"] == (
-        f"https://pypi.{STAGING_DOWNLOAD_HOST}/x/_abcdefgh/_xyzabcde/simple/"
-    )
-    assert netrc_texts == [
-        f"machine pypi.{STAGING_DOWNLOAD_HOST} login __token__ password secret-token\n"
-    ]
+    assert calls[0]["env"]["PIP_INDEX_URL"] == (f"{PYPI_READ_URL}/_abcdefgh/_xyzabcde/simple/")
+    assert netrc_texts == [f"machine {PYPI_READ_HOST} login __token__ password secret-token\n"]
 
 
 def test_native_pip_exchanges_profile_token_for_scoped_remote_credential(
@@ -321,7 +357,7 @@ def test_native_pip_exchanges_profile_token_for_scoped_remote_credential(
 ) -> None:
     _isolate_config(monkeypatch, tmp_path)
     _mock_native_tools(monkeypatch)
-    index_url = f"https://pypi.{STAGING_DOWNLOAD_HOST}/r/_custpid1/piwheels/simple/"
+    index_url = f"{PYPI_CACHE_URL}/c/piwheels/simple/"
     monkeypatch.setenv("PIP_INDEX_URL", index_url)
     calls: list[dict[str, Any]] = []
     netrc_texts: list[str] = []
@@ -342,7 +378,7 @@ def test_native_pip_exchanges_profile_token_for_scoped_remote_credential(
     ]
     assert calls[0]["env"]["PIP_INDEX_URL"] == index_url
     assert netrc_texts == [
-        f"machine pypi.{STAGING_DOWNLOAD_HOST} login __token__ password remote-secret-token\n"
+        f"machine {PYPI_CACHE_HOST} login __token__ password remote-secret-token\n"
     ]
 
 
@@ -355,14 +391,14 @@ def test_native_pip_local_remote_cache_netrc_uses_hostname_without_port(
     config_path = cfg_mod.CONFIG_FILE
     config_path.write_text(
         config_path.read_text(encoding="utf-8").replace(
-            STAGING_DOWNLOAD_URL,
-            "http://localhost:8788",
+            PYPI_CACHE_URL,
+            "http://localhost:8788/native/pypi",
         ),
         encoding="utf-8",
     )
     monkeypatch.setenv(
         "PIP_INDEX_URL",
-        "http://localhost:8788/native/pypi/r/_custpid1/piwheels/simple/",
+        "http://localhost:8788/native/pypi/c/piwheels/simple/",
     )
     calls: list[dict[str, Any]] = []
     netrc_texts: list[str] = []
@@ -386,7 +422,7 @@ def test_native_pip_exchanges_official_remote_credential(
     _mock_native_tools(monkeypatch)
     monkeypatch.setenv(
         "PIP_INDEX_URL",
-        f"https://pypi.{STAGING_DOWNLOAD_HOST}/r/o/pypiorg/simple/",
+        f"{PYPI_CACHE_URL}/o/pypiorg/simple/",
     )
     captured: list[str] = []
 
@@ -398,9 +434,7 @@ def test_native_pip_exchanges_official_remote_credential(
     result = runner.invoke(app, ["pip", "download", "demo"])
 
     assert result.exit_code == 0
-    assert captured == [
-        f"machine pypi.{STAGING_DOWNLOAD_HOST} login __token__ password remote-secret-token\n"
-    ]
+    assert captured == [f"machine {PYPI_CACHE_HOST} login __token__ password remote-secret-token\n"]
 
 
 def test_native_pip_isolate_overrides_index_without_writing_credentials(
@@ -435,13 +469,11 @@ def test_native_pip_isolate_overrides_index_without_writing_credentials(
         "/bin/pip",
         "install",
         "--index-url",
-        f"https://pypi.{STAGING_DOWNLOAD_HOST}/x/_abcdefgh/_xyzabcde/simple/",
+        f"{PYPI_READ_URL}/_abcdefgh/_xyzabcde/simple/",
         "demo",
     ]
     assert calls[0]["env"]["PIP_CONFIG_FILE"] == os.devnull
-    assert netrc_texts == [
-        f"machine pypi.{STAGING_DOWNLOAD_HOST} login __token__ password secret-token\n"
-    ]
+    assert netrc_texts == [f"machine {PYPI_READ_HOST} login __token__ password secret-token\n"]
 
 
 def test_native_pip_preserves_multi_part_pip_command_prefix(
@@ -463,7 +495,7 @@ def test_native_pip_preserves_multi_part_pip_command_prefix(
         "pip",
         "install",
         "--index-url",
-        f"https://pypi.{STAGING_DOWNLOAD_HOST}/x/_abcdefgh/_xyzabcde/simple/",
+        f"{PYPI_READ_URL}/_abcdefgh/_xyzabcde/simple/",
         "demo",
     ]
 
@@ -481,12 +513,8 @@ def test_native_uv_repo_override_sets_index_publish_env_and_netrc(
 
     assert result.exit_code == 0
     assert calls[0]["cmd"] == ["/bin/uv", "sync", "--locked"]
-    assert calls[0]["env"]["UV_DEFAULT_INDEX"] == (
-        f"https://pypi.{STAGING_DOWNLOAD_HOST}/x/_abcdefgh/_xyzabcde/simple/"
-    )
-    assert calls[0]["env"]["UV_PUBLISH_URL"] == (
-        f"https://pypi.{STAGING_UPLOAD_HOST}/x/_abcdefgh/_xyzabcde/"
-    )
+    assert calls[0]["env"]["UV_DEFAULT_INDEX"] == (f"{PYPI_READ_URL}/_abcdefgh/_xyzabcde/simple/")
+    assert calls[0]["env"]["UV_PUBLISH_URL"] == (f"{PYPI_PUSH_URL}/_abcdefgh/_xyzabcde/")
     assert calls[0]["env"]["UV_PUBLISH_USERNAME"] == "__token__"
     assert calls[0]["env"]["UV_PUBLISH_PASSWORD"] == "secret-token"
     assert "NETRC" in calls[0]["env"]
@@ -505,9 +533,7 @@ def test_native_twine_repo_override_sets_ephemeral_upload_credentials(
 
     assert result.exit_code == 0
     assert calls[0]["cmd"] == ["/bin/twine", "upload", "dist/demo.whl"]
-    assert calls[0]["env"]["TWINE_REPOSITORY_URL"] == (
-        f"https://pypi.{STAGING_UPLOAD_HOST}/x/_abcdefgh/_xyzabcde/"
-    )
+    assert calls[0]["env"]["TWINE_REPOSITORY_URL"] == (f"{PYPI_PUSH_URL}/_abcdefgh/_xyzabcde/")
     assert calls[0]["env"]["TWINE_USERNAME"] == "__token__"
     assert calls[0]["env"]["TWINE_PASSWORD"] == "secret-token"
 
@@ -532,7 +558,7 @@ def test_native_maven_repo_override_generates_temp_settings(
     assert result.exit_code == 0
     assert calls[0]["cmd"][0:2] == ["/bin/mvn", "--settings"]
     assert calls[0]["cmd"][-1] == (
-        f"-DaltDeploymentRepository=rvs-private::default::https://maven.{STAGING_UPLOAD_HOST}/x/_abcdefgh/_xyzabcde/"
+        f"-DaltDeploymentRepository=rvs-private::default::{MAVEN_PUSH_URL}/_abcdefgh/_xyzabcde/"
     )
     assert "<id>rvs-private</id>" in settings_texts[0]
     assert "<username>__token__</username>" in settings_texts[0]

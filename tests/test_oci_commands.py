@@ -58,7 +58,7 @@ class _Api:
         return _Response(
             {
                 "access_token": "exact-secret-capability",
-                "native_path": "/x/w_abcdefgh/r_xyzabcde",
+                "native_path": "/w_abcdefgh/r_xyzabcde",
             }
         )
 
@@ -73,8 +73,6 @@ default_profile = "default"
 
 [profiles.default]
 api_url = "https://api.example.test"
-pkg_download_url = "https://pkg.example.test"
-pkg_upload_url = "https://push.example.test"
 """.strip(),
         encoding="utf-8",
     )
@@ -125,7 +123,7 @@ def test_docker_uses_exact_ephemeral_helper_without_secret_in_argv(
             "--rvs-repo",
             "main/images",
             "push",
-            "oci.rvsta.sh/x/w_abcdefgh/r_xyzabcde/backend:latest",
+            "oci.rvsta.sh/w_abcdefgh/r_xyzabcde/backend:latest",
         ],
     )
 
@@ -133,7 +131,7 @@ def test_docker_uses_exact_ephemeral_helper_without_secret_in_argv(
     assert captured["cmd"] == [
         "/usr/bin/docker",
         "push",
-        "oci.rvsta.sh/x/w_abcdefgh/r_xyzabcde/backend:latest",
+        "oci.rvsta.sh/w_abcdefgh/r_xyzabcde/backend:latest",
     ]
     assert "exact-secret-capability" not in " ".join(captured["cmd"])
     assert not Path(captured["env"]["RVS_OCI_CREDENTIAL_FILE"]).exists()
@@ -218,7 +216,7 @@ def test_native_signal_is_forwarded_with_shell_exit_code_and_secret_cleanup(
             "--rvs-repo",
             "main/images",
             "push",
-            "oci.rvsta.sh/x/w_abcdefgh/r_xyzabcde/backend:latest",
+            "oci.rvsta.sh/w_abcdefgh/r_xyzabcde/backend:latest",
         ],
     )
 
@@ -243,8 +241,8 @@ def test_oras_requires_kind_and_rejects_second_ravenstash_target(
             "--rvs-repo",
             "images",
             "cp",
-            "oci.rvsta.sh/x/w_abcdefgh/r_xyzabcde/a:one",
-            "oci.rvsta.sh/x/w_abcdefgh/r_23456789/b:two",
+            "oci.rvsta.sh/w_abcdefgh/r_xyzabcde/a:one",
+            "oci.rvsta.sh/w_abcdefgh/r_23456789/b:two",
         ],
     )
     assert rejected.exit_code != 0
@@ -291,7 +289,7 @@ def test_oci_reference_prints_public_stable_root_without_v2(monkeypatch, tmp_pat
         ],
     )
     assert result.exit_code == 0, result.output
-    assert result.output.strip() == ("oci.rvsta.sh/x/w_abcdefgh/r_xyzabcde/team/api:1.2.3")
+    assert result.output.strip() == ("oci.rvsta.sh/w_abcdefgh/r_xyzabcde/team/api:1.2.3")
     assert "/v2/" not in result.output
 
 
@@ -304,7 +302,7 @@ def test_oci_capability_rejects_noncanonical_native_path(monkeypatch, tmp_path: 
             return _Response(
                 {
                     "access_token": "exact-secret-capability",
-                    "native_path": "/x/_abcdefgh/_xyzabcde",
+                    "native_path": "/_abcdefgh/_xyzabcde",
                 }
             )
 

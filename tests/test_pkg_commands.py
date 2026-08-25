@@ -16,10 +16,14 @@ if TYPE_CHECKING:
 
 runner = CliRunner()
 STAGING_API_URL = "https://staging.example.test"
-STAGING_DOWNLOAD_URL = "https://pkg-staging.example.test"
-STAGING_DOWNLOAD_HOST = "pkg-staging.example.test"
-STAGING_UPLOAD_URL = "https://push-staging.example.test"
-STAGING_UPLOAD_HOST = "push-staging.example.test"
+PYPI_READ_URL = "https://pypi-staging.example.test"
+PYPI_READ_HOST = "pypi-staging.example.test"
+PYPI_PUSH_URL = "https://push.pypi-staging.example.test"
+NPM_READ_URL = "https://npm-staging.example.test"
+NPM_READ_HOST = "npm-staging.example.test"
+NPM_PUSH_URL = "https://push.npm-staging.example.test"
+MAVEN_READ_URL = "https://maven-staging.example.test"
+MAVEN_PUSH_URL = "https://push.maven-staging.example.test"
 
 
 class _JsonResponse:
@@ -120,8 +124,12 @@ default_repo = "_abcdefgh/_xyzabcde"
     monkeypatch.delenv("RVS_ENV_FILE", raising=False)
     monkeypatch.setenv("RVS_PROFILE_STAGING_API_URL", STAGING_API_URL)
     monkeypatch.setenv("RVS_PROFILE_STAGING_PKG_API_URL", "https://app-staging.example.test/api")
-    monkeypatch.setenv("RVS_PROFILE_STAGING_PKG_DOWNLOAD_URL", STAGING_DOWNLOAD_URL)
-    monkeypatch.setenv("RVS_PROFILE_STAGING_PKG_UPLOAD_URL", STAGING_UPLOAD_URL)
+    monkeypatch.setenv("RVS_PROFILE_STAGING_PYPI_READ_URL", PYPI_READ_URL)
+    monkeypatch.setenv("RVS_PROFILE_STAGING_PYPI_PUSH_URL", PYPI_PUSH_URL)
+    monkeypatch.setenv("RVS_PROFILE_STAGING_NPM_READ_URL", NPM_READ_URL)
+    monkeypatch.setenv("RVS_PROFILE_STAGING_NPM_PUSH_URL", NPM_PUSH_URL)
+    monkeypatch.setenv("RVS_PROFILE_STAGING_MAVEN_READ_URL", MAVEN_READ_URL)
+    monkeypatch.setenv("RVS_PROFILE_STAGING_MAVEN_PUSH_URL", MAVEN_PUSH_URL)
     _use_fake_client(monkeypatch, _FakeApiClient())
 
 
@@ -516,19 +524,19 @@ def test_pkg_package_mutations_call_expected_api_paths(monkeypatch, tmp_path: Pa
     [
         (
             ["pypi", "index-url", "--profile", "staging"],
-            f"https://pypi.{STAGING_DOWNLOAD_HOST}/x/_abcdefgh/_xyzabcde/simple/",
+            f"{PYPI_READ_URL}/_abcdefgh/_xyzabcde/simple/",
         ),
         (
             ["pypi", "upload-url", "--profile", "staging"],
-            f"https://pypi.{STAGING_UPLOAD_HOST}/x/_abcdefgh/_xyzabcde/",
+            f"{PYPI_PUSH_URL}/_abcdefgh/_xyzabcde/",
         ),
         (
             ["npm", "registry-url", "--profile", "staging"],
-            f"https://npm.{STAGING_DOWNLOAD_HOST}/x/_abcdefgh/_xyzabcde/",
+            f"{NPM_READ_URL}/_abcdefgh/_xyzabcde/",
         ),
         (
             ["maven", "repo-url", "--profile", "staging"],
-            f"https://maven.{STAGING_DOWNLOAD_HOST}/x/_abcdefgh/_xyzabcde/",
+            f"{MAVEN_READ_URL}/_abcdefgh/_xyzabcde/",
         ),
     ],
 )
@@ -559,13 +567,13 @@ def test_pkg_configure_snippets_are_printed_for_native_toolchains(
     assert pypi_result.exit_code == 0
     assert "index-url" in pypi_result.output
     assert "extra-index-url" not in pypi_result.output
-    assert "/x/_abcdefgh/_xyzabcde/" in pypi_result.output
+    assert "/_abcdefgh/_xyzabcde/" in pypi_result.output
     assert npm_result.exit_code == 0
     assert "_authToken=${RVS_TOKEN}" in npm_result.output
-    assert "/x/_abcdefgh/_xyzabcde/" in npm_result.output
+    assert "/_abcdefgh/_xyzabcde/" in npm_result.output
     assert maven_result.exit_code == 0
     assert "<settings" in maven_result.output
-    assert "/x/_abcdefgh/_xyzabcde/" in maven_result.output
+    assert "/_abcdefgh/_xyzabcde/" in maven_result.output
 
 
 def test_pypi_install_uses_authenticated_primary_index_url(
@@ -587,7 +595,7 @@ def test_pypi_install_uses_authenticated_primary_index_url(
     assert result.exit_code == 0
     assert calls[0][0] == ["/bin/pip", "install", "demo"]
     assert calls[0][1]["PIP_INDEX_URL"] == (
-        f"https://__token__:secret-token@pypi.{STAGING_DOWNLOAD_HOST}/x/_abcdefgh/_xyzabcde/simple/"
+        f"https://__token__:secret-token@{PYPI_READ_HOST}/_abcdefgh/_xyzabcde/simple/"
     )
 
 
@@ -655,11 +663,11 @@ def test_npm_install_injects_token_for_registry_host(monkeypatch, tmp_path: Path
         "/bin/npm",
         "install",
         "--registry",
-        f"https://npm.{STAGING_DOWNLOAD_HOST}/x/_abcdefgh/_xyzabcde/",
+        f"{NPM_READ_URL}/_abcdefgh/_xyzabcde/",
         "@scope/demo",
     ]
     assert (
-        calls[0][1][f"NPM_CONFIG_//npm.{STAGING_DOWNLOAD_HOST}/x/_abcdefgh/_xyzabcde/:_authToken"]
+        calls[0][1][f"NPM_CONFIG_//{NPM_READ_HOST}/_abcdefgh/_xyzabcde/:_authToken"]
         == "secret-token"
     )
 
@@ -706,10 +714,10 @@ def test_npm_publish_calls_registry_adapter(monkeypatch, tmp_path: Path) -> None
     assert result.exit_code == 0
     assert calls == [
         {
-            "registry_url": f"https://npm.{STAGING_UPLOAD_HOST}/x/_abcdefgh/_xyzabcde/",
+            "registry_url": f"{NPM_PUSH_URL}/_abcdefgh/_xyzabcde/",
             "token": "secret-token",
             "package_dir": package_dir,
-            "download_registry_url": f"https://npm.{STAGING_DOWNLOAD_HOST}/x/_abcdefgh/_xyzabcde/",
+            "download_registry_url": f"{NPM_READ_URL}/_abcdefgh/_xyzabcde/",
         }
     ]
 
@@ -747,7 +755,7 @@ def test_maven_deploy_checks_file_and_calls_registry_adapter(monkeypatch, tmp_pa
     assert result.exit_code == 0
     assert calls == [
         {
-            "upload_url": f"https://maven.{STAGING_UPLOAD_HOST}/x/_abcdefgh/_xyzabcde/",
+            "upload_url": f"{MAVEN_PUSH_URL}/_abcdefgh/_xyzabcde/",
             "token": "secret-token",
             "group_id": "com.example",
             "artifact_id": "demo",

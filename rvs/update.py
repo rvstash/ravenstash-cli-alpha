@@ -231,10 +231,7 @@ def update(
     installed, candidate = _apt_versions()
     if installed is None:
         output.info(f"Ravenstash CLI {_cli_version()} is not managed by the rvs APT package.")
-        output.info(
-            "Install or migrate with: "
-            "curl -fsSL https://ravenstash.com/install.sh | bash"
-        )
+        output.info("Install or migrate with: curl -fsSL https://ravenstash.com/install.sh | bash")
         return
     if candidate is None:
         output.fatal(

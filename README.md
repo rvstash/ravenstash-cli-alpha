@@ -57,11 +57,17 @@ or a gitignored local `.rvs.env` file:
 ```bash
 # packages/rvs/.rvs.env, ~/.rvs/profiles.env, or a file pointed to by RVS_ENV_FILE
 RVS_PROFILE_STAGING_API_URL=https://<staging-devapi-host>
-RVS_PROFILE_STAGING_PKG_DOWNLOAD_URL=https://<staging-download-host>
-RVS_PROFILE_STAGING_PKG_UPLOAD_URL=https://<staging-upload-host>
+RVS_PROFILE_STAGING_PYPI_READ_URL=https://<staging-pypi-read-host>
+RVS_PROFILE_STAGING_PYPI_PUSH_URL=https://<staging-pypi-push-host>
+RVS_PROFILE_STAGING_PYPI_CACHE_URL=https://<staging-pypi-cache-host>
+RVS_PROFILE_STAGING_NPM_READ_URL=https://<staging-npm-read-host>
+RVS_PROFILE_STAGING_NPM_PUSH_URL=https://<staging-npm-push-host>
+RVS_PROFILE_STAGING_NPM_CACHE_URL=https://<staging-npm-cache-host>
+RVS_PROFILE_STAGING_MAVEN_READ_URL=https://<staging-maven-read-host>
+RVS_PROFILE_STAGING_MAVEN_PUSH_URL=https://<staging-maven-push-host>
+RVS_PROFILE_STAGING_MAVEN_CACHE_URL=https://<staging-maven-cache-host>
+RVS_PROFILE_STAGING_OCI_REGISTRY_URL=https://<staging-oci-host>
 RVS_PROFILE_DEV_API_URL=http://<local-devapi-host>
-RVS_PROFILE_DEV_PKG_DOWNLOAD_URL=http://<local-download-host>
-RVS_PROFILE_DEV_PKG_UPLOAD_URL=http://<local-upload-host>
 ```
 
 Process environment variables override env-file values. `RVS_ENV_FILE` can point
@@ -222,9 +228,9 @@ rvs uv sync
 rvs twine upload dist/*
 rvs npm install @acme/widgets
 rvs mvn test
-rvs docker --rvs-repo runtime-images pull oci.rvsta.sh/x/w_abcdefgh/r_23456789/api:latest
-rvs helm --rvs-repo deployment-charts show chart oci://oci.rvsta.sh/x/w_abcdefgh/r_3456789a/charts/api --version 1.2.3
-rvs oras --rvs-kind container --rvs-repo runtime-images discover oci.rvsta.sh/x/w_abcdefgh/r_23456789/api:latest
+rvs docker --rvs-repo runtime-images pull oci.rvsta.sh/w_abcdefgh/r_23456789/api:latest
+rvs helm --rvs-repo deployment-charts show chart oci://oci.rvsta.sh/w_abcdefgh/r_3456789a/charts/api --version 1.2.3
+rvs oras --rvs-kind container --rvs-repo runtime-images discover oci.rvsta.sh/w_abcdefgh/r_23456789/api:latest
 rvs oci-reference --kind container --repo runtime-images --oci-path api --reference latest
 
 rvs npm --rvs-repo my-node-packages install @acme/widgets
@@ -247,7 +253,7 @@ the native registry config. Existing credentials for other registries are
 preserved; stale Ravenstash auth entries are removed from the copy. The token is
 never placed in argv or written to the user's Docker or Helm config. Docker,
 Helm, and ORAS all use the same `oci.rvsta.sh` host and the stable
-`/x/<workspace-ref>/<repository-ref>/...` namespace. `rvs oras` requires
+`/<workspace-ref>/<repository-ref>/...` namespace. `rvs oras` requires
 `--rvs-kind container` or `--rvs-kind helm` because ORAS supports both lanes.
 
 ## Installation on Ubuntu / WSL

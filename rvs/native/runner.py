@@ -58,8 +58,8 @@ class NativeOptions:
 @dataclass(frozen=True)
 class RegistryRoute:
     kind: RegistryKind
-    pkg_download_url: str
-    pkg_upload_url: str
+    read_base_url: str
+    push_base_url: str
     workspace_unique_ref: str
     repository_unique_ref: str
     package_token: str
@@ -67,7 +67,7 @@ class RegistryRoute:
     @property
     def pypi_index_url(self) -> str:
         return _ROUTER.pypi_index_url(
-            self.pkg_download_url,
+            self.read_base_url,
             self.workspace_unique_ref,
             self.repository_unique_ref,
         )
@@ -75,7 +75,7 @@ class RegistryRoute:
     @property
     def pypi_upload_url(self) -> str:
         return _ROUTER.pypi_upload_url(
-            self.pkg_upload_url,
+            self.push_base_url,
             self.workspace_unique_ref,
             self.repository_unique_ref,
         )
@@ -83,7 +83,7 @@ class RegistryRoute:
     @property
     def npm_registry_url(self) -> str:
         return _ROUTER.npm_registry_url(
-            self.pkg_download_url,
+            self.read_base_url,
             self.workspace_unique_ref,
             self.repository_unique_ref,
         )
@@ -91,7 +91,7 @@ class RegistryRoute:
     @property
     def npm_upload_registry_url(self) -> str:
         return _ROUTER.npm_upload_registry_url(
-            self.pkg_upload_url,
+            self.push_base_url,
             self.workspace_unique_ref,
             self.repository_unique_ref,
         )
@@ -99,7 +99,7 @@ class RegistryRoute:
     @property
     def maven_repo_url(self) -> str:
         return _ROUTER.maven_repo_url(
-            self.pkg_download_url,
+            self.read_base_url,
             self.workspace_unique_ref,
             self.repository_unique_ref,
         )
@@ -107,7 +107,7 @@ class RegistryRoute:
     @property
     def maven_upload_url(self) -> str:
         return _ROUTER.maven_upload_url(
-            self.pkg_upload_url,
+            self.push_base_url,
             self.workspace_unique_ref,
             self.repository_unique_ref,
         )
@@ -161,7 +161,10 @@ def _build_plan(
         )
         if not urls:
             return ExecutionPlan(cmd=cmd, env=env)
-        route_scopes = {_credential_route(url) for url in urls}
+        kind = _kind_for_tool(tool)
+        route_scopes = {
+            _credential_route(url, kind, profile_config.native_registries) for url in urls
+        }
         if len(route_scopes) != 1:
             output.fatal(
                 "Native configuration references multiple Ravenstash repositories. "
@@ -169,7 +172,7 @@ def _build_plan(
             )
         token = _package_token_for_url(
             urls[0],
-            _kind_for_tool(tool),
+            kind,
             options.profile,
             options.customer_id,
         )
@@ -274,6 +277,7 @@ def _resolve_route(kind: RegistryKind, options: NativeOptions) -> RegistryRoute:
     except (KeyError, TypeError, ValueError) as exc:
         output.fatal(str(exc))
     profile_cfg = _profile(options.profile)
+    endpoints = profile_cfg.native_registries.package(kind)
     if options.repo is None:
         cfg_mod.set_registry_default_target(
             kind,
@@ -283,8 +287,8 @@ def _resolve_route(kind: RegistryKind, options: NativeOptions) -> RegistryRoute:
         )
     return RegistryRoute(
         kind=kind,
-        pkg_download_url=profile_cfg.pkg_download_url,
-        pkg_upload_url=profile_cfg.pkg_upload_url,
+        read_base_url=endpoints.read_base_url,
+        push_base_url=endpoints.push_base_url,
         workspace_unique_ref=repository["workspace_unique_ref"],
         repository_unique_ref=repository["repository_unique_ref"],
         package_token=credential["access_token"],
@@ -297,26 +301,13 @@ def _package_token_for_url(
     profile: str | None,
     customer_id: str | None,
 ) -> str:
-    parts = [part for part in urlparse(url).path.split("/") if part]
-    route_parts = parts[2:] if len(parts) >= 3 and parts[0] == "native" else parts
-    if route_parts and route_parts[0] == "r":
+    profile_config = _profile(profile)
+    route_parts = _configured_route_parts(url, kind, profile_config.native_registries)
+    if route_parts and route_parts[0] in {"o", "c"}:
         try:
             workspace_reference, repository_reference, route_kind = _remote_route_scope(route_parts)
             client = ApiClient.from_profile(profile)
             effective_customer_id = customer_id or _profile(profile).customer_id
-            if route_kind == "remote_custom":
-                customers = client.get("/v0/customers").json()
-                matching_customer = next(
-                    (
-                        customer
-                        for customer in customers
-                        if customer.get("customer_unique_ref") == workspace_reference
-                    ),
-                    None,
-                )
-                if matching_customer is None:
-                    output.fatal("Remote cache customer is not authorized for this profile.")
-                effective_customer_id = matching_customer["customer_id"]
             if not effective_customer_id:
                 output.fatal(
                     "A customer is required for direct remote-cache access. Pass --rvs-customer-id."
@@ -333,11 +324,9 @@ def _package_token_for_url(
             ).json()["access_token"]
         except (ApiError, KeyError, TypeError) as exc:
             output.fatal(str(exc))
-    try:
-        marker = parts.index("x")
-        selector = f"{parts[marker + 1]}/{parts[marker + 2]}"
-    except ValueError, IndexError:
-        output.fatal("Detected Ravenstash URL is not a canonical /x/<workspace>/<repository> URL.")
+    if len(route_parts) < 2 or route_parts[0] in {"x", "r", "o", "c"}:
+        output.fatal("Detected Ravenstash URL is not a canonical <workspace>/<repository> URL.")
+    selector = f"{route_parts[0]}/{route_parts[1]}"
     try:
         client = ApiClient.from_profile(profile)
         profile_name = profile or cfg_mod.current_profile_name(cfg_mod.load())
@@ -364,26 +353,48 @@ def _package_token_for_url(
         output.fatal(str(exc))
 
 
-def _credential_route(url: str) -> tuple[str, str | None, str]:
-    parts = [part for part in urlparse(url).path.split("/") if part]
-    if len(parts) >= 3 and parts[0] == "native":
-        parts = parts[2:]
+def _credential_route(
+    url: str,
+    kind: RegistryKind,
+    native_registries: cfg_mod.NativeRegistryEndpoints,
+) -> tuple[str, str | None, str]:
+    parts = _configured_route_parts(url, kind, native_registries)
     if not parts:
         output.fatal("Detected Ravenstash URL has no repository route.")
-    if parts[0] == "x" and len(parts) >= 3:
-        return ("x", parts[1], parts[2])
-    if parts[0] == "r":
+    if parts[0] in {"o", "c"}:
         workspace_reference, repository_reference, route_kind = _remote_route_scope(parts)
         return (route_kind, workspace_reference, repository_reference)
+    if len(parts) >= 2 and parts[0] not in {"x", "r"}:
+        return ("x", parts[0], parts[1])
     output.fatal("Detected Ravenstash URL has an invalid repository route.")
 
 
-def _remote_route_scope(parts: list[str]) -> tuple[str | None, str, str]:
-    if len(parts) < 3 or parts[0] != "r":
+def _configured_route_parts(
+    url: str,
+    kind: RegistryKind,
+    native_registries: cfg_mod.NativeRegistryEndpoints,
+) -> list[str]:
+    parts = [part for part in urlparse(url).path.split("/") if part]
+    endpoints = native_registries.package(kind)
+    for service_url in (
+        endpoints.read_base_url,
+        endpoints.push_base_url,
+        endpoints.cache_base_url,
+    ):
+        base = native_base_url(service_url, kind)
+        if not _same_origin(url, base):
+            continue
+        base_parts = [part for part in urlparse(base).path.split("/") if part]
+        if parts[: len(base_parts)] == base_parts:
+            return parts[len(base_parts) :]
+    return parts
+
+
+def _remote_route_scope(parts: list[str]) -> tuple[str, str, str]:
+    if len(parts) < 2 or parts[0] not in {"o", "c"}:
         output.fatal("Detected Ravenstash remote-cache URL is invalid.")
-    if parts[1] == "o":
-        return None, parts[2], "remote_official"
-    return parts[1], parts[2], "remote_custom"
+    route_kind = "remote_official" if parts[0] == "o" else "remote_custom"
+    return parts[0], parts[1], route_kind
 
 
 def _detected_ravenstash_urls(
@@ -410,8 +421,7 @@ def _detected_ravenstash_urls(
                 continue
             kind = _ravenstash_url_kind(
                 url,
-                download_url=profile_config.pkg_download_url,
-                upload_url=profile_config.pkg_upload_url,
+                native_registries=profile_config.native_registries,
             )
             if kind in allowed_kinds:
                 seen.add(url)
@@ -446,8 +456,7 @@ def _same_origin(left: str, right: str) -> bool:
 def _ravenstash_url_kind(
     url: str,
     *,
-    download_url: str,
-    upload_url: str,
+    native_registries: cfg_mod.NativeRegistryEndpoints,
 ) -> RegistryKind | None:
     parsed = urlparse(url)
     if (
@@ -458,7 +467,12 @@ def _ravenstash_url_kind(
     ):
         return None
     for kind in ("pypi", "npm", "maven"):
-        for service_url in (download_url, upload_url):
+        endpoints = native_registries.package(kind)
+        for service_url, surface in (
+            (endpoints.read_base_url, "private"),
+            (endpoints.push_base_url, "private"),
+            (endpoints.cache_base_url, "cache"),
+        ):
             base = native_base_url(service_url, kind)
             if not _same_origin(url, base):
                 continue
@@ -466,24 +480,31 @@ def _ravenstash_url_kind(
             path_parts = [part for part in parsed.path.split("/") if part]
             if path_parts[: len(base_parts)] != base_parts:
                 continue
-            if _valid_registry_route(path_parts[len(base_parts) :]):
+            route_parts = path_parts[len(base_parts) :]
+            if (
+                (
+                    surface == "private"
+                    and _valid_private_registry_route(route_parts)
+                )
+                or (
+                    surface == "cache"
+                    and _valid_cache_registry_route(route_parts)
+                )
+            ):
                 return kind  # type: ignore[return-value]
     return None
 
 
-def _valid_registry_route(path_parts: list[str]) -> bool:
-    if (
-        len(path_parts) >= 3
-        and path_parts[0] == "x"
-        and path_parts[1].startswith("_")
-        and path_parts[2].startswith("_")
-    ):
-        return True
-    if len(path_parts) < 3 or path_parts[0] != "r":
-        return False
-    if path_parts[1] == "o":
-        return bool(path_parts[2]) and not path_parts[2].startswith("_")
-    return path_parts[1].startswith("_") and bool(path_parts[2])
+def _valid_private_registry_route(path_parts: list[str]) -> bool:
+    return (
+        len(path_parts) >= 2
+        and path_parts[0] not in {"x", "r", "o", "c"}
+        and bool(path_parts[1])
+    )
+
+
+def _valid_cache_registry_route(path_parts: list[str]) -> bool:
+    return len(path_parts) >= 2 and path_parts[0] in {"o", "c"} and bool(path_parts[1])
 
 
 def _relevant_env_values(tool: NativeTool, env: dict[str, str]) -> list[str]:

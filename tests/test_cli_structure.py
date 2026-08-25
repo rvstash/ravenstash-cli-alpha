@@ -17,7 +17,7 @@ if TYPE_CHECKING:
 
 runner = CliRunner()
 STAGING_API_URL = "https://staging.example.test"
-STAGING_DOWNLOAD_URL = "https://pkg-staging.example.test"
+STAGING_PYPI_READ_URL = "https://pypi-staging.example.test"
 
 
 def _isolate_config(monkeypatch, tmp_path: Path, content: str = "") -> None:
@@ -91,7 +91,7 @@ default_repo = "private-pypi"
 
 def test_packages_alias_dispatches_to_pkg_commands(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setenv("RVS_PROFILE_STAGING_API_URL", STAGING_API_URL)
-    monkeypatch.setenv("RVS_PROFILE_STAGING_PKG_DOWNLOAD_URL", STAGING_DOWNLOAD_URL)
+    monkeypatch.setenv("RVS_PROFILE_STAGING_PYPI_READ_URL", STAGING_PYPI_READ_URL)
     _isolate_config(
         monkeypatch,
         tmp_path,

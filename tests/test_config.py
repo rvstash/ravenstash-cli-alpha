@@ -24,11 +24,13 @@ def _point_config(monkeypatch, tmp_path: Path) -> tuple[Path, Path]:
         "RVS_PROFILE_DEV_API_URL",
         "RVS_PROFILE_STAGING_API_URL",
         "RVS_PKG_API_URL",
-        "RVS_PKG_DOWNLOAD_URL",
-        "RVS_PKG_UPLOAD_URL",
+        "RVS_PYPI_READ_URL",
+        "RVS_PYPI_PUSH_URL",
+        "RVS_PYPI_CACHE_URL",
         "RVS_PROFILE_STAGING_PKG_API_URL",
-        "RVS_PROFILE_STAGING_PKG_DOWNLOAD_URL",
-        "RVS_PROFILE_STAGING_PKG_UPLOAD_URL",
+        "RVS_PROFILE_STAGING_PYPI_READ_URL",
+        "RVS_PROFILE_STAGING_PYPI_PUSH_URL",
+        "RVS_PROFILE_STAGING_PYPI_CACHE_URL",
     ):
         monkeypatch.delenv(key, raising=False)
     return config_dir, config_file
@@ -47,8 +49,11 @@ def test_load_missing_config_uses_production_default_without_profile_env(
     assert cfg.active_profile().api_url == "https://api.ravenstash.com"
     assert cfg.active_profile("dev").api_url == "https://api.ravenstash.com"
     assert cfg.active_profile("staging").api_url == "https://api.ravenstash.com"
-    assert cfg.active_profile().pkg_download_url == "https://pkg.rvsta.sh"
-    assert cfg.active_profile().pkg_upload_url == "https://push.rvsta.sh"
+    assert cfg.active_profile().native_registries.pypi.read_base_url == "https://pypi.rvsta.sh"
+    assert cfg.active_profile().native_registries.pypi.push_base_url == "https://push.pypi.rvsta.sh"
+    assert (
+        cfg.active_profile().native_registries.pypi.cache_base_url == "https://cache.pypi.rvsta.sh"
+    )
 
 
 def test_load_uses_env_api_url_for_configured_profile_without_api_url(
@@ -105,16 +110,20 @@ def test_package_service_urls_can_be_declared_per_profile(monkeypatch, tmp_path:
     _point_config(monkeypatch, tmp_path)
     (tmp_path / ".rvs.env").write_text(
         """
-RVS_PROFILE_STAGING_PKG_DOWNLOAD_URL=https://pkg-staging.example.test
-RVS_PROFILE_STAGING_PKG_UPLOAD_URL=https://push-staging.example.test
+RVS_PROFILE_STAGING_PYPI_READ_URL=https://pypi-staging.example.test
+RVS_PROFILE_STAGING_PYPI_PUSH_URL=https://push.pypi-staging.example.test
+RVS_PROFILE_STAGING_PYPI_CACHE_URL=https://cache.pypi-staging.example.test
 """.strip(),
         encoding="utf-8",
     )
 
     profile = cfg_mod.load().active_profile("staging")
 
-    assert profile.pkg_download_url == "https://pkg-staging.example.test"
-    assert profile.pkg_upload_url == "https://push-staging.example.test"
+    assert profile.native_registries.pypi.read_base_url == "https://pypi-staging.example.test"
+    assert profile.native_registries.pypi.push_base_url == "https://push.pypi-staging.example.test"
+    assert (
+        profile.native_registries.pypi.cache_base_url == "https://cache.pypi-staging.example.test"
+    )
 
 
 def test_explicit_rvs_env_file_overrides_local_env_file(monkeypatch, tmp_path: Path) -> None:
@@ -171,8 +180,24 @@ def test_save_and_load_round_trips_profiles_and_registry_defaults(
         profiles={
             "work": cfg_mod.ProfileConfig(
                 api_url="https://api.work.example",
-                pkg_download_url="https://pkg-work.example",
-                pkg_upload_url="https://pkg-push-work.example",
+                native_registries=cfg_mod.NativeRegistryEndpoints(
+                    pypi=cfg_mod.PackageRegistryEndpoints(
+                        "https://pypi.work.example",
+                        "https://push.pypi.work.example",
+                        "https://cache.pypi.work.example",
+                    ),
+                    npm=cfg_mod.PackageRegistryEndpoints(
+                        "https://npm.work.example",
+                        "https://push.npm.work.example",
+                        "https://cache.npm.work.example",
+                    ),
+                    maven=cfg_mod.PackageRegistryEndpoints(
+                        "https://maven.work.example",
+                        "https://push.maven.work.example",
+                        "https://cache.maven.work.example",
+                    ),
+                    oci_registry_base_url="https://oci.work.example",
+                ),
                 customer_id="cus_work",
                 customer_unique_id="custpid1",
                 credential_type="expiring",
@@ -191,8 +216,17 @@ def test_save_and_load_round_trips_profiles_and_registry_defaults(
 
     assert loaded.default_profile == "work"
     assert loaded.profiles["work"].api_url == "https://api.work.example"
-    assert loaded.profiles["work"].pkg_download_url == "https://pkg-work.example"
-    assert loaded.profiles["work"].pkg_upload_url == "https://pkg-push-work.example"
+    assert (
+        loaded.profiles["work"].native_registries.pypi.read_base_url == "https://pypi.work.example"
+    )
+    assert (
+        loaded.profiles["work"].native_registries.npm.push_base_url
+        == "https://push.npm.work.example"
+    )
+    assert (
+        loaded.profiles["work"].native_registries.oci_registry_base_url
+        == "https://oci.work.example"
+    )
     assert loaded.profiles["work"].customer_id == "cus_work"
     assert loaded.profiles["work"].customer_unique_id == "custpid1"
     assert loaded.registry_defaults("pypi").default_repo == "_abcdefgh/_pypi0001"

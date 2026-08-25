@@ -14,13 +14,29 @@ Config file shape
 
     [profiles.default]
     api_url = "https://api.ravenstash.com"
-    pkg_download_url = "https://pkg.rvsta.sh"
-    pkg_upload_url = "https://push.rvsta.sh"
     customer_id = "cus_..."
     customer_unique_id = "a8f3k2mz"
     credential_type = "expiring"
     expires_at = "2026-06-17T16:00:00+00:00"
     refresh_expires_at = "2026-06-17T20:00:00+00:00"
+
+    [profiles.default.native_registries.pypi]
+    read_base_url = "https://pypi.rvsta.sh"
+    push_base_url = "https://push.pypi.rvsta.sh"
+    cache_base_url = "https://cache.pypi.rvsta.sh"
+
+    [profiles.default.native_registries.npm]
+    read_base_url = "https://npm.rvsta.sh"
+    push_base_url = "https://push.npm.rvsta.sh"
+    cache_base_url = "https://cache.npm.rvsta.sh"
+
+    [profiles.default.native_registries.maven]
+    read_base_url = "https://maven.rvsta.sh"
+    push_base_url = "https://push.maven.rvsta.sh"
+    cache_base_url = "https://cache.maven.rvsta.sh"
+
+    [profiles.default.native_registries.oci]
+    registry_base_url = "https://oci.rvsta.sh"
 
     [profiles.default.registries.pypi]
     default_repo = "_abcdefgh/_m7nk3p4q"
@@ -57,8 +73,24 @@ PROFILE_ENV_FILE = CONFIG_DIR / "profiles.env"
 LOCAL_ENV_FILE_NAME = ".rvs.env"
 
 DEFAULT_API_URL = "https://api.ravenstash.com"
-DEFAULT_PKG_DOWNLOAD_URL = "https://pkg.rvsta.sh"
-DEFAULT_PKG_UPLOAD_URL = "https://push.rvsta.sh"
+
+
+@dataclass(frozen=True)
+class PackageRegistryEndpoints:
+    read_base_url: str
+    push_base_url: str
+    cache_base_url: str
+
+
+@dataclass(frozen=True)
+class NativeRegistryEndpoints:
+    pypi: PackageRegistryEndpoints
+    npm: PackageRegistryEndpoints
+    maven: PackageRegistryEndpoints
+    oci_registry_base_url: str
+
+    def package(self, kind: Literal["pypi", "npm", "maven"]) -> PackageRegistryEndpoints:
+        return cast("PackageRegistryEndpoints", getattr(self, kind))
 
 
 def _is_loopback_host(hostname: str) -> bool:
@@ -100,8 +132,9 @@ def validate_service_url(value: str, *, label: str) -> str:
 @dataclass
 class ProfileConfig:
     api_url: str = DEFAULT_API_URL
-    pkg_download_url: str = DEFAULT_PKG_DOWNLOAD_URL
-    pkg_upload_url: str = DEFAULT_PKG_UPLOAD_URL
+    native_registries: NativeRegistryEndpoints = field(
+        default_factory=lambda: _default_native_registries("default")
+    )
     customer_id: str | None = None
     customer_unique_id: str | None = None
     credential_type: str | None = None
@@ -241,29 +274,93 @@ def _profile_service_url(
     return validate_service_url(default_url, label=f"{profile_name} {suffix.lower()} URL")
 
 
-def profile_pkg_download_url(profile_name: str) -> str:
-    return _profile_service_url(
-        profile_name,
-        suffix="PKG_DOWNLOAD_URL",
-        default_env_key="RVS_PKG_DOWNLOAD_URL",
-        default_url=DEFAULT_PKG_DOWNLOAD_URL,
+def _package_registry_endpoints(
+    profile_name: str,
+    kind: Literal["pypi", "npm", "maven"],
+) -> PackageRegistryEndpoints:
+    upper = kind.upper()
+    return PackageRegistryEndpoints(
+        read_base_url=_profile_service_url(
+            profile_name,
+            suffix=f"{upper}_READ_URL",
+            default_env_key=f"RVS_{upper}_READ_URL",
+            default_url=f"https://{kind}.rvsta.sh",
+        ),
+        push_base_url=_profile_service_url(
+            profile_name,
+            suffix=f"{upper}_PUSH_URL",
+            default_env_key=f"RVS_{upper}_PUSH_URL",
+            default_url=f"https://push.{kind}.rvsta.sh",
+        ),
+        cache_base_url=_profile_service_url(
+            profile_name,
+            suffix=f"{upper}_CACHE_URL",
+            default_env_key=f"RVS_{upper}_CACHE_URL",
+            default_url=f"https://cache.{kind}.rvsta.sh",
+        ),
     )
 
 
-def profile_pkg_upload_url(profile_name: str) -> str:
-    return _profile_service_url(
-        profile_name,
-        suffix="PKG_UPLOAD_URL",
-        default_env_key="RVS_PKG_UPLOAD_URL",
-        default_url=DEFAULT_PKG_UPLOAD_URL,
+def _default_native_registries(profile_name: str) -> NativeRegistryEndpoints:
+    return NativeRegistryEndpoints(
+        pypi=_package_registry_endpoints(profile_name, "pypi"),
+        npm=_package_registry_endpoints(profile_name, "npm"),
+        maven=_package_registry_endpoints(profile_name, "maven"),
+        oci_registry_base_url=_profile_service_url(
+            profile_name,
+            suffix="OCI_REGISTRY_URL",
+            default_env_key="RVS_OCI_REGISTRY_URL",
+            default_url="https://oci.rvsta.sh",
+        ),
+    )
+
+
+def _native_registries_from_mapping(
+    value: object,
+    *,
+    profile_name: str,
+) -> NativeRegistryEndpoints:
+    if value is None:
+        return _default_native_registries(profile_name)
+    if not isinstance(value, dict):
+        raise ValueError(f"{profile_name} native registry endpoints must be a table")
+
+    def package(kind: Literal["pypi", "npm", "maven"]) -> PackageRegistryEndpoints:
+        raw = value.get(kind)
+        if not isinstance(raw, dict):
+            raise ValueError(f"{profile_name} {kind} registry endpoints are missing")
+        try:
+            return PackageRegistryEndpoints(
+                read_base_url=validate_service_url(
+                    str(raw["read_base_url"]), label=f"{profile_name} {kind} read URL"
+                ),
+                push_base_url=validate_service_url(
+                    str(raw["push_base_url"]), label=f"{profile_name} {kind} push URL"
+                ),
+                cache_base_url=validate_service_url(
+                    str(raw["cache_base_url"]), label=f"{profile_name} {kind} cache URL"
+                ),
+            )
+        except KeyError as exc:
+            raise ValueError(f"{profile_name} {kind} registry endpoints are incomplete") from exc
+
+    raw_oci = value.get("oci")
+    if not isinstance(raw_oci, dict) or "registry_base_url" not in raw_oci:
+        raise ValueError(f"{profile_name} OCI registry endpoint is missing")
+    return NativeRegistryEndpoints(
+        pypi=package("pypi"),
+        npm=package("npm"),
+        maven=package("maven"),
+        oci_registry_base_url=validate_service_url(
+            str(raw_oci["registry_base_url"]), label=f"{profile_name} OCI registry URL"
+        ),
     )
 
 
 def _default_profile_config(profile_name: str) -> ProfileConfig:
     return ProfileConfig(
         api_url=profile_api_url(profile_name),
-        pkg_download_url=profile_pkg_download_url(profile_name),
-        pkg_upload_url=profile_pkg_upload_url(profile_name),
+        native_registries=_default_native_registries(profile_name),
     )
 
 
@@ -287,13 +384,8 @@ def load() -> RvsConfig:
                 vals.get("api_url", profile_api_url(name)),
                 label=f"{name} API URL",
             ),
-            pkg_download_url=validate_service_url(
-                vals.get("pkg_download_url", profile_pkg_download_url(name)),
-                label=f"{name} package download URL",
-            ),
-            pkg_upload_url=validate_service_url(
-                vals.get("pkg_upload_url", profile_pkg_upload_url(name)),
-                label=f"{name} package upload URL",
+            native_registries=_native_registries_from_mapping(
+                vals.get("native_registries"), profile_name=name
             ),
             customer_id=vals.get("customer_id"),
             customer_unique_id=vals.get("customer_unique_id"),
@@ -333,8 +425,12 @@ def save(cfg: RvsConfig) -> None:
                 k: v
                 for k, v in {
                     "api_url": p.api_url,
-                    "pkg_download_url": p.pkg_download_url,
-                    "pkg_upload_url": p.pkg_upload_url,
+                    "native_registries": {
+                        "pypi": vars(p.native_registries.pypi),
+                        "npm": vars(p.native_registries.npm),
+                        "maven": vars(p.native_registries.maven),
+                        "oci": {"registry_base_url": p.native_registries.oci_registry_base_url},
+                    },
                     "customer_id": p.customer_id,
                     "customer_unique_id": p.customer_unique_id,
                     "credential_type": p.credential_type,
@@ -400,8 +496,7 @@ def set_profile_value(profile: str, api_url: str | None = None) -> None:
         api_url=validate_service_url(api_url, label=f"{profile} API URL")
         if api_url is not None
         else existing.api_url,
-        pkg_download_url=existing.pkg_download_url,
-        pkg_upload_url=existing.pkg_upload_url,
+        native_registries=existing.native_registries,
         customer_id=existing.customer_id,
         customer_unique_id=existing.customer_unique_id,
         credential_type=existing.credential_type,
@@ -419,8 +514,7 @@ def clear_profile_credential_metadata(profile: str) -> None:
         return
     cfg.profiles[profile] = ProfileConfig(
         api_url=existing.api_url,
-        pkg_download_url=existing.pkg_download_url,
-        pkg_upload_url=existing.pkg_upload_url,
+        native_registries=existing.native_registries,
         customer_id=None,
         customer_unique_id=None,
         credential_type=None,
@@ -435,8 +529,7 @@ def set_profile_metadata(
     profile: str,
     *,
     api_url: str | None = None,
-    pkg_download_url: str | None = None,
-    pkg_upload_url: str | None = None,
+    native_registries: object | None = None,
     customer_id: str | None = None,
     customer_unique_id: str | None = None,
     credential_type: str | None = None,
@@ -449,21 +542,10 @@ def set_profile_metadata(
         api_url=validate_service_url(api_url, label=f"{profile} API URL")
         if api_url is not None
         else existing.api_url,
-        pkg_download_url=(
-            validate_service_url(
-                pkg_download_url,
-                label=f"{profile} package download URL",
-            )
-            if pkg_download_url is not None
-            else existing.pkg_download_url
-        ),
-        pkg_upload_url=(
-            validate_service_url(
-                pkg_upload_url,
-                label=f"{profile} package upload URL",
-            )
-            if pkg_upload_url is not None
-            else existing.pkg_upload_url
+        native_registries=(
+            _native_registries_from_mapping(native_registries, profile_name=profile)
+            if native_registries is not None
+            else existing.native_registries
         ),
         customer_id=customer_id if customer_id is not None else existing.customer_id,
         customer_unique_id=customer_unique_id

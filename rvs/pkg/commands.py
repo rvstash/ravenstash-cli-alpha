@@ -886,7 +886,9 @@ def pypi_index_url(
         "pypi", repo, profile, customer_id
     )
     output.value(
-        _ROUTER.pypi_index_url(profile_cfg.pkg_download_url, customer_id, repository_name),
+        _ROUTER.pypi_index_url(
+            profile_cfg.native_registries.pypi.read_base_url, customer_id, repository_name
+        ),
         key="index_url",
     )
 
@@ -904,7 +906,9 @@ def pypi_upload_url(
         "pypi", repo, profile, customer_id
     )
     output.value(
-        _ROUTER.pypi_upload_url(profile_cfg.pkg_upload_url, customer_id, repository_name),
+        _ROUTER.pypi_upload_url(
+            profile_cfg.native_registries.pypi.push_base_url, customer_id, repository_name
+        ),
         key="upload_url",
     )
 
@@ -922,7 +926,9 @@ def pypi_install(
     profile_cfg, customer_id, repository_name, token = _registry_context(
         "pypi", repo, profile, customer_id
     )
-    index_url = _ROUTER.pypi_index_url(profile_cfg.pkg_download_url, customer_id, repository_name)
+    index_url = _ROUTER.pypi_index_url(
+        profile_cfg.native_registries.pypi.read_base_url, customer_id, repository_name
+    )
     env = {**os.environ}
     if token:
         env["PIP_INDEX_URL"] = _authed_url(index_url, token)
@@ -951,7 +957,9 @@ def pypi_publish(
         output.fatal(f"No .whl or .tar.gz files found in {dist_dir}")
     results = pypi_reg.publish(
         upload_url=_ROUTER.pypi_upload_url(
-            profile_cfg.pkg_upload_url, customer_id, repository_name
+            profile_cfg.native_registries.pypi.push_base_url,
+            customer_id,
+            repository_name,
         ),
         token=token,
         files=files,
@@ -979,7 +987,9 @@ def pypi_configure(
     profile_cfg, customer_id, repository_name, _ = _registry_context(
         "pypi", repo, profile, customer_id
     )
-    index_url = _ROUTER.pypi_index_url(profile_cfg.pkg_download_url, customer_id, repository_name)
+    index_url = _ROUTER.pypi_index_url(
+        profile_cfg.native_registries.pypi.read_base_url, customer_id, repository_name
+    )
     output.value(f"[global]\nindex-url = {index_url}", key="configuration")
 
 
@@ -999,7 +1009,9 @@ def npm_registry_url(
         "npm", repo, profile, customer_id
     )
     output.value(
-        _ROUTER.npm_registry_url(profile_cfg.pkg_download_url, customer_id, repository_name),
+        _ROUTER.npm_registry_url(
+            profile_cfg.native_registries.npm.read_base_url, customer_id, repository_name
+        ),
         key="registry_url",
     )
 
@@ -1017,7 +1029,9 @@ def npmrc(
         "npm", repo, profile, customer_id
     )
     registry_url = _ROUTER.npm_registry_url(
-        profile_cfg.pkg_download_url, customer_id, repository_name
+        profile_cfg.native_registries.npm.read_base_url,
+        customer_id,
+        repository_name,
     )
     auth_key = _npm_auth_token_key(registry_url)
     output.value(
@@ -1040,7 +1054,9 @@ def npm_install(
         "npm", repo, profile, customer_id
     )
     registry_url = _ROUTER.npm_registry_url(
-        profile_cfg.pkg_download_url, customer_id, repository_name
+        profile_cfg.native_registries.npm.read_base_url,
+        customer_id,
+        repository_name,
     )
     env = {**os.environ}
     if token:
@@ -1067,12 +1083,16 @@ def npm_publish(
     )
     results = npm_reg.publish(
         registry_url=_ROUTER.npm_upload_registry_url(
-            profile_cfg.pkg_upload_url, customer_id, repository_name
+            profile_cfg.native_registries.npm.push_base_url,
+            customer_id,
+            repository_name,
         ),
         token=token,
         package_dir=package_dir,
         download_registry_url=_ROUTER.npm_registry_url(
-            profile_cfg.pkg_download_url, customer_id, repository_name
+            profile_cfg.native_registries.npm.read_base_url,
+            customer_id,
+            repository_name,
         ),
     )
     failed = False
@@ -1114,7 +1134,11 @@ def maven_repo_url(
         "maven", repo, profile, customer_id
     )
     output.value(
-        _ROUTER.maven_repo_url(profile_cfg.pkg_download_url, customer_id, repository_name),
+        _ROUTER.maven_repo_url(
+            profile_cfg.native_registries.maven.read_base_url,
+            customer_id,
+            repository_name,
+        ),
         key="repository_url",
     )
 
@@ -1161,7 +1185,11 @@ def maven_settings(
     )
     output.value(
         _settings_xml(
-            _ROUTER.maven_repo_url(profile_cfg.pkg_download_url, customer_id, repository_name)
+            _ROUTER.maven_repo_url(
+                profile_cfg.native_registries.maven.read_base_url,
+                customer_id,
+                repository_name,
+            )
         ),
         key="configuration",
     )
@@ -1180,7 +1208,9 @@ def maven_install(
     profile_cfg, customer_id, repository_name, token = _registry_context(
         "maven", repo, profile, customer_id
     )
-    repo_url = _ROUTER.maven_repo_url(profile_cfg.pkg_download_url, customer_id, repository_name)
+    repo_url = _ROUTER.maven_repo_url(
+        profile_cfg.native_registries.maven.read_base_url, customer_id, repository_name
+    )
     settings_xml = maven_reg._build_settings_xml(repo_url, token)
     with tempfile.NamedTemporaryFile(
         mode="w", suffix=".xml", prefix="rvs-settings-", delete=False
@@ -1226,7 +1256,9 @@ def maven_deploy(
     )
     results = maven_reg.publish(
         upload_url=_ROUTER.maven_upload_url(
-            profile_cfg.pkg_upload_url, customer_id, repository_name
+            profile_cfg.native_registries.maven.push_base_url,
+            customer_id,
+            repository_name,
         ),
         token=token,
         group_id=group,

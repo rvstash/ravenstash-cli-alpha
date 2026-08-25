@@ -101,8 +101,8 @@ refresh_expires_at = "2099-01-02T00:00:00+00:00"
 
     assert deleted == ["default", "default:refresh"]
     assert profile.api_url == "https://api.ravenstash.com"
-    assert profile.pkg_download_url == "https://pkg.rvsta.sh"
-    assert profile.pkg_upload_url == "https://push.rvsta.sh"
+    assert profile.native_registries.pypi.read_base_url == "https://pypi.rvsta.sh"
+    assert profile.native_registries.pypi.push_base_url == "https://push.pypi.rvsta.sh"
     assert profile.customer_id is None
     assert profile.customer_unique_id is None
     assert profile.credential_type is None

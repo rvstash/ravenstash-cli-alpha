@@ -152,7 +152,7 @@ The CLI resolves that selector, saves immutable references for persistent
 defaults, and always generates native package URLs in this stable form:
 
 ```text
-/x/_abcdefgh/_m7nk3p4q/
+/_abcdefgh/_m7nk3p4q/
 ```
 
 Workspace and repository renames therefore do not break CLI defaults.
@@ -172,9 +172,9 @@ rvs uv sync
 rvs twine upload dist/*
 rvs npm install @acme/widgets
 rvs mvn test
-rvs docker --rvs-repo <container-repo-name> pull oci.rvsta.sh/x/w_abcdefgh/r_23456789/api:latest
-rvs helm --rvs-repo <helm-repo-name> show chart oci://oci.rvsta.sh/x/w_abcdefgh/r_3456789a/charts/api --version 1.2.3
-rvs oras --rvs-kind container --rvs-repo <container-repo-name> discover oci.rvsta.sh/x/w_abcdefgh/r_23456789/api:latest
+rvs docker --rvs-repo <container-repo-name> pull oci.rvsta.sh/w_abcdefgh/r_23456789/api:latest
+rvs helm --rvs-repo <helm-repo-name> show chart oci://oci.rvsta.sh/w_abcdefgh/r_3456789a/charts/api --version 1.2.3
+rvs oras --rvs-kind container --rvs-repo <container-repo-name> discover oci.rvsta.sh/w_abcdefgh/r_23456789/api:latest
 ```
 
 By default, the wrappers respect native config such as `.npmrc`, `pip.conf`,
@@ -229,7 +229,7 @@ rvs pkg pypi install requests
 For this command, `rvs` delegates to `pip` and injects:
 
 ```text
-PIP_INDEX_URL=https://__token__:<token>@pypi.<download-host>/x/<workspace_unique_ref>/<repository_unique_ref>/simple/
+PIP_INDEX_URL=https://__token__:<token>@<pypi-read-host>/<workspace_unique_ref>/<repository_unique_ref>/simple/
 ```
 
 That environment variable is scoped to the subprocess. It is not written to a
@@ -248,7 +248,7 @@ Current behavior: `rvs pkg pypi publish` does not shell out to `twine`. It
 implements the legacy PyPI upload protocol directly and posts to:
 
 ```text
-https://pypi.<upload-host>/x/<workspace_unique_ref>/<repository_unique_ref>/
+https://<pypi-push-host>/<workspace_unique_ref>/<repository_unique_ref>/
 ```
 
 To print a pip configuration snippet instead of running an install:
@@ -274,13 +274,13 @@ rvs pkg npm install lodash
 For this command, `rvs` delegates to `npm` and runs the equivalent of:
 
 ```bash
-npm install --registry https://npm.<download-host>/x/<workspace_unique_ref>/<repository_unique_ref>/ lodash
+npm install --registry https://<npm-read-host>/<workspace_unique_ref>/<repository_unique_ref>/ lodash
 ```
 
 It injects the auth token through npm's environment-backed config key:
 
 ```text
-NPM_CONFIG_//npm.<download-host>/x/<workspace_unique_ref>/<repository_unique_ref>/:_authToken=<token>
+NPM_CONFIG_//<npm-read-host>/<workspace_unique_ref>/<repository_unique_ref>/:_authToken=<token>
 ```
 
 Publish the package in the current directory:
@@ -294,14 +294,14 @@ runs native `npm pack`, reads `package.json`, builds the npm publish JSON body,
 and PUTs it to:
 
 ```text
-https://npm.<upload-host>/x/<workspace_unique_ref>/<repository_unique_ref>/<package-name>
+https://<npm-push-host>/<workspace_unique_ref>/<repository_unique_ref>/<package-name>
 ```
 
 It writes package metadata with download tarball URLs pointing at the private
 download registry:
 
 ```text
-https://npm.<download-host>/x/<workspace_unique_ref>/<repository_unique_ref>/<package-name>/-/<tarball>
+https://<npm-read-host>/<workspace_unique_ref>/<repository_unique_ref>/<package-name>/-/<tarball>
 ```
 
 Using `npm pack` honors npm's normal packlist, lifecycle hooks, bundled
@@ -337,7 +337,7 @@ For this command, `rvs` writes a temporary `settings.xml` containing:
 - username `__token__`
 - the active token as the password
 - repository URL
-  `https://maven.<download-host>/x/<workspace_unique_ref>/<repository_unique_ref>/`
+  `https://<maven-read-host>/<workspace_unique_ref>/<repository_unique_ref>/`
 
 It then runs:
 
@@ -360,7 +360,7 @@ Current behavior: `rvs pkg maven deploy` does not shell out to `mvn deploy`. It
 uploads the artifact and checksum sidecars with HTTP PUTs under:
 
 ```text
-https://maven.<upload-host>/x/<workspace_unique_ref>/<repository_unique_ref>/<group-path>/<artifact>/<version>/
+https://<maven-push-host>/<workspace_unique_ref>/<repository_unique_ref>/<group-path>/<artifact>/<version>/
 ```
 
 To print a reusable Maven `settings.xml` snippet:
@@ -391,8 +391,9 @@ package transfer hosts when they differ from production:
 
 ```bash
 export RVS_PROFILE_CI_API_URL=https://api.ravenstash.com
-export RVS_PROFILE_CI_PKG_DOWNLOAD_URL=https://pkg.rvsta.sh
-export RVS_PROFILE_CI_PKG_UPLOAD_URL=https://push.rvsta.sh
+export RVS_PROFILE_CI_PYPI_READ_URL=https://pypi.rvsta.sh
+export RVS_PROFILE_CI_PYPI_PUSH_URL=https://push.pypi.rvsta.sh
+export RVS_PROFILE_CI_PYPI_CACHE_URL=https://cache.pypi.rvsta.sh
 export RVS_TOKEN=<automation-token>
 
 rvs pkg pypi install private-package --repo <pypi-repo-name>
@@ -455,7 +456,7 @@ LLM agents should follow these rules when using `rvs`:
 - Treat customer, workspace, and repository internal IDs as different from
   their immutable generated references.
 - Private registry URLs always use
-  `/x/<workspace_unique_ref>/<repository_unique_ref>`; never construct them
+  `/<workspace_unique_ref>/<repository_unique_ref>`; never construct them
   from a customer identifier.
 - The CLI control plane is DevAPI. Do not configure or call Central directly.
 - Use `RVS_TOKEN` for CI/headless flows.
