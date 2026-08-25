@@ -64,7 +64,9 @@ def pip(
     _run(
         "pip",
         ctx,
-        _options(rvs_profile, rvs_repo, rvs_target, rvs_account, rvs_customer_id, rvs_native_config),
+        _options(
+            rvs_profile, rvs_repo, rvs_target, rvs_account, rvs_customer_id, rvs_native_config
+        ),
     )
 
 
@@ -92,7 +94,9 @@ def uv(
     _run(
         "uv",
         ctx,
-        _options(rvs_profile, rvs_repo, rvs_target, rvs_account, rvs_customer_id, rvs_native_config),
+        _options(
+            rvs_profile, rvs_repo, rvs_target, rvs_account, rvs_customer_id, rvs_native_config
+        ),
     )
 
 
@@ -120,7 +124,9 @@ def twine(
     _run(
         "twine",
         ctx,
-        _options(rvs_profile, rvs_repo, rvs_target, rvs_account, rvs_customer_id, rvs_native_config),
+        _options(
+            rvs_profile, rvs_repo, rvs_target, rvs_account, rvs_customer_id, rvs_native_config
+        ),
     )
 
 
@@ -148,7 +154,9 @@ def npm(
     _run(
         "npm",
         ctx,
-        _options(rvs_profile, rvs_repo, rvs_target, rvs_account, rvs_customer_id, rvs_native_config),
+        _options(
+            rvs_profile, rvs_repo, rvs_target, rvs_account, rvs_customer_id, rvs_native_config
+        ),
     )
 
 
@@ -176,5 +184,7 @@ def mvn(
     _run(
         "mvn",
         ctx,
-        _options(rvs_profile, rvs_repo, rvs_target, rvs_account, rvs_customer_id, rvs_native_config),
+        _options(
+            rvs_profile, rvs_repo, rvs_target, rvs_account, rvs_customer_id, rvs_native_config
+        ),
     )

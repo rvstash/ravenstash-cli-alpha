@@ -75,9 +75,7 @@ def _private_target(entry: dict) -> cfg_mod.PackageTarget:
     customer = entry["customer"]
     repository = entry["repository"]
     package_kinds = [
-        kind
-        for kind in repository.get("registry_kinds", [])
-        if kind in {"pypi", "npm", "maven"}
+        kind for kind in repository.get("registry_kinds", []) if kind in {"pypi", "npm", "maven"}
     ]
     inferred_kind = package_kinds[0] if len(package_kinds) == 1 else None
     return cfg_mod.PackageTarget(
@@ -194,7 +192,9 @@ def resolve_target(
                 raise ValueError(f"Package target '{value}' was not found in this account")
             if len(matches) > 1:
                 kinds = ", ".join(
-                    sorted({str(item["remote_repository"].get("registry_kind")) for item in matches})
+                    sorted(
+                        {str(item["remote_repository"].get("registry_kind")) for item in matches}
+                    )
                 )
                 raise ValueError(
                     f"Package target '{value}' is ambiguous across {kinds}. Pass --kind."
@@ -273,9 +273,7 @@ def effective_target(
             customer_id=account.customer_id,
             kind=kind,
         )
-    output.fatal(
-        f"No {kind} package target is selected. Pass --target or run `rvs pkg select`."
-    )
+    output.fatal(f"No {kind} package target is selected. Pass --target or run `rvs pkg select`.")
 
 
 def registry_context(
@@ -321,7 +319,9 @@ def registry_context(
                     },
                 },
             ).json()
-            workspace_reference = credential.get("workspace_unique_ref") or selected.workspace_unique_ref
+            workspace_reference = (
+                credential.get("workspace_unique_ref") or selected.workspace_unique_ref
+            )
             repository_reference = (
                 credential.get("repository_unique_ref") or selected.repository_unique_ref
             )
@@ -331,9 +331,7 @@ def registry_context(
             push_base_url: str | None = endpoints.push_base_url
         else:
             route_kind = (
-                "remote_official"
-                if selected.target_type == "official_cache"
-                else "remote_custom"
+                "remote_official" if selected.target_type == "official_cache" else "remote_custom"
             )
             workspace_reference = "o" if selected.target_type == "official_cache" else "c"
             credential = client.post(

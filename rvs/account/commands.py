@@ -163,7 +163,9 @@ def account_current(
 
 @app.command("switch")
 def account_switch(
-    account: str = typer.Argument(..., help="personal, org:<label>, or a stable account reference."),
+    account: str = typer.Argument(
+        ..., help="personal, org:<label>, or a stable account reference."
+    ),
     profile: str | None = typer.Option(None, "--profile", "-p"),
 ) -> None:
     """Switch the account used by this shell or the active profile."""

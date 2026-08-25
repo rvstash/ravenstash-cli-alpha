@@ -86,7 +86,10 @@ class FakeApi:
                 for item in self.remotes
                 if params is None
                 or (
-                    (not params.get("customer_id") or item["customer"]["customer_id"] == params["customer_id"])
+                    (
+                        not params.get("customer_id")
+                        or item["customer"]["customer_id"] == params["customer_id"]
+                    )
                     and (
                         not params.get("registry_kind")
                         or item["remote_repository"]["registry_kind"] == params["registry_kind"]
@@ -150,7 +153,10 @@ def test_account_and_official_cache_selection_are_visible_and_clearable(
     isolate(monkeypatch, tmp_path)
     personal = customer("personal-alice", "Alice", "personal")
     acme = customer("acme", "acme")
-    fake = FakeApi([personal, acme], [remote(owner=acme, family="official", name="pypiorg", kind="pypi", suffix="pypi")])
+    fake = FakeApi(
+        [personal, acme],
+        [remote(owner=acme, family="official", name="pypiorg", kind="pypi", suffix="pypi")],
+    )
     monkeypatch.setattr(ApiClient, "from_profile", staticmethod(lambda profile=None: fake))
 
     switched = runner.invoke(app, ["account", "switch", "org:acme"])
@@ -197,11 +203,17 @@ def test_two_login_profiles_keep_separate_actor_state_for_the_same_org(
 ) -> None:
     isolate(monkeypatch, tmp_path, profiles=("alice", "bob"))
     acme = customer("acme", "acme")
-    fake = FakeApi([acme], [remote(owner=acme, family="official", name="pypiorg", kind="pypi", suffix="pypi")])
+    fake = FakeApi(
+        [acme], [remote(owner=acme, family="official", name="pypiorg", kind="pypi", suffix="pypi")]
+    )
     monkeypatch.setattr(ApiClient, "from_profile", staticmethod(lambda profile=None: fake))
 
-    assert runner.invoke(app, ["account", "switch", "org:acme", "--profile", "alice"]).exit_code == 0
-    assert runner.invoke(app, ["pkg", "select", "cache:pypiorg", "--profile", "alice"]).exit_code == 0
+    assert (
+        runner.invoke(app, ["account", "switch", "org:acme", "--profile", "alice"]).exit_code == 0
+    )
+    assert (
+        runner.invoke(app, ["pkg", "select", "cache:pypiorg", "--profile", "alice"]).exit_code == 0
+    )
     assert runner.invoke(app, ["account", "switch", "org:acme", "--profile", "bob"]).exit_code == 0
 
     assert cfg_mod.selected_package_target("alice", "acme") is not None

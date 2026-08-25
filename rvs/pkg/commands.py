@@ -70,7 +70,9 @@ def package_context(
         "--account",
         help="One-shot acting account selector.",
     ),
-    kind: str | None = typer.Option(None, "--kind", help="Registry kind when inference is ambiguous."),
+    kind: str | None = typer.Option(
+        None, "--kind", help="Registry kind when inference is ambiguous."
+    ),
     profile: str | None = typer.Option(None, "--profile", help="One-shot login profile."),
 ) -> None:
     """Manage package targets and delegate package operations to native tools."""
@@ -225,9 +227,7 @@ def package_install(
         kind = selected.registry_kind if selected is not None else None
     kind = kind or _project_package_kind()
     if kind not in _PACKAGE_KINDS:
-        output.fatal(
-            "Cannot infer the package registry kind. Pass --kind pypi, npm, or maven."
-        )
+        output.fatal("Cannot infer the package registry kind. Pass --kind pypi, npm, or maven.")
     if kind == "pypi":
         pypi_install(packages=packages, repo=None, profile=None, customer_id=None)
     elif kind == "npm":
@@ -353,9 +353,7 @@ def _registry_context(
     effective_profile = profile or options.get("profile")
     effective_customer_id = customer_id
     if effective_customer_id is None and options.get("account"):
-        effective_customer_id = _context_customer_id(
-            effective_profile, options.get("account")
-        )
+        effective_customer_id = _context_customer_id(effective_profile, options.get("account"))
     return registry_context(
         kind=kind,
         target=options.get("target"),
@@ -709,9 +707,7 @@ def remote_list(
     profile: str | None = typer.Option(None, "--profile", "-p"),
     customer_id: str | None = typer.Option(None, "--customer-id"),
     account: str | None = typer.Option(None, "--account"),
-    kind: str | None = typer.Option(
-        None, "--kind", "--registry-kind", "-k", "--ecosystem", "-e"
-    ),
+    kind: str | None = typer.Option(None, "--kind", "--registry-kind", "-k", "--ecosystem", "-e"),
 ) -> None:
     """List remote caches & proxies for the selected customer."""
     if kind:
@@ -919,10 +915,14 @@ def remote_create_custom(
             }
         )
     try:
-        entry = _client(profile).post(
-            "/v0/remote-repositories/custom",
-            json=payload,
-        ).json()
+        entry = (
+            _client(profile)
+            .post(
+                "/v0/remote-repositories/custom",
+                json=payload,
+            )
+            .json()
+        )
     except (ApiError, KeyError, TypeError) as exc:
         output.fatal(str(exc))
     item = entry["remote_repository"]
@@ -943,9 +943,7 @@ def remote_show(
     """Show a remote cache & proxy."""
     if kind:
         _require_package_kind(kind)
-    selected_customer = _context_customer_id(profile, account) or _customer_id(
-        profile, customer_id
-    )
+    selected_customer = _context_customer_id(profile, account) or _customer_id(profile, customer_id)
     client = _client(profile)
     try:
         item = client.get(
@@ -985,9 +983,7 @@ def remote_set_age(
     """Update the minimum package age for direct access."""
     if kind:
         _require_package_kind(kind)
-    selected_customer = _context_customer_id(profile, account) or _customer_id(
-        profile, customer_id
-    )
+    selected_customer = _context_customer_id(profile, account) or _customer_id(profile, customer_id)
     client = _client(profile)
     payload = {"min_age_days": min_age_days}
     try:
@@ -1007,9 +1003,7 @@ def remote_delete(
     profile: str | None = typer.Option(None, "--profile", "-p"),
     customer_id: str | None = typer.Option(None, "--customer-id"),
     account: str | None = typer.Option(None, "--account"),
-    kind: str | None = typer.Option(
-        None, "--kind", "--registry-kind", "-k", "--ecosystem", "-e"
-    ),
+    kind: str | None = typer.Option(None, "--kind", "--registry-kind", "-k", "--ecosystem", "-e"),
     yes: bool = typer.Option(False, "--yes", "-y"),
 ) -> None:
     """Delete a remote cache & proxy."""
@@ -1017,9 +1011,7 @@ def remote_delete(
         _require_package_kind(kind)
     if not yes:
         typer.confirm(f"Delete remote cache & proxy '{remote}'?", abort=True)
-    selected_customer = _context_customer_id(profile, account) or _customer_id(
-        profile, customer_id
-    )
+    selected_customer = _context_customer_id(profile, account) or _customer_id(profile, customer_id)
     params = {"customer_id": selected_customer, "registry_kind": kind}
     client = _client(profile)
     try:
@@ -1254,9 +1246,7 @@ def pypi_index_url(
     ),
 ) -> None:
     """Print the private PyPI simple-index URL."""
-    context = _registry_context(
-        "pypi", repo, profile, customer_id, allow_official_default=True
-    )
+    context = _registry_context("pypi", repo, profile, customer_id, allow_official_default=True)
     output.value(
         _ROUTER.pypi_index_url(
             context.read_base_url, context.workspace_reference, context.repository_reference
@@ -1274,9 +1264,7 @@ def pypi_upload_url(
     ),
 ) -> None:
     """Print the private PyPI upload URL."""
-    context = _registry_context(
-        "pypi", repo, profile, customer_id, require_private=True
-    )
+    context = _registry_context("pypi", repo, profile, customer_id, require_private=True)
     assert context.push_base_url is not None
     output.value(
         _ROUTER.pypi_upload_url(
@@ -1296,9 +1284,7 @@ def pypi_install(
     ),
 ) -> None:
     """Install Python packages using pip with Ravenstash credentials injected."""
-    context = _registry_context(
-        "pypi", repo, profile, customer_id, allow_official_default=True
-    )
+    context = _registry_context("pypi", repo, profile, customer_id, allow_official_default=True)
     index_url = _ROUTER.pypi_index_url(
         context.read_base_url, context.workspace_reference, context.repository_reference
     )
@@ -1322,9 +1308,7 @@ def pypi_publish(
     ),
 ) -> None:
     """Upload wheel and sdist files to a PyPI package repository."""
-    context = _registry_context(
-        "pypi", repo, profile, customer_id, require_private=True
-    )
+    context = _registry_context("pypi", repo, profile, customer_id, require_private=True)
     assert context.push_base_url is not None
     files = list(dist_dir.glob("*.whl")) + list(dist_dir.glob("*.tar.gz"))
     if not files:
@@ -1358,9 +1342,7 @@ def pypi_configure(
     ),
 ) -> None:
     """Print pip configuration for the private PyPI repository."""
-    context = _registry_context(
-        "pypi", repo, profile, customer_id, allow_official_default=True
-    )
+    context = _registry_context("pypi", repo, profile, customer_id, allow_official_default=True)
     index_url = _ROUTER.pypi_index_url(
         context.read_base_url, context.workspace_reference, context.repository_reference
     )
@@ -1379,9 +1361,7 @@ def npm_registry_url(
     ),
 ) -> None:
     """Print the private npm registry URL."""
-    context = _registry_context(
-        "npm", repo, profile, customer_id, allow_official_default=True
-    )
+    context = _registry_context("npm", repo, profile, customer_id, allow_official_default=True)
     output.value(
         _ROUTER.npm_registry_url(
             context.read_base_url, context.workspace_reference, context.repository_reference
@@ -1399,9 +1379,7 @@ def npmrc(
     ),
 ) -> None:
     """Print an .npmrc snippet for the private npm repository."""
-    context = _registry_context(
-        "npm", repo, profile, customer_id, allow_official_default=True
-    )
+    context = _registry_context("npm", repo, profile, customer_id, allow_official_default=True)
     registry_url = _ROUTER.npm_registry_url(
         context.read_base_url,
         context.workspace_reference,
@@ -1424,9 +1402,7 @@ def npm_install(
     ),
 ) -> None:
     """Install npm packages with Ravenstash credentials injected."""
-    context = _registry_context(
-        "npm", repo, profile, customer_id, allow_official_default=True
-    )
+    context = _registry_context("npm", repo, profile, customer_id, allow_official_default=True)
     registry_url = _ROUTER.npm_registry_url(
         context.read_base_url,
         context.workspace_reference,
@@ -1452,9 +1428,7 @@ def npm_publish(
     ),
 ) -> None:
     """Publish an npm package to a Ravenstash npm repository."""
-    context = _registry_context(
-        "npm", repo, profile, customer_id, require_private=True
-    )
+    context = _registry_context("npm", repo, profile, customer_id, require_private=True)
     assert context.push_base_url is not None
     results = npm_reg.publish(
         registry_url=_ROUTER.npm_upload_registry_url(
@@ -1505,9 +1479,7 @@ def maven_repo_url(
     ),
 ) -> None:
     """Print the private Maven repository URL."""
-    context = _registry_context(
-        "maven", repo, profile, customer_id, allow_official_default=True
-    )
+    context = _registry_context("maven", repo, profile, customer_id, allow_official_default=True)
     output.value(
         _ROUTER.maven_repo_url(
             context.read_base_url,
@@ -1555,9 +1527,7 @@ def maven_settings(
     ),
 ) -> None:
     """Print a Maven settings.xml snippet for the private Maven repository."""
-    context = _registry_context(
-        "maven", repo, profile, customer_id, allow_official_default=True
-    )
+    context = _registry_context("maven", repo, profile, customer_id, allow_official_default=True)
     output.value(
         _settings_xml(
             _ROUTER.maven_repo_url(
@@ -1580,9 +1550,7 @@ def maven_install(
     ),
 ) -> None:
     """Fetch a Maven artifact into the local Maven cache."""
-    context = _registry_context(
-        "maven", repo, profile, customer_id, allow_official_default=True
-    )
+    context = _registry_context("maven", repo, profile, customer_id, allow_official_default=True)
     repo_url = _ROUTER.maven_repo_url(
         context.read_base_url, context.workspace_reference, context.repository_reference
     )
@@ -1626,9 +1594,7 @@ def maven_deploy(
         maven_reg.validate_artifact_filename(artifact_file.name, artifact, version)
     except ValueError as exc:
         output.fatal(str(exc))
-    context = _registry_context(
-        "maven", repo, profile, customer_id, require_private=True
-    )
+    context = _registry_context("maven", repo, profile, customer_id, require_private=True)
     assert context.push_base_url is not None
     results = maven_reg.publish(
         upload_url=_ROUTER.maven_upload_url(

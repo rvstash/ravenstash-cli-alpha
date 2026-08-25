@@ -264,13 +264,11 @@ def load_session() -> SessionContext:
     try:
         with path.open("rb") as handle:
             raw = tomllib.load(handle)
-    except (OSError, tomllib.TOMLDecodeError):
+    except OSError, tomllib.TOMLDecodeError:
         return SessionContext()
     return SessionContext(
         profile=raw.get("profile") if isinstance(raw.get("profile"), str) else None,
-        customer_id=(
-            raw.get("customer_id") if isinstance(raw.get("customer_id"), str) else None
-        ),
+        customer_id=(raw.get("customer_id") if isinstance(raw.get("customer_id"), str) else None),
     )
 
 
@@ -499,8 +497,7 @@ def _package_target_from_mapping(value: object) -> PackageTarget | None:
     if target_type not in {"private", "official_cache", "custom_cache"}:
         return None
     if not all(
-        isinstance(item, str) and item
-        for item in (customer_id, stable_selector, display_selector)
+        isinstance(item, str) and item for item in (customer_id, stable_selector, display_selector)
     ):
         return None
     registry_kind = value.get("registry_kind")

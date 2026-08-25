@@ -74,9 +74,7 @@ def test_pypi_publish_reports_http_failures(monkeypatch, tmp_path: Path) -> None
         lambda url, **kwargs: httpx.Response(409, text="already exists"),
     )
 
-    result = pypi_reg.publish(
-        "https://push.pypi.example/custpid1/repo", "token", [sdist]
-    )
+    result = pypi_reg.publish("https://push.pypi.example/custpid1/repo", "token", [sdist])
 
     assert result == [
         pypi_reg.PublishResult(

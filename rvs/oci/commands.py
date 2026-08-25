@@ -85,9 +85,7 @@ def oras(
     rvs_account: str | None = typer.Option(None, "--rvs-account"),
     rvs_customer_id: str | None = typer.Option(None, "--rvs-customer-id"),
 ) -> None:
-    _run(
-        "oras", ctx, rvs_profile, rvs_repo, rvs_target, rvs_account, rvs_customer_id, rvs_kind
-    )
+    _run("oras", ctx, rvs_profile, rvs_repo, rvs_target, rvs_account, rvs_customer_id, rvs_kind)
 
 
 def oci_reference(

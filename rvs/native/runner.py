@@ -159,9 +159,13 @@ def _build_plan(
     native_arg_start = len(command_prefix)
     selected_customer_id = _selected_customer_id(options)
     saved_target = cfg_mod.selected_package_target(options.profile, selected_customer_id)
-    has_rvs_target = options.target is not None or options.repo is not None or saved_target is not None
+    has_rvs_target = (
+        options.target is not None or options.repo is not None or saved_target is not None
+    )
     effective_policy = (
-        "override" if has_rvs_target and options.native_config == "respect" else options.native_config
+        "override"
+        if has_rvs_target and options.native_config == "respect"
+        else options.native_config
     )
 
     if effective_policy == "respect":
@@ -463,15 +467,8 @@ def _ravenstash_url_kind(
             if path_parts[: len(base_parts)] != base_parts:
                 continue
             route_parts = path_parts[len(base_parts) :]
-            if (
-                (
-                    surface == "private"
-                    and _valid_private_registry_route(route_parts)
-                )
-                or (
-                    surface == "cache"
-                    and _valid_cache_registry_route(route_parts)
-                )
+            if (surface == "private" and _valid_private_registry_route(route_parts)) or (
+                surface == "cache" and _valid_cache_registry_route(route_parts)
             ):
                 return kind  # type: ignore[return-value]
     return None
@@ -479,9 +476,7 @@ def _ravenstash_url_kind(
 
 def _valid_private_registry_route(path_parts: list[str]) -> bool:
     return (
-        len(path_parts) >= 2
-        and path_parts[0] not in {"x", "r", "o", "c"}
-        and bool(path_parts[1])
+        len(path_parts) >= 2 and path_parts[0] not in {"x", "r", "o", "c"} and bool(path_parts[1])
     )
 
 
