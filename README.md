@@ -13,6 +13,8 @@ history in `rvstash/ravenstash-cli`. The CLI is licensed under the
 
 ```text
 rvs auth       Authenticate and manage local profiles
+rvs account    Select the personal or organization customer used for package work
+rvs shell      Install the visible profile/account/target prompt integration
 rvs runtime    Install and select local Python, Node, and Java runtimes
 rvs pkg        Manage Ravenstash package repositories and package workflows
 rvs packages   Alias for rvs pkg
@@ -88,6 +90,21 @@ rvs auth profile delete --all
 rvs auth profile rename old-name new-name
 ```
 
+One login profile may access a personal customer and several organizations. Select
+the account used for authorization, metering, and unqualified target resolution:
+
+```bash
+rvs account list
+rvs account switch personal
+rvs account switch org:acme
+rvs account current
+rvs shell setup
+```
+
+The shell prompt shows `(profile · personal)` or `(profile · org:acme)` and appends
+the selected package target. Shell-local profile/account state is non-secret; tokens
+remain in the keyring.
+
 `rvs auth whoami` verifies the current identity against Ravenstash; it does not
 infer identity solely from local profile metadata.
 
@@ -141,6 +158,32 @@ rvs pkg remote-cache set-age <cache-id> --min-age-days 3
 rvs pkg remote-cache delete <cache-id>
 ```
 
+Select one typed target without reserving workspace names:
+
+```bash
+rvs pkg select acme/backend
+rvs pkg select cache:pypiorg
+rvs pkg select custom-cache:piwheels
+rvs pkg current
+rvs pkg clear
+
+rvs pkg --target acme/backend --kind pypi install internal-lib
+rvs pkg --repo acme/backend --kind pypi install internal-lib  # private-target alias
+rvs pkg --target cache:pypiorg install requests
+rvs pkg --target custom-cache:piwheels --kind pypi install numpy
+```
+
+`rvs pkg cache` is an alias for `rvs pkg remote-cache`. Official and custom cache
+management stays visibly distinct:
+
+```bash
+rvs pkg cache add pypiorg --select
+rvs pkg cache create-custom piwheels --kind pypi \
+  --api-url https://www.piwheels.org/simple/ --select
+rvs pkg cache select pypiorg
+rvs pkg cache select --custom piwheels
+```
+
 A remote cache & proxy is a customer-owned read-only binding to a curated
 public registry. Use it directly with package managers or connect it to a
 private repository. Packages are cached on demand and can be delayed with
@@ -154,9 +197,10 @@ hyphens. When a name is ambiguous across authorized workspaces, use
 the CLI always builds native package URLs from the immutable
 `<workspace_unique_ref>/<repository_unique_ref>` pair.
 
-Defaults are profile-scoped under
-`[profiles.<name>.registries.<registry-kind>]` in `~/.rvs/config.toml`. Legacy top-level
-registry defaults remain readable as a migration fallback.
+The active account and selected target are scoped by login profile and immutable
+customer ID. Legacy per-kind repository defaults remain readable as a migration
+fallback. An explicit `--target` (or private `--repo` alias) is one-shot and
+never changes saved state.
 
 Saved defaults store immutable workspace and repository references as identity
 and keep names only as display hints. A later workspace or repository rename
@@ -228,18 +272,18 @@ rvs uv sync
 rvs twine upload dist/*
 rvs npm install @acme/widgets
 rvs mvn test
-rvs docker --rvs-repo runtime-images pull oci.rvsta.sh/w_abcdefgh/r_23456789/api:latest
-rvs helm --rvs-repo deployment-charts show chart oci://oci.rvsta.sh/w_abcdefgh/r_3456789a/charts/api --version 1.2.3
-rvs oras --rvs-kind container --rvs-repo runtime-images discover oci.rvsta.sh/w_abcdefgh/r_23456789/api:latest
-rvs oci-reference --kind container --repo runtime-images --oci-path api --reference latest
+rvs docker --rvs-target acme/runtime-images pull oci.rvsta.sh/w_abcdefgh/r_23456789/api:latest
+rvs helm --rvs-target acme/deployment-charts show chart oci://oci.rvsta.sh/w_abcdefgh/r_3456789a/charts/api --version 1.2.3
+rvs oras --rvs-kind container --rvs-target acme/runtime-images discover oci.rvsta.sh/w_abcdefgh/r_23456789/api:latest
+rvs oci-reference --kind container --target acme/runtime-images --oci-path api --reference latest
 
 rvs npm --rvs-repo my-node-packages install @acme/widgets
 rvs pip --rvs-repo my-python-packages install acme-utils
 rvs uv --rvs-repo my-python-packages --rvs-native-config isolate sync
 ```
 
-`rvs pkg ...` is Ravenstash-native: it selects the Ravenstash repository through
-`--repo` or `~/.rvs/config.toml`, and the underlying implementation may or may
+`rvs pkg ...` is Ravenstash-native: it selects a typed Ravenstash target through
+`--target` or the active profile/account context, and the underlying implementation may or may
 not use a native package manager. `rvs pip`, `rvs uv`, `rvs twine`, `rvs npm`,
 `rvs mvn`, `rvs docker`, `rvs helm`, and `rvs oras` are explicit native-tool passthroughs. The
 package-release wrappers respect native config

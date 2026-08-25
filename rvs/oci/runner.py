@@ -17,7 +17,9 @@ import typer
 
 from .. import config as cfg_mod
 from .. import output
+from ..account.commands import resolve_account
 from ..client import ApiClient, ApiError
+from ..pkg.targets import resolve_target
 from ..runtime import tools
 
 
@@ -34,6 +36,8 @@ _OCI_NATIVE_PATH = re.compile(
 class OciOptions:
     profile: str | None = None
     repo: str | None = None
+    target: str | None = None
+    account: str | None = None
     customer_id: str | None = None
     kind: OciRegistryKind | None = None
 
@@ -92,33 +96,41 @@ def resolve_route(tool: OciTool, options: OciOptions) -> OciRoute:
     kind = _selected_kind(tool, options.kind)
     config = cfg_mod.load()
     profile_name = options.profile or cfg_mod.current_profile_name(config)
-    repo_ref = options.repo or config.registry_defaults(kind, profile_name).default_repo
+    customer_id = options.customer_id
+    if customer_id is None and options.account is not None:
+        customer_id = str(resolve_account(options.account, profile_name)["customer_id"])
+    customer_id = customer_id or cfg_mod.current_customer_id(profile_name)
+    selected = cfg_mod.selected_package_target(profile_name, customer_id)
+    repo_ref = options.target or options.repo
+    if repo_ref is None and selected is not None:
+        if selected.target_type != "private":
+            output.fatal("OCI commands require a private repository target.")
+        repo_ref = selected.stable_selector
+    if repo_ref is None:
+        repo_ref = config.registry_defaults(kind, profile_name).default_repo
     if not repo_ref:
-        output.fatal(
-            f"No {kind} repository selected. Pass --rvs-repo or run "
-            f"`rvs pkg repo set-default {kind} <repository>`."
-        )
-    workspace, repository = _split_repo_ref(repo_ref)
-    selector = f"{workspace}/{repository}" if workspace else repository
-    expected_target = cfg_mod.registry_target_expectation(kind, selector, profile_name)
-    resolve_params = {
-        "selector": selector,
-        "registry_kind": kind,
-    }
-    if options.customer_id is not None:
-        resolve_params["customer_id"] = options.customer_id
+        output.fatal(f"No {kind} repository selected. Pass --rvs-target or run `rvs pkg select`.")
+    _, _, target = resolve_target(
+        repo_ref,
+        profile=profile_name,
+        customer_id=customer_id,
+        kind=kind,
+    )
+    if target.target_type != "private" or target.repository_id is None:
+        output.fatal("OCI commands require a private repository target.")
     try:
-        client = ApiClient.from_profile(options.profile)
-        entry = client.get(
-            "/v0/repositories/resolve",
-            params=resolve_params,
-        ).json()
-        repository_row = entry["repository"]
+        client = ApiClient.from_profile(profile_name)
         credential_body: dict[str, object] = {
-            "repository_id": repository_row["id"],
+            "repository_id": target.repository_id,
             "registry_kind": kind,
-            "expected_target": expected_target
-            or cfg_mod.repository_target_snapshot(repository_row),
+            "expected_target": {
+                "workspace_id": target.workspace_id,
+                "workspace_unique_ref": target.workspace_unique_ref,
+                "workspace_name": target.workspace_name_cache,
+                "repository_id": target.repository_id,
+                "repository_unique_ref": target.repository_unique_ref,
+                "repository_name": target.repository_name_cache,
+            },
         }
         credential = client.post(
             "/v0/package-credentials",
@@ -132,13 +144,6 @@ def resolve_route(tool: OciTool, options: OciOptions) -> OciRoute:
         output.fatal(f"Invalid OCI capability response: {exc}")
     if not isinstance(native_path, str) or _OCI_NATIVE_PATH.fullmatch(native_path) is None:
         output.fatal("Invalid OCI capability response: native_path is not canonical.")
-    if options.repo is None:
-        cfg_mod.set_registry_default_target(
-            kind,
-            customer=entry["customer"],
-            repository=repository_row,
-            profile=profile_name,
-        )
     registry_url, registry_host = _registry_url(config.active_profile(profile_name))
     return OciRoute(
         kind=kind,

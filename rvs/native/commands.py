@@ -17,12 +17,16 @@ PASSTHROUGH_CONTEXT = {
 def _options(
     profile: str | None,
     repo: str | None,
+    target: str | None,
+    account: str | None,
     customer_id: str | None,
     native_config: str,
 ) -> runner.NativeOptions:
     return runner.NativeOptions(
         profile=profile,
         repo=repo,
+        target=target,
+        account=account,
         customer_id=customer_id,
         native_config=runner.normalize_policy(native_config),
     )
@@ -44,6 +48,8 @@ def pip(
         "--rvs-repo",
         help="Ravenstash PyPI repository override.",
     ),
+    rvs_target: str | None = typer.Option(None, "--rvs-target", help="Ravenstash target override."),
+    rvs_account: str | None = typer.Option(None, "--rvs-account", help="Acting account override."),
     rvs_customer_id: str | None = typer.Option(
         None,
         "--rvs-customer-id",
@@ -55,7 +61,11 @@ def pip(
         help="Native config policy: respect, override, or isolate.",
     ),
 ) -> None:
-    _run("pip", ctx, _options(rvs_profile, rvs_repo, rvs_customer_id, rvs_native_config))
+    _run(
+        "pip",
+        ctx,
+        _options(rvs_profile, rvs_repo, rvs_target, rvs_account, rvs_customer_id, rvs_native_config),
+    )
 
 
 def uv(
@@ -66,6 +76,8 @@ def uv(
         "--rvs-repo",
         help="Ravenstash PyPI repository override.",
     ),
+    rvs_target: str | None = typer.Option(None, "--rvs-target", help="Ravenstash target override."),
+    rvs_account: str | None = typer.Option(None, "--rvs-account", help="Acting account override."),
     rvs_customer_id: str | None = typer.Option(
         None,
         "--rvs-customer-id",
@@ -77,7 +89,11 @@ def uv(
         help="Native config policy: respect, override, or isolate.",
     ),
 ) -> None:
-    _run("uv", ctx, _options(rvs_profile, rvs_repo, rvs_customer_id, rvs_native_config))
+    _run(
+        "uv",
+        ctx,
+        _options(rvs_profile, rvs_repo, rvs_target, rvs_account, rvs_customer_id, rvs_native_config),
+    )
 
 
 def twine(
@@ -88,6 +104,8 @@ def twine(
         "--rvs-repo",
         help="Ravenstash PyPI repository override.",
     ),
+    rvs_target: str | None = typer.Option(None, "--rvs-target", help="Ravenstash target override."),
+    rvs_account: str | None = typer.Option(None, "--rvs-account", help="Acting account override."),
     rvs_customer_id: str | None = typer.Option(
         None,
         "--rvs-customer-id",
@@ -99,7 +117,11 @@ def twine(
         help="Native config policy: respect, override, or isolate.",
     ),
 ) -> None:
-    _run("twine", ctx, _options(rvs_profile, rvs_repo, rvs_customer_id, rvs_native_config))
+    _run(
+        "twine",
+        ctx,
+        _options(rvs_profile, rvs_repo, rvs_target, rvs_account, rvs_customer_id, rvs_native_config),
+    )
 
 
 def npm(
@@ -110,6 +132,8 @@ def npm(
         "--rvs-repo",
         help="Ravenstash npm repository override.",
     ),
+    rvs_target: str | None = typer.Option(None, "--rvs-target", help="Ravenstash target override."),
+    rvs_account: str | None = typer.Option(None, "--rvs-account", help="Acting account override."),
     rvs_customer_id: str | None = typer.Option(
         None,
         "--rvs-customer-id",
@@ -121,7 +145,11 @@ def npm(
         help="Native config policy: respect, override, or isolate.",
     ),
 ) -> None:
-    _run("npm", ctx, _options(rvs_profile, rvs_repo, rvs_customer_id, rvs_native_config))
+    _run(
+        "npm",
+        ctx,
+        _options(rvs_profile, rvs_repo, rvs_target, rvs_account, rvs_customer_id, rvs_native_config),
+    )
 
 
 def mvn(
@@ -132,6 +160,8 @@ def mvn(
         "--rvs-repo",
         help="Ravenstash Maven repository override.",
     ),
+    rvs_target: str | None = typer.Option(None, "--rvs-target", help="Ravenstash target override."),
+    rvs_account: str | None = typer.Option(None, "--rvs-account", help="Acting account override."),
     rvs_customer_id: str | None = typer.Option(
         None,
         "--rvs-customer-id",
@@ -143,4 +173,8 @@ def mvn(
         help="Native config policy: respect, override, or isolate.",
     ),
 ) -> None:
-    _run("mvn", ctx, _options(rvs_profile, rvs_repo, rvs_customer_id, rvs_native_config))
+    _run(
+        "mvn",
+        ctx,
+        _options(rvs_profile, rvs_repo, rvs_target, rvs_account, rvs_customer_id, rvs_native_config),
+    )

@@ -21,8 +21,10 @@ import typer
 
 from .. import config as cfg_mod
 from .. import output
+from ..account.commands import resolve_account
 from ..client import ApiClient, ApiError
 from ..pkg.routing import CanonicalRouter, native_base_url
+from ..pkg.targets import registry_context
 from ..runtime import tools
 
 
@@ -51,6 +53,8 @@ _RVS_URL_KINDS: dict[NativeTool, tuple[RegistryKind, ...]] = {
 class NativeOptions:
     profile: str | None = None
     repo: str | None = None
+    target: str | None = None
+    account: str | None = None
     customer_id: str | None = None
     native_config: ConfigPolicy = "respect"
 
@@ -59,7 +63,7 @@ class NativeOptions:
 class RegistryRoute:
     kind: RegistryKind
     read_base_url: str
-    push_base_url: str
+    push_base_url: str | None
     workspace_unique_ref: str
     repository_unique_ref: str
     package_token: str
@@ -74,6 +78,8 @@ class RegistryRoute:
 
     @property
     def pypi_upload_url(self) -> str:
+        if self.push_base_url is None:
+            output.fatal("The selected remote cache is read-only.")
         return _ROUTER.pypi_upload_url(
             self.push_base_url,
             self.workspace_unique_ref,
@@ -90,6 +96,8 @@ class RegistryRoute:
 
     @property
     def npm_upload_registry_url(self) -> str:
+        if self.push_base_url is None:
+            output.fatal("The selected remote cache is read-only.")
         return _ROUTER.npm_upload_registry_url(
             self.push_base_url,
             self.workspace_unique_ref,
@@ -106,6 +114,8 @@ class RegistryRoute:
 
     @property
     def maven_upload_url(self) -> str:
+        if self.push_base_url is None:
+            output.fatal("The selected remote cache is read-only.")
         return _ROUTER.maven_upload_url(
             self.push_base_url,
             self.workspace_unique_ref,
@@ -147,8 +157,11 @@ def _build_plan(
     command_prefix = _command_prefix_for(tool)
     cmd = [*command_prefix, *argv]
     native_arg_start = len(command_prefix)
+    selected_customer_id = _selected_customer_id(options)
+    saved_target = cfg_mod.selected_package_target(options.profile, selected_customer_id)
+    has_rvs_target = options.target is not None or options.repo is not None or saved_target is not None
     effective_policy = (
-        "override" if options.repo and options.native_config == "respect" else options.native_config
+        "override" if has_rvs_target and options.native_config == "respect" else options.native_config
     )
 
     if effective_policy == "respect":
@@ -174,7 +187,7 @@ def _build_plan(
             urls[0],
             kind,
             options.profile,
-            options.customer_id,
+            selected_customer_id,
         )
         _inject_for_detected_urls(tool, cmd, native_arg_start, env, urls, token, temp_dir)
         return ExecutionPlan(cmd=cmd, env=env)
@@ -237,62 +250,30 @@ def _split_repo_ref(repo_ref: str) -> tuple[str | None, str]:
 
 
 def _resolve_route(kind: RegistryKind, options: NativeOptions) -> RegistryRoute:
-    cfg = cfg_mod.load()
-    profile_name = options.profile or cfg_mod.current_profile_name(cfg)
-    repo_ref = options.repo or cfg.registry_defaults(kind, profile_name).default_repo
-    if not repo_ref:
-        output.fatal(
-            f"No {kind} package repository selected. Pass --rvs-repo or run "
-            f"`rvs pkg repo set-default {kind} <repository-name>`."
-        )
-    workspace_selector, repository_selector = _split_repo_ref(repo_ref)
-    selector = (
-        f"{workspace_selector}/{repository_selector}" if workspace_selector else repository_selector
+    context = registry_context(
+        kind=kind,
+        target=options.target,
+        repo=options.repo,
+        profile=options.profile,
+        customer_id=_selected_customer_id(options),
     )
-    expected_target = cfg_mod.registry_target_expectation(kind, selector, profile_name)
-    try:
-        client = ApiClient.from_profile(options.profile)
-        entry = client.get(
-            "/v0/repositories/resolve",
-            params={
-                "selector": selector,
-                "customer_id": options.customer_id,
-                "registry_kind": kind,
-            },
-        ).json()
-        repository = entry["repository"]
-        credential_body: dict[str, object] = {
-            "repository_id": repository["id"],
-            "registry_kind": kind,
-            "expected_target": expected_target or cfg_mod.repository_target_snapshot(repository),
-        }
-        credential = client.post(
-            "/v0/package-credentials",
-            json=credential_body,
-        ).json()
-    except ApiError as exc:
-        if options.repo is None and exc.status_code in {403, 404}:
-            cfg_mod.mark_registry_default_unavailable(kind, profile_name)
-        output.fatal(str(exc))
-    except (KeyError, TypeError, ValueError) as exc:
-        output.fatal(str(exc))
-    profile_cfg = _profile(options.profile)
-    endpoints = profile_cfg.native_registries.package(kind)
-    if options.repo is None:
-        cfg_mod.set_registry_default_target(
-            kind,
-            customer=entry["customer"],
-            repository=repository,
-            profile=profile_name,
-        )
     return RegistryRoute(
         kind=kind,
-        read_base_url=endpoints.read_base_url,
-        push_base_url=endpoints.push_base_url,
-        workspace_unique_ref=repository["workspace_unique_ref"],
-        repository_unique_ref=repository["repository_unique_ref"],
-        package_token=credential["access_token"],
+        read_base_url=context.read_base_url,
+        push_base_url=context.push_base_url,
+        workspace_unique_ref=context.workspace_reference,
+        repository_unique_ref=context.repository_reference,
+        package_token=context.token,
     )
+
+
+def _selected_customer_id(options: NativeOptions) -> str | None:
+    if options.customer_id:
+        return options.customer_id
+    if options.account:
+        return str(resolve_account(options.account, options.profile)["customer_id"])
+    profile_name = options.profile or cfg_mod.current_profile_name()
+    return cfg_mod.current_customer_id(profile_name)
 
 
 def _package_token_for_url(
@@ -307,7 +288,8 @@ def _package_token_for_url(
         try:
             workspace_reference, repository_reference, route_kind = _remote_route_scope(route_parts)
             client = ApiClient.from_profile(profile)
-            effective_customer_id = customer_id or _profile(profile).customer_id
+            profile_name = profile or cfg_mod.current_profile_name()
+            effective_customer_id = customer_id or cfg_mod.current_customer_id(profile_name)
             if not effective_customer_id:
                 output.fatal(
                     "A customer is required for direct remote-cache access. Pass --rvs-customer-id."

@@ -458,6 +458,10 @@ def profile_rename(
     if cfg.default_profile == old:
         cfg.default_profile = new
     cfg_mod.save(cfg)
+    session = cfg_mod.load_session()
+    if session.profile == old:
+        session.profile = new
+        cfg_mod.save_session(session)
     auth_mod.delete_token(old)
     output.success(f"Profile '{old}' renamed to '{new}'.")
     output.info(

@@ -5,6 +5,8 @@ Alpha command surface:
 | Command | Purpose |
 | --- | --- |
 | `rvs auth` | Browser/device login and local profile management |
+| `rvs account` | Personal/organization acting-account selection |
+| `rvs shell` | Session-aware profile/account/target prompt integration |
 | `rvs runtime` | Local Python, Node, and Java runtime management |
 | `rvs pkg` | Package repositories and package-manager configuration |
 | `rvs packages` | Alias for `rvs pkg` |
@@ -95,6 +97,26 @@ shell shims resolve `.python-version`, `.node-version`, and `.java-version` at
 invocation time, so project pins written by `runtime use` are effective after
 the shim was installed.
 
+## Account and package context
+
+```bash
+rvs account list [--profile NAME]
+rvs account current [--profile NAME]
+rvs account switch personal|org:LABEL|STABLE_REF [--profile NAME]
+rvs shell setup [--shell bash|zsh|fish]
+
+rvs pkg select TARGET [--kind KIND] [--account ACCOUNT] [--profile NAME]
+rvs pkg current [--account ACCOUNT] [--profile NAME]
+rvs pkg clear [--account ACCOUNT] [--profile NAME]
+rvs pkg --target TARGET [--account ACCOUNT] [--kind KIND] install PACKAGE...
+rvs pkg --repo WORKSPACE/REPOSITORY [--account ACCOUNT] [--kind KIND] install PACKAGE...
+```
+
+Targets are `workspace/repository`, `cache:official-slug`, or
+`custom-cache:customer-name`. Resolution is always scoped to the active customer.
+`--kind` is needed only when a generic operation or duplicate cross-kind custom
+cache name is ambiguous. Clearing a target does not change the login or account.
+
 ## CLI updates
 
 `rvs update` checks only the signed candidate in the currently configured APT
@@ -144,6 +166,12 @@ rvs pkg remote-cache show CACHE_ID [--profile NAME]
 rvs pkg remote-cache set-age CACHE_ID --min-age-days DAYS [--profile NAME]
 rvs pkg remote-cache delete CACHE_ID [--profile NAME] [--yes]
 rvs pkg remote-cache delete CACHE_ID --customer-id CUSTOMER_ID --registry-kind pypi|npm|maven [--profile NAME] [--yes]
+rvs pkg cache add OFFICIAL_SOURCE [--direct|--no-direct] [--select]
+rvs pkg cache create-custom NAME --kind pypi|npm|maven --api-url URL [--artifact-url URL] [--select]
+rvs pkg cache select SOURCE
+rvs pkg cache select --custom NAME [--kind KIND]
+rvs pkg cache current
+rvs pkg cache clear
 ```
 
 Package metadata commands:
@@ -204,15 +232,15 @@ No package-token command is exposed in the alpha CLI.
 ## Native Package-Manager Wrappers
 
 ```bash
-rvs pip [--rvs-profile NAME] [--rvs-repo REPOSITORY_NAME] [--rvs-customer-id CUSTOMER_ID] [--rvs-native-config respect|override|isolate] PIP_ARGS...
-rvs uv [--rvs-profile NAME] [--rvs-repo REPOSITORY_NAME] [--rvs-customer-id CUSTOMER_ID] [--rvs-native-config respect|override|isolate] UV_ARGS...
-rvs twine [--rvs-profile NAME] [--rvs-repo REPOSITORY_NAME] [--rvs-customer-id CUSTOMER_ID] [--rvs-native-config respect|override|isolate] TWINE_ARGS...
-rvs npm [--rvs-profile NAME] [--rvs-repo REPOSITORY_NAME] [--rvs-customer-id CUSTOMER_ID] [--rvs-native-config respect|override|isolate] NPM_ARGS...
-rvs mvn [--rvs-profile NAME] [--rvs-repo REPOSITORY_NAME] [--rvs-customer-id CUSTOMER_ID] [--rvs-native-config respect|override|isolate] MVN_ARGS...
-rvs docker [--rvs-profile NAME] [--rvs-repo REPOSITORY_NAME] [--rvs-customer-id CUSTOMER_ID] DOCKER_ARGS...
-rvs helm [--rvs-profile NAME] [--rvs-repo REPOSITORY_NAME] [--rvs-customer-id CUSTOMER_ID] HELM_ARGS...
-rvs oras --rvs-kind container|helm [--rvs-profile NAME] [--rvs-repo REPOSITORY_NAME] [--rvs-customer-id CUSTOMER_ID] ORAS_ARGS...
-rvs oci-reference --kind container|helm [--repo REPOSITORY_NAME] [--oci-path PATH] [--reference TAG_OR_DIGEST] [--profile NAME] [--customer-id CUSTOMER_ID]
+rvs pip [--rvs-profile NAME] [--rvs-target TARGET] [--rvs-account ACCOUNT] [--rvs-repo REPOSITORY_NAME] [--rvs-customer-id CUSTOMER_ID] [--rvs-native-config respect|override|isolate] PIP_ARGS...
+rvs uv [--rvs-profile NAME] [--rvs-target TARGET] [--rvs-account ACCOUNT] [--rvs-repo REPOSITORY_NAME] [--rvs-customer-id CUSTOMER_ID] [--rvs-native-config respect|override|isolate] UV_ARGS...
+rvs twine [--rvs-profile NAME] [--rvs-target TARGET] [--rvs-account ACCOUNT] [--rvs-repo REPOSITORY_NAME] [--rvs-customer-id CUSTOMER_ID] [--rvs-native-config respect|override|isolate] TWINE_ARGS...
+rvs npm [--rvs-profile NAME] [--rvs-target TARGET] [--rvs-account ACCOUNT] [--rvs-repo REPOSITORY_NAME] [--rvs-customer-id CUSTOMER_ID] [--rvs-native-config respect|override|isolate] NPM_ARGS...
+rvs mvn [--rvs-profile NAME] [--rvs-target TARGET] [--rvs-account ACCOUNT] [--rvs-repo REPOSITORY_NAME] [--rvs-customer-id CUSTOMER_ID] [--rvs-native-config respect|override|isolate] MVN_ARGS...
+rvs docker [--rvs-profile NAME] [--rvs-target TARGET] [--rvs-account ACCOUNT] [--rvs-repo REPOSITORY_NAME] [--rvs-customer-id CUSTOMER_ID] DOCKER_ARGS...
+rvs helm [--rvs-profile NAME] [--rvs-target TARGET] [--rvs-account ACCOUNT] [--rvs-repo REPOSITORY_NAME] [--rvs-customer-id CUSTOMER_ID] HELM_ARGS...
+rvs oras --rvs-kind container|helm [--rvs-profile NAME] [--rvs-target TARGET] [--rvs-account ACCOUNT] [--rvs-repo REPOSITORY_NAME] [--rvs-customer-id CUSTOMER_ID] ORAS_ARGS...
+rvs oci-reference --kind container|helm [--target TARGET] [--account ACCOUNT] [--repo REPOSITORY_NAME] [--oci-path PATH] [--reference TAG_OR_DIGEST] [--profile NAME] [--customer-id CUSTOMER_ID]
 ```
 
 These commands run the named native package manager. They are not aliases for
@@ -221,8 +249,9 @@ selection alone, reads native config files and relevant environment variables,
 and injects short-lived Ravenstash credentials only when the invocation
 references Ravenstash registry URLs.
 
-Passing `--rvs-repo` selects a Ravenstash repository for the invocation and
-overrides native registry selection. `--rvs-native-config isolate` also disables
+Passing `--rvs-target` selects a private repository or direct cache for one
+invocation and overrides the saved selection. `--rvs-repo` remains a
+private-repository-only compatibility alias. `--rvs-native-config isolate` also disables
 native config where the underlying tool supports it, such as `PIP_CONFIG_FILE`
 for pip and `UV_NO_CONFIG` for uv. Tokens are injected through subprocess
 environment variables or temporary files and are not written to persistent

@@ -12,17 +12,21 @@ from pathlib import Path
 from typing import cast
 from urllib.parse import urlparse, urlunparse
 
+import click
 import typer
 
 from .. import auth as auth_mod
 from .. import config as cfg_mod
 from .. import output
+from ..account.commands import display_name as account_display_name
+from ..account.commands import ensure_active_account, resolve_account
 from ..client import ApiClient, ApiError
 from ..runtime import tools
 from .registries import maven as maven_reg
 from .registries import npm as npm_reg
 from .registries import pypi as pypi_reg
 from .routing import CanonicalRouter
+from .targets import RegistryContext, registry_context, resolve_target
 
 
 app = typer.Typer(
@@ -40,6 +44,7 @@ maven_app = typer.Typer(help="Maven package repository helpers.", no_args_is_hel
 
 app.add_typer(repo_app, name="repo")
 app.add_typer(remote_app, name="remote-cache")
+app.add_typer(remote_app, name="cache")
 app.add_typer(package_app, name="package")
 app.add_typer(pypi_app, name="pypi")
 app.add_typer(npm_app, name="npm")
@@ -49,6 +54,32 @@ _KINDS = ("pypi", "npm", "maven", "container", "helm")
 _PACKAGE_KINDS = ("pypi", "npm", "maven")
 _ROUTER = CanonicalRouter()
 _REPOSITORY_NAME_HELP = "Package repository name: lowercase letters, numbers, and hyphens."
+
+
+@app.callback()
+def package_context(
+    ctx: typer.Context,
+    target: str | None = typer.Option(
+        None,
+        "--target",
+        "--repo",
+        help="One-shot package target: workspace/repository, cache:<source>, or custom-cache:<name>.",
+    ),
+    account: str | None = typer.Option(
+        None,
+        "--account",
+        help="One-shot acting account selector.",
+    ),
+    kind: str | None = typer.Option(None, "--kind", help="Registry kind when inference is ambiguous."),
+    profile: str | None = typer.Option(None, "--profile", help="One-shot login profile."),
+) -> None:
+    """Manage package targets and delegate package operations to native tools."""
+    ctx.obj = {
+        "target": target,
+        "account": account,
+        "kind": kind,
+        "profile": profile,
+    }
 
 
 def _profile_name(profile: str | None) -> str:
@@ -69,13 +100,142 @@ def _client(profile: str | None) -> ApiClient:
 def _customer_id(profile: str | None, explicit_customer_id: str | None = None) -> str:
     if explicit_customer_id:
         return explicit_customer_id
-    _, p = _profile(profile)
-    if not p.customer_id:
+    profile_name, _ = _profile(profile)
+    customer_id = cfg_mod.current_customer_id(profile_name)
+    if not customer_id:
         output.fatal(
-            "No customer ID is stored for this profile. "
-            "Run `rvs auth login` again or pass --customer-id."
+            "No Ravenstash account is selected. Run `rvs account switch` or pass --customer-id."
         )
-    return p.customer_id
+    return customer_id
+
+
+def _context_customer_id(profile: str | None, account: str | None) -> str | None:
+    if account is None:
+        return None
+    return str(resolve_account(account, profile)["customer_id"])
+
+
+@app.command("select")
+def target_select(
+    target: str = typer.Argument(
+        ...,
+        help="workspace/repository, cache:<source>, or custom-cache:<name>.",
+    ),
+    kind: str | None = typer.Option(None, "--kind", help="Registry kind if ambiguous."),
+    account: str | None = typer.Option(None, "--account", help="Acting account selector."),
+    profile: str | None = typer.Option(None, "--profile", "-p"),
+) -> None:
+    """Select the package target used when --target is omitted."""
+    customer_id = _context_customer_id(profile, account)
+    profile_name, selected_account, selected = resolve_target(
+        target,
+        profile=profile,
+        customer_id=customer_id,
+        kind=kind,
+    )
+    try:
+        cfg_mod.set_selected_package_target(
+            selected,
+            profile=profile_name,
+            customer_id=selected_account.customer_id,
+        )
+    except ValueError as exc:
+        output.fatal(str(exc))
+    kind_suffix = f" ({selected.registry_kind})" if selected.registry_kind else ""
+    output.success(
+        f"Selected '{selected.display_selector}'{kind_suffix} for "
+        f"{account_display_name(selected_account)}."
+    )
+
+
+@app.command("current")
+def target_current(
+    account: str | None = typer.Option(None, "--account", help="Acting account selector."),
+    profile: str | None = typer.Option(None, "--profile", "-p"),
+) -> None:
+    """Show the current profile, account, and package target."""
+    customer_id = _context_customer_id(profile, account)
+    profile_name, selected_account = ensure_active_account(profile, customer_id)
+    selected = cfg_mod.selected_package_target(profile_name, selected_account.customer_id)
+    output.kv(
+        {
+            "Profile": profile_name,
+            "Account": account_display_name(selected_account),
+            "Target": selected.display_selector if selected else "none",
+            "Target type": selected.target_type if selected else "none",
+            "Registry kind": selected.registry_kind or "inferred by operation"
+            if selected
+            else "none",
+        },
+        title="Current package context",
+    )
+
+
+@app.command("clear")
+def target_clear(
+    account: str | None = typer.Option(None, "--account", help="Acting account selector."),
+    profile: str | None = typer.Option(None, "--profile", "-p"),
+) -> None:
+    """Clear the explicit package target without changing login or account."""
+    customer_id = _context_customer_id(profile, account)
+    profile_name, selected_account = ensure_active_account(profile, customer_id)
+    try:
+        cfg_mod.set_selected_package_target(
+            None,
+            profile=profile_name,
+            customer_id=selected_account.customer_id,
+        )
+    except ValueError as exc:
+        output.fatal(str(exc))
+    output.success(f"Cleared the package target for {account_display_name(selected_account)}.")
+
+
+def _project_package_kind() -> str | None:
+    candidates: list[str] = []
+    if Path("pyproject.toml").exists() or Path("requirements.txt").exists():
+        candidates.append("pypi")
+    if Path("package.json").exists():
+        candidates.append("npm")
+    if Path("pom.xml").exists():
+        candidates.append("maven")
+    return candidates[0] if len(candidates) == 1 else None
+
+
+@app.command("install")
+def package_install(
+    packages: list[str] = typer.Argument(..., help="Package specifications to install."),
+) -> None:
+    """Install from the one-shot, selected, or official-default package target."""
+    options = _root_package_options()
+    kind = options.get("kind")
+    if kind is not None:
+        _require_package_kind(kind)
+    if kind is None and options.get("target"):
+        customer_id = _context_customer_id(options.get("profile"), options.get("account"))
+        _, _, target = resolve_target(
+            cast("str", options["target"]),
+            profile=options.get("profile"),
+            customer_id=customer_id,
+        )
+        kind = target.registry_kind
+    if kind is None:
+        customer_id = _context_customer_id(options.get("profile"), options.get("account"))
+        profile_name, account = ensure_active_account(options.get("profile"), customer_id)
+        selected = cfg_mod.selected_package_target(profile_name, account.customer_id)
+        kind = selected.registry_kind if selected is not None else None
+    kind = kind or _project_package_kind()
+    if kind not in _PACKAGE_KINDS:
+        output.fatal(
+            "Cannot infer the package registry kind. Pass --kind pypi, npm, or maven."
+        )
+    if kind == "pypi":
+        pypi_install(packages=packages, repo=None, profile=None, customer_id=None)
+    elif kind == "npm":
+        npm_install(packages=packages, repo=None, profile=None, customer_id=None)
+    else:
+        if len(packages) != 1:
+            output.fatal("Maven install accepts one groupId:artifactId:version coordinate.")
+        maven_install(coords=packages[0], repo=None, profile=None, customer_id=None)
 
 
 def _require_kind(kind: str) -> cfg_mod.RegistryKind:
@@ -170,54 +330,40 @@ def _npm_auth_token_key(registry_url: str) -> str:
     return f"//{parsed.netloc}{path}:_authToken"
 
 
+def _root_package_options() -> dict[str, str | None]:
+    context = click.get_current_context(silent=True)
+    while context is not None:
+        value = context.obj
+        if isinstance(value, dict) and {"target", "account", "kind", "profile"} <= value.keys():
+            return value
+        context = context.parent
+    return {}
+
+
 def _registry_context(
     kind: str,
     repo: str | None,
     profile: str | None,
     customer_id: str | None = None,
-) -> tuple[cfg_mod.ProfileConfig, str, str, str]:
-    workspace_selector, repository_selector = _repo_for_kind(kind, repo, profile)
-    selector = (
-        f"{workspace_selector}/{repository_selector}" if workspace_selector else repository_selector
-    )
-    profile_name = _profile_name(profile)
-    expected_target = cfg_mod.registry_target_expectation(
-        _require_kind(kind), selector, profile_name
-    )
-    client = _client(profile)
-    try:
-        entry = client.get(
-            "/v0/repositories/resolve",
-            params={
-                "selector": selector,
-                "customer_id": customer_id,
-                "registry_kind": kind,
-            },
-        ).json()
-        repository = entry["repository"]
-        credential_body: dict[str, object] = {
-            "repository_id": repository["id"],
-            "registry_kind": kind,
-            "expected_target": expected_target or cfg_mod.repository_target_snapshot(repository),
-        }
-        credential = client.post(
-            "/v0/package-credentials",
-            json=credential_body,
-        ).json()
-    except (ApiError, KeyError, TypeError, ValueError) as exc:
-        output.fatal(str(exc))
-    if repo is None:
-        cfg_mod.set_registry_default_target(
-            _require_kind(kind),
-            customer=entry["customer"],
-            repository=repository,
-            profile=profile,
+    *,
+    require_private: bool = False,
+    allow_official_default: bool = False,
+) -> RegistryContext:
+    options = _root_package_options()
+    effective_profile = profile or options.get("profile")
+    effective_customer_id = customer_id
+    if effective_customer_id is None and options.get("account"):
+        effective_customer_id = _context_customer_id(
+            effective_profile, options.get("account")
         )
-    return (
-        _registry_profile(profile),
-        repository["workspace_unique_ref"],
-        repository["repository_unique_ref"],
-        credential["access_token"],
+    return registry_context(
+        kind=kind,
+        target=options.get("target"),
+        repo=repo,
+        profile=effective_profile,
+        customer_id=effective_customer_id,
+        allow_official_default=allow_official_default,
+        require_private=require_private,
     )
 
 
@@ -527,21 +673,58 @@ def repo_clear_upstream(
 # ── remote caches & proxies ───────────────────────────────────────────────────
 
 
+@remote_app.command("select")
+def remote_select(
+    cache: str = typer.Argument(..., help="Official source slug or custom cache name."),
+    custom: bool = typer.Option(False, "--custom", help="Select a customer-defined cache."),
+    kind: str | None = typer.Option(None, "--kind", help="Registry kind if ambiguous."),
+    account: str | None = typer.Option(None, "--account", help="Acting account selector."),
+    profile: str | None = typer.Option(None, "--profile", "-p"),
+) -> None:
+    """Select an official or customer-defined direct cache."""
+    prefix = "custom-cache" if custom else "cache"
+    target_select(f"{prefix}:{cache}", kind=kind, account=account, profile=profile)
+
+
+@remote_app.command("current")
+def remote_current(
+    account: str | None = typer.Option(None, "--account", help="Acting account selector."),
+    profile: str | None = typer.Option(None, "--profile", "-p"),
+) -> None:
+    """Show the current package context."""
+    target_current(account=account, profile=profile)
+
+
+@remote_app.command("clear")
+def remote_clear(
+    account: str | None = typer.Option(None, "--account", help="Acting account selector."),
+    profile: str | None = typer.Option(None, "--profile", "-p"),
+) -> None:
+    """Clear the selected package target."""
+    target_clear(account=account, profile=profile)
+
+
 @remote_app.command("list")
 def remote_list(
     profile: str | None = typer.Option(None, "--profile", "-p"),
     customer_id: str | None = typer.Option(None, "--customer-id"),
-    kind: str | None = typer.Option(None, "--registry-kind", "-k", "--ecosystem", "-e"),
+    account: str | None = typer.Option(None, "--account"),
+    kind: str | None = typer.Option(
+        None, "--kind", "--registry-kind", "-k", "--ecosystem", "-e"
+    ),
 ) -> None:
     """List remote caches & proxies for the selected customer."""
     if kind:
         _require_package_kind(kind)
     client = _client(profile)
+    effective_customer_id = _context_customer_id(profile, account) or _customer_id(
+        profile, customer_id
+    )
     try:
         items = client.get(
             "/v0/remote-repositories",
             params={
-                "customer_id": customer_id,
+                "customer_id": effective_customer_id,
                 "registry_kind": kind,
             },
         ).json()
@@ -555,13 +738,19 @@ def remote_list(
         output.info("No remote caches & proxies found.")
         return
     output.table(
-        ["ID", "Registry kind", "Minimum package age", "Maximum age"],
+        ["Account", "Type", "Target", "Registry kind", "Direct", "Age range"],
         [
             [
-                str(item["public_id"]),
+                str(entry.get("customer", {}).get("account_label", "")),
+                str(item.get("source_family") or "unknown"),
+                (
+                    f"cache:{item.get('official_slug') or item['public_id']}"
+                    if item.get("source_family") == "official"
+                    else f"custom-cache:{item.get('remote_name') or item['public_id']}"
+                ),
                 str(item.get("registry_kind", "")),
-                str(item.get("min_age_days", "")),
-                str(item.get("max_age_days", "")),
+                "yes" if item.get("direct_access_enabled") else "no",
+                f"{item.get('min_age_days') or 'none'} - {item.get('max_age_days') or 'none'}",
             ]
             for entry in items
             for item in [entry["remote_repository"]]
@@ -574,6 +763,7 @@ def remote_create(
     kind: str = typer.Option(..., "--registry-kind", "-k", "--ecosystem", "-e"),
     profile: str | None = typer.Option(None, "--profile", "-p"),
     customer_id: str | None = typer.Option(None, "--customer-id"),
+    account: str | None = typer.Option(None, "--account"),
 ) -> None:
     """Create a remote cache & proxy for a registry kind."""
     _require_package_kind(kind)
@@ -582,7 +772,8 @@ def remote_create(
         item = client.post(
             "/v0/remote-repositories",
             json={
-                "customer_id": _customer_id(profile, customer_id),
+                "customer_id": _context_customer_id(profile, account)
+                or _customer_id(profile, customer_id),
                 "registry_kind": kind,
             },
         ).json()["remote_repository"]
@@ -592,22 +783,189 @@ def remote_create(
     output.success(f"Created {kind} remote cache & proxy '{remote_id}'.")
 
 
+@remote_app.command("add")
+def remote_add_official(
+    source: str = typer.Argument(..., help="Official source slug, such as pypiorg."),
+    kind: str | None = typer.Option(None, "--kind", help="Registry kind if ambiguous."),
+    direct: bool = typer.Option(True, "--direct/--no-direct"),
+    min_age_days: float | None = typer.Option(None, "--min-age-days", min=0),
+    max_age_days: float | None = typer.Option(None, "--max-age-days", min=0),
+    select: bool = typer.Option(False, "--select", help="Select the cache after creating it."),
+    profile: str | None = typer.Option(None, "--profile", "-p"),
+    account: str | None = typer.Option(None, "--account"),
+) -> None:
+    """Add a Ravenstash-curated official cache to the active account."""
+    customer_id = _context_customer_id(profile, account) or _customer_id(profile)
+    if kind:
+        _require_package_kind(kind)
+    client = _client(profile)
+    try:
+        sources = client.get(
+            "/v0/remote-repositories/official-sources",
+            params={"customer_id": customer_id},
+        ).json()
+        matches = [
+            item
+            for item in sources
+            if source in {item.get("remote_repository_public_id"), item.get("official_source_id")}
+            and (kind is None or item.get("registry_kind") == kind)
+        ]
+        if not matches:
+            output.fatal(f"Official cache source '{source}' was not found.")
+        if len(matches) > 1:
+            output.fatal(f"Official cache source '{source}' is ambiguous. Pass --kind.")
+        selected_source = matches[0]
+        payload: dict[str, object] = {
+            "customer_id": customer_id,
+            "official_source_id": selected_source["official_source_id"],
+            "enable_direct_access": direct,
+        }
+        if min_age_days is not None:
+            payload["min_age_days"] = min_age_days
+        if max_age_days is not None:
+            payload["max_age_days"] = max_age_days
+        entry = client.post(
+            "/v0/remote-repositories/official",
+            json=payload,
+        ).json()
+    except (ApiError, KeyError, TypeError) as exc:
+        output.fatal(str(exc))
+    item = entry["remote_repository"]
+    target_name = f"cache:{item.get('official_slug') or item['public_id']}"
+    output.success(f"Added official cache '{target_name}'.")
+    if select:
+        target_select(
+            target_name,
+            kind=str(item["registry_kind"]),
+            account=account,
+            profile=profile,
+        )
+
+
+@remote_app.command("create-custom")
+def remote_create_custom(
+    name: str = typer.Argument(..., help="Customer-scoped custom cache name."),
+    kind: str = typer.Option(..., "--kind", help="Registry kind: pypi, npm, or maven."),
+    api_url: str = typer.Option(..., "--api-url", help="HTTPS metadata/API origin."),
+    artifact_url: str | None = typer.Option(None, "--artifact-url"),
+    auth_scheme: str = typer.Option("none", "--auth-scheme", help="none, basic, or bearer."),
+    username: str | None = typer.Option(None, "--username"),
+    secret_env: str | None = typer.Option(
+        None,
+        "--secret-env",
+        help="Environment variable containing the origin secret.",
+    ),
+    allowed_host: list[str] = typer.Option([], "--allowed-host"),
+    direct: bool = typer.Option(True, "--direct/--no-direct"),
+    min_age_days: float | None = typer.Option(None, "--min-age-days", min=0),
+    max_age_days: float | None = typer.Option(None, "--max-age-days", min=0),
+    managed_location: str | None = typer.Option(None, "--managed-location"),
+    storage_target: str | None = typer.Option(None, "--storage-target"),
+    select: bool = typer.Option(False, "--select", help="Select the cache after creating it."),
+    profile: str | None = typer.Option(None, "--profile", "-p"),
+    account: str | None = typer.Option(None, "--account"),
+) -> None:
+    """Create a customer-defined cache backed by a secured HTTPS origin."""
+    registry_kind = _require_package_kind(kind)
+    customer_id = _context_customer_id(profile, account) or _customer_id(profile)
+    if auth_scheme not in {"none", "basic", "bearer"}:
+        output.fatal("--auth-scheme must be none, basic, or bearer.")
+    secret = os.environ.get(secret_env) if secret_env else None
+    if secret_env and secret is None:
+        output.fatal(f"Origin secret environment variable '{secret_env}' is not set.")
+    if auth_scheme == "basic" and (not username or secret is None):
+        output.fatal("Basic origin authentication requires --username and --secret-env.")
+    if auth_scheme == "bearer" and secret is None:
+        output.fatal("Bearer origin authentication requires --secret-env.")
+    if auth_scheme == "none" and (username or secret_env):
+        output.fatal("The none authentication scheme does not accept credentials.")
+    if managed_location and storage_target:
+        output.fatal("Pass either --managed-location or --storage-target, not both.")
+    payload: dict[str, object] = {
+        "customer_id": customer_id,
+        "registry_kind": registry_kind,
+        "remote_name": name,
+        "api_base_url": api_url,
+        "credential": {
+            "auth_scheme": auth_scheme,
+            "allowed_hosts": allowed_host,
+        },
+        "enable_direct_access": direct,
+    }
+    credential = payload["credential"]
+    assert isinstance(credential, dict)
+    if artifact_url is not None:
+        payload["artifact_base_url"] = artifact_url
+    if username is not None:
+        credential["username"] = username
+    if secret is not None:
+        credential["secret"] = secret
+    if min_age_days is not None:
+        payload["min_age_days"] = min_age_days
+    if max_age_days is not None:
+        payload["max_age_days"] = max_age_days
+    if managed_location:
+        payload.update(
+            {
+                "storage_mode": "ravenstash_managed",
+                "managed_storage_location_key": managed_location,
+            }
+        )
+    elif storage_target:
+        payload.update(
+            {
+                "storage_mode": "customer_target",
+                "object_storage_target_id": storage_target,
+            }
+        )
+    try:
+        entry = _client(profile).post(
+            "/v0/remote-repositories/custom",
+            json=payload,
+        ).json()
+    except (ApiError, KeyError, TypeError) as exc:
+        output.fatal(str(exc))
+    item = entry["remote_repository"]
+    target_name = f"custom-cache:{item.get('remote_name') or item['public_id']}"
+    output.success(f"Created custom cache '{target_name}'.")
+    if select:
+        target_select(target_name, kind=kind, account=account, profile=profile)
+
+
 @remote_app.command("show")
 def remote_show(
     remote: str = typer.Argument(..., help="Remote cache & proxy ID."),
     profile: str | None = typer.Option(None, "--profile", "-p"),
+    account: str | None = typer.Option(None, "--account"),
+    customer_id: str | None = typer.Option(None, "--customer-id", hidden=True),
+    kind: str | None = typer.Option(None, "--kind", "--registry-kind", "-k"),
 ) -> None:
     """Show a remote cache & proxy."""
+    if kind:
+        _require_package_kind(kind)
+    selected_customer = _context_customer_id(profile, account) or _customer_id(
+        profile, customer_id
+    )
     client = _client(profile)
     try:
-        item = client.get(f"/v0/remote-repositories/{remote}").json()["remote_repository"]
+        item = client.get(
+            f"/v0/remote-repositories/{remote}",
+            params={"customer_id": selected_customer, "registry_kind": kind},
+        ).json()["remote_repository"]
     except (ApiError, KeyError, TypeError) as exc:
         output.fatal(str(exc))
     output.kv(
         {
             "ID": item["public_id"],
+            "Type": item.get("source_family"),
+            "Target": (
+                f"cache:{item.get('official_slug') or item['public_id']}"
+                if item.get("source_family") == "official"
+                else f"custom-cache:{item.get('remote_name') or item['public_id']}"
+            ),
             "Registry kind": item.get("registry_kind"),
             "Owner ID": item.get("customer_id"),
+            "Direct access": "yes" if item.get("direct_access_enabled") else "no",
             "Minimum package age (days)": str(item.get("min_age_days", "")),
             "Maximum age days": str(item.get("max_age_days", "")),
         },
@@ -620,12 +978,24 @@ def remote_set_age(
     remote: str = typer.Argument(..., help="Remote cache & proxy ID."),
     min_age_days: float = typer.Option(..., "--min-age-days", min=0),
     profile: str | None = typer.Option(None, "--profile", "-p"),
+    account: str | None = typer.Option(None, "--account"),
+    customer_id: str | None = typer.Option(None, "--customer-id", hidden=True),
+    kind: str | None = typer.Option(None, "--kind", "--registry-kind", "-k"),
 ) -> None:
     """Update the minimum package age for direct access."""
+    if kind:
+        _require_package_kind(kind)
+    selected_customer = _context_customer_id(profile, account) or _customer_id(
+        profile, customer_id
+    )
     client = _client(profile)
     payload = {"min_age_days": min_age_days}
     try:
-        client.patch(f"/v0/remote-repositories/{remote}", json=payload)
+        client.patch(
+            f"/v0/remote-repositories/{remote}",
+            params={"customer_id": selected_customer, "registry_kind": kind},
+            json=payload,
+        )
     except ApiError as exc:
         output.fatal(str(exc))
     output.success(f"Updated minimum package age for remote cache & proxy '{remote}'.")
@@ -636,19 +1006,21 @@ def remote_delete(
     remote: str = typer.Argument(..., help="Remote cache & proxy ID."),
     profile: str | None = typer.Option(None, "--profile", "-p"),
     customer_id: str | None = typer.Option(None, "--customer-id"),
-    kind: str | None = typer.Option(None, "--registry-kind", "-k", "--ecosystem", "-e"),
+    account: str | None = typer.Option(None, "--account"),
+    kind: str | None = typer.Option(
+        None, "--kind", "--registry-kind", "-k", "--ecosystem", "-e"
+    ),
     yes: bool = typer.Option(False, "--yes", "-y"),
 ) -> None:
     """Delete a remote cache & proxy."""
-    if (customer_id is None) != (kind is None):
-        output.fatal("Pass both --customer-id and --registry-kind, or neither.")
     if kind:
         _require_package_kind(kind)
     if not yes:
         typer.confirm(f"Delete remote cache & proxy '{remote}'?", abort=True)
-    params = None
-    if customer_id and kind:
-        params = {"customer_id": customer_id, "registry_kind": kind}
+    selected_customer = _context_customer_id(profile, account) or _customer_id(
+        profile, customer_id
+    )
+    params = {"customer_id": selected_customer, "registry_kind": kind}
     client = _client(profile)
     try:
         client.delete(f"/v0/remote-repositories/{remote}", params=params)
@@ -882,12 +1254,12 @@ def pypi_index_url(
     ),
 ) -> None:
     """Print the private PyPI simple-index URL."""
-    profile_cfg, customer_id, repository_name, _ = _registry_context(
-        "pypi", repo, profile, customer_id
+    context = _registry_context(
+        "pypi", repo, profile, customer_id, allow_official_default=True
     )
     output.value(
         _ROUTER.pypi_index_url(
-            profile_cfg.native_registries.pypi.read_base_url, customer_id, repository_name
+            context.read_base_url, context.workspace_reference, context.repository_reference
         ),
         key="index_url",
     )
@@ -902,12 +1274,13 @@ def pypi_upload_url(
     ),
 ) -> None:
     """Print the private PyPI upload URL."""
-    profile_cfg, customer_id, repository_name, _ = _registry_context(
-        "pypi", repo, profile, customer_id
+    context = _registry_context(
+        "pypi", repo, profile, customer_id, require_private=True
     )
+    assert context.push_base_url is not None
     output.value(
         _ROUTER.pypi_upload_url(
-            profile_cfg.native_registries.pypi.push_base_url, customer_id, repository_name
+            context.push_base_url, context.workspace_reference, context.repository_reference
         ),
         key="upload_url",
     )
@@ -923,15 +1296,15 @@ def pypi_install(
     ),
 ) -> None:
     """Install Python packages using pip with Ravenstash credentials injected."""
-    profile_cfg, customer_id, repository_name, token = _registry_context(
-        "pypi", repo, profile, customer_id
+    context = _registry_context(
+        "pypi", repo, profile, customer_id, allow_official_default=True
     )
     index_url = _ROUTER.pypi_index_url(
-        profile_cfg.native_registries.pypi.read_base_url, customer_id, repository_name
+        context.read_base_url, context.workspace_reference, context.repository_reference
     )
     env = {**os.environ}
-    if token:
-        env["PIP_INDEX_URL"] = _authed_url(index_url, token)
+    if context.token:
+        env["PIP_INDEX_URL"] = _authed_url(index_url, context.token)
     else:
         output.warn("No credentials found; running pip without private repository auth.")
 
@@ -949,19 +1322,20 @@ def pypi_publish(
     ),
 ) -> None:
     """Upload wheel and sdist files to a PyPI package repository."""
-    profile_cfg, customer_id, repository_name, token = _registry_context(
-        "pypi", repo, profile, customer_id
+    context = _registry_context(
+        "pypi", repo, profile, customer_id, require_private=True
     )
+    assert context.push_base_url is not None
     files = list(dist_dir.glob("*.whl")) + list(dist_dir.glob("*.tar.gz"))
     if not files:
         output.fatal(f"No .whl or .tar.gz files found in {dist_dir}")
     results = pypi_reg.publish(
         upload_url=_ROUTER.pypi_upload_url(
-            profile_cfg.native_registries.pypi.push_base_url,
-            customer_id,
-            repository_name,
+            context.push_base_url,
+            context.workspace_reference,
+            context.repository_reference,
         ),
-        token=token,
+        token=context.token,
         files=files,
     )
     failed = False
@@ -984,11 +1358,11 @@ def pypi_configure(
     ),
 ) -> None:
     """Print pip configuration for the private PyPI repository."""
-    profile_cfg, customer_id, repository_name, _ = _registry_context(
-        "pypi", repo, profile, customer_id
+    context = _registry_context(
+        "pypi", repo, profile, customer_id, allow_official_default=True
     )
     index_url = _ROUTER.pypi_index_url(
-        profile_cfg.native_registries.pypi.read_base_url, customer_id, repository_name
+        context.read_base_url, context.workspace_reference, context.repository_reference
     )
     output.value(f"[global]\nindex-url = {index_url}", key="configuration")
 
@@ -1005,12 +1379,12 @@ def npm_registry_url(
     ),
 ) -> None:
     """Print the private npm registry URL."""
-    profile_cfg, customer_id, repository_name, _ = _registry_context(
-        "npm", repo, profile, customer_id
+    context = _registry_context(
+        "npm", repo, profile, customer_id, allow_official_default=True
     )
     output.value(
         _ROUTER.npm_registry_url(
-            profile_cfg.native_registries.npm.read_base_url, customer_id, repository_name
+            context.read_base_url, context.workspace_reference, context.repository_reference
         ),
         key="registry_url",
     )
@@ -1025,13 +1399,13 @@ def npmrc(
     ),
 ) -> None:
     """Print an .npmrc snippet for the private npm repository."""
-    profile_cfg, customer_id, repository_name, _ = _registry_context(
-        "npm", repo, profile, customer_id
+    context = _registry_context(
+        "npm", repo, profile, customer_id, allow_official_default=True
     )
     registry_url = _ROUTER.npm_registry_url(
-        profile_cfg.native_registries.npm.read_base_url,
-        customer_id,
-        repository_name,
+        context.read_base_url,
+        context.workspace_reference,
+        context.repository_reference,
     )
     auth_key = _npm_auth_token_key(registry_url)
     output.value(
@@ -1050,17 +1424,17 @@ def npm_install(
     ),
 ) -> None:
     """Install npm packages with Ravenstash credentials injected."""
-    profile_cfg, customer_id, repository_name, token = _registry_context(
-        "npm", repo, profile, customer_id
+    context = _registry_context(
+        "npm", repo, profile, customer_id, allow_official_default=True
     )
     registry_url = _ROUTER.npm_registry_url(
-        profile_cfg.native_registries.npm.read_base_url,
-        customer_id,
-        repository_name,
+        context.read_base_url,
+        context.workspace_reference,
+        context.repository_reference,
     )
     env = {**os.environ}
-    if token:
-        env[f"NPM_CONFIG_{_npm_auth_token_key(registry_url)}"] = token
+    if context.token:
+        env[f"NPM_CONFIG_{_npm_auth_token_key(registry_url)}"] = context.token
     else:
         output.warn("No credentials found; running npm without private repository auth.")
     subprocess.run(
@@ -1078,21 +1452,22 @@ def npm_publish(
     ),
 ) -> None:
     """Publish an npm package to a Ravenstash npm repository."""
-    profile_cfg, customer_id, repository_name, token = _registry_context(
-        "npm", repo, profile, customer_id
+    context = _registry_context(
+        "npm", repo, profile, customer_id, require_private=True
     )
+    assert context.push_base_url is not None
     results = npm_reg.publish(
         registry_url=_ROUTER.npm_upload_registry_url(
-            profile_cfg.native_registries.npm.push_base_url,
-            customer_id,
-            repository_name,
+            context.push_base_url,
+            context.workspace_reference,
+            context.repository_reference,
         ),
-        token=token,
+        token=context.token,
         package_dir=package_dir,
         download_registry_url=_ROUTER.npm_registry_url(
-            profile_cfg.native_registries.npm.read_base_url,
-            customer_id,
-            repository_name,
+            context.read_base_url,
+            context.workspace_reference,
+            context.repository_reference,
         ),
     )
     failed = False
@@ -1130,14 +1505,14 @@ def maven_repo_url(
     ),
 ) -> None:
     """Print the private Maven repository URL."""
-    profile_cfg, customer_id, repository_name, _ = _registry_context(
-        "maven", repo, profile, customer_id
+    context = _registry_context(
+        "maven", repo, profile, customer_id, allow_official_default=True
     )
     output.value(
         _ROUTER.maven_repo_url(
-            profile_cfg.native_registries.maven.read_base_url,
-            customer_id,
-            repository_name,
+            context.read_base_url,
+            context.workspace_reference,
+            context.repository_reference,
         ),
         key="repository_url",
     )
@@ -1180,15 +1555,15 @@ def maven_settings(
     ),
 ) -> None:
     """Print a Maven settings.xml snippet for the private Maven repository."""
-    profile_cfg, customer_id, repository_name, _ = _registry_context(
-        "maven", repo, profile, customer_id
+    context = _registry_context(
+        "maven", repo, profile, customer_id, allow_official_default=True
     )
     output.value(
         _settings_xml(
             _ROUTER.maven_repo_url(
-                profile_cfg.native_registries.maven.read_base_url,
-                customer_id,
-                repository_name,
+                context.read_base_url,
+                context.workspace_reference,
+                context.repository_reference,
             )
         ),
         key="configuration",
@@ -1205,13 +1580,13 @@ def maven_install(
     ),
 ) -> None:
     """Fetch a Maven artifact into the local Maven cache."""
-    profile_cfg, customer_id, repository_name, token = _registry_context(
-        "maven", repo, profile, customer_id
+    context = _registry_context(
+        "maven", repo, profile, customer_id, allow_official_default=True
     )
     repo_url = _ROUTER.maven_repo_url(
-        profile_cfg.native_registries.maven.read_base_url, customer_id, repository_name
+        context.read_base_url, context.workspace_reference, context.repository_reference
     )
-    settings_xml = maven_reg._build_settings_xml(repo_url, token)
+    settings_xml = maven_reg._build_settings_xml(repo_url, context.token)
     with tempfile.NamedTemporaryFile(
         mode="w", suffix=".xml", prefix="rvs-settings-", delete=False
     ) as settings_file:
@@ -1251,16 +1626,17 @@ def maven_deploy(
         maven_reg.validate_artifact_filename(artifact_file.name, artifact, version)
     except ValueError as exc:
         output.fatal(str(exc))
-    profile_cfg, customer_id, repository_name, token = _registry_context(
-        "maven", repo, profile, customer_id
+    context = _registry_context(
+        "maven", repo, profile, customer_id, require_private=True
     )
+    assert context.push_base_url is not None
     results = maven_reg.publish(
         upload_url=_ROUTER.maven_upload_url(
-            profile_cfg.native_registries.maven.push_base_url,
-            customer_id,
-            repository_name,
+            context.push_base_url,
+            context.workspace_reference,
+            context.repository_reference,
         ),
-        token=token,
+        token=context.token,
         group_id=group,
         artifact_id=artifact,
         version=version,

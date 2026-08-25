@@ -7,9 +7,9 @@ cases that matter when automating workflows.
 
 ## Mental Model
 
-`rvs auth login` authenticates a profile with DevAPI. One device session can
-see the user's personal customer and every organization the user may access,
-but it does not select a package repository.
+`rvs auth login` authenticates one Ravenstash user profile with DevAPI. Select
+the personal customer or an organization separately, then select a typed private
+repository or direct cache target.
 
 Package commands resolve a repository selector through DevAPI:
 
@@ -18,17 +18,18 @@ Package commands resolve a repository selector through DevAPI:
 - saved defaults contain immutable
   `<workspace_unique_ref>/<repository_unique_ref>` pairs.
 
-When a package command needs a repository, `rvs` resolves it in this order:
+When a package command needs a target, `rvs` resolves it in this order:
 
-1. Use `--repo`, if provided.
-2. Use `[profiles.<name>.registries.<registry-kind>].default_repo` for the selected
-   profile from `~/.rvs/config.toml`.
-3. Exit with a clear error if neither exists.
+1. Use the one-shot `--target`, if provided.
+2. Use the selected target for the active `(profile, customer)` pair.
+3. Read a legacy per-kind private default during migration.
+4. For `rvs pkg` read/install helpers, use the account-scoped official default
+   (`pypiorg`, `npmjs`, or `maven-central`) when its direct binding is enabled.
 
 The error looks like this:
 
 ```text
-No pypi package repository selected. Pass --repo or run `rvs pkg repo set-default pypi <repo-name>`.
+No pypi package target is selected. Pass --target or run `rvs pkg select`.
 ```
 
 The same pattern applies to `npm` and `maven`.
@@ -89,6 +90,18 @@ After login, inspect the active profile:
 rvs auth status
 rvs auth whoami
 ```
+
+Select the acting account and enable the persistent terminal hint:
+
+```bash
+rvs account list
+rvs account switch org:acme
+rvs shell setup
+rvs pkg select acme/backend
+```
+
+The prompt becomes `(staging · org:acme · acme/backend)`. Two named login
+profiles may select the same organization while retaining distinct audit actors.
 
 `whoami` verifies the identity with DevAPI and reports the server-returned user
 and current customer default rather than trusting local profile data alone.

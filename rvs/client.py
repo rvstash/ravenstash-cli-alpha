@@ -147,8 +147,13 @@ class ApiClient:
     def post(self, path: str, json: Any = None, **kwargs: Any) -> httpx.Response:
         return self._request("POST", path, json=json, **kwargs)
 
-    def patch(self, path: str, json: Any = None) -> httpx.Response:
-        return self._request("PATCH", path, json=json)
+    def patch(
+        self,
+        path: str,
+        json: Any = None,
+        params: dict | None = None,
+    ) -> httpx.Response:
+        return self._request("PATCH", path, json=json, params=params)
 
     def delete(self, path: str, params: dict | None = None) -> httpx.Response:
         return self._request("DELETE", path, params=params)

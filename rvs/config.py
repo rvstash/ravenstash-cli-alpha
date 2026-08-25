@@ -50,6 +50,7 @@ Config file shape
 
 from __future__ import annotations
 
+import hashlib
 import os
 import re
 import tempfile
@@ -66,11 +67,13 @@ from .paths import rvs_home
 
 
 RegistryKind = Literal["pypi", "npm", "maven", "container", "helm"]
+PackageTargetType = Literal["private", "official_cache", "custom_cache"]
 
 CONFIG_DIR = rvs_home()
 CONFIG_FILE = CONFIG_DIR / "config.toml"
 PROFILE_ENV_FILE = CONFIG_DIR / "profiles.env"
 LOCAL_ENV_FILE_NAME = ".rvs.env"
+SESSIONS_DIR_NAME = "sessions"
 
 DEFAULT_API_URL = "https://api.ravenstash.com"
 
@@ -140,7 +143,47 @@ class ProfileConfig:
     credential_type: str | None = None
     expires_at: str | None = None
     refresh_expires_at: str | None = None
+    active_customer_id: str | None = None
+    accounts: dict[str, AccountContext] = field(default_factory=dict)
     registries: dict[RegistryKind, RegistryDefaults] = field(default_factory=dict)
+
+
+@dataclass
+class PackageTarget:
+    target_type: PackageTargetType
+    customer_id: str
+    stable_selector: str
+    display_selector: str
+    registry_kind: RegistryKind | None = None
+    workspace_id: str | None = None
+    workspace_unique_ref: str | None = None
+    workspace_name_cache: str | None = None
+    repository_id: str | None = None
+    repository_unique_ref: str | None = None
+    repository_name_cache: str | None = None
+    remote_id: str | None = None
+    remote_unique_ref: str | None = None
+    remote_name_cache: str | None = None
+    source_id: str | None = None
+    direct_access_enabled: bool | None = None
+    is_available: bool = True
+
+
+@dataclass
+class AccountContext:
+    customer_id: str
+    customer_unique_ref: str
+    account_type: Literal["personal", "organization"]
+    account_label: str
+    organization_role: str | None = None
+    authority_revision: int | None = None
+    selected_target: PackageTarget | None = None
+
+
+@dataclass
+class SessionContext:
+    profile: str | None = None
+    customer_id: str | None = None
 
 
 @dataclass
@@ -183,7 +226,89 @@ class RvsConfig:
 def current_profile_name(cfg: RvsConfig | None = None) -> str:
     """Return the effective active profile name."""
     resolved_cfg = cfg or load()
-    return os.environ.get("RVS_PROFILE") or resolved_cfg.default_profile
+    session = load_session()
+    return os.environ.get("RVS_PROFILE") or session.profile or resolved_cfg.default_profile
+
+
+def current_customer_id(
+    profile_name: str | None = None,
+    cfg: RvsConfig | None = None,
+) -> str | None:
+    """Return the active customer for a profile, including this shell's override."""
+    resolved_cfg = cfg or load()
+    effective_profile = profile_name or current_profile_name(resolved_cfg)
+    explicit = os.environ.get("RVS_CUSTOMER_ID")
+    if explicit:
+        return explicit
+    session = load_session()
+    if session.customer_id and (session.profile is None or session.profile == effective_profile):
+        return session.customer_id
+    profile = resolved_cfg.profiles.get(effective_profile)
+    if profile is None:
+        return None
+    return profile.active_customer_id or profile.customer_id
+
+
+def _session_file() -> Path | None:
+    session_id = os.environ.get("RVS_SESSION_ID", "").strip()
+    if not session_id:
+        return None
+    digest = hashlib.sha256(session_id.encode("utf-8")).hexdigest()[:32]
+    return CONFIG_DIR / SESSIONS_DIR_NAME / f"{digest}.toml"
+
+
+def load_session() -> SessionContext:
+    path = _session_file()
+    if path is None or not path.exists():
+        return SessionContext()
+    try:
+        with path.open("rb") as handle:
+            raw = tomllib.load(handle)
+    except (OSError, tomllib.TOMLDecodeError):
+        return SessionContext()
+    return SessionContext(
+        profile=raw.get("profile") if isinstance(raw.get("profile"), str) else None,
+        customer_id=(
+            raw.get("customer_id") if isinstance(raw.get("customer_id"), str) else None
+        ),
+    )
+
+
+def save_session(session: SessionContext) -> bool:
+    """Persist non-secret shell-local context; return False without shell integration."""
+    path = _session_file()
+    if path is None:
+        return False
+    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    path.parent.chmod(0o700)
+    raw = {
+        key: value
+        for key, value in {
+            "profile": session.profile,
+            "customer_id": session.customer_id,
+        }.items()
+        if value is not None
+    }
+    temporary_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="wb",
+            dir=path.parent,
+            prefix=f".{path.stem}.",
+            suffix=".tmp",
+            delete=False,
+        ) as temporary:
+            temporary_path = Path(temporary.name)
+            os.fchmod(temporary.fileno(), 0o600)
+            tomli_w.dump(raw, temporary)
+            temporary.flush()
+            os.fsync(temporary.fileno())
+        os.replace(temporary_path, path)
+        path.chmod(0o600)
+    finally:
+        if temporary_path is not None:
+            temporary_path.unlink(missing_ok=True)
+    return True
 
 
 # ── Environment helpers ───────────────────────────────────────────────────────
@@ -364,6 +489,97 @@ def _default_profile_config(profile_name: str) -> ProfileConfig:
     )
 
 
+def _package_target_from_mapping(value: object) -> PackageTarget | None:
+    if not isinstance(value, dict):
+        return None
+    target_type = value.get("target_type")
+    customer_id = value.get("customer_id")
+    stable_selector = value.get("stable_selector")
+    display_selector = value.get("display_selector")
+    if target_type not in {"private", "official_cache", "custom_cache"}:
+        return None
+    if not all(
+        isinstance(item, str) and item
+        for item in (customer_id, stable_selector, display_selector)
+    ):
+        return None
+    registry_kind = value.get("registry_kind")
+    if registry_kind not in {None, "pypi", "npm", "maven", "container", "helm"}:
+        return None
+    return PackageTarget(
+        target_type=cast("PackageTargetType", target_type),
+        customer_id=cast("str", customer_id),
+        stable_selector=cast("str", stable_selector),
+        display_selector=cast("str", display_selector),
+        registry_kind=cast("RegistryKind | None", registry_kind),
+        workspace_id=value.get("workspace_id"),
+        workspace_unique_ref=value.get("workspace_unique_ref"),
+        workspace_name_cache=value.get("workspace_name_cache"),
+        repository_id=value.get("repository_id"),
+        repository_unique_ref=value.get("repository_unique_ref"),
+        repository_name_cache=value.get("repository_name_cache"),
+        remote_id=value.get("remote_id"),
+        remote_unique_ref=value.get("remote_unique_ref"),
+        remote_name_cache=value.get("remote_name_cache"),
+        source_id=value.get("source_id"),
+        direct_access_enabled=value.get("direct_access_enabled"),
+        is_available=value.get("is_available", True),
+    )
+
+
+def _account_contexts_from_mapping(value: object) -> dict[str, AccountContext]:
+    if not isinstance(value, dict):
+        return {}
+    result: dict[str, AccountContext] = {}
+    for customer_id, raw in value.items():
+        if not isinstance(customer_id, str) or not isinstance(raw, dict):
+            continue
+        account_type = raw.get("account_type")
+        unique_ref = raw.get("customer_unique_ref")
+        label = raw.get("account_label")
+        if account_type not in {"personal", "organization"}:
+            continue
+        if not isinstance(unique_ref, str) or not isinstance(label, str):
+            continue
+        result[customer_id] = AccountContext(
+            customer_id=customer_id,
+            customer_unique_ref=unique_ref,
+            account_type=account_type,
+            account_label=label,
+            organization_role=raw.get("organization_role"),
+            authority_revision=raw.get("authority_revision"),
+            selected_target=_package_target_from_mapping(raw.get("selected_target")),
+        )
+    return result
+
+
+def _package_target_mapping(target: PackageTarget) -> dict:
+    return {
+        key: value
+        for key, value in vars(target).items()
+        if value is not None and not (key == "is_available" and value is True)
+    }
+
+
+def _account_context_mapping(account: AccountContext) -> dict:
+    return {
+        key: value
+        for key, value in {
+            "customer_unique_ref": account.customer_unique_ref,
+            "account_type": account.account_type,
+            "account_label": account.account_label,
+            "organization_role": account.organization_role,
+            "authority_revision": account.authority_revision,
+            "selected_target": (
+                _package_target_mapping(account.selected_target)
+                if account.selected_target is not None
+                else None
+            ),
+        }.items()
+        if value is not None
+    }
+
+
 # ── Serialisation helpers ─────────────────────────────────────────────────────
 
 
@@ -392,6 +608,8 @@ def load() -> RvsConfig:
             credential_type=vals.get("credential_type"),
             expires_at=vals.get("expires_at"),
             refresh_expires_at=vals.get("refresh_expires_at"),
+            active_customer_id=vals.get("active_customer_id"),
+            accounts=_account_contexts_from_mapping(vals.get("accounts")),
             registries={
                 kind: RegistryDefaults(
                     default_repo=defaults.get("default_repo"),
@@ -436,6 +654,12 @@ def save(cfg: RvsConfig) -> None:
                     "credential_type": p.credential_type,
                     "expires_at": p.expires_at,
                     "refresh_expires_at": p.refresh_expires_at,
+                    "active_customer_id": p.active_customer_id,
+                    "accounts": {
+                        customer_id: _account_context_mapping(account)
+                        for customer_id, account in p.accounts.items()
+                    }
+                    or None,
                     "registries": {
                         kind: {
                             key: value
@@ -502,6 +726,8 @@ def set_profile_value(profile: str, api_url: str | None = None) -> None:
         credential_type=existing.credential_type,
         expires_at=existing.expires_at,
         refresh_expires_at=existing.refresh_expires_at,
+        active_customer_id=existing.active_customer_id,
+        accounts=existing.accounts,
         registries=existing.registries,
     )
     save(cfg)
@@ -520,6 +746,8 @@ def clear_profile_credential_metadata(profile: str) -> None:
         credential_type=None,
         expires_at=None,
         refresh_expires_at=None,
+        active_customer_id=existing.active_customer_id,
+        accounts=existing.accounts,
         registries=existing.registries,
     )
     save(cfg)
@@ -558,14 +786,107 @@ def set_profile_metadata(
         refresh_expires_at=refresh_expires_at
         if refresh_expires_at is not None
         else existing.refresh_expires_at,
+        active_customer_id=existing.active_customer_id,
+        accounts=existing.accounts,
         registries=existing.registries,
     )
     save(cfg)
 
 
 def set_default_profile(profile: str) -> None:
+    session = load_session()
+    if _session_file() is not None:
+        session.profile = profile
+        session.customer_id = None
+        save_session(session)
+        return
     cfg = load()
     cfg.default_profile = profile
+    save(cfg)
+
+
+def set_active_account(
+    *,
+    profile: str,
+    customer: dict,
+) -> AccountContext:
+    """Select and cache one authorized customer for a login profile."""
+    return cache_account(profile=profile, customer=customer, activate=True)
+
+
+def cache_account(
+    *,
+    profile: str,
+    customer: dict,
+    activate: bool = False,
+) -> AccountContext:
+    """Cache safe account metadata, optionally making the account active."""
+    cfg = load()
+    profile_config = cfg.profiles.get(profile, _default_profile_config(profile))
+    customer_id = str(customer["customer_id"])
+    existing = profile_config.accounts.get(customer_id)
+    account = AccountContext(
+        customer_id=customer_id,
+        customer_unique_ref=str(customer["customer_unique_ref"]),
+        account_type=cast("Literal['personal', 'organization']", customer["account_type"]),
+        account_label=str(customer["account_label"]),
+        organization_role=customer.get("organization_role"),
+        authority_revision=customer.get("authority_revision"),
+        selected_target=existing.selected_target if existing is not None else None,
+    )
+    profile_config.accounts[customer_id] = account
+    session_scoped = _session_file() is not None
+    if activate and not session_scoped:
+        profile_config.active_customer_id = customer_id
+    cfg.profiles[profile] = profile_config
+    save(cfg)
+    session = load_session()
+    if activate and session_scoped:
+        session.profile = profile
+        session.customer_id = customer_id
+        save_session(session)
+    return account
+
+
+def cached_account(
+    profile: str | None = None,
+    customer_id: str | None = None,
+) -> AccountContext | None:
+    cfg = load()
+    profile_name = profile or current_profile_name(cfg)
+    effective_customer_id = customer_id or current_customer_id(profile_name, cfg)
+    if not effective_customer_id:
+        return None
+    profile_config = cfg.profiles.get(profile_name)
+    return profile_config.accounts.get(effective_customer_id) if profile_config else None
+
+
+def selected_package_target(
+    profile: str | None = None,
+    customer_id: str | None = None,
+) -> PackageTarget | None:
+    account = cached_account(profile, customer_id)
+    return account.selected_target if account is not None else None
+
+
+def set_selected_package_target(
+    target: PackageTarget | None,
+    *,
+    profile: str | None = None,
+    customer_id: str | None = None,
+) -> None:
+    cfg = load()
+    profile_name = profile or current_profile_name(cfg)
+    effective_customer_id = customer_id or current_customer_id(profile_name, cfg)
+    if not effective_customer_id:
+        raise ValueError("No Ravenstash account is selected")
+    profile_config = cfg.profiles.get(profile_name, _default_profile_config(profile_name))
+    account = profile_config.accounts.get(effective_customer_id)
+    if account is None:
+        raise ValueError("The selected Ravenstash account has not been resolved")
+    account.selected_target = target
+    profile_config.accounts[effective_customer_id] = account
+    cfg.profiles[profile_name] = profile_config
     save(cfg)
 
 
@@ -578,6 +899,11 @@ def delete_profile(profile: str) -> bool:
     if cfg.default_profile == profile:
         cfg.default_profile = next(iter(cfg.profiles), "default")
     save(cfg)
+    session = load_session()
+    if session.profile == profile:
+        session.profile = cfg.default_profile
+        session.customer_id = None
+        save_session(session)
     return True
 
 
@@ -586,6 +912,8 @@ def delete_all_profiles() -> None:
     cfg.profiles = {}
     cfg.default_profile = "default"
     save(cfg)
+    if _session_file() is not None:
+        save_session(SessionContext(profile="default"))
 
 
 def set_registry_default_repo(
