@@ -528,6 +528,26 @@ def test_pkg_repo_upstream_add_requires_exactly_one_source(
     assert "exactly one" in both.output
 
 
+def test_pkg_repo_upstream_priority_is_limited_to_four_slots() -> None:
+    result = runner.invoke(
+        pkg_cmd.app,
+        [
+            "repo",
+            "upstream",
+            "add",
+            "application",
+            "pypi",
+            "--private-repository",
+            "shared",
+            "--priority",
+            "4",
+        ],
+    )
+
+    assert result.exit_code == 2
+    assert "0<=x<=3" in result.output
+
+
 def test_pkg_package_list_and_show_use_repository_package_paths(
     monkeypatch,
     tmp_path: Path,

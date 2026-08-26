@@ -163,7 +163,7 @@ Container and Helm are OCI-native private lanes. They do not support upstream
 attachments or remote caches. Classic non-OCI Helm repositories are not
 supported.
 
-The `upstream` subgroup manages the complete ordered plan of at most 32 mixed
+The `upstream` subgroup manages the complete ordered plan of at most four mixed
 private and remote sources. A private selector may be workspace-qualified and must
 resolve to a same-customer, same-kind lane. Omitting `--priority` appends. Private
 sources default to a disabled minimum-age guard; remote sources retain their server

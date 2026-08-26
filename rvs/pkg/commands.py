@@ -54,6 +54,7 @@ app.add_typer(maven_app, name="maven")
 
 _KINDS = ("pypi", "npm", "maven", "container", "helm")
 _PACKAGE_KINDS = ("pypi", "npm", "maven")
+_MAX_UPSTREAM_PRIORITY = 3
 _ROUTER = CanonicalRouter()
 _REPOSITORY_NAME_HELP = "Package repository name: lowercase letters, numbers, and hyphens."
 
@@ -733,7 +734,7 @@ def upstream_add(
     kind: str = typer.Argument(...),
     private_repository: str | None = typer.Option(None, "--private-repository"),
     remote_cache: str | None = typer.Option(None, "--remote-cache"),
-    priority: int | None = typer.Option(None, "--priority", min=0, max=31),
+    priority: int | None = typer.Option(None, "--priority", min=0, max=_MAX_UPSTREAM_PRIORITY),
     min_age_days: float | None = typer.Option(None, "--min-age-days", min=0),
     max_age_days: float | None = typer.Option(None, "--max-age-days", min=0),
     profile: str | None = typer.Option(None, "--profile", "-p"),
@@ -787,7 +788,7 @@ def upstream_update(
     repository: str = typer.Argument(...),
     kind: str = typer.Argument(...),
     attachment: str = typer.Argument(...),
-    priority: int | None = typer.Option(None, "--priority", min=0, max=31),
+    priority: int | None = typer.Option(None, "--priority", min=0, max=_MAX_UPSTREAM_PRIORITY),
     min_age_days: float | None = typer.Option(None, "--min-age-days", min=0),
     max_age_days: float | None = typer.Option(None, "--max-age-days", min=0),
     profile: str | None = typer.Option(None, "--profile", "-p"),
