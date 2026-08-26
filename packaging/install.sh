@@ -152,9 +152,10 @@ portable_architecture() {
 }
 
 require_glibc_228() {
-  local libc_version
+  local libc_version ldd_output
   if ! libc_version="$(getconf GNU_LIBC_VERSION 2>/dev/null)"; then
-    if ldd --version 2>&1 | grep -qi musl; then
+    ldd_output="$(ldd --version 2>&1 || true)"
+    if grep -qi musl <<<"$ldd_output"; then
       fail "Alpine/musl needs a separate rvs build, which is not published yet; this installer will not run a glibc binary on musl"
     fi
     fail "could not identify a supported glibc runtime"
