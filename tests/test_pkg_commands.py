@@ -430,9 +430,7 @@ def test_pkg_repo_upstream_add_appends_after_existing_plan(
         "min_age_days": None,
         "max_age_days": None,
     }
-    fake = _FakeApiClient(
-        [destination, source, [{"id": "one"}, {"id": "two"}], attachment]
-    )
+    fake = _FakeApiClient([destination, source, [{"id": "one"}, {"id": "two"}], attachment])
     _use_fake_client(monkeypatch, fake)
 
     result = runner.invoke(
