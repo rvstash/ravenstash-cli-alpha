@@ -925,11 +925,19 @@ def remote_list(
         output.info("No remote caches & proxies found.")
         return
     output.table(
-        ["Account", "Type", "Target", "Registry kind", "Direct", "Age range"],
+        ["Account", "Type", "Publication", "Target", "Registry kind", "Direct", "Age range"],
         [
             [
                 str(entry.get("customer", {}).get("account_label", "")),
                 str(item.get("source_family") or "unknown"),
+                str(
+                    item.get("publication_control")
+                    or (
+                        "externally_controlled"
+                        if item.get("source_family") == "official"
+                        else "unknown"
+                    )
+                ),
                 (
                     f"cache:{item.get('official_slug') or item['public_id']}"
                     if item.get("source_family") == "official"
@@ -1035,6 +1043,11 @@ def remote_create_custom(
     kind: str = typer.Option(..., "--kind", help="Registry kind: pypi, npm, or maven."),
     api_url: str = typer.Option(..., "--api-url", help="HTTPS metadata/API origin."),
     artifact_url: str | None = typer.Option(None, "--artifact-url"),
+    publication_control: str = typer.Option(
+        ...,
+        "--publication-control",
+        help="Who controls publishing: user-controlled or externally-controlled.",
+    ),
     auth_scheme: str = typer.Option("none", "--auth-scheme", help="none, basic, or bearer."),
     username: str | None = typer.Option(None, "--username"),
     secret_env: str | None = typer.Option(
@@ -1057,6 +1070,11 @@ def remote_create_custom(
     customer_id = _context_customer_id(profile, account) or _customer_id(profile)
     if auth_scheme not in {"none", "basic", "bearer"}:
         output.fatal("--auth-scheme must be none, basic, or bearer.")
+    publication_control_value = publication_control.replace("-", "_")
+    if publication_control_value not in {"user_controlled", "externally_controlled"}:
+        output.fatal(
+            "--publication-control must be user-controlled or externally-controlled."
+        )
     secret = os.environ.get(secret_env) if secret_env else None
     if secret_env and secret is None:
         output.fatal(f"Origin secret environment variable '{secret_env}' is not set.")
@@ -1072,6 +1090,7 @@ def remote_create_custom(
         "customer_id": customer_id,
         "registry_kind": registry_kind,
         "remote_name": name,
+        "publication_control": publication_control_value,
         "api_base_url": api_url,
         "credential": {
             "auth_scheme": auth_scheme,

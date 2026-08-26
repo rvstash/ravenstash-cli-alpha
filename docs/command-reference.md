@@ -181,7 +181,7 @@ rvs pkg remote-cache set-age CACHE_ID --min-age-days DAYS [--profile NAME]
 rvs pkg remote-cache delete CACHE_ID [--profile NAME] [--yes]
 rvs pkg remote-cache delete CACHE_ID --customer-id CUSTOMER_ID --registry-kind pypi|npm|maven [--profile NAME] [--yes]
 rvs pkg cache add OFFICIAL_SOURCE [--direct|--no-direct] [--select]
-rvs pkg cache create-custom NAME --kind pypi|npm|maven --api-url URL [--artifact-url URL] [--select]
+rvs pkg cache create-custom NAME --kind pypi|npm|maven --api-url URL --publication-control user-controlled|externally-controlled [--artifact-url URL] [--select]
 rvs pkg cache select SOURCE
 rvs pkg cache select --custom NAME [--kind KIND]
 rvs pkg cache current

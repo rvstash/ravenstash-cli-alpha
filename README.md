@@ -202,7 +202,8 @@ management stays visibly distinct:
 ```bash
 rvs pkg cache add pypiorg --select
 rvs pkg cache create-custom piwheels --kind pypi \
-  --api-url https://www.piwheels.org/simple/ --select
+  --api-url https://www.piwheels.org/simple/ \
+  --publication-control externally-controlled --select
 rvs pkg cache select pypiorg
 rvs pkg cache select --custom piwheels
 ```

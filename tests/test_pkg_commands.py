@@ -354,6 +354,94 @@ def test_pkg_remote_management_and_upstream_configuration(monkeypatch, tmp_path:
     ]
 
 
+def test_pkg_custom_remote_requires_and_submits_publication_control(
+    monkeypatch, tmp_path: Path
+) -> None:
+    _isolate_config(monkeypatch, tmp_path)
+    fake = _FakeApiClient(
+        [
+            {
+                "customer": _repository_entry()["customer"],
+                "remote_repository": {
+                    "id": "remote_custom_1",
+                    "public_id": "company-packages",
+                    "remote_name": "company-packages",
+                    "registry_kind": "pypi",
+                },
+            }
+        ]
+    )
+    _use_fake_client(monkeypatch, fake)
+
+    result = runner.invoke(
+        pkg_cmd.app,
+        [
+            "remote-cache",
+            "create-custom",
+            "company-packages",
+            "--kind",
+            "pypi",
+            "--api-url",
+            "https://packages.example.test/simple/",
+            "--publication-control",
+            "user-controlled",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert fake.calls == [
+        (
+            "POST",
+            "/v0/remote-repositories/custom",
+            {
+                "customer_id": "cus_123",
+                "registry_kind": "pypi",
+                "remote_name": "company-packages",
+                "publication_control": "user_controlled",
+                "api_base_url": "https://packages.example.test/simple/",
+                "credential": {"auth_scheme": "none", "allowed_hosts": []},
+                "enable_direct_access": True,
+            },
+        )
+    ]
+
+
+def test_pkg_official_remote_list_reports_external_publication_control(
+    monkeypatch, tmp_path: Path
+) -> None:
+    _isolate_config(monkeypatch, tmp_path)
+    fake = _FakeApiClient(
+        [
+            [
+                {
+                    "customer": _repository_entry()["customer"],
+                    "remote_repository": {
+                        "id": "remote_official_1",
+                        "public_id": "pypi",
+                        "official_slug": "pypi",
+                        "source_family": "official",
+                        "registry_kind": "pypi",
+                        "direct_access_enabled": True,
+                    },
+                }
+            ]
+        ]
+    )
+    _use_fake_client(monkeypatch, fake)
+    tables: list[tuple[list[str], list[list[str]]]] = []
+    monkeypatch.setattr(
+        pkg_cmd.output,
+        "table",
+        lambda headers, rows, **_kwargs: tables.append((headers, rows)),
+    )
+
+    result = runner.invoke(pkg_cmd.app, ["remote-cache", "list"])
+
+    assert result.exit_code == 0
+    assert tables[0][0][2] == "Publication"
+    assert tables[0][1][0][2] == "externally_controlled"
+
+
 def test_pkg_repo_upstream_add_private_uses_source_lane_and_zero_age_default(
     monkeypatch,
     tmp_path: Path,
