@@ -32,7 +32,13 @@ profile_app = typer.Typer(
     help="Manage local authenticated profiles.",
     no_args_is_help=True,
 )
+keyring_app = typer.Typer(
+    name="keyring",
+    help="Select and diagnose secure credential storage.",
+    no_args_is_help=True,
+)
 app.add_typer(profile_app, name="profile")
+app.add_typer(keyring_app, name="keyring")
 
 _KEY_UP = "up"
 _KEY_DOWN = "down"
@@ -238,15 +244,88 @@ def login(
         "--duration",
         help="Requested device session duration, for example 8h or 3days.",
     ),
+    credential_store: str | None = typer.Option(
+        None,
+        "--credential-store",
+        help="Secure store for this login: auto, keyring, or pass.",
+    ),
 ) -> None:
     """Authenticate through Ravenstash browser/device login."""
     cfg = cfg_mod.load()
+    profile_name = _target_profile(profile, cfg)
+    try:
+        selected_store = auth_mod.preflight_credential_store(profile_name, credential_store)
+    except RuntimeError as exc:
+        output.fatal(str(exc))
     perform_device_login(
-        profile=_target_profile(profile, cfg),
+        profile=profile_name,
         api_url=api_url,
         no_browser=no_browser,
         duration=duration,
+        credential_store=selected_store,
     )
+
+
+@keyring_app.command("doctor")
+def keyring_doctor(
+    profile: str | None = typer.Option(
+        None, "--profile", "-p", help="Profile whose store selection should be resolved."
+    ),
+) -> None:
+    """Diagnose supported secure credential stores without exposing credentials."""
+    cfg = cfg_mod.load()
+    profile_name = _target_profile(profile, cfg)
+    statuses = auth_mod.credential_store_statuses()
+    try:
+        selected = auth_mod.preflight_credential_store(profile_name)
+        selection_error = None
+        round_trip = "passed"
+    except RuntimeError as exc:
+        selected = None
+        selection_error = str(exc)
+        round_trip = "not available"
+
+    rows = [
+        [
+            status.name,
+            "yes" if status.available else "no",
+            status.backend,
+            status.detail,
+        ]
+        for status in statuses
+    ]
+    output.table(["Store", "Available", "Backend", "Detail"], rows, title="Credential stores")
+    output.kv(
+        {
+            "Profile": profile_name,
+            "Configured preference": os.environ.get("RVS_CREDENTIAL_STORE") or cfg.credential_store,
+            "Selected store": selected or "none",
+            "Write/read/delete check": round_trip,
+            "RVS_TOKEN set": "yes" if os.environ.get("RVS_TOKEN") else "no",
+            "Selection error": selection_error,
+        }
+    )
+    if selected is None:
+        raise typer.Exit(1)
+
+
+@keyring_app.command("set")
+def keyring_set(
+    store: str = typer.Argument(..., help="Preferred store: auto, keyring, or pass."),
+) -> None:
+    """Set the preferred secure store for future device logins."""
+    normalized = store.strip().lower()
+    try:
+        cfg_mod.set_credential_store(normalized)
+    except ValueError as exc:
+        output.fatal(str(exc))
+    output.success(f"Credential-store preference set to '{normalized}'.")
+    if normalized != "auto":
+        status = next(
+            item for item in auth_mod.credential_store_statuses() if item.name == normalized
+        )
+        if not status.available:
+            output.warn(f"{status.detail} {status.guidance}")
 
 
 @app.command("logout")
@@ -296,6 +375,11 @@ def status(
     p = cfg.active_profile(profile_name)
     token = auth_mod.get_token(profile_name)
     source = auth_mod.token_source(profile_name)
+    credential_store = (
+        "not used (RVS_TOKEN)"
+        if source == "RVS_TOKEN"
+        else p.credential_store or auth_mod.selected_credential_store(profile_name) or "none"
+    )
 
     output.kv(
         {
@@ -313,6 +397,7 @@ def status(
             "OCI registry URL": p.native_registries.oci_registry_base_url,
             "Authenticated": "yes" if token else "no",
             "Credential source": source or "none",
+            "Credential store": credential_store,
             "Credential type": auth_mod.display_credential_type(p.credential_type) or "unknown",
             "Owner ID": p.customer_id or "unknown",
             "Access expires at": p.expires_at or "unknown",

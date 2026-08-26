@@ -46,9 +46,26 @@ rvs auth login --duration 8h
 ```
 
 The CLI stores the short-lived CLI access token and profile-scoped refresh token
-in the OS keyring. Profile metadata lives in `~/.rvs/config.toml`. Automation
-should pass credentials with `RVS_TOKEN`; that env var takes precedence over
-local profiles and is never refreshed.
+in a secure store. In `auto` mode it uses a working OS keyring (Secret Service,
+including GNOME Keyring, KWallet Secret Service, or compatible providers) and
+then an initialized `pass` store. It never silently falls back to plaintext.
+Profile metadata lives in `~/.rvs/config.toml`. Automation should pass
+credentials with `RVS_TOKEN`; that env var takes precedence over local profiles,
+requires no keyring or D-Bus session, and is never refreshed.
+
+Inspect or select credential storage before logging in:
+
+```bash
+rvs auth keyring doctor
+rvs auth keyring set auto       # detect an available secure provider
+rvs auth keyring set keyring    # use the desktop/system keyring
+rvs auth keyring set pass       # use the user's initialized pass store
+rvs auth login --credential-store pass
+```
+
+The provider used by a successful login is pinned to that profile, so a machine
+with both desktop keyring and `pass` continues using the user's chosen store.
+`RVS_CREDENTIAL_STORE=auto|keyring|pass` supplies a non-persistent override.
 
 Device login discovers and stores the package transfer endpoints returned by
 DevAPI. Every control-plane operation goes through DevAPI; `rvs` never calls
@@ -308,12 +325,11 @@ Helm, and ORAS all use the same `oci.rvsta.sh` host and the stable
 `/<workspace-ref>/<repository-ref>/...` namespace. `rvs oras` requires
 `--rvs-kind container` or `--rvs-kind helm` because ORAS supports both lanes.
 
-## Installation on Ubuntu / WSL
+## Installation on Linux / WSL
 
-The supported end-user install path is a system package, not `pip install`.
-The Linux package contains a self-contained CLI and installs both `/usr/bin/rvs`
-and the long-form `/usr/bin/ravenstash` alias; user config, credentials, and
-managed runtimes stay in `~/.rvs`.
+The supported end-user install path is a signed self-contained distribution,
+not `pip install`. The CLI embeds Python 3.14; it does not use the system Python.
+User config, credentials, and managed runtimes stay in `~/.rvs`.
 
 Install the current recommended Linux compatibility channel:
 
@@ -321,12 +337,21 @@ Install the current recommended Linux compatibility channel:
 curl -fsSL https://ravenstash.com/install.sh | bash
 ```
 
-The installer supports Ubuntu 20.04+ and Debian 11+ on Linux `amd64`. The
-package embeds Python 3.14 and does not depend on the system Python. It verifies
-the published APT signing-key fingerprint before configuring
-`releases.ravenstash.com` and running `apt install rvs`. Review the installer
-source at <https://ravenstash.com/install.sh> before running it if required by
-your environment.
+On Debian, Ubuntu, WSL, and derivatives such as Linux Mint and Pop!_OS, the
+installer verifies the published APT signing-key fingerprint, configures the
+signed Ravenstash APT channel, and installs the system package. On other
+`amd64` distributions with glibc 2.28 or newer—including current Fedora,
+RHEL-compatible, Amazon Linux, and openSUSE systems—it verifies a detached
+OpenPGP signature and exact SHA-256 digest before installing the portable bundle
+under `~/.local/share/rvs` and linking commands into `~/.local/bin`.
+
+The current portable artifact is `amd64`/glibc only. Linux `arm64` and
+Alpine/musl are detected and rejected with an explicit diagnostic rather than
+attempting to execute an incompatible binary. They remain release-matrix gaps,
+not claimed support. Review the installer source at
+<https://ravenstash.com/install.sh> before running it if required by your
+environment. Set `RVS_INSTALL_SCOPE=system` for `/opt/rvs` plus
+`/usr/local/bin`; the default portable install is rootless and per-user.
 
 Direct `.deb` artifacts are also published for early testing:
 
@@ -334,7 +359,7 @@ Direct `.deb` artifacts are also published for early testing:
 sudo apt install ./rvs_<version>_amd64.deb
 ```
 
-APT remains the update authority:
+APT remains the update authority for Debian-family package installs:
 
 ```bash
 rvs update                 # check compatible updates in the current channel
@@ -349,9 +374,14 @@ Starting with `1.0`, the major version is the boundary (`v1`, `v2`, and so on).
 The CLI authenticates the signed channel manifest before offering or applying a
 channel change. It never downloads over and replaces its own executable.
 
-WSL/headless note: `RVS_TOKEN` works without extra setup. Persistent
-`rvs auth login` stores access and refresh tokens in the OS keyring, so WSL
-needs a usable keyring service before local login credentials can be saved.
+Portable installations are updated by rerunning the signed installer. The
+current `rvs update` and `rvs upgrade` commands deliberately modify only a
+recognized Ravenstash APT installation.
+
+WSL/headless/server note: `RVS_TOKEN` works without extra setup and is the
+recommended CI path. Persistent `rvs auth login` requires either a usable Secret
+Service provider or an initialized `pass` store. Run `rvs auth keyring doctor`
+before login to see exactly what this session can use.
 
 ## Release packaging
 
@@ -369,6 +399,8 @@ packaging/scripts/build-in-ubuntu20.sh
 
 That builds the Python 3.14 PyInstaller bundle, Debian package, tarball,
 CycloneDX SBOM, and checksum file.
+See [`docs/linux-compatibility.md`](docs/linux-compatibility.md) for the distro,
+installer, headless, desktop-keyring, and known-gap release matrix.
 APT repository metadata is generated and signed separately:
 
 ```bash

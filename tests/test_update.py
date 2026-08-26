@@ -22,6 +22,7 @@ def _completed(returncode: int = 0, stdout: str = "") -> Any:
 def test_update_reports_new_apt_candidate(monkeypatch: Any) -> None:
     monkeypatch.setattr(update_mod, "_apt_versions", lambda: ("0.2.2", "0.3.0"))
     monkeypatch.setattr(update_mod, "_upgrade_available", lambda installed, candidate: True)
+    monkeypatch.setattr(update_mod, "_current_channel", lambda: "v0.3")
 
     result = runner.invoke(app, ["update"])
 
@@ -44,6 +45,7 @@ def test_update_does_not_self_replace_non_apt_install(monkeypatch: Any) -> None:
 def test_update_apply_uses_fixed_apt_paths(monkeypatch: Any) -> None:
     monkeypatch.setattr(update_mod, "_apt_versions", lambda: ("0.2.2", "0.3.0"))
     monkeypatch.setattr(update_mod, "_upgrade_available", lambda installed, candidate: True)
+    monkeypatch.setattr(update_mod, "_current_channel", lambda: "v0.3")
     monkeypatch.setattr(update_mod.os, "geteuid", lambda: 0)
     calls: list[list[str]] = []
 

@@ -1,8 +1,8 @@
 # rvs Linux packaging
 
 This directory contains the Linux packaging path for the Ravenstash `rvs` CLI.
-The user-facing install path is a self-contained Debian package, not a global
-Python install.
+The user-facing install paths are a self-contained Debian package and a signed
+portable glibc bundle, not a global Python install.
 
 ## Build tools
 
@@ -84,14 +84,27 @@ every major series has one (`v1`, `v2`). Routine APT upgrades never cross that
 boundary. The legacy `stable` suite remains a permanent alias for `v0.3` so the
 initial alpha install cannot later roll into an incompatible release.
 
-The canonical user-facing installer source is `packaging/install.sh`. It
-verifies the expected signing-key fingerprint, configures this APT repository,
-and installs `rvs`. The build includes it in the checksummed and attested release
-artifacts. After the APT repository passes a clean installation check, the
-release workflow embeds the exact attested bytes in a dedicated
+The canonical user-facing installer source is `packaging/install.sh`. On a
+Debian-family system it verifies the expected signing-key fingerprint,
+configures this APT repository, and installs `rvs`. On other glibc `amd64`
+systems it verifies an OpenPGP-signed release inventory plus the archive's exact
+SHA-256 digest and performs a user-local install by default. The same protected
+release signer authenticates the APT repository and portable inventory; neither
+path accepts unsigned executable bytes. The build includes the installer in the
+checksummed and attested release artifacts. After the APT repository and GitHub
+release pass their publication gates, the release workflow embeds the exact
+attested bytes in a dedicated
 Cloudflare Worker at `https://ravenstash.com/install.sh`. The Worker does not
 fetch executable shell code from R2, and the frontend website repository
 contains no installer implementation.
+
+Source CI builds once on the glibc 2.28 compatibility floor and exercises the
+same frozen archive in pinned Ubuntu 22.04/24.04, Debian 12/13, Fedora, Rocky
+Linux 8/9, Amazon Linux 2023, and openSUSE Leap containers. Each headless smoke
+test verifies normal startup, both aliases, `RVS_TOKEN` authentication, and the
+expected no-keyring diagnostic. Desktop keyring behavior is covered separately
+by provider and disposable round-trip tests because containers do not supply a
+real graphical D-Bus session.
 
 Only protected GitHub environments in this repository define these Actions
 values:

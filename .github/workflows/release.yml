@@ -55,6 +55,7 @@ jobs:
           python3 packaging/repository/channel_policy.py validate "$VERSION" "$CHANNEL"
           project_version="$(sed -n 's/^version = "\([^"]*\)"/\1/p' pyproject.toml)"
           test "$project_version" = "$VERSION"
+          grep -Fx "readonly release_version=\"${VERSION}\"" packaging/install.sh
           grep -Fx "readonly compatibility_channel=\"${CHANNEL}\"" packaging/install.sh
           test -z "$(git status --porcelain)"
 
@@ -245,6 +246,20 @@ jobs:
               "build/rvs_${VERSION}_amd64.deb" \
               signed \
               packaging/repository/keys/ravenstash-rvs.gpg
+          install -d -m 0755 portable
+          install -m 0644 \
+            "build/rvs-v${VERSION}-checksums.txt" \
+            "portable/rvs-v${VERSION}-checksums.txt"
+          gpg --batch --yes --pinentry-mode loopback \
+            --passphrase-file "$passphrase_file" \
+            --local-user "$key_id" \
+            --armor --detach-sign \
+            --output "portable/rvs-v${VERSION}-checksums.txt.asc" \
+            "portable/rvs-v${VERSION}-checksums.txt"
+          gpgv \
+            --keyring packaging/repository/keys/ravenstash-rvs.gpg \
+            "portable/rvs-v${VERSION}-checksums.txt.asc" \
+            "portable/rvs-v${VERSION}-checksums.txt"
           rm -f "$passphrase_file"
           rm -rf "$GNUPGHOME"
 
@@ -253,6 +268,15 @@ jobs:
         with:
           name: signed-apt-${{ inputs.source_sha }}
           path: signed/
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 1
+
+      - name: Upload signed portable inventory
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: signed-portable-${{ inputs.source_sha }}
+          path: portable/
           if-no-files-found: error
           compression-level: 0
           retention-days: 1
@@ -336,6 +360,7 @@ jobs:
     needs:
       - build
       - publish-apt
+      - publish-github-release
     runs-on: ubuntu-24.04
     environment: installer-delivery
     permissions:
@@ -420,7 +445,6 @@ jobs:
     needs:
       - build
       - publish-apt
-      - deploy-installer
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -434,6 +458,12 @@ jobs:
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
           name: rvs-build-${{ inputs.source_sha }}
+          path: build
+
+      - name: Download signed portable inventory
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: signed-portable-${{ inputs.source_sha }}
           path: build
 
       - name: Create immutable-source draft, upload once, then publish

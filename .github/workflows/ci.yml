@@ -64,3 +64,87 @@ jobs:
               test -x /usr/lib/rvs/docker-credential-rvs
               test -e /usr/lib/rvs/_internal/libpython3.14.so.1.0
             '
+
+      - name: Reject Alpine musl before downloading an incompatible archive
+        run: |
+          docker run --rm \
+            --volume "$PWD/packaging/install.sh:/install.sh:ro" \
+            alpine@sha256:7c8cb692ae09657cbc4a3f3cbd0e8d5a2690ba38386aaaf252dbb060bf5eb2e6 \
+            /bin/sh -euc '
+              apk add --no-cache bash >/dev/null
+              set +e
+              output="$(/bin/bash /install.sh 2>&1)"
+              status=$?
+              set -e
+              test "$status" -eq 1
+              printf "%s\n" "$output" | grep -F "Alpine/musl needs a separate rvs build"
+            '
+
+      - name: Upload portable compatibility bundle
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: rvs-portable-compatibility-${{ github.sha }}
+          path: dist/release/rvs-v*-linux-amd64.tar.gz
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 1
+
+  linux-glibc-portable-compatibility:
+    needs: ubuntu-2004-package-compatibility
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - system: Ubuntu 22.04
+            image: ubuntu@sha256:79676deb51ebb02885b0b9d33788e78a37cf1045ad79d1bb04c6a222c3556b3d
+          - system: Ubuntu 24.04
+            image: ubuntu@sha256:1e0a86e57d247923571b75e0aaf48a1449cf8c543d51fb3e07a4a7d7bfa79316
+          - system: Ubuntu 26.04
+            image: ubuntu@sha256:889d056d5c6c0bfb55789ff3710681d68e50713cb562d2196dc07110599c7a6f
+          - system: Debian 12
+            image: debian@sha256:2f65600e1252c5649d2213e1d1ea4d74253d26514dc6530102a875e429245929
+          - system: Debian 13
+            image: debian@sha256:6788062a1b42ac281f053ac876170b79a3eaed5d61383b8ed7eaca6c6965f3b1
+          - system: Fedora 44
+            image: fedora@sha256:89f61a124414261868224666aa7fb8df1b78397a53623774bdfb105d1612b48b
+          - system: Fedora 43
+            image: fedora@sha256:52cfb35e60823b691af7541b576c0fa49195628044b2c1a15b0ae775ec01048e
+          - system: Rocky Linux 8
+            image: rockylinux@sha256:2d05a9266523bbf24f33ebc3a9832e4d5fd74b973c220f2204ca802286aa275d
+          - system: Rocky Linux 9
+            image: rockylinux@sha256:d644d203142cd5b54ad2a83a203e1dee68af2229f8fe32f52a30c6e1d3c3a9e0
+          - system: AlmaLinux 10
+            image: almalinux@sha256:689dc4a86e288b3f88ced4bf14bef18cdaf5539609608ca4cebc62720740dfa2
+          - system: Amazon Linux 2023
+            image: amazonlinux@sha256:fa946e513ed149232490479653141fa4c6cd1e71c70130525cf00a791477ed19
+          - system: openSUSE Leap 15.6
+            image: opensuse/leap@sha256:ca2942f9510c3e30fd322017782cdf6c067b2183dd7d56b39d0c697a9808ce2a
+          - system: openSUSE Leap 16.0
+            image: opensuse/leap@sha256:77732aa024f765ecdb4067affdea9e386d68056d0d281608ce4665d8fb0b4edd
+          - system: Arch Linux
+            image: archlinux@sha256:c9dc8b5d1b06d8d50ace6d42b2c93fbb1e34c9e1332d1a2102936e497d3187ae
+    name: portable (${{ matrix.system }})
+    steps:
+      - name: Check out compatibility smoke policy
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+
+      - name: Download portable bundle
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: rvs-portable-compatibility-${{ github.sha }}
+          path: compatibility-release
+
+      - name: Exercise frozen CLI in ${{ matrix.system }}
+        run: |
+          install -d compatibility-bundle
+          tar -xzf compatibility-release/rvs-v*-linux-amd64.tar.gz \
+            --strip-components=1 \
+            -C compatibility-bundle
+          docker run --rm \
+            --volume "$PWD/compatibility-bundle:/bundle:ro" \
+            --volume "$PWD/packaging/scripts/smoke-portable-bundle.sh:/smoke.sh:ro" \
+            "${{ matrix.image }}" \
+            /bin/bash /smoke.sh --bundle /bundle

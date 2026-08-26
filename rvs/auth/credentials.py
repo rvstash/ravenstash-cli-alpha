@@ -1,7 +1,8 @@
 """Credential storage for rvs.
 
-Device-login credentials are stored in the OS keyring. Automation credentials
-must be supplied through ``RVS_TOKEN``.
+Device-login credentials are stored in a selected secure provider (an OS
+keyring or ``pass``). Automation credentials must be supplied through
+``RVS_TOKEN``.
 
 Public API
 ----------
@@ -17,9 +18,12 @@ import importlib.metadata
 import logging
 import os
 import platform as platform_mod
+import secrets
 from datetime import UTC, datetime, timedelta
 
 import httpx
+
+from . import stores
 
 
 logger = logging.getLogger(__name__)
@@ -33,6 +37,7 @@ _REFRESHABLE_CREDENTIAL_TYPES = {
     EXPIRING_CREDENTIAL_TYPE,
     _LEGACY_TEMPORARY_CREDENTIAL_TYPE,
 }
+_CREDENTIAL_STORES = {"auto", "keyring", "pass"}
 
 
 def is_refreshable_credential_type(credential_type: str | None) -> bool:
@@ -62,29 +67,20 @@ def _device_platform() -> str:
 
 
 def _keyring_available() -> bool:
-    try:
-        import keyring  # noqa: F401
-
-        return True
-    except ImportError:
-        return False
+    return stores.system_keyring_status().available
 
 
 def _kr_get(profile: str) -> str | None:
     try:
-        import keyring
-
-        return keyring.get_password(_SERVICE, profile)
-    except Exception:
+        return stores.system_get(_SERVICE, profile)
+    except stores.StoreError:
         return None
 
 
 def _kr_set(profile: str, token: str) -> None:
     try:
-        import keyring
-
-        keyring.set_password(_SERVICE, profile, token)
-    except Exception as exc:
+        stores.system_set(_SERVICE, profile, token)
+    except stores.StoreError as exc:
         msg = (
             "No usable OS keyring is available. Use RVS_TOKEN for CI/headless "
             "runs or configure a keyring before storing local credentials."
@@ -93,12 +89,133 @@ def _kr_set(profile: str, token: str) -> None:
 
 
 def _kr_delete(profile: str) -> None:
-    try:
-        import keyring
+    stores.system_delete(_SERVICE, profile)
 
-        keyring.delete_password(_SERVICE, profile)
-    except Exception:
-        pass
+
+def credential_store_statuses() -> list[stores.StoreStatus]:
+    """Return non-secret diagnostics for supported local credential stores."""
+    return [stores.system_keyring_status(), stores.pass_status()]
+
+
+def _credential_store_preference(profile: str, requested: str | None = None) -> str:
+    from .. import config as cfg_mod
+
+    value = requested or os.environ.get("RVS_CREDENTIAL_STORE")
+    if value is None:
+        cfg = cfg_mod.load()
+        profile_config = cfg.profiles.get(profile)
+        value = (
+            profile_config.credential_store
+            if profile_config is not None and profile_config.credential_store
+            else cfg.credential_store
+        )
+    if not isinstance(value, str):
+        raise RuntimeError("Credential store must be auto, keyring, or pass.")
+    normalized = value.strip().lower()
+    if normalized not in _CREDENTIAL_STORES:
+        raise RuntimeError("Credential store must be auto, keyring, or pass.")
+    return normalized
+
+
+def _store_available(name: str) -> bool:
+    if name == "keyring":
+        return _keyring_available()
+    if name == "pass":
+        return stores.pass_status().available
+    return False
+
+
+def selected_credential_store(
+    profile: str,
+    requested: str | None = None,
+    *,
+    required: bool = False,
+) -> str | None:
+    """Resolve the configured or automatically detected secure store."""
+    preference = _credential_store_preference(profile, requested)
+    candidates = ("keyring", "pass") if preference == "auto" else (preference,)
+    for candidate in candidates:
+        if _store_available(candidate):
+            return candidate
+    if not required:
+        return None
+
+    statuses = {status.name: status for status in credential_store_statuses()}
+    details = "; ".join(
+        f"{candidate}: {statuses[candidate].detail.rstrip('.')}" for candidate in candidates
+    )
+    raise RuntimeError(
+        "No usable secure credential store is available. "
+        f"{details}. Configure an existing store, choose one with "
+        "`rvs auth keyring set keyring|pass`, or use RVS_TOKEN for CI/headless runs."
+    )
+
+
+def _store_get(name: str, account: str, *, strict: bool = False) -> str | None:
+    if name == "keyring":
+        if strict:
+            try:
+                return stores.system_get(_SERVICE, account)
+            except stores.StoreError as exc:
+                raise RuntimeError(str(exc)) from exc
+        return _kr_get(account)
+    try:
+        return stores.pass_get(account)
+    except stores.StoreError as exc:
+        if strict:
+            raise RuntimeError(str(exc)) from exc
+        return None
+
+
+def _store_set(name: str, account: str, token: str) -> None:
+    if name == "keyring":
+        _kr_set(account, token)
+        return
+    try:
+        stores.pass_set(account, token)
+    except stores.StoreError as exc:
+        raise RuntimeError(f"Could not store credentials with pass: {exc}") from exc
+
+
+def _store_delete(name: str, account: str, *, strict: bool = False) -> None:
+    try:
+        if name == "keyring":
+            _kr_delete(account)
+        else:
+            stores.pass_delete(account)
+    except stores.StoreError as exc:
+        if strict:
+            raise RuntimeError(str(exc)) from exc
+        return
+
+
+def preflight_credential_store(profile: str, requested: str | None = None) -> str:
+    """Verify a secure store with a disposable round trip before device auth."""
+    store = selected_credential_store(profile, requested, required=True)
+    assert store is not None
+    account = f"__probe__:{secrets.token_urlsafe(12)}"
+    probe = secrets.token_urlsafe(24)
+    failure: RuntimeError | None = None
+    try:
+        _store_set(store, account, probe)
+        if _store_get(store, account, strict=True) != probe:
+            raise RuntimeError("the credential store did not return the probe value")
+    except RuntimeError as exc:
+        failure = exc
+    try:
+        _store_delete(store, account, strict=True)
+    except RuntimeError as cleanup_error:
+        if failure is not None:
+            raise RuntimeError(
+                f"Credential-store preflight failed for {store}: {failure}; "
+                f"probe cleanup also failed: {cleanup_error}"
+            ) from failure
+        raise RuntimeError(
+            f"Credential-store preflight failed for {store}: probe cleanup failed: {cleanup_error}"
+        ) from cleanup_error
+    if failure is not None:
+        raise RuntimeError(f"Credential-store preflight failed for {store}: {failure}") from failure
+    return store
 
 
 def _refresh_profile(profile: str) -> str:
@@ -135,9 +252,10 @@ def _stored_refresh_token_expired(profile: str) -> bool:
 
 def get_refresh_token(profile: str) -> str | None:
     """Return the stored device refresh token for *profile*, if present."""
-    if not _keyring_available():
+    store = selected_credential_store(profile)
+    if store is None:
         return None
-    return _kr_get(_refresh_profile(profile))
+    return _store_get(store, _refresh_profile(profile))
 
 
 def has_active_expiring_session(profile: str) -> bool:
@@ -171,7 +289,8 @@ def refresh_expiring_credential(profile: str) -> str | None:
     """Refresh an expired expiring device credential for *profile*."""
     from .. import config as cfg_mod
 
-    if not _keyring_available():
+    store = selected_credential_store(profile)
+    if store is None:
         return None
 
     cfg = cfg_mod.load()
@@ -179,7 +298,7 @@ def refresh_expiring_credential(profile: str) -> str | None:
     if not p or not is_refreshable_credential_type(p.credential_type):
         return None
 
-    refresh_token = _kr_get(_refresh_profile(profile))
+    refresh_token = _store_get(store, _refresh_profile(profile))
     if not refresh_token:
         return None
 
@@ -215,20 +334,30 @@ def refresh_expiring_credential(profile: str) -> str | None:
         delete_token(profile)
         return None
 
-    _kr_set(profile, access_token)
-    _kr_set(_refresh_profile(profile), new_refresh_token)
-    expires_at = datetime.now(UTC) + timedelta(seconds=expires_in)
-    refresh_expires_at = datetime.now(UTC) + timedelta(seconds=refresh_expires_in)
-    cfg_mod.set_profile_metadata(
-        profile,
-        api_url=p.api_url,
-        native_registries=payload.get("native_registries"),
-        customer_id=payload.get("customer_id"),
-        customer_unique_id=payload.get("customer_unique_id"),
-        credential_type=EXPIRING_CREDENTIAL_TYPE,
-        expires_at=expires_at.isoformat(),
-        refresh_expires_at=refresh_expires_at.isoformat(),
-    )
+    try:
+        _store_set(store, profile, access_token)
+        _store_set(store, _refresh_profile(profile), new_refresh_token)
+        expires_at = datetime.now(UTC) + timedelta(seconds=expires_in)
+        refresh_expires_at = datetime.now(UTC) + timedelta(seconds=refresh_expires_in)
+        cfg_mod.set_profile_metadata(
+            profile,
+            api_url=p.api_url,
+            native_registries=payload.get("native_registries"),
+            customer_id=payload.get("customer_id"),
+            customer_unique_id=payload.get("customer_unique_id"),
+            credential_store=store,
+            credential_type=EXPIRING_CREDENTIAL_TYPE,
+            expires_at=expires_at.isoformat(),
+            refresh_expires_at=refresh_expires_at.isoformat(),
+        )
+    except OSError, RuntimeError:
+        # A rotated pair is useful only when both secrets and its metadata are
+        # durable. Revoke and remove a partial pair rather than leaving an
+        # access token whose refresh state is ambiguous.
+        revoke_device_refresh_token(p.api_url, new_refresh_token)
+        delete_token_from_store(profile, store)
+        cfg_mod.clear_profile_credential_metadata(profile)
+        return None
     return access_token
 
 
@@ -246,8 +375,9 @@ def get_token(profile: str) -> str | None:
         return env_token
     if _stored_profile_expired(profile):
         return refresh_expiring_credential(profile)
-    if _keyring_available():
-        token = _kr_get(profile)
+    store = selected_credential_store(profile)
+    if store is not None:
+        token = _store_get(store, profile)
         if token:
             return token
         return refresh_expiring_credential(profile)
@@ -260,29 +390,40 @@ def token_source(profile: str) -> str | None:
         return "RVS_TOKEN"
     if _stored_profile_expired(profile):
         return None
-    if _keyring_available() and _kr_get(profile):
-        return "keyring"
+    store = selected_credential_store(profile)
+    if store is not None and _store_get(store, profile):
+        return store
     return None
 
 
-def set_token(profile: str, token: str) -> None:
-    """Persist *token* for *profile* (keyring preferred)."""
-    if not _keyring_available():
-        raise RuntimeError("No usable OS keyring is available. Use RVS_TOKEN for CI/headless runs.")
-    _kr_set(profile, token)
+def set_token(profile: str, token: str, credential_store: str | None = None) -> None:
+    """Persist *token* for *profile* in the selected secure store."""
+    store = selected_credential_store(profile, credential_store, required=True)
+    assert store is not None
+    _store_set(store, profile, token)
 
 
-def set_refresh_token(profile: str, token: str) -> None:
+def set_refresh_token(profile: str, token: str, credential_store: str | None = None) -> None:
     """Persist the device refresh token for *profile*."""
-    if not _keyring_available():
-        raise RuntimeError("No usable OS keyring is available. Use RVS_TOKEN for CI/headless runs.")
-    _kr_set(_refresh_profile(profile), token)
+    store = selected_credential_store(profile, credential_store, required=True)
+    assert store is not None
+    _store_set(store, _refresh_profile(profile), token)
+
+
+def delete_token_from_store(profile: str, credential_store: str) -> None:
+    """Remove both device credentials from one explicitly selected store."""
+    if credential_store not in {"keyring", "pass"}:
+        raise ValueError("Credential store must be keyring or pass")
+    _store_delete(credential_store, profile)
+    _store_delete(credential_store, _refresh_profile(profile))
 
 
 def delete_token(profile: str) -> None:
     """Remove stored credentials for *profile*."""
-    _kr_delete(profile)
-    _kr_delete(_refresh_profile(profile))
+    preference = _credential_store_preference(profile)
+    candidates = ("keyring", "pass") if preference == "auto" else (preference,)
+    for store in candidates:
+        delete_token_from_store(profile, store)
     from .. import config as cfg_mod
 
     cfg_mod.clear_profile_credential_metadata(profile)

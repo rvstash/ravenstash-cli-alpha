@@ -14,6 +14,7 @@ Config file shape
 
     [profiles.default]
     api_url = "https://api.ravenstash.com"
+    credential_store = "keyring"
     customer_id = "cus_..."
     customer_unique_id = "a8f3k2mz"
     credential_type = "expiring"
@@ -140,6 +141,7 @@ class ProfileConfig:
     )
     customer_id: str | None = None
     customer_unique_id: str | None = None
+    credential_store: str | None = None
     credential_type: str | None = None
     expires_at: str | None = None
     refresh_expires_at: str | None = None
@@ -205,6 +207,7 @@ class RegistryDefaults:
 @dataclass
 class RvsConfig:
     default_profile: str = "default"
+    credential_store: str = "auto"
     profiles: dict[str, ProfileConfig] = field(default_factory=dict)
 
     def active_profile(self, profile_name: str | None = None) -> ProfileConfig:
@@ -589,7 +592,10 @@ def _load_raw() -> dict:
 
 def load() -> RvsConfig:
     raw = _load_raw()
-    cfg = RvsConfig(default_profile=raw.get("default_profile", "default"))
+    cfg = RvsConfig(
+        default_profile=raw.get("default_profile", "default"),
+        credential_store=raw.get("credential_store", "auto"),
+    )
 
     for name, vals in raw.get("profiles", {}).items():
         cfg.profiles[name] = ProfileConfig(
@@ -602,6 +608,7 @@ def load() -> RvsConfig:
             ),
             customer_id=vals.get("customer_id"),
             customer_unique_id=vals.get("customer_unique_id"),
+            credential_store=vals.get("credential_store"),
             credential_type=vals.get("credential_type"),
             expires_at=vals.get("expires_at"),
             refresh_expires_at=vals.get("refresh_expires_at"),
@@ -632,7 +639,10 @@ def load() -> RvsConfig:
 def save(cfg: RvsConfig) -> None:
     CONFIG_DIR.mkdir(mode=0o700, parents=True, exist_ok=True)
     CONFIG_DIR.chmod(0o700)
-    raw: dict = {"default_profile": cfg.default_profile}
+    raw: dict = {
+        "default_profile": cfg.default_profile,
+        "credential_store": cfg.credential_store,
+    }
 
     if cfg.profiles:
         raw["profiles"] = {
@@ -648,6 +658,7 @@ def save(cfg: RvsConfig) -> None:
                     },
                     "customer_id": p.customer_id,
                     "customer_unique_id": p.customer_unique_id,
+                    "credential_store": p.credential_store,
                     "credential_type": p.credential_type,
                     "expires_at": p.expires_at,
                     "refresh_expires_at": p.refresh_expires_at,
@@ -720,6 +731,7 @@ def set_profile_value(profile: str, api_url: str | None = None) -> None:
         native_registries=existing.native_registries,
         customer_id=existing.customer_id,
         customer_unique_id=existing.customer_unique_id,
+        credential_store=existing.credential_store,
         credential_type=existing.credential_type,
         expires_at=existing.expires_at,
         refresh_expires_at=existing.refresh_expires_at,
@@ -740,6 +752,7 @@ def clear_profile_credential_metadata(profile: str) -> None:
         native_registries=existing.native_registries,
         customer_id=None,
         customer_unique_id=None,
+        credential_store=existing.credential_store,
         credential_type=None,
         expires_at=None,
         refresh_expires_at=None,
@@ -757,6 +770,7 @@ def set_profile_metadata(
     native_registries: object | None = None,
     customer_id: str | None = None,
     customer_unique_id: str | None = None,
+    credential_store: str | None = None,
     credential_type: str | None = None,
     expires_at: str | None = None,
     refresh_expires_at: str | None = None,
@@ -776,6 +790,9 @@ def set_profile_metadata(
         customer_unique_id=customer_unique_id
         if customer_unique_id is not None
         else existing.customer_unique_id,
+        credential_store=credential_store
+        if credential_store is not None
+        else existing.credential_store,
         credential_type=credential_type
         if credential_type is not None
         else existing.credential_type,
@@ -787,6 +804,15 @@ def set_profile_metadata(
         accounts=existing.accounts,
         registries=existing.registries,
     )
+    save(cfg)
+
+
+def set_credential_store(store: str) -> None:
+    """Set the preferred credential store for future device logins."""
+    if store not in {"auto", "keyring", "pass"}:
+        raise ValueError("Credential store must be auto, keyring, or pass")
+    cfg = load()
+    cfg.credential_store = store
     save(cfg)
 
 

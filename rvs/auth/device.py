@@ -105,25 +105,32 @@ def _store_expiring_credential(
     native_registries: object | None,
     expires_in: int,
     refresh_expires_in: int,
+    credential_store: str | None = None,
 ) -> None:
-    try:
-        auth_mod.set_token(profile, token)
-        auth_mod.set_refresh_token(profile, refresh_token)
-    except RuntimeError as exc:
-        output.fatal(str(exc))
-
     expires_at = datetime.now(UTC) + timedelta(seconds=expires_in)
     refresh_expires_at = datetime.now(UTC) + timedelta(seconds=refresh_expires_in)
-    cfg_mod.set_profile_metadata(
-        profile,
-        api_url=api_url,
-        native_registries=native_registries,
-        customer_id=customer_id,
-        customer_unique_id=customer_unique_id,
-        credential_type=auth_mod.EXPIRING_CREDENTIAL_TYPE,
-        expires_at=expires_at.isoformat(),
-        refresh_expires_at=refresh_expires_at.isoformat(),
-    )
+    try:
+        if credential_store is None:
+            auth_mod.set_token(profile, token)
+            auth_mod.set_refresh_token(profile, refresh_token)
+        else:
+            auth_mod.set_token(profile, token, credential_store)
+            auth_mod.set_refresh_token(profile, refresh_token, credential_store)
+        cfg_mod.set_profile_metadata(
+            profile,
+            api_url=api_url,
+            native_registries=native_registries,
+            customer_id=customer_id,
+            customer_unique_id=customer_unique_id,
+            credential_store=credential_store,
+            credential_type=auth_mod.EXPIRING_CREDENTIAL_TYPE,
+            expires_at=expires_at.isoformat(),
+            refresh_expires_at=refresh_expires_at.isoformat(),
+        )
+    except (OSError, RuntimeError) as exc:
+        if credential_store is not None:
+            auth_mod.delete_token_from_store(profile, credential_store)
+        raise RuntimeError(str(exc)) from exc
 
 
 def _print_browser_prompt(*, no_browser: bool) -> None:
@@ -189,6 +196,7 @@ def perform_device_login(
     api_url: str | None,
     no_browser: bool,
     duration: str | None = None,
+    credential_store: str | None = None,
 ) -> None:
     resolved_api_url = _resolve_api_url(profile, api_url)
     existing_profile = cfg_mod.load().profiles.get(profile)
@@ -246,17 +254,25 @@ def perform_device_login(
                 )
                 if poll_resp.is_success:
                     payload = poll_resp.json()
-                    _store_expiring_credential(
-                        profile=profile,
-                        api_url=resolved_api_url,
-                        token=payload["access_token"],
-                        refresh_token=payload["refresh_token"],
-                        customer_id=payload.get("customer_id"),
-                        customer_unique_id=payload.get("customer_unique_id"),
-                        native_registries=payload.get("native_registries"),
-                        expires_in=int(payload.get("expires_in") or 0),
-                        refresh_expires_in=int(payload.get("refresh_expires_in") or 0),
-                    )
+                    try:
+                        _store_expiring_credential(
+                            profile=profile,
+                            api_url=resolved_api_url,
+                            token=payload["access_token"],
+                            refresh_token=payload["refresh_token"],
+                            customer_id=payload.get("customer_id"),
+                            customer_unique_id=payload.get("customer_unique_id"),
+                            native_registries=payload.get("native_registries"),
+                            expires_in=int(payload.get("expires_in") or 0),
+                            refresh_expires_in=int(payload.get("refresh_expires_in") or 0),
+                            credential_store=credential_store,
+                        )
+                    except RuntimeError as exc:
+                        auth_mod.revoke_device_refresh_token(
+                            resolved_api_url,
+                            payload["refresh_token"],
+                        )
+                        output.fatal(f"Login approved, but credentials could not be stored: {exc}")
                     if previous_refresh_token:
                         auth_mod.revoke_device_refresh_token(
                             previous_refresh_api_url,

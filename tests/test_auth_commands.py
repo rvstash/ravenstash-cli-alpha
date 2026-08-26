@@ -40,6 +40,11 @@ def test_auth_status_reports_env_token_for_builtin_staging_profile(
     _isolate_config(monkeypatch, tmp_path, 'default_profile = "default"')
     monkeypatch.setenv("RVS_TOKEN", "env-token")
     monkeypatch.setenv("RVS_PROFILE_STAGING_API_URL", STAGING_API_URL)
+    monkeypatch.setattr(
+        auth_cmd.auth_mod,
+        "selected_credential_store",
+        lambda profile: (_ for _ in ()).throw(AssertionError("CI token must bypass stores")),
+    )
 
     result = runner.invoke(auth_cmd.app, ["status", "--profile", "staging"])
 
@@ -49,6 +54,7 @@ def test_auth_status_reports_env_token_for_builtin_staging_profile(
     assert "Authenticated" in result.output
     assert "yes" in result.output
     assert "RVS_TOKEN" in result.output
+    assert "not used (RVS_TOKEN)" in result.output
 
 
 def test_auth_status_exits_one_when_profile_has_no_token(monkeypatch, tmp_path: Path) -> None:
@@ -129,6 +135,11 @@ api_url = "https://api.work.example"
     )
     calls: list[dict[str, Any]] = []
     monkeypatch.setattr(
+        auth_cmd.auth_mod,
+        "preflight_credential_store",
+        lambda profile, requested=None: "keyring",
+    )
+    monkeypatch.setattr(
         auth_cmd,
         "perform_device_login",
         lambda **kwargs: calls.append(kwargs),
@@ -146,8 +157,58 @@ api_url = "https://api.work.example"
             "api_url": "https://api.override.example",
             "no_browser": True,
             "duration": "8h",
+            "credential_store": "keyring",
         }
     ]
+
+
+def test_auth_login_stops_before_device_flow_when_store_preflight_fails(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    _isolate_config(monkeypatch, tmp_path, 'default_profile = "default"')
+    called = False
+
+    def unexpected_device_login(**_kwargs: Any) -> None:
+        nonlocal called
+        called = True
+
+    monkeypatch.setattr(
+        auth_cmd.auth_mod,
+        "preflight_credential_store",
+        lambda profile, requested=None: (_ for _ in ()).throw(RuntimeError("store locked")),
+    )
+    monkeypatch.setattr(auth_cmd, "perform_device_login", unexpected_device_login)
+
+    result = runner.invoke(auth_cmd.app, ["login"])
+
+    assert result.exit_code == 1
+    assert "store locked" in result.stderr
+    assert called is False
+
+
+def test_auth_keyring_doctor_performs_disposable_round_trip(monkeypatch, tmp_path: Path) -> None:
+    _isolate_config(monkeypatch, tmp_path, 'default_profile = "default"')
+    checked: list[tuple[str, str | None]] = []
+    status = auth_cmd.auth_mod.stores.StoreStatus(
+        "keyring",
+        True,
+        "SecretService",
+        "ready",
+        "",
+    )
+    monkeypatch.setattr(auth_cmd.auth_mod, "credential_store_statuses", lambda: [status])
+    monkeypatch.setattr(
+        auth_cmd.auth_mod,
+        "preflight_credential_store",
+        lambda profile, requested=None: checked.append((profile, requested)) or "keyring",
+    )
+
+    result = runner.invoke(auth_cmd.app, ["keyring", "doctor"])
+
+    assert result.exit_code == 0
+    assert checked == [("default", None)]
+    assert "passed" in result.output
 
 
 def test_auth_profile_list_reports_no_profiles(monkeypatch, tmp_path: Path) -> None:

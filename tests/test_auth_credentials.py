@@ -31,7 +31,7 @@ def test_credential_type_display_keeps_legacy_temporary_user_facing_as_expiring(
 def test_set_token_requires_keyring(monkeypatch) -> None:
     monkeypatch.setattr(auth_mod, "_keyring_available", lambda: False)
 
-    with pytest.raises(RuntimeError, match="No usable OS keyring"):
+    with pytest.raises(RuntimeError, match="No usable secure credential store"):
         auth_mod.set_token("default", "token")
 
 
@@ -86,6 +86,7 @@ default_profile = "default"
 
 [profiles.default]
 api_url = "https://api.ravenstash.com"
+credential_store = "keyring"
 customer_id = "cus_123"
 customer_unique_id = "custpid1"
 credential_type = "expiring"
@@ -105,6 +106,7 @@ refresh_expires_at = "2099-01-02T00:00:00+00:00"
     assert profile.native_registries.pypi.push_base_url == "https://push.pypi.rvsta.sh"
     assert profile.customer_id is None
     assert profile.customer_unique_id is None
+    assert profile.credential_store == "keyring"
     assert profile.credential_type is None
     assert profile.expires_at is None
     assert profile.refresh_expires_at is None
@@ -114,3 +116,70 @@ def test_get_refresh_token_returns_none_when_keyring_unavailable(monkeypatch) ->
     monkeypatch.setattr(auth_mod, "_keyring_available", lambda: False)
 
     assert auth_mod.get_refresh_token("default") is None
+
+
+def test_selected_store_honors_profile_pass_choice(monkeypatch, tmp_path: Path) -> None:
+    _isolate_config(
+        monkeypatch,
+        tmp_path,
+        """
+default_profile = "default"
+credential_store = "auto"
+
+[profiles.default]
+api_url = "https://api.ravenstash.com"
+credential_store = "pass"
+""",
+    )
+    monkeypatch.delenv("RVS_CREDENTIAL_STORE", raising=False)
+    monkeypatch.setattr(auth_mod, "_keyring_available", lambda: True)
+    monkeypatch.setattr(
+        auth_mod.stores,
+        "pass_status",
+        lambda: auth_mod.stores.StoreStatus("pass", True, "pass", "ready", ""),
+    )
+
+    assert auth_mod.selected_credential_store("default") == "pass"
+
+
+def test_auto_store_prefers_usable_os_keyring(monkeypatch, tmp_path: Path) -> None:
+    _isolate_config(monkeypatch, tmp_path, 'credential_store = "auto"')
+    monkeypatch.delenv("RVS_CREDENTIAL_STORE", raising=False)
+    monkeypatch.setattr(auth_mod, "_keyring_available", lambda: True)
+    monkeypatch.setattr(
+        auth_mod.stores,
+        "pass_status",
+        lambda: auth_mod.stores.StoreStatus("pass", True, "pass", "ready", ""),
+    )
+
+    assert auth_mod.selected_credential_store("default") == "keyring"
+
+
+def test_preflight_round_trips_disposable_secret(monkeypatch) -> None:
+    values: dict[str, str] = {}
+    deleted: list[str] = []
+    monkeypatch.setattr(
+        auth_mod,
+        "selected_credential_store",
+        lambda profile, requested=None, required=False: "pass",
+    )
+    monkeypatch.setattr(
+        auth_mod,
+        "_store_set",
+        lambda store, account, secret: values.__setitem__(account, secret),
+    )
+    monkeypatch.setattr(
+        auth_mod,
+        "_store_get",
+        lambda store, account, strict=False: values.get(account),
+    )
+    monkeypatch.setattr(
+        auth_mod,
+        "_store_delete",
+        lambda store, account, strict=False: (deleted.append(account), values.pop(account, None)),
+    )
+
+    assert auth_mod.preflight_credential_store("default") == "pass"
+    assert values == {}
+    assert len(deleted) == 1
+    assert deleted[0].startswith("__probe__:")

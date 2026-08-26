@@ -596,6 +596,40 @@ def test_device_login_does_not_revoke_expired_previous_refresh(
     assert not any("already authenticated" in message for message in info_messages)
 
 
+def test_store_expiring_credential_rolls_back_when_metadata_cannot_be_saved(
+    monkeypatch,
+) -> None:
+    deleted: list[tuple[str, str]] = []
+    monkeypatch.setattr(login_mod.auth_mod, "set_token", lambda *_args: None)
+    monkeypatch.setattr(login_mod.auth_mod, "set_refresh_token", lambda *_args: None)
+    monkeypatch.setattr(
+        login_mod.auth_mod,
+        "delete_token_from_store",
+        lambda profile, store: deleted.append((profile, store)),
+    )
+    monkeypatch.setattr(
+        login_mod.cfg_mod,
+        "set_profile_metadata",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(OSError("disk full")),
+    )
+
+    with pytest.raises(RuntimeError, match="disk full"):
+        login_mod._store_expiring_credential(
+            profile="default",
+            api_url="https://api.ravenstash.com",
+            token="access",
+            refresh_token="refresh",
+            customer_id="cus_123",
+            customer_unique_id="custpid1",
+            native_registries=NATIVE_REGISTRIES,
+            expires_in=900,
+            refresh_expires_in=14400,
+            credential_store="pass",
+        )
+
+    assert deleted == [("default", "pass")]
+
+
 @pytest.mark.parametrize("credential_type", ["expiring", "temporary"])
 def test_refresh_expiring_credential_rotates_tokens(
     monkeypatch,
@@ -673,6 +707,63 @@ def test_revoke_device_refresh_token_posts_to_devapi(monkeypatch) -> None:
             {"User-Agent": "rvs/0.1.0"},
         )
     ]
+
+
+def test_refresh_storage_failure_revokes_and_removes_partial_pair(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    config_dir = tmp_path / ".rvs"
+    _write_profiles_config(config_dir)
+    monkeypatch.setattr(cfg_mod, "CONFIG_DIR", config_dir)
+    monkeypatch.setattr(cfg_mod, "CONFIG_FILE", config_dir / "config.toml")
+    monkeypatch.setattr(auth_mod, "_keyring_available", lambda: True)
+    monkeypatch.setattr(
+        auth_mod,
+        "_kr_get",
+        lambda profile: "old-refresh" if profile == "default:refresh" else None,
+    )
+    _FakeClient.requests = []
+    _FakeClient.responses = [
+        _FakeResponse(
+            200,
+            {
+                "access_token": "new-jwt",
+                "refresh_token": "new-refresh",
+                "expires_in": 900,
+                "refresh_expires_in": 14400,
+            },
+        )
+    ]
+    writes: list[str] = []
+    deleted: list[tuple[str, str]] = []
+    revoked: list[tuple[str, str]] = []
+
+    def fail_second_write(profile: str, _token: str) -> None:
+        writes.append(profile)
+        if profile.endswith(":refresh"):
+            raise RuntimeError("locked during write")
+
+    monkeypatch.setattr(auth_mod.httpx, "Client", _FakeClient)
+    monkeypatch.setattr(
+        auth_mod, "_store_set", lambda _store, profile, token: fail_second_write(profile, token)
+    )
+    monkeypatch.setattr(
+        auth_mod,
+        "delete_token_from_store",
+        lambda profile, store: deleted.append((profile, store)),
+    )
+    monkeypatch.setattr(
+        auth_mod,
+        "revoke_device_refresh_token",
+        lambda api_url, token: revoked.append((api_url, token)) or True,
+    )
+
+    assert auth_mod.refresh_expiring_credential("default") is None
+    assert writes == ["default", "default:refresh"]
+    assert deleted == [("default", "keyring")]
+    assert revoked == [("https://api.ravenstash.com", "new-refresh")]
+    assert cfg_mod.load().profiles["default"].credential_type is None
 
 
 def test_refresh_expiring_credential_failure_clears_profile(monkeypatch, tmp_path: Path) -> None:

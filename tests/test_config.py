@@ -177,6 +177,7 @@ def test_save_and_load_round_trips_profiles_and_registry_defaults(
     _point_config(monkeypatch, tmp_path)
     cfg = cfg_mod.RvsConfig(
         default_profile="work",
+        credential_store="pass",
         profiles={
             "work": cfg_mod.ProfileConfig(
                 api_url="https://api.work.example",
@@ -200,6 +201,7 @@ def test_save_and_load_round_trips_profiles_and_registry_defaults(
                 ),
                 customer_id="cus_work",
                 customer_unique_id="custpid1",
+                credential_store="pass",
                 credential_type="expiring",
                 expires_at="2099-01-01T00:00:00+00:00",
                 refresh_expires_at="2099-01-02T00:00:00+00:00",
@@ -215,6 +217,7 @@ def test_save_and_load_round_trips_profiles_and_registry_defaults(
     loaded = cfg_mod.load()
 
     assert loaded.default_profile == "work"
+    assert loaded.credential_store == "pass"
     assert loaded.profiles["work"].api_url == "https://api.work.example"
     assert (
         loaded.profiles["work"].native_registries.pypi.read_base_url == "https://pypi.work.example"
@@ -229,6 +232,7 @@ def test_save_and_load_round_trips_profiles_and_registry_defaults(
     )
     assert loaded.profiles["work"].customer_id == "cus_work"
     assert loaded.profiles["work"].customer_unique_id == "custpid1"
+    assert loaded.profiles["work"].credential_store == "pass"
     assert loaded.registry_defaults("pypi").default_repo == "_abcdefgh/_pypi0001"
     assert loaded.registry_defaults("npm").default_repo == "_abcdefgh/_npm00001"
     assert loaded.registry_defaults("maven").default_repo is None
