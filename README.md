@@ -165,19 +165,19 @@ rvs pkg repo rename <repo-name> <new-name>
 rvs pkg repo delete <repo-name>
 rvs pkg repo set-default pypi <repo-name>
 rvs pkg repo defaults
-rvs pkg repo set-upstream <repo-name> <cache-id> --min-age-days 3
+rvs pkg repo set-upstream <repo-name> <cache-id> --min-age-hours 24
 rvs pkg repo clear-upstream <repo-name>
 rvs pkg repo upstream list acme/app pypi
 rvs pkg repo upstream add acme/app pypi --private-repository acme/libraries
 rvs pkg repo upstream add acme/app pypi --remote-cache pypiorg
-rvs pkg repo upstream update acme/app pypi <attachment-id> --min-age-days 1
+rvs pkg repo upstream update acme/app pypi <attachment-id> --min-age-hours 1
 rvs pkg repo upstream reorder acme/app pypi <attachment-id> <attachment-id>
 rvs pkg repo upstream remove acme/app pypi <attachment-id>
 
 rvs pkg remote-cache list
 rvs pkg remote-cache create --registry-kind pypi
 rvs pkg remote-cache show <cache-id>
-rvs pkg remote-cache set-age <cache-id> --min-age-days 3
+rvs pkg remote-cache set-age <cache-id> --min-age-hours 24
 rvs pkg remote-cache delete <cache-id>
 ```
 

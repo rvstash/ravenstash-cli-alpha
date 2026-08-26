@@ -318,7 +318,7 @@ def test_pkg_remote_management_and_upstream_configuration(monkeypatch, tmp_path:
     )
     upstream_result = runner.invoke(
         pkg_cmd.app,
-        ["repo", "set-upstream", "repo-pypi", "pypi", "--min-age-days", "5"],
+        ["repo", "set-upstream", "repo-pypi", "pypi", "--min-age-hours", "5"],
     )
 
     assert create_result.exit_code == 0
@@ -348,7 +348,7 @@ def test_pkg_remote_management_and_upstream_configuration(monkeypatch, tmp_path:
             "/v0/repositories/repository-1/lanes/pypi/remote-upstreams",
             {
                 "remote_repository_lane_id": "remote_1",
-                "min_age_days": 5.0,
+                "min_age_hours": 5.0,
             },
         ),
     ]
@@ -462,8 +462,8 @@ def test_pkg_repo_upstream_add_private_uses_source_lane_and_zero_age_default(
         "source_workspace_name": "libraries",
         "source_repository_name": "shared",
         "registry_kind": "pypi",
-        "min_age_days": None,
-        "max_age_days": None,
+        "min_age_hours": None,
+        "max_age_hours": None,
     }
     fake = _FakeApiClient([destination, source, [], attachment])
     _use_fake_client(monkeypatch, fake)
@@ -489,8 +489,8 @@ def test_pkg_repo_upstream_add_private_uses_source_lane_and_zero_age_default(
             "source_type": "private",
             "source_repository_lane_id": "lane-b-pypi",
             "priority": 0,
-            "min_age_days": 0.0,
-            "max_age_days": None,
+            "min_age_hours": 0.0,
+            "max_age_hours": None,
         },
     )
 
@@ -515,8 +515,8 @@ def test_pkg_repo_upstream_add_appends_after_existing_plan(
         "source_workspace_name": "libraries",
         "source_repository_name": "shared",
         "registry_kind": "pypi",
-        "min_age_days": None,
-        "max_age_days": None,
+        "min_age_hours": None,
+        "max_age_hours": None,
     }
     fake = _FakeApiClient([destination, source, [{"id": "one"}, {"id": "two"}], attachment])
     _use_fake_client(monkeypatch, fake)

@@ -627,7 +627,7 @@ def repo_defaults(
 def repo_set_upstream(
     repo: str = typer.Argument(..., help="Private package repository name."),
     remote: str = typer.Argument(..., help="Remote cache & proxy ID."),
-    min_age_days: float = typer.Option(3, "--min-age-days", min=0),
+    min_age_hours: float = typer.Option(24, "--min-age-hours", min=0),
     profile: str | None = typer.Option(None, "--profile", "-p"),
 ) -> None:
     """Connect a remote cache & proxy to a private repository."""
@@ -641,7 +641,7 @@ def repo_set_upstream(
             f"/v0/repositories/{repository_id}/lanes/{registry_kind}/remote-upstreams",
             json={
                 "remote_repository_lane_id": remote_repository["id"],
-                "min_age_days": min_age_days,
+                "min_age_hours": min_age_hours,
             },
         )
     except (ApiError, KeyError, TypeError) as exc:
@@ -702,8 +702,8 @@ def _print_upstreams(items: list[dict]) -> None:
                     if item.get("source_workspace_name")
                     else str(item.get("source_repository_name", ""))
                 ),
-                str(item.get("min_age_days") or 0),
-                str(item.get("max_age_days") or "none"),
+                str(item.get("min_age_hours") or 0),
+                str(item.get("max_age_hours") or "none"),
             ]
             for item in items
         ],
@@ -735,8 +735,8 @@ def upstream_add(
     private_repository: str | None = typer.Option(None, "--private-repository"),
     remote_cache: str | None = typer.Option(None, "--remote-cache"),
     priority: int | None = typer.Option(None, "--priority", min=0, max=_MAX_UPSTREAM_PRIORITY),
-    min_age_days: float | None = typer.Option(None, "--min-age-days", min=0),
-    max_age_days: float | None = typer.Option(None, "--max-age-days", min=0),
+    min_age_hours: float | None = typer.Option(None, "--min-age-hours", min=0),
+    max_age_hours: float | None = typer.Option(None, "--max-age-hours", min=0),
     profile: str | None = typer.Option(None, "--profile", "-p"),
 ) -> None:
     """Attach one private repository lane or remote cache."""
@@ -768,12 +768,12 @@ def upstream_add(
             "source_type": source_type,
             "source_repository_lane_id": source_lane_id,
             "priority": effective_priority,
-            "max_age_days": max_age_days,
+            "max_age_hours": max_age_hours,
         }
-        if min_age_days is not None:
-            body["min_age_days"] = min_age_days
+        if min_age_hours is not None:
+            body["min_age_hours"] = min_age_hours
         elif source_type == "private":
-            body["min_age_days"] = 0.0
+            body["min_age_hours"] = 0.0
         item = client.post(
             _upstream_path(destination["repository"]["id"], registry_kind),
             json=body,
@@ -789,8 +789,8 @@ def upstream_update(
     kind: str = typer.Argument(...),
     attachment: str = typer.Argument(...),
     priority: int | None = typer.Option(None, "--priority", min=0, max=_MAX_UPSTREAM_PRIORITY),
-    min_age_days: float | None = typer.Option(None, "--min-age-days", min=0),
-    max_age_days: float | None = typer.Option(None, "--max-age-days", min=0),
+    min_age_hours: float | None = typer.Option(None, "--min-age-hours", min=0),
+    max_age_hours: float | None = typer.Option(None, "--max-age-hours", min=0),
     profile: str | None = typer.Option(None, "--profile", "-p"),
 ) -> None:
     """Update priority or age bounds for one attachment."""
@@ -798,8 +798,8 @@ def upstream_update(
         key: value
         for key, value in {
             "priority": priority,
-            "min_age_days": min_age_days,
-            "max_age_days": max_age_days,
+            "min_age_hours": min_age_hours,
+            "max_age_hours": max_age_hours,
         }.items()
         if value is not None
     }
@@ -945,7 +945,7 @@ def remote_list(
                 ),
                 str(item.get("registry_kind", "")),
                 "yes" if item.get("direct_access_enabled") else "no",
-                f"{item.get('min_age_days') or 'none'} - {item.get('max_age_days') or 'none'}",
+                f"{item.get('min_age_hours') or 'none'} - {item.get('max_age_hours') or 'none'}",
             ]
             for entry in items
             for item in [entry["remote_repository"]]
@@ -983,8 +983,8 @@ def remote_add_official(
     source: str = typer.Argument(..., help="Official source slug, such as pypiorg."),
     kind: str | None = typer.Option(None, "--kind", help="Registry kind if ambiguous."),
     direct: bool = typer.Option(True, "--direct/--no-direct"),
-    min_age_days: float | None = typer.Option(None, "--min-age-days", min=0),
-    max_age_days: float | None = typer.Option(None, "--max-age-days", min=0),
+    min_age_hours: float | None = typer.Option(None, "--min-age-hours", min=0),
+    max_age_hours: float | None = typer.Option(None, "--max-age-hours", min=0),
     select: bool = typer.Option(False, "--select", help="Select the cache after creating it."),
     profile: str | None = typer.Option(None, "--profile", "-p"),
     account: str | None = typer.Option(None, "--account"),
@@ -1015,10 +1015,10 @@ def remote_add_official(
             "official_source_id": selected_source["official_source_id"],
             "enable_direct_access": direct,
         }
-        if min_age_days is not None:
-            payload["min_age_days"] = min_age_days
-        if max_age_days is not None:
-            payload["max_age_days"] = max_age_days
+        if min_age_hours is not None:
+            payload["min_age_hours"] = min_age_hours
+        if max_age_hours is not None:
+            payload["max_age_hours"] = max_age_hours
         entry = client.post(
             "/v0/remote-repositories/official",
             json=payload,
@@ -1057,8 +1057,8 @@ def remote_create_custom(
     ),
     allowed_host: list[str] = typer.Option([], "--allowed-host"),
     direct: bool = typer.Option(True, "--direct/--no-direct"),
-    min_age_days: float | None = typer.Option(None, "--min-age-days", min=0),
-    max_age_days: float | None = typer.Option(None, "--max-age-days", min=0),
+    min_age_hours: float | None = typer.Option(None, "--min-age-hours", min=0),
+    max_age_hours: float | None = typer.Option(None, "--max-age-hours", min=0),
     managed_location: str | None = typer.Option(None, "--managed-location"),
     storage_target: str | None = typer.Option(None, "--storage-target"),
     select: bool = typer.Option(False, "--select", help="Select the cache after creating it."),
@@ -1072,9 +1072,7 @@ def remote_create_custom(
         output.fatal("--auth-scheme must be none, basic, or bearer.")
     publication_control_value = publication_control.replace("-", "_")
     if publication_control_value not in {"user_controlled", "externally_controlled"}:
-        output.fatal(
-            "--publication-control must be user-controlled or externally-controlled."
-        )
+        output.fatal("--publication-control must be user-controlled or externally-controlled.")
     secret = os.environ.get(secret_env) if secret_env else None
     if secret_env and secret is None:
         output.fatal(f"Origin secret environment variable '{secret_env}' is not set.")
@@ -1106,10 +1104,10 @@ def remote_create_custom(
         credential["username"] = username
     if secret is not None:
         credential["secret"] = secret
-    if min_age_days is not None:
-        payload["min_age_days"] = min_age_days
-    if max_age_days is not None:
-        payload["max_age_days"] = max_age_days
+    if min_age_hours is not None:
+        payload["min_age_hours"] = min_age_hours
+    if max_age_hours is not None:
+        payload["max_age_hours"] = max_age_hours
     if managed_location:
         payload.update(
             {
@@ -1174,8 +1172,8 @@ def remote_show(
             "Registry kind": item.get("registry_kind"),
             "Owner ID": item.get("customer_id"),
             "Direct access": "yes" if item.get("direct_access_enabled") else "no",
-            "Minimum package age (days)": str(item.get("min_age_days", "")),
-            "Maximum age days": str(item.get("max_age_days", "")),
+            "Minimum package age (hours)": str(item.get("min_age_hours", "")),
+            "Maximum age hours": str(item.get("max_age_hours", "")),
         },
         title=f"Remote cache & proxy {remote}",
     )
@@ -1184,7 +1182,7 @@ def remote_show(
 @remote_app.command("set-age")
 def remote_set_age(
     remote: str = typer.Argument(..., help="Remote cache & proxy ID."),
-    min_age_days: float = typer.Option(..., "--min-age-days", min=0),
+    min_age_hours: float = typer.Option(..., "--min-age-hours", min=0),
     profile: str | None = typer.Option(None, "--profile", "-p"),
     account: str | None = typer.Option(None, "--account"),
     customer_id: str | None = typer.Option(None, "--customer-id", hidden=True),
@@ -1195,7 +1193,7 @@ def remote_set_age(
         _require_package_kind(kind)
     selected_customer = _context_customer_id(profile, account) or _customer_id(profile, customer_id)
     client = _client(profile)
-    payload = {"min_age_days": min_age_days}
+    payload = {"min_age_hours": min_age_hours}
     try:
         client.patch(
             f"/v0/remote-repositories/{remote}",
