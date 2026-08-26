@@ -23,7 +23,7 @@ from .. import config as cfg_mod
 from .. import output
 from ..account.commands import resolve_account
 from ..client import ApiClient, ApiError
-from ..pkg.routing import CanonicalRouter, native_base_url
+from ..pkg.routing import CanonicalRouter, RepositoryRouteKind, native_base_url
 from ..pkg.targets import registry_context
 from ..runtime import tools
 
@@ -310,7 +310,7 @@ def _package_token_for_url(
             ).json()["access_token"]
         except (ApiError, KeyError, TypeError) as exc:
             output.fatal(str(exc))
-    if len(route_parts) < 2 or route_parts[0] in {"x", "r", "o", "c"}:
+    if len(route_parts) < 2:
         output.fatal("Detected Ravenstash URL is not a canonical <workspace>/<repository> URL.")
     selector = f"{route_parts[0]}/{route_parts[1]}"
     try:
@@ -343,16 +343,14 @@ def _credential_route(
     url: str,
     kind: RegistryKind,
     native_registries: cfg_mod.NativeRegistryEndpoints,
-) -> tuple[str, str | None, str]:
+) -> tuple[RepositoryRouteKind, str | None, str]:
     parts = _configured_route_parts(url, kind, native_registries)
     if not parts:
         output.fatal("Detected Ravenstash URL has no repository route.")
     if parts[0] in {"o", "c"}:
         workspace_reference, repository_reference, route_kind = _remote_route_scope(parts)
         return (route_kind, workspace_reference, repository_reference)
-    if len(parts) >= 2 and parts[0] not in {"x", "r"}:
-        return ("x", parts[0], parts[1])
-    output.fatal("Detected Ravenstash URL has an invalid repository route.")
+    return (RepositoryRouteKind.PRIVATE, parts[0], parts[1])
 
 
 def _configured_route_parts(
@@ -376,10 +374,14 @@ def _configured_route_parts(
     return parts
 
 
-def _remote_route_scope(parts: list[str]) -> tuple[str, str, str]:
+def _remote_route_scope(parts: list[str]) -> tuple[str, str, RepositoryRouteKind]:
     if len(parts) < 2 or parts[0] not in {"o", "c"}:
         output.fatal("Detected Ravenstash remote-cache URL is invalid.")
-    route_kind = "remote_official" if parts[0] == "o" else "remote_custom"
+    route_kind = (
+        RepositoryRouteKind.REMOTE_OFFICIAL
+        if parts[0] == "o"
+        else RepositoryRouteKind.REMOTE_CUSTOM
+    )
     return parts[0], parts[1], route_kind
 
 
@@ -475,9 +477,7 @@ def _ravenstash_url_kind(
 
 
 def _valid_private_registry_route(path_parts: list[str]) -> bool:
-    return (
-        len(path_parts) >= 2 and path_parts[0] not in {"x", "r", "o", "c"} and bool(path_parts[1])
-    )
+    return len(path_parts) >= 2 and path_parts[0] not in {"o", "c"} and bool(path_parts[1])
 
 
 def _valid_cache_registry_route(path_parts: list[str]) -> bool:

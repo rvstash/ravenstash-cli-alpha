@@ -9,6 +9,7 @@ from .. import config as cfg_mod
 from .. import output
 from ..account.commands import ensure_active_account
 from ..client import ApiClient, ApiError
+from .routing import RepositoryRouteKind
 
 
 PackageKind = Literal["pypi", "npm", "maven"]
@@ -331,7 +332,9 @@ def registry_context(
             push_base_url: str | None = endpoints.push_base_url
         else:
             route_kind = (
-                "remote_official" if selected.target_type == "official_cache" else "remote_custom"
+                RepositoryRouteKind.REMOTE_OFFICIAL
+                if selected.target_type == "official_cache"
+                else RepositoryRouteKind.REMOTE_CUSTOM
             )
             workspace_reference = "o" if selected.target_type == "official_cache" else "c"
             credential = client.post(

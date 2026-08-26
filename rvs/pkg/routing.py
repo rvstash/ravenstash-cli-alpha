@@ -11,6 +11,16 @@ Each service URL is an exact discovered endpoint. No hostname labels are derived
 
 from __future__ import annotations
 
+from enum import StrEnum
+
+
+class RepositoryRouteKind(StrEnum):
+    """Package credential route families understood by DevAPI."""
+
+    PRIVATE = "private"
+    REMOTE_OFFICIAL = "remote_official"
+    REMOTE_CUSTOM = "remote_custom"
+
 
 def native_base_url(service_url: str, kind: str) -> str:
     del kind

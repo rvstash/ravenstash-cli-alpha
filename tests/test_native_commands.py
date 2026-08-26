@@ -214,12 +214,10 @@ def test_ravenstash_url_kind_accepts_public_hosts_and_local_normalized_routes() 
     assert url_kind(f"{NPM_CACHE_URL}/c/_xyzabcde/") == "npm"
     assert url_kind("https://npm.example.test/_abcdefgh/_xyzabcde/") is None
     assert url_kind("https://pkg-staging.example.test/_abcdefgh/_xyzabcde/") is None
-    assert url_kind(f"{NPM_READ_URL}/x/_abcdefgh/_xyzabcde/") is None
     assert url_kind(f"{NPM_READ_URL}/o/npmjs/") is None
     assert url_kind(f"{NPM_READ_URL}/c/private-upstream/") is None
     assert url_kind(f"{NPM_CACHE_URL}/_abcdefgh/_xyzabcde/") is None
     assert url_kind(f"{NPM_READ_URL}/_abcdefgh/") is None
-    assert url_kind(f"{PYPI_CACHE_URL}/r/_abcdefgh/") is None
 
 
 def test_ravenstash_url_kind_rejects_attacker_lookalike_origins() -> None:
@@ -230,7 +228,7 @@ def test_ravenstash_url_kind_rejects_attacker_lookalike_origins() -> None:
         )
 
     assert url_kind("https://npm.pkg.attacker.example/_abcdefgh/_xyzabcde/") is None
-    assert url_kind("https://attacker.example/native/pypi/r/_customer/cache/simple/") is None
+    assert url_kind("https://attacker.example/native/pypi/other/customer/simple/") is None
     assert (
         url_kind("https://npm.pkg-staging.example.test.attacker.example/_abcdefgh/_xyzabcde/")
         is None
