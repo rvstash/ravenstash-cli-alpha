@@ -36,6 +36,7 @@ app = typer.Typer(
 )
 
 repo_app = typer.Typer(help="Manage Ravenstash package repositories.", no_args_is_help=True)
+upstream_app = typer.Typer(help="Manage ordered repository-lane upstreams.", no_args_is_help=True)
 remote_app = typer.Typer(help="Manage remote caches & proxies.", no_args_is_help=True)
 package_app = typer.Typer(help="Manage packages hosted in a repository.", no_args_is_help=True)
 pypi_app = typer.Typer(help="PyPI package repository helpers.", no_args_is_help=True)
@@ -43,6 +44,7 @@ npm_app = typer.Typer(help="npm package repository helpers.", no_args_is_help=Tr
 maven_app = typer.Typer(help="Maven package repository helpers.", no_args_is_help=True)
 
 app.add_typer(repo_app, name="repo")
+repo_app.add_typer(upstream_app, name="upstream")
 app.add_typer(remote_app, name="remote-cache")
 app.add_typer(remote_app, name="cache")
 app.add_typer(package_app, name="package")
@@ -666,6 +668,194 @@ def repo_clear_upstream(
     except (ApiError, KeyError, TypeError) as exc:
         output.fatal(str(exc))
     output.success(f"Removed the upstream connection from '{repo}'.")
+
+
+def _upstream_path(repository_id: str, registry_kind: str) -> str:
+    return f"/v0/repositories/{repository_id}/lanes/{registry_kind}/upstreams"
+
+
+def _repository_lane_id(entry: dict, registry_kind: str) -> str:
+    lane = next(
+        (
+            lane
+            for lane in entry["repository"].get("lanes", [])
+            if lane.get("registry_kind") == registry_kind
+        ),
+        None,
+    )
+    if lane is None or not lane.get("id"):
+        output.fatal(f"Repository has no {registry_kind} lane.")
+    return str(lane["id"])
+
+
+def _print_upstreams(items: list[dict]) -> None:
+    output.table(
+        ["ID", "Priority", "Type", "Source", "Minimum age", "Maximum age"],
+        [
+            [
+                str(item.get("id", "")),
+                str(item.get("priority", "")),
+                str(item.get("source_type", "")),
+                (
+                    f"{item.get('source_workspace_name')}/{item.get('source_repository_name')}"
+                    if item.get("source_workspace_name")
+                    else str(item.get("source_repository_name", ""))
+                ),
+                str(item.get("min_age_days") or 0),
+                str(item.get("max_age_days") or "none"),
+            ]
+            for item in items
+        ],
+        title="Repository upstreams",
+    )
+
+
+@upstream_app.command("list")
+def upstream_list(
+    repository: str = typer.Argument(...),
+    kind: str = typer.Argument(...),
+    profile: str | None = typer.Option(None, "--profile", "-p"),
+) -> None:
+    """List the complete ordered upstream plan for one repository lane."""
+    registry_kind = _require_package_kind(kind)
+    client = _client(profile)
+    try:
+        entry = _resolve_repository_entry(repository, profile, kind=registry_kind)
+        items = client.get(_upstream_path(entry["repository"]["id"], registry_kind)).json()
+    except (ApiError, KeyError, TypeError) as exc:
+        output.fatal(str(exc))
+    _print_upstreams(items)
+
+
+@upstream_app.command("add")
+def upstream_add(
+    repository: str = typer.Argument(...),
+    kind: str = typer.Argument(...),
+    private_repository: str | None = typer.Option(None, "--private-repository"),
+    remote_cache: str | None = typer.Option(None, "--remote-cache"),
+    priority: int | None = typer.Option(None, "--priority", min=0, max=31),
+    min_age_days: float | None = typer.Option(None, "--min-age-days", min=0),
+    max_age_days: float | None = typer.Option(None, "--max-age-days", min=0),
+    profile: str | None = typer.Option(None, "--profile", "-p"),
+) -> None:
+    """Attach one private repository lane or remote cache."""
+    if (private_repository is None) == (remote_cache is None):
+        output.fatal("Pass exactly one of --private-repository or --remote-cache.")
+    registry_kind = _require_package_kind(kind)
+    client = _client(profile)
+    try:
+        destination = _resolve_repository_entry(repository, profile, kind=registry_kind)
+        if private_repository is not None:
+            source = _resolve_repository_entry(private_repository, profile, kind=registry_kind)
+            source_lane_id = _repository_lane_id(source, registry_kind)
+            source_type = "private"
+        else:
+            remote_entry = client.get(
+                f"/v0/remote-repositories/{remote_cache}",
+                params={"registry_kind": registry_kind},
+            ).json()
+            source_lane_id = str(remote_entry["remote_repository"]["id"])
+            source_type = "remote"
+        if priority is None:
+            current = client.get(
+                _upstream_path(destination["repository"]["id"], registry_kind)
+            ).json()
+            effective_priority = len(current)
+        else:
+            effective_priority = priority
+        body = {
+            "source_type": source_type,
+            "source_repository_lane_id": source_lane_id,
+            "priority": effective_priority,
+            "max_age_days": max_age_days,
+        }
+        if min_age_days is not None:
+            body["min_age_days"] = min_age_days
+        elif source_type == "private":
+            body["min_age_days"] = 0.0
+        item = client.post(
+            _upstream_path(destination["repository"]["id"], registry_kind),
+            json=body,
+        ).json()
+    except (ApiError, KeyError, TypeError) as exc:
+        output.fatal(str(exc))
+    _print_upstreams([item])
+
+
+@upstream_app.command("update")
+def upstream_update(
+    repository: str = typer.Argument(...),
+    kind: str = typer.Argument(...),
+    attachment: str = typer.Argument(...),
+    priority: int | None = typer.Option(None, "--priority", min=0, max=31),
+    min_age_days: float | None = typer.Option(None, "--min-age-days", min=0),
+    max_age_days: float | None = typer.Option(None, "--max-age-days", min=0),
+    profile: str | None = typer.Option(None, "--profile", "-p"),
+) -> None:
+    """Update priority or age bounds for one attachment."""
+    body = {
+        key: value
+        for key, value in {
+            "priority": priority,
+            "min_age_days": min_age_days,
+            "max_age_days": max_age_days,
+        }.items()
+        if value is not None
+    }
+    if not body:
+        output.fatal("Pass at least one field to update.")
+    registry_kind = _require_package_kind(kind)
+    client = _client(profile)
+    try:
+        destination = _resolve_repository_entry(repository, profile, kind=registry_kind)
+        item = client.patch(
+            f"{_upstream_path(destination['repository']['id'], registry_kind)}/{attachment}",
+            json=body,
+        ).json()
+    except (ApiError, KeyError, TypeError) as exc:
+        output.fatal(str(exc))
+    _print_upstreams([item])
+
+
+@upstream_app.command("reorder")
+def upstream_reorder(
+    repository: str = typer.Argument(...),
+    kind: str = typer.Argument(...),
+    attachments: list[str] = typer.Argument(...),
+    profile: str | None = typer.Option(None, "--profile", "-p"),
+) -> None:
+    """Replace the complete attachment order atomically."""
+    registry_kind = _require_package_kind(kind)
+    client = _client(profile)
+    try:
+        destination = _resolve_repository_entry(repository, profile, kind=registry_kind)
+        items = client.put(
+            f"{_upstream_path(destination['repository']['id'], registry_kind)}/order",
+            json={"attachment_ids": attachments},
+        ).json()
+    except (ApiError, KeyError, TypeError) as exc:
+        output.fatal(str(exc))
+    _print_upstreams(items)
+
+
+@upstream_app.command("remove")
+def upstream_remove(
+    repository: str = typer.Argument(...),
+    kind: str = typer.Argument(...),
+    attachment: str = typer.Argument(...),
+    profile: str | None = typer.Option(None, "--profile", "-p"),
+) -> None:
+    """Remove one upstream attachment."""
+    registry_kind = _require_package_kind(kind)
+    client = _client(profile)
+    try:
+        destination = _resolve_repository_entry(repository, profile, kind=registry_kind)
+        client.delete(
+            f"{_upstream_path(destination['repository']['id'], registry_kind)}/{attachment}"
+        )
+    except (ApiError, KeyError, TypeError) as exc:
+        output.fatal(str(exc))
+    output.success(f"Removed upstream '{attachment}' from '{repository}' ({registry_kind}).")
 
 
 # ── remote caches & proxies ───────────────────────────────────────────────────

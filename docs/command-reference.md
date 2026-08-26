@@ -143,6 +143,12 @@ rvs pkg repo set-default pypi|npm|maven|container|helm REPOSITORY_NAME [--profil
 rvs pkg repo defaults [--profile NAME]
 rvs pkg repo set-upstream REPOSITORY_NAME REMOTE_ID [--min-age-days DAYS] [--profile NAME]
 rvs pkg repo clear-upstream REPOSITORY_NAME [--profile NAME]
+rvs pkg repo upstream list REPOSITORY KIND [--profile NAME]
+rvs pkg repo upstream add REPOSITORY KIND --private-repository WORKSPACE/REPOSITORY [--priority N] [--min-age-days DAYS] [--max-age-days DAYS] [--profile NAME]
+rvs pkg repo upstream add REPOSITORY KIND --remote-cache CACHE [--priority N] [--min-age-days DAYS] [--max-age-days DAYS] [--profile NAME]
+rvs pkg repo upstream update REPOSITORY KIND ATTACHMENT [--priority N] [--min-age-days DAYS] [--max-age-days DAYS] [--profile NAME]
+rvs pkg repo upstream reorder REPOSITORY KIND ATTACHMENT... [--profile NAME]
+rvs pkg repo upstream remove REPOSITORY KIND ATTACHMENT [--profile NAME]
 ```
 
 `--registry-kind` (short form `-k`) is the canonical selector. The former
@@ -156,6 +162,14 @@ repository also updates a matching default in the selected profile.
 Container and Helm are OCI-native private lanes. They do not support upstream
 attachments or remote caches. Classic non-OCI Helm repositories are not
 supported.
+
+The `upstream` subgroup manages the complete ordered plan of at most 32 mixed
+private and remote sources. A private selector may be workspace-qualified and must
+resolve to a same-customer, same-kind lane. Omitting `--priority` appends. Private
+sources default to a disabled minimum-age guard; remote sources retain their server
+recommendation when the option is omitted. Reordering replaces the full order
+atomically. The older `set-upstream`/`clear-upstream` commands remain remote-only
+compatibility commands.
 
 Remote cache & proxy commands:
 

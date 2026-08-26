@@ -55,6 +55,10 @@ class _FakeApiClient:
         self.calls.append(("PATCH", path, json))
         return _JsonResponse(self.responses.pop(0) if self.responses else {})
 
+    def put(self, path: str, json: Any = None) -> _JsonResponse:
+        self.calls.append(("PUT", path, json))
+        return _JsonResponse(self.responses.pop(0) if self.responses else {})
+
     def delete(self, path: str, params: dict[str, Any] | None = None) -> _JsonResponse:
         self.calls.append(("DELETE", path, params))
         return _JsonResponse(self.responses.pop(0) if self.responses else {})
@@ -348,6 +352,182 @@ def test_pkg_remote_management_and_upstream_configuration(monkeypatch, tmp_path:
             },
         ),
     ]
+
+
+def test_pkg_repo_upstream_add_private_uses_source_lane_and_zero_age_default(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    _isolate_config(monkeypatch, tmp_path)
+    destination = _repository_entry("application")
+    source = _repository_entry("shared")
+    source["repository"] = {
+        **source["repository"],
+        "id": "repository-2",
+        "workspace_name": "libraries",
+        "lanes": [{"id": "lane-b-pypi", "registry_kind": "pypi"}],
+    }
+    attachment = {
+        "id": "attachment-a-b",
+        "priority": 0,
+        "source_type": "private",
+        "source_workspace_name": "libraries",
+        "source_repository_name": "shared",
+        "registry_kind": "pypi",
+        "min_age_days": None,
+        "max_age_days": None,
+    }
+    fake = _FakeApiClient([destination, source, [], attachment])
+    _use_fake_client(monkeypatch, fake)
+
+    result = runner.invoke(
+        pkg_cmd.app,
+        [
+            "repo",
+            "upstream",
+            "add",
+            "application",
+            "pypi",
+            "--private-repository",
+            "libraries/shared",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert fake.calls[-1] == (
+        "POST",
+        "/v0/repositories/repository-1/lanes/pypi/upstreams",
+        {
+            "source_type": "private",
+            "source_repository_lane_id": "lane-b-pypi",
+            "priority": 0,
+            "min_age_days": 0.0,
+            "max_age_days": None,
+        },
+    )
+
+
+def test_pkg_repo_upstream_add_appends_after_existing_plan(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    _isolate_config(monkeypatch, tmp_path)
+    destination = _repository_entry("application")
+    source = _repository_entry("shared")
+    source["repository"] = {
+        **source["repository"],
+        "id": "repository-2",
+        "workspace_name": "libraries",
+        "lanes": [{"id": "lane-b-pypi", "registry_kind": "pypi"}],
+    }
+    attachment = {
+        "id": "attachment-a-b",
+        "priority": 2,
+        "source_type": "private",
+        "source_workspace_name": "libraries",
+        "source_repository_name": "shared",
+        "registry_kind": "pypi",
+        "min_age_days": None,
+        "max_age_days": None,
+    }
+    fake = _FakeApiClient(
+        [destination, source, [{"id": "one"}, {"id": "two"}], attachment]
+    )
+    _use_fake_client(monkeypatch, fake)
+
+    result = runner.invoke(
+        pkg_cmd.app,
+        [
+            "repo",
+            "upstream",
+            "add",
+            "application",
+            "pypi",
+            "--private-repository",
+            "libraries/shared",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert fake.calls[-1][2]["priority"] == 2
+
+
+def test_pkg_repo_upstream_reorder_and_remove_use_generic_routes(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    _isolate_config(monkeypatch, tmp_path)
+    fake = _FakeApiClient([_repository_entry("application"), [], _repository_entry("application")])
+    _use_fake_client(monkeypatch, fake)
+
+    reordered = runner.invoke(
+        pkg_cmd.app,
+        [
+            "repo",
+            "upstream",
+            "reorder",
+            "application",
+            "npm",
+            "attachment-b",
+            "attachment-r",
+        ],
+    )
+    removed = runner.invoke(
+        pkg_cmd.app,
+        [
+            "repo",
+            "upstream",
+            "remove",
+            "application",
+            "npm",
+            "attachment-b",
+        ],
+    )
+
+    assert reordered.exit_code == 0
+    assert removed.exit_code == 0
+    assert (
+        "PUT",
+        "/v0/repositories/repository-1/lanes/npm/upstreams/order",
+        {"attachment_ids": ["attachment-b", "attachment-r"]},
+    ) in fake.calls
+    assert (
+        "DELETE",
+        "/v0/repositories/repository-1/lanes/npm/upstreams/attachment-b",
+        None,
+    ) in fake.calls
+
+
+def test_pkg_repo_upstream_add_requires_exactly_one_source(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    _isolate_config(monkeypatch, tmp_path)
+    _use_fake_client(monkeypatch, _FakeApiClient())
+
+    neither = runner.invoke(
+        pkg_cmd.app,
+        ["repo", "upstream", "add", "application", "pypi"],
+    )
+    both = runner.invoke(
+        pkg_cmd.app,
+        [
+            "repo",
+            "upstream",
+            "add",
+            "application",
+            "pypi",
+            "--private-repository",
+            "shared",
+            "--remote-cache",
+            "pypi",
+        ],
+    )
+
+    assert neither.exit_code == 1
+    assert both.exit_code == 1
+    assert "exactly one" in neither.output
+    assert "exactly one" in both.output
 
 
 def test_pkg_package_list_and_show_use_repository_package_paths(

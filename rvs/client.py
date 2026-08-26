@@ -155,5 +155,13 @@ class ApiClient:
     ) -> httpx.Response:
         return self._request("PATCH", path, json=json, params=params)
 
+    def put(
+        self,
+        path: str,
+        json: Any = None,
+        params: dict | None = None,
+    ) -> httpx.Response:
+        return self._request("PUT", path, json=json, params=params)
+
     def delete(self, path: str, params: dict | None = None) -> httpx.Response:
         return self._request("DELETE", path, params=params)

@@ -150,6 +150,12 @@ rvs pkg repo set-default pypi <repo-name>
 rvs pkg repo defaults
 rvs pkg repo set-upstream <repo-name> <cache-id> --min-age-days 3
 rvs pkg repo clear-upstream <repo-name>
+rvs pkg repo upstream list acme/app pypi
+rvs pkg repo upstream add acme/app pypi --private-repository acme/libraries
+rvs pkg repo upstream add acme/app pypi --remote-cache pypiorg
+rvs pkg repo upstream update acme/app pypi <attachment-id> --min-age-days 1
+rvs pkg repo upstream reorder acme/app pypi <attachment-id> <attachment-id>
+rvs pkg repo upstream remove acme/app pypi <attachment-id>
 
 rvs pkg remote-cache list
 rvs pkg remote-cache create --registry-kind pypi
@@ -184,11 +190,13 @@ rvs pkg cache select pypiorg
 rvs pkg cache select --custom piwheels
 ```
 
-A remote cache & proxy is a customer-owned read-only binding to a curated
-public registry. Use it directly with package managers or connect it to a
-private repository. Packages are cached on demand and can be delayed with
-minimum package age. Remote caches and upstream attachments are currently
-available only for PyPI, npm, and Maven; Container and Helm are private-only.
+A remote cache & proxy is a customer-owned read-only binding to a curated public
+registry. Use it directly with package managers or connect it to a private
+repository. A private PyPI, npm, or Maven lane can also attach a same-kind private
+lane from the same customer, including another workspace. Private sources expose
+only their intrinsic packages; their own upstream plans are never traversed.
+Private attachments default to zero/disabled minimum age, while official remote
+attachments retain the server recommendation. Container and Helm are private-only.
 
 Repository references use the package repository name, such as
 `my-python-packages`. Repository names use lowercase letters, numbers, and
