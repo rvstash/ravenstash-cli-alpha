@@ -83,3 +83,12 @@ def test_installer_is_owned_by_cli_packaging_and_pins_release_identity() -> None
     assert 'readonly compatibility_channel="v0.5"' in source
     assert "3B7C20FC370D1A7C813DF3A2E9679F951AD8BAA0" in source
     assert "--proto '=https' --proto-redir '=https' --tlsv1.2" in source
+
+
+def test_installer_prints_ravenstash_banner_after_success() -> None:
+    source = INSTALLER.read_text(encoding="utf-8")
+
+    assert "RVS_INSTALL_NO_BANNER" in source
+    assert "█████████████████████████▄▄▄" in source
+    assert "CLI installed successfully" in source
+    assert 'print_success_banner\nsay "next: rvs auth login"' in source

@@ -19,6 +19,40 @@ say() {
   printf 'rvs installer: %s\n' "$*"
 }
 
+print_success_banner() {
+  if [[ "${RVS_INSTALL_NO_BANNER:-0}" == "1" ]]; then
+    return
+  fi
+
+  cat <<'RAVENSTASH_BANNER'
+
+  █████████████████████████▄▄▄
+  █████████████████████████████▄▄
+  ████████████████████████████████▄
+  █████████████████████████████████▄
+  ██████████████████████████████████▄
+  ███████▀▀▀▀▀      ▀▀███████████████▄
+  ████████▀      ▄▄▄▄   ▀▀▀███████████
+  ██████▀         ▀▀         ▀████████
+  ████▀                  ▄▄▄▄▄▄███████
+  ███▀               ▄███████████████▀
+  ██▀               ████████████████▀
+  ▀▀               ▄███████████████▀
+                   ▀█████████████▀
+                    ██████████▀▀
+                     █████████
+                      ▀████████▄
+                       ▀████████▄
+                        ▀████████▄
+                          █████████
+                           ▀▀███████
+                                ▀▀▀██▄
+
+              RAVENSTASH
+       CLI installed successfully
+RAVENSTASH_BANNER
+}
+
 fail() {
   printf 'rvs installer: error: %s\n' "$*" >&2
   exit 1
@@ -298,4 +332,5 @@ else
   install_portable_archive "$temporary_directory"
 fi
 
+print_success_banner
 say "next: rvs auth login"
