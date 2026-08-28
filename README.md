@@ -118,6 +118,15 @@ rvs account current
 rvs shell setup
 ```
 
+Headless automation must make this selection explicitly; device authentication
+does not imply a package customer. For a personal account use
+`rvs account switch personal`. Before selecting or directly installing from an
+official cache, attach that source to the selected account once, for example
+`rvs pkg cache add pypiorg`, `rvs pkg cache add npmjs`, or
+`rvs pkg cache add maven-central`. A direct `cache:<source>` request returns 404
+until that binding exists; it is an authorization boundary, not a transient cache
+miss.
+
 The shell prompt shows `(profile · personal)` or `(profile · org:acme)` and appends
 the selected package target. Shell-local profile/account state is non-secret; tokens
 remain in the keyring.

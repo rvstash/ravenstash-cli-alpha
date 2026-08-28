@@ -100,6 +100,21 @@ rvs shell setup
 rvs pkg select acme/backend
 ```
 
+For a personal account, use `rvs account switch personal` instead. Account
+selection is mandatory in headless flows even immediately after device login.
+Direct official-cache use additionally requires an account binding created once
+with the matching command:
+
+```bash
+rvs pkg cache add pypiorg
+rvs pkg cache add npmjs
+rvs pkg cache add maven-central
+```
+
+Without that binding, `cache:pypiorg` (or its npm/Maven equivalent) returns 404 by
+design. Creating the binding grants direct access; merely knowing the curated slug
+does not.
+
 The prompt becomes `(staging · org:acme · acme/backend)`. Two named login
 profiles may select the same organization while retaining distinct audit actors.
 
