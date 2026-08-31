@@ -39,15 +39,34 @@ def test_root_help_exposes_clean_alpha_command_surface() -> None:
         "npm",
         "mvn",
         "auth",
+        "profile",
+        "account",
+        "context",
         "runtime",
         "pkg",
-        "packages",
         "repo",
         "ci",
     ):
         assert command in result.output
     for removed_root_command in ("pypi", "maven", "system", "sync", "tokens"):
         assert removed_root_command not in result.output
+
+
+def test_context_commands_are_separated_from_auth_help() -> None:
+    auth_result = runner.invoke(app, ["auth", "--help"])
+    profile_result = runner.invoke(app, ["profile", "--help"])
+    account_result = runner.invoke(app, ["account", "--help"])
+
+    assert auth_result.exit_code == 0
+    assert "Manage named local CLI profiles" not in auth_result.output
+    assert "login" in auth_result.output
+    assert profile_result.exit_code == 0
+    assert "current" in profile_result.output
+    assert "use" in profile_result.output
+    assert "switch" not in profile_result.output
+    assert account_result.exit_code == 0
+    assert "use" in account_result.output
+    assert "switch" not in account_result.output
 
 
 def test_root_without_args_shows_help() -> None:
@@ -88,31 +107,12 @@ default_repo = "private-pypi"
     }
 
 
-def test_packages_alias_dispatches_to_pkg_commands(monkeypatch, tmp_path: Path) -> None:
-    monkeypatch.setenv("RVS_PROFILE_STAGING_API_URL", STAGING_API_URL)
-    monkeypatch.setenv("RVS_PROFILE_STAGING_REPOSITORY_DOMAIN", "packages.example.test")
-    _isolate_config(
-        monkeypatch,
-        tmp_path,
-        """
-default_profile = "default"
+def test_removed_compatibility_groups_are_rejected() -> None:
+    packages_result = runner.invoke(app, ["packages", "--help"])
+    keyring_result = runner.invoke(app, ["auth", "keyring", "doctor"])
 
-[registries.pypi]
-default_repo = "repo-alias"
-
-[profiles.staging]
-customer_unique_id = "custpid1"
-""".strip(),
-    )
-
-    pkg_result = runner.invoke(app, ["pkg", "repo", "defaults", "--profile", "staging"])
-    packages_result = runner.invoke(app, ["packages", "repo", "defaults", "--profile", "staging"])
-
-    assert pkg_result.exit_code == 0
-    assert packages_result.exit_code == 0
-    assert packages_result.output == pkg_result.output
-    assert "Package repository defaults" in packages_result.output
-    assert "(staging)" in packages_result.output
+    assert packages_result.exit_code != 0
+    assert keyring_result.exit_code != 0
 
 
 def test_repo_commands_are_registered() -> None:
@@ -123,13 +123,30 @@ def test_repo_commands_are_registered() -> None:
         assert command in repo_result.output
 
 
-def test_registry_kind_is_canonical_and_ecosystem_is_a_compatible_alias() -> None:
+def test_registry_kind_has_no_ecosystem_alias() -> None:
     result = runner.invoke(app, ["pkg", "repo", "list", "--help"])
 
     assert result.exit_code == 0
     help_output = unstyle(result.output)
     assert "--registry-kind" in help_output
-    assert "--ecosystem" in help_output
+    assert "--ecosystem" not in help_output
+
+
+def test_repository_group_has_no_legacy_upstream_commands() -> None:
+    result = runner.invoke(app, ["pkg", "repo", "--help"])
+
+    assert result.exit_code == 0
+    help_output = unstyle(result.output)
+    assert "set-upstream" not in help_output
+    assert "clear-upstream" not in help_output
+
+
+@pytest.mark.parametrize("command", ["pip", "docker"])
+def test_native_wrappers_reject_removed_repository_option(command: str) -> None:
+    result = runner.invoke(app, [command, "--rvs-repo", "acme/packages", "version"])
+
+    assert result.exit_code != 0
+    assert "Use --rvs-target" in result.output
 
 
 @pytest.mark.parametrize(

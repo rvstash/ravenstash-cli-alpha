@@ -206,9 +206,9 @@ rvs uv sync
 rvs twine upload dist/*
 rvs npm install @acme/widgets
 rvs mvn test
-rvs docker --rvs-repo <container-repo-name> pull oci.rvsta.sh/<workspace-name>/<container-repo-name>/api:latest
-rvs helm --rvs-repo <helm-repo-name> show chart oci://oci.rvsta.sh/<workspace-name>/<helm-repo-name>/charts/api --version 1.2.3
-rvs oras --rvs-kind container --rvs-repo <container-repo-name> discover oci.rvsta.sh/<workspace-name>/<container-repo-name>/api:latest
+rvs docker --rvs-target <workspace>/<container-repo-name> pull oci.rvsta.sh/<workspace-name>/<container-repo-name>/api:latest
+rvs helm --rvs-target <workspace>/<helm-repo-name> show chart oci://oci.rvsta.sh/<workspace-name>/<helm-repo-name>/charts/api --version 1.2.3
+rvs oras --rvs-kind container --rvs-target <workspace>/<container-repo-name> discover oci.rvsta.sh/<workspace-name>/<container-repo-name>/api:latest
 ```
 
 By default, the wrappers respect native config such as `.npmrc`, `pip.conf`,
@@ -225,24 +225,24 @@ secret is written to the user's config or command line. Use
 `rvs oci-reference --kind container|helm` to print a stable customer-facing
 reference; the clients' internal `/v2/` requests are intentionally hidden.
 
-Use `--rvs-repo` when the wrapper should override native registry selection for
+Use `--rvs-target` when the wrapper should override native registry selection for
 one invocation:
 
 ```bash
-rvs npm --rvs-repo <npm-repo-name> install @acme/widgets
-rvs npm --rvs-repo <npm-repo-name> publish
-rvs pip --rvs-repo <pypi-repo-name> install private-package
-rvs uv --rvs-repo <pypi-repo-name> sync
-rvs twine --rvs-repo <pypi-repo-name> upload dist/*
-rvs mvn --rvs-repo <maven-repo-name> deploy
+rvs npm --rvs-target <workspace>/<npm-repo-name> install @acme/widgets
+rvs npm --rvs-target <workspace>/<npm-repo-name> publish
+rvs pip --rvs-target <workspace>/<pypi-repo-name> install private-package
+rvs uv --rvs-target <workspace>/<pypi-repo-name> sync
+rvs twine --rvs-target <workspace>/<pypi-repo-name> upload dist/*
+rvs mvn --rvs-target <workspace>/<maven-repo-name> deploy
 ```
 
 Use `--rvs-native-config isolate` for a cleaner subprocess environment where
 the native tool supports disabling persistent config:
 
 ```bash
-rvs pip --rvs-repo <pypi-repo-name> --rvs-native-config isolate install private-package
-rvs uv --rvs-repo <pypi-repo-name> --rvs-native-config isolate sync
+rvs pip --rvs-target <workspace>/<pypi-repo-name> --rvs-native-config isolate install private-package
+rvs uv --rvs-target <workspace>/<pypi-repo-name> --rvs-native-config isolate sync
 ```
 
 ## PyPI

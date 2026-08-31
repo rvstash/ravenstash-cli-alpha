@@ -28,8 +28,9 @@ def test_credential_type_display_keeps_legacy_temporary_user_facing_as_expiring(
     assert auth_mod.display_credential_type("expiring") == "expiring"
 
 
-def test_set_token_requires_configured_store(monkeypatch) -> None:
-    monkeypatch.setattr(auth_mod, "_keyring_available", lambda: False)
+def test_set_token_requires_configured_store(monkeypatch, tmp_path: Path) -> None:
+    _isolate_config(monkeypatch, tmp_path, 'credential_store = "auto"')
+    monkeypatch.setattr(auth_mod, "_store_available", lambda _store: False)
 
     with pytest.raises(RuntimeError, match="No usable credential store"):
         auth_mod.set_token("default", "token")
@@ -112,8 +113,11 @@ refresh_expires_at = "2099-01-02T00:00:00+00:00"
     assert profile.refresh_expires_at is None
 
 
-def test_get_refresh_token_returns_none_when_keyring_unavailable(monkeypatch) -> None:
-    monkeypatch.setattr(auth_mod, "_keyring_available", lambda: False)
+def test_get_refresh_token_returns_none_when_keyring_unavailable(
+    monkeypatch, tmp_path: Path
+) -> None:
+    _isolate_config(monkeypatch, tmp_path, 'credential_store = "auto"')
+    monkeypatch.setattr(auth_mod, "_store_available", lambda _store: False)
 
     assert auth_mod.get_refresh_token("default") is None
 
@@ -155,7 +159,8 @@ def test_auto_store_prefers_usable_os_keyring(monkeypatch, tmp_path: Path) -> No
     assert auth_mod.selected_credential_store("default") == "keyring"
 
 
-def test_preflight_round_trips_disposable_secret(monkeypatch) -> None:
+def test_preflight_round_trips_disposable_secret(monkeypatch, tmp_path: Path) -> None:
+    _isolate_config(monkeypatch, tmp_path, 'credential_store = "auto"')
     values: dict[str, str] = {}
     deleted: list[str] = []
     monkeypatch.setattr(auth_mod, "_store_available", lambda store: store == "pass")

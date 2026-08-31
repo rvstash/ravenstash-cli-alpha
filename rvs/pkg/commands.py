@@ -1,7 +1,4 @@
-"""`rvs pkg` command group.
-
-`rvs packages` is registered as an alias for the same app at the root.
-"""
+"""`rvs pkg` command group."""
 
 from __future__ import annotations
 
@@ -64,7 +61,6 @@ def package_context(
     target: str | None = typer.Option(
         None,
         "--target",
-        "--repo",
         help="One-shot package target: workspace/repository, mirror:<source>, or custom-mirror:<name>.",
     ),
     account: str | None = typer.Option(
@@ -249,7 +245,7 @@ def _require_kind(kind: str) -> cfg_mod.RegistryKind:
 def _require_package_kind(kind: str) -> cfg_mod.RegistryKind:
     if kind not in _PACKAGE_KINDS:
         output.fatal(
-            "Package/version commands and remote caches support only pypi, npm, "
+            "Package/version commands and private mirrors support only pypi, npm, "
             "and maven. Use rvs docker, rvs helm, or rvs oras for OCI content."
         )
     return cast("cfg_mod.RegistryKind", kind)
@@ -415,8 +411,6 @@ def repo_list(
         None,
         "--registry-kind",
         "-k",
-        "--ecosystem",
-        "-e",
         help="Registry-kind filter: pypi | npm | maven | container | helm.",
     ),
 ) -> None:
@@ -460,8 +454,6 @@ def repo_create(
         ...,
         "--registry-kind",
         "-k",
-        "--ecosystem",
-        "-e",
         help="Registry kind to enable; repeat to enable more than one.",
     ),
     profile: str | None = typer.Option(None, "--profile", "-p"),
@@ -620,54 +612,6 @@ def repo_defaults(
         rows,
         title=f"Package repository defaults ({profile_name})",
     )
-
-
-@repo_app.command("set-upstream")
-def repo_set_upstream(
-    repo: str = typer.Argument(..., help="Private package repository name."),
-    remote: str = typer.Argument(..., help="Remote cache & proxy ID."),
-    min_age_hours: float = typer.Option(24, "--min-age-hours", min=0),
-    profile: str | None = typer.Option(None, "--profile", "-p"),
-) -> None:
-    """Connect a remote cache to a private repository."""
-    client = _client(profile)
-    try:
-        remote_entry = client.get(f"/v0/remote-repositories/{remote}").json()
-        remote_repository = remote_entry["remote_repository"]
-        registry_kind = remote_repository["registry_kind"]
-        repository_id = _resolved_repository_id(repo, profile, kind=registry_kind)
-        client.post(
-            f"/v0/repositories/{repository_id}/lanes/{registry_kind}/remote-upstreams",
-            json={
-                "remote_repository_lane_id": remote_repository["id"],
-                "min_age_hours": min_age_hours,
-            },
-        )
-    except (ApiError, KeyError, TypeError) as exc:
-        output.fatal(str(exc))
-    output.success(f"Connected remote cache '{remote}' to '{repo}'.")
-
-
-@repo_app.command("clear-upstream")
-def repo_clear_upstream(
-    repo: str = typer.Argument(..., help="Private package repository name."),
-    profile: str | None = typer.Option(None, "--profile", "-p"),
-) -> None:
-    """Remove the upstream configuration from a private repository."""
-    client = _client(profile)
-    try:
-        entry = _resolve_repository_entry(repo, profile)
-        repository = entry["repository"]
-        for registry_kind in repository["registry_kinds"]:
-            if registry_kind not in _PACKAGE_KINDS:
-                continue
-            path = f"/v0/repositories/{repository['id']}/lanes/{registry_kind}/remote-upstreams"
-            attachments = client.get(path).json()
-            for attachment in attachments:
-                client.delete(f"{path}/{attachment['id']}")
-    except (ApiError, KeyError, TypeError) as exc:
-        output.fatal(str(exc))
-    output.success(f"Removed the upstream connection from '{repo}'.")
 
 
 def _upstream_path(repository_id: str, registry_kind: str) -> str:
@@ -863,15 +807,15 @@ def upstream_remove(
 
 @remote_app.command("select")
 def remote_select(
-    cache: str = typer.Argument(..., help="Official source slug or custom cache name."),
-    custom: bool = typer.Option(False, "--custom", help="Select a customer-defined cache."),
+    mirror: str = typer.Argument(..., help="Official source slug or custom mirror name."),
+    custom: bool = typer.Option(False, "--custom", help="Select a customer-defined mirror."),
     kind: str | None = typer.Option(None, "--kind", help="Registry kind if ambiguous."),
     account: str | None = typer.Option(None, "--account", help="Acting account selector."),
     profile: str | None = typer.Option(None, "--profile", "-p"),
 ) -> None:
     """Select an official or customer-defined private mirror."""
     prefix = "custom-mirror" if custom else "mirror"
-    target_select(f"{prefix}:{cache}", kind=kind, account=account, profile=profile)
+    target_select(f"{prefix}:{mirror}", kind=kind, account=account, profile=profile)
 
 
 @remote_app.command("current")
@@ -897,7 +841,7 @@ def remote_list(
     profile: str | None = typer.Option(None, "--profile", "-p"),
     customer_id: str | None = typer.Option(None, "--customer-id"),
     account: str | None = typer.Option(None, "--account"),
-    kind: str | None = typer.Option(None, "--kind", "--registry-kind", "-k", "--ecosystem", "-e"),
+    kind: str | None = typer.Option(None, "--kind", "--registry-kind", "-k"),
 ) -> None:
     """List private mirrors for the selected customer."""
     if kind:
@@ -924,7 +868,7 @@ def remote_list(
         output.info("No private mirrors found.")
         return
     output.table(
-        ["Account", "Cache type", "Publication", "Mirror target", "Registry kind", "Minimum age"],
+        ["Account", "Mirror type", "Publication", "Mirror target", "Registry kind", "Minimum age"],
         [
             [
                 str(entry.get("customer", {}).get("account_label", "")),
@@ -953,7 +897,7 @@ def remote_list(
 
 @remote_app.command("create")
 def remote_create(
-    kind: str = typer.Option(..., "--registry-kind", "-k", "--ecosystem", "-e"),
+    kind: str = typer.Option(..., "--registry-kind", "-k"),
     profile: str | None = typer.Option(None, "--profile", "-p"),
     customer_id: str | None = typer.Option(None, "--customer-id"),
     account: str | None = typer.Option(None, "--account"),
@@ -1003,9 +947,9 @@ def remote_add_official(
             and (kind is None or item.get("registry_kind") == kind)
         ]
         if not matches:
-            output.fatal(f"Official cache source '{source}' was not found.")
+            output.fatal(f"Official mirror source '{source}' was not found.")
         if len(matches) > 1:
-            output.fatal(f"Official cache source '{source}' is ambiguous. Pass --kind.")
+            output.fatal(f"Official mirror source '{source}' is ambiguous. Pass --kind.")
         selected_source = matches[0]
         payload: dict[str, object] = {
             "customer_id": customer_id,
@@ -1035,7 +979,7 @@ def remote_add_official(
 
 @remote_app.command("create-custom")
 def remote_create_custom(
-    name: str = typer.Argument(..., help="Customer-scoped custom cache name."),
+    name: str = typer.Argument(..., help="Customer-scoped custom mirror name."),
     kind: str = typer.Option(..., "--kind", help="Registry kind: pypi, npm, or maven."),
     api_url: str = typer.Option(..., "--api-url", help="HTTPS metadata/API origin."),
     artifact_url: str | None = typer.Option(None, "--artifact-url"),
@@ -1205,7 +1149,7 @@ def remote_delete(
     profile: str | None = typer.Option(None, "--profile", "-p"),
     customer_id: str | None = typer.Option(None, "--customer-id"),
     account: str | None = typer.Option(None, "--account"),
-    kind: str | None = typer.Option(None, "--kind", "--registry-kind", "-k", "--ecosystem", "-e"),
+    kind: str | None = typer.Option(None, "--kind", "--registry-kind", "-k"),
     yes: bool = typer.Option(False, "--yes", "-y"),
 ) -> None:
     """Delete a remote cache and its private mirror."""
@@ -1233,8 +1177,6 @@ def package_list(
         ...,
         "--registry-kind",
         "-k",
-        "--ecosystem",
-        "-e",
         help="Registry kind: pypi | npm | maven.",
     ),
     profile: str | None = typer.Option(None, "--profile", "-p"),
@@ -1278,8 +1220,6 @@ def package_show(
         ...,
         "--registry-kind",
         "-k",
-        "--ecosystem",
-        "-e",
         help="Registry kind: pypi | npm | maven.",
     ),
     profile: str | None = typer.Option(None, "--profile", "-p"),
@@ -1349,8 +1289,6 @@ def package_delete(
         ...,
         "--registry-kind",
         "-k",
-        "--ecosystem",
-        "-e",
         help="Registry kind: pypi | npm | maven.",
     ),
     profile: str | None = typer.Option(None, "--profile", "-p"),
@@ -1381,8 +1319,6 @@ def package_delete_version(
         ...,
         "--registry-kind",
         "-k",
-        "--ecosystem",
-        "-e",
         help="Registry kind: pypi | npm | maven.",
     ),
     profile: str | None = typer.Option(None, "--profile", "-p"),
@@ -1413,8 +1349,6 @@ def package_yank(
         ...,
         "--registry-kind",
         "-k",
-        "--ecosystem",
-        "-e",
         help="Registry kind: pypi | npm | maven.",
     ),
     reason: str | None = typer.Option(None, "--reason", "-m", help="Yank reason."),

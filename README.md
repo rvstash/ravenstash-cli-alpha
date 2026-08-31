@@ -1,8 +1,8 @@
 # rvs - Ravenstash Developer CLI
 
-`rvs` is the alpha command line for Ravenstash developer products. Package
-repositories are one product area; source repositories, CI, and other tooling
-will sit beside it rather than inside it.
+`rvs` is the alpha command line for Ravenstash developer products. It manages
+package repositories, authentication, local context, native package workflows,
+and developer runtimes; CI remains a future product area.
 
 This work-in-progress alpha is developed privately in
 `rvstash/ravenstash-cli-alpha`. The first public beta will start a clean public
@@ -19,19 +19,18 @@ rvs context    Inspect the effective user/profile/account/target tuple
 rvs shell      Install the visible context prompt integration
 rvs runtime    Install and select local Python, Node, and Java runtimes
 rvs pkg        Manage Ravenstash package repositories and package workflows
-rvs packages   Alias for rvs pkg
 rvs pip        Run pip with ephemeral Ravenstash auth injection
 rvs uv         Run uv with ephemeral Ravenstash auth injection
 rvs twine      Run twine with ephemeral Ravenstash auth injection
 rvs npm        Run npm with ephemeral Ravenstash auth injection
 rvs mvn        Run Maven with ephemeral Ravenstash auth injection
-rvs repo       Placeholder for future Ravenstash source repositories
+rvs repo       Manage Ravenstash package repositories
 rvs ci         Placeholder for future Ravenstash CI
 rvs update     Check or apply signed APT updates
 ```
 
-`rvs repo` and `rvs ci` are intentionally registered now, but their commands only
-print "not implemented" until those products exist.
+`rvs repo` is the first-class package-repository group. `rvs ci` is registered
+but its commands print "not implemented" until that product exists.
 
 Pass global `--json` before a command to emit rvs-owned output as newline-delimited
 JSON, for example `rvs --json pkg repo list`. Output from native passthrough tools
@@ -78,8 +77,7 @@ rvs auth login --credential-store pass
 The provider used by a successful login is pinned to that profile, so a machine
 with both desktop keyring and `pass` continues using the user's chosen store.
 `RVS_CREDENTIAL_STORE=auto|keyring|pass|vault|plaintext` supplies a non-persistent
-override. The legacy `rvs auth keyring` command remains an alias for
-`rvs auth storage`.
+override.
 
 Device login discovers and stores the package transfer endpoints returned by
 DevAPI. Every control-plane operation goes through DevAPI; `rvs` never calls
@@ -107,7 +105,8 @@ rvs profile delete --all
 rvs profile rename old-name new-name
 ```
 
-One local login profile may access a personal account and several organizations.
+One local profile's authenticated user may access a personal account and several
+organizations.
 Select the acting account used for authorization, metering, and unqualified target
 resolution:
 
@@ -137,9 +136,6 @@ infer identity solely from local profile metadata. `rvs context current` combine
 that verified user with the effective local profile, acting account, package
 target, and the source of each selection.
 
-The older `rvs auth profile ...`, `rvs profile switch`, and `rvs account switch`
-forms remain hidden compatibility aliases.
-
 ## Runtime
 
 Runtime management is limited to local Python, Node, and Java installs:
@@ -163,9 +159,8 @@ the shim. Version-prefix selection chooses the newest matching semantic version.
 
 ## Package Repositories
 
-Package repository commands are under `rvs pkg`; `rvs packages` is the same
-command group. This area connects the local machine and native package managers
-to a remote Ravenstash package repository.
+Package repository commands are under `rvs pkg`. This area connects the local
+machine and native package managers to a remote Ravenstash package repository.
 
 Repository commands:
 
@@ -180,8 +175,6 @@ rvs pkg repo rename <repo-name> <new-name>
 rvs pkg repo delete <repo-name>
 rvs pkg repo set-default pypi <repo-name>
 rvs pkg repo defaults
-rvs pkg repo set-upstream <repo-name> <cache-id> --min-age-hours 24
-rvs pkg repo clear-upstream <repo-name>
 rvs pkg repo upstream list acme/app pypi
 rvs pkg repo upstream add acme/app pypi --private-repository acme/libraries
 rvs pkg repo upstream add acme/app pypi --remote-cache pypiorg
@@ -206,7 +199,6 @@ rvs pkg current
 rvs pkg clear
 
 rvs pkg --target acme/backend --kind pypi install internal-lib
-rvs pkg --repo acme/backend --kind pypi install internal-lib  # private-target alias
 rvs pkg --target mirror:pypiorg install requests
 rvs pkg --target custom-mirror:piwheels --kind pypi install numpy
 ```
@@ -240,10 +232,9 @@ hyphens. When a name is ambiguous across authorized workspaces, use
 the CLI always builds native package URLs from the immutable
 `<workspace_unique_ref>/<repository_unique_ref>` pair.
 
-The acting account and selected target are scoped by local login profile and immutable
+The acting account and selected target are scoped by local profile and immutable
 customer ID. Legacy per-kind repository defaults remain readable as a migration
-fallback. An explicit `--target` (or private `--repo` alias) is one-shot and
-never changes saved state.
+fallback. An explicit `--target` is one-shot and never changes saved state.
 
 Saved defaults store immutable workspace and repository references as identity
 and keep names only as display hints. A later workspace or repository rename
@@ -320,9 +311,9 @@ rvs helm --rvs-target acme/deployment-charts show chart oci://oci.rvsta.sh/acme/
 rvs oras --rvs-kind container --rvs-target acme/runtime-images discover oci.rvsta.sh/acme/runtime-images/api:latest
 rvs oci-reference --kind container --target acme/runtime-images --oci-path api --reference latest
 
-rvs npm --rvs-repo my-node-packages install @acme/widgets
-rvs pip --rvs-repo my-python-packages install acme-utils
-rvs uv --rvs-repo my-python-packages --rvs-native-config isolate sync
+rvs npm --rvs-target acme/my-node-packages install @acme/widgets
+rvs pip --rvs-target acme/my-python-packages install acme-utils
+rvs uv --rvs-target acme/my-python-packages --rvs-native-config isolate sync
 ```
 
 `rvs pkg ...` is Ravenstash-native: it selects a typed Ravenstash target through
@@ -382,7 +373,7 @@ APT remains the update authority for Debian-family package installs:
 ```bash
 rvs update                 # check compatible updates in the current channel
 rvs update --apply         # refresh APT metadata and install a compatible update
-rvs upgrade --to 0.4       # explicitly accept a newer compatibility channel
+rvs upgrade --to 0.7       # explicitly accept the current compatibility channel
 sudo apt upgrade           # updates only within the configured channel
 ```
 

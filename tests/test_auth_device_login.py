@@ -178,17 +178,17 @@ def test_parse_duration_seconds_rejects_out_of_range_or_invalid(raw: str) -> Non
         login_mod.parse_duration_seconds(raw)
 
 
-def test_auth_switch_profile_sets_active_profile(monkeypatch, tmp_path: Path) -> None:
+def test_profile_use_sets_default_profile(monkeypatch, tmp_path: Path) -> None:
     config_dir = tmp_path / ".rvs"
     _write_profiles_config(config_dir)
     monkeypatch.setattr(cfg_mod, "CONFIG_DIR", config_dir)
     monkeypatch.setattr(cfg_mod, "CONFIG_FILE", config_dir / "config.toml")
 
-    result = runner.invoke(auth_cmd.app, ["profile", "switch", "work"])
+    result = runner.invoke(auth_cmd.profile_app, ["use", "work"])
 
     assert result.exit_code == 0
     assert cfg_mod.load().default_profile == "work"
-    assert "Active profile set to 'work'." in result.output
+    assert "Local profile 'work' selected for persisted default." in result.output
 
 
 @pytest.mark.parametrize(
@@ -287,7 +287,7 @@ def test_auth_delete_profile_removes_config_and_token(monkeypatch, tmp_path: Pat
     deleted: list[str] = []
     monkeypatch.setattr(auth_cmd.auth_mod, "delete_token", lambda profile: deleted.append(profile))
 
-    result = runner.invoke(auth_cmd.app, ["profile", "delete"])
+    result = runner.invoke(auth_cmd.profile_app, ["delete"])
     cfg = cfg_mod.load()
 
     assert result.exit_code == 0
@@ -305,7 +305,7 @@ def test_auth_delete_all_profiles(monkeypatch, tmp_path: Path) -> None:
     deleted: list[str] = []
     monkeypatch.setattr(auth_cmd.auth_mod, "delete_token", lambda profile: deleted.append(profile))
 
-    result = runner.invoke(auth_cmd.app, ["profile", "delete", "-a"])
+    result = runner.invoke(auth_cmd.profile_app, ["delete", "-a"])
     cfg = cfg_mod.load()
 
     assert result.exit_code == 0

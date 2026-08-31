@@ -32,7 +32,6 @@ _UNIQUE_ID = re.compile(r"^[23456789abcdefghijkmnpqrstuvwxyz]{8}$")
 @dataclass(frozen=True)
 class OciOptions:
     profile: str | None = None
-    repo: str | None = None
     target: str | None = None
     account: str | None = None
     customer_id: str | None = None
@@ -135,7 +134,7 @@ def resolve_route(tool: OciTool, options: OciOptions) -> OciRoute:
         customer_id = str(resolve_account(options.account, profile_name)["customer_id"])
     customer_id = customer_id or cfg_mod.current_customer_id(profile_name)
     selected = cfg_mod.selected_package_target(profile_name, customer_id)
-    repo_ref = options.target or options.repo
+    repo_ref = options.target
     if repo_ref is None and selected is not None:
         if selected.target_type != "private":
             output.fatal("OCI commands require a private repository target.")
@@ -214,7 +213,7 @@ def _assert_exact_targets(argv: list[str], route: OciRoute) -> None:
     if any(value not in route.accepted_roots for value in observed):
         output.fatal(
             "This invocation references another Ravenstash logical repository. "
-            "One native invocation may use only the exact --rvs-repo target."
+            "One native invocation may use only the exact --rvs-target value."
         )
 
 

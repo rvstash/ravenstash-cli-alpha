@@ -18,7 +18,7 @@ app = typer.Typer(
 def list_repos(
     profile: str | None = typer.Option(None, "--profile", "-p"),
     customer_id: str | None = typer.Option(None, "--customer-id"),
-    registry_kind: str | None = typer.Option(None, "--registry-kind", "-k", "--ecosystem", "-e"),
+    registry_kind: str | None = typer.Option(None, "--registry-kind", "-k"),
 ) -> None:
     """List authorized repositories grouped by account and workspace."""
     pkg_commands.repo_list(
@@ -35,8 +35,6 @@ def create(
         ...,
         "--registry-kind",
         "-k",
-        "--ecosystem",
-        "-e",
         help="Registry kind to enable; repeat for multiple lanes.",
     ),
     profile: str | None = typer.Option(None, "--profile", "-p"),

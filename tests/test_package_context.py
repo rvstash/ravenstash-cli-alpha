@@ -165,7 +165,7 @@ def test_account_and_official_cache_selection_are_visible_and_clearable(
     )
     monkeypatch.setattr(ApiClient, "from_profile", staticmethod(lambda profile=None: fake))
 
-    switched = runner.invoke(app, ["account", "switch", "org:acme"])
+    switched = runner.invoke(app, ["account", "use", "org:acme"])
     selected = runner.invoke(app, ["pkg", "select", "mirror:pypiorg"])
 
     assert switched.exit_code == 0, switched.output
@@ -215,12 +215,12 @@ def test_two_login_profiles_keep_separate_actor_state_for_the_same_org(
     monkeypatch.setattr(ApiClient, "from_profile", staticmethod(lambda profile=None: fake))
 
     assert (
-        runner.invoke(app, ["account", "switch", "org:acme", "--profile", "alice"]).exit_code == 0
+        runner.invoke(app, ["account", "use", "org:acme", "--profile", "alice"]).exit_code == 0
     )
     assert (
         runner.invoke(app, ["pkg", "select", "mirror:pypiorg", "--profile", "alice"]).exit_code == 0
     )
-    assert runner.invoke(app, ["account", "switch", "org:acme", "--profile", "bob"]).exit_code == 0
+    assert runner.invoke(app, ["account", "use", "org:acme", "--profile", "bob"]).exit_code == 0
 
     assert cfg_mod.selected_package_target("alice", "acme") is not None
     assert cfg_mod.selected_package_target("bob", "acme") is None
@@ -248,7 +248,7 @@ def test_account_switch_is_local_to_an_integrated_shell(monkeypatch, tmp_path: P
     monkeypatch.setattr(ApiClient, "from_profile", staticmethod(lambda profile=None: fake))
     monkeypatch.setenv("RVS_SESSION_ID", "terminal-a")
 
-    switched = runner.invoke(app, ["account", "switch", "org:acme"])
+    switched = runner.invoke(app, ["account", "use", "org:acme"])
 
     assert switched.exit_code == 0, switched.output
     assert cfg_mod.current_customer_id("alice") == "acme"
@@ -329,7 +329,7 @@ def test_pkg_install_uses_account_scoped_official_default_without_selection(
     assert cfg_mod.selected_package_target("alice", "personal-alice") is None
 
 
-def test_pkg_repo_one_liner_is_a_target_alias(monkeypatch, tmp_path: Path) -> None:
+def test_pkg_repo_one_liner_alias_is_rejected(monkeypatch, tmp_path: Path) -> None:
     isolate(monkeypatch, tmp_path)
     calls: list[tuple[list[str], str | None]] = []
     monkeypatch.setattr(
@@ -351,5 +351,5 @@ def test_pkg_repo_one_liner_is_a_target_alias(monkeypatch, tmp_path: Path) -> No
         ],
     )
 
-    assert result.exit_code == 0, result.output
-    assert calls == [(["internal-lib"], None)]
+    assert result.exit_code != 0
+    assert calls == []

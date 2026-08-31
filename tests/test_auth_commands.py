@@ -50,17 +50,16 @@ def test_auth_status_reports_env_token_for_builtin_staging_profile(
 
     assert result.exit_code == 0
     assert "staging" in result.output
-    assert STAGING_API_URL in result.output
     assert "Authenticated" in result.output
     assert "yes" in result.output
     assert "RVS_TOKEN" in result.output
     assert "not used (RVS_TOKEN)" in result.output
-    assert "Repository domain" in result.output
-    assert "rvsta.sh" in result.output
-    assert "PyPI read URL" not in result.output
+    assert STAGING_API_URL not in result.output
+    assert "Repository domain" not in result.output
+    assert "Owner ID" not in result.output
 
 
-def test_auth_status_verbose_reports_resolved_repository_endpoints(
+def test_auth_status_rejects_profile_configuration_options(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
@@ -69,13 +68,8 @@ def test_auth_status_verbose_reports_resolved_repository_endpoints(
 
     result = runner.invoke(auth_cmd.app, ["status", "--verbose"])
 
-    assert result.exit_code == 0
-    assert "Repository domain" in result.output
-    assert "rvsta.sh" in result.output
-    assert "PyPI read URL" in result.output
-    assert "https://pypi.rvsta.sh" in result.output
-    assert "OCI registry URL" in result.output
-    assert "https://oci.rvsta.sh" in result.output
+    assert result.exit_code == 2
+    assert "No such option: --verbose" in result.output
 
 
 def test_auth_status_exits_one_when_profile_has_no_token(monkeypatch, tmp_path: Path) -> None:
@@ -90,10 +84,10 @@ def test_auth_status_exits_one_when_profile_has_no_token(monkeypatch, tmp_path: 
     assert result.exit_code == 1
     assert "Authenticated" in result.output
     assert "no" in result.output
-    assert STAGING_API_URL in result.output
+    assert STAGING_API_URL not in result.output
 
 
-def test_auth_whoami_verifies_identity_with_package_api(monkeypatch, tmp_path: Path) -> None:
+def test_auth_whoami_reports_only_verified_user_identity(monkeypatch, tmp_path: Path) -> None:
     _isolate_config(
         monkeypatch,
         tmp_path,
@@ -135,12 +129,10 @@ customer_id = "cus_work"
     assert calls == ["/v0/me"]
     assert "work" in result.output
     assert "developer@example.test" in result.output
-    assert "cus_verified" in result.output
-    assert "custpid1" in result.output
-    assert "https://api.work.example" in result.output
-    assert "Repository domain" in result.output
-    assert "rvsta.sh" in result.output
-    assert "PyPI read URL" not in result.output
+    assert "cus_verified" not in result.output
+    assert "custpid1" not in result.output
+    assert "https://api.work.example" not in result.output
+    assert "Repository domain" not in result.output
 
 
 def test_auth_login_delegates_to_device_login_with_active_profile(
@@ -373,7 +365,7 @@ def test_auth_storage_setup_plaintext_allows_explicit_noninteractive_acknowledge
     assert initialized == [True]
 
 
-def test_auth_keyring_doctor_performs_disposable_round_trip(monkeypatch, tmp_path: Path) -> None:
+def test_auth_storage_doctor_performs_disposable_round_trip(monkeypatch, tmp_path: Path) -> None:
     _isolate_config(monkeypatch, tmp_path, 'default_profile = "default"')
     checked: list[tuple[str, str | None]] = []
     status = auth_cmd.stores.StoreStatus(
@@ -390,7 +382,7 @@ def test_auth_keyring_doctor_performs_disposable_round_trip(monkeypatch, tmp_pat
         lambda profile, requested=None: checked.append((profile, requested)) or "keyring",
     )
 
-    result = runner.invoke(auth_cmd.app, ["keyring", "doctor"])
+    result = runner.invoke(auth_cmd.app, ["storage", "doctor"])
 
     assert result.exit_code == 0
     assert checked == [("default", None)]
@@ -400,7 +392,7 @@ def test_auth_keyring_doctor_performs_disposable_round_trip(monkeypatch, tmp_pat
 def test_auth_profile_list_reports_no_profiles(monkeypatch, tmp_path: Path) -> None:
     _isolate_config(monkeypatch, tmp_path, 'default_profile = "default"')
 
-    result = runner.invoke(auth_cmd.app, ["profile", "list"])
+    result = runner.invoke(auth_cmd.profile_app, ["list"])
 
     assert result.exit_code == 0
     assert "No profiles configured" in result.output
@@ -424,7 +416,7 @@ customer_id = "cus_work"
     deleted: list[str] = []
     monkeypatch.setattr(auth_cmd.auth_mod, "delete_token", lambda profile: deleted.append(profile))
 
-    result = runner.invoke(auth_cmd.app, ["profile", "rename", "work", "staging"])
+    result = runner.invoke(auth_cmd.profile_app, ["rename", "work", "staging"])
     cfg = cfg_mod.load()
 
     assert result.exit_code == 0
@@ -435,7 +427,7 @@ customer_id = "cus_work"
     assert "renamed to 'staging'" in result.output
 
 
-def test_auth_profile_switch_rejects_missing_profile(monkeypatch, tmp_path: Path) -> None:
+def test_profile_use_rejects_missing_profile(monkeypatch, tmp_path: Path) -> None:
     _isolate_config(
         monkeypatch,
         tmp_path,
@@ -447,7 +439,7 @@ api_url = "https://api.ravenstash.com"
 """,
     )
 
-    result = runner.invoke(auth_cmd.app, ["profile", "switch", "missing"])
+    result = runner.invoke(auth_cmd.profile_app, ["use", "missing"])
 
     assert result.exit_code == 1
     assert "Profile 'missing' is not configured" in result.stderr

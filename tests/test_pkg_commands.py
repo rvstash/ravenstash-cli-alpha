@@ -299,6 +299,7 @@ def test_pkg_remote_management_and_upstream_configuration(monkeypatch, tmp_path:
                     "registry_kind": "pypi",
                 },
             },
+            _repository_entry("repo-pypi"),
             {
                 "customer": _repository_entry()["customer"],
                 "remote_repository": {
@@ -307,7 +308,16 @@ def test_pkg_remote_management_and_upstream_configuration(monkeypatch, tmp_path:
                     "registry_kind": "pypi",
                 },
             },
-            _repository_entry("repo-pypi"),
+            [],
+            {
+                "id": "attachment-1",
+                "priority": 0,
+                "source_type": "remote",
+                "source_remote_name": "pypi",
+                "registry_kind": "pypi",
+                "min_age_hours": 5.0,
+                "max_age_hours": None,
+            },
         ]
     )
     _use_fake_client(monkeypatch, fake)
@@ -317,7 +327,17 @@ def test_pkg_remote_management_and_upstream_configuration(monkeypatch, tmp_path:
     )
     upstream_result = runner.invoke(
         pkg_cmd.app,
-        ["repo", "set-upstream", "repo-pypi", "pypi", "--min-age-hours", "5"],
+        [
+            "repo",
+            "upstream",
+            "add",
+            "repo-pypi",
+            "pypi",
+            "--remote-cache",
+            "pypi",
+            "--min-age-hours",
+            "5",
+        ],
     )
 
     assert create_result.exit_code == 0
@@ -330,11 +350,6 @@ def test_pkg_remote_management_and_upstream_configuration(monkeypatch, tmp_path:
         ),
         (
             "GET",
-            "/v0/remote-repositories/pypi",
-            None,
-        ),
-        (
-            "GET",
             "/v0/repositories/resolve",
             {
                 "selector": "repo-pypi",
@@ -343,11 +358,24 @@ def test_pkg_remote_management_and_upstream_configuration(monkeypatch, tmp_path:
             },
         ),
         (
+            "GET",
+            "/v0/remote-repositories/pypi",
+            {"registry_kind": "pypi"},
+        ),
+        (
+            "GET",
+            "/v0/repositories/repository-1/lanes/pypi/upstreams",
+            None,
+        ),
+        (
             "POST",
-            "/v0/repositories/repository-1/lanes/pypi/remote-upstreams",
+            "/v0/repositories/repository-1/lanes/pypi/upstreams",
             {
-                "remote_repository_lane_id": "remote_1",
+                "source_type": "remote",
+                "source_repository_lane_id": "remote_1",
+                "priority": 0,
                 "min_age_hours": 5.0,
+                "max_age_hours": None,
             },
         ),
     ]
@@ -672,10 +700,11 @@ def test_pkg_package_list_and_show_use_repository_package_paths(
     _use_fake_client(monkeypatch, fake)
 
     list_result = runner.invoke(
-        pkg_cmd.app, ["package", "list", "--repo", "repo-pypi", "--ecosystem", "pypi"]
+        pkg_cmd.app, ["package", "list", "--repo", "repo-pypi", "--registry-kind", "pypi"]
     )
     show_result = runner.invoke(
-        pkg_cmd.app, ["package", "show", "demo", "--repo", "repo-pypi", "--ecosystem", "pypi"]
+        pkg_cmd.app,
+        ["package", "show", "demo", "--repo", "repo-pypi", "--registry-kind", "pypi"],
     )
 
     assert list_result.exit_code == 0
@@ -721,7 +750,16 @@ def test_pkg_package_mutations_call_expected_api_paths(monkeypatch, tmp_path: Pa
 
     delete_result = runner.invoke(
         pkg_cmd.app,
-        ["package", "delete", "demo", "--repo", "repo-pypi", "--ecosystem", "pypi", "--yes"],
+        [
+            "package",
+            "delete",
+            "demo",
+            "--repo",
+            "repo-pypi",
+            "--registry-kind",
+            "pypi",
+            "--yes",
+        ],
     )
     delete_version_result = runner.invoke(
         pkg_cmd.app,
@@ -732,7 +770,7 @@ def test_pkg_package_mutations_call_expected_api_paths(monkeypatch, tmp_path: Pa
             "1.0.0",
             "--repo",
             "repo-pypi",
-            "--ecosystem",
+            "--registry-kind",
             "pypi",
             "--yes",
         ],
@@ -746,7 +784,7 @@ def test_pkg_package_mutations_call_expected_api_paths(monkeypatch, tmp_path: Pa
             "1.0.1",
             "--repo",
             "repo-pypi",
-            "--ecosystem",
+            "--registry-kind",
             "pypi",
             "--reason",
             "bad build",

@@ -26,12 +26,12 @@ if TYPE_CHECKING:
 
 app = typer.Typer(
     name="auth",
-    help="Authenticate with Ravenstash and manage local profiles.",
+    help="Authenticate a Ravenstash user and manage local credentials.",
     no_args_is_help=True,
 )
 profile_app = typer.Typer(
     name="profile",
-    help="Manage local authenticated profiles.",
+    help="Manage named local CLI profiles.",
     no_args_is_help=True,
 )
 storage_app = typer.Typer(
@@ -39,10 +39,7 @@ storage_app = typer.Typer(
     help="Set up, select, and diagnose credential storage.",
     no_args_is_help=True,
 )
-keyring_app = storage_app
-app.add_typer(profile_app, name="profile")
 app.add_typer(storage_app, name="storage")
-app.add_typer(storage_app, name="keyring", hidden=True)
 
 _KEY_UP = "up"
 _KEY_DOWN = "down"
@@ -204,7 +201,7 @@ def _render_profile_selector(
     active_profile: str,
 ) -> str:
     lines = [
-        "[bold]Select Ravenstash profile[/]",
+        "[bold]Select local Ravenstash profile[/]",
         "[dim]Use up/down and ENTER to confirm.[/]",
         "",
     ]
@@ -221,7 +218,7 @@ def _select_profile_interactive(cfg: cfg_mod.RvsConfig) -> str:
     if not profiles:
         output.fatal("No profiles configured. Run `rvs auth login` first.")
     if not sys.stdin.isatty() or not output.console.is_terminal:
-        output.fatal("Cannot open profile selector. Use `rvs auth profile switch <name>`.")
+        output.fatal("Cannot open profile selector. Use `rvs profile use <name>`.")
 
     active_profile = _current_profile_name(cfg)
     selected_index = profiles.index(active_profile) if active_profile in profiles else 0
@@ -363,7 +360,7 @@ def login(
         None,
         "--profile",
         "-p",
-        help="Profile to write credentials into (default: active profile).",
+        help="Local profile to write credentials into (default: selected profile).",
     ),
     api_url: str | None = typer.Option(
         None,
@@ -414,10 +411,10 @@ def login(
     )
 
 
-@keyring_app.command("doctor")
+@storage_app.command("doctor")
 def keyring_doctor(
     profile: str | None = typer.Option(
-        None, "--profile", "-p", help="Profile whose store selection should be resolved."
+        None, "--profile", "-p", help="Local profile whose store selection should be resolved."
     ),
 ) -> None:
     """Diagnose supported credential stores without exposing credentials."""
@@ -457,7 +454,7 @@ def keyring_doctor(
         raise typer.Exit(1)
 
 
-@keyring_app.command("setup")
+@storage_app.command("setup")
 def credential_storage_setup(
     store: str | None = typer.Option(
         None,
@@ -482,7 +479,7 @@ def credential_storage_setup(
     output.success(f"Credential storage is ready using '{selected}'.")
 
 
-@keyring_app.command("unlock")
+@storage_app.command("unlock")
 def credential_storage_unlock() -> None:
     """Unlock the encrypted vault for this Linux login session."""
     if not stores.vault.exists():
@@ -500,7 +497,7 @@ def credential_storage_unlock() -> None:
     output.success("Encrypted Ravenstash vault unlocked.")
 
 
-@keyring_app.command("lock")
+@storage_app.command("lock")
 def credential_storage_lock() -> None:
     """Forget the encrypted vault key held by the session agent."""
     if stores.vault.lock():
@@ -509,7 +506,7 @@ def credential_storage_lock() -> None:
         output.info("Encrypted Ravenstash vault is already locked.")
 
 
-@keyring_app.command("change-passphrase")
+@storage_app.command("change-passphrase")
 def credential_storage_change_passphrase() -> None:
     """Replace the encrypted vault passphrase."""
     if not stores.vault.exists():
@@ -532,7 +529,7 @@ def credential_storage_change_passphrase() -> None:
     output.success("Encrypted Ravenstash vault passphrase changed.")
 
 
-@keyring_app.command("set")
+@storage_app.command("set")
 def keyring_set(
     store: str = typer.Argument(
         ...,
@@ -562,16 +559,16 @@ def logout(
         None,
         "--profile",
         "-p",
-        help="Profile to remove credentials from (default: active profile).",
+        help="Local profile to remove credentials from (default: selected profile).",
     ),
     all_profiles: bool = typer.Option(
         False,
         "--all",
         "-a",
-        help="Remove credentials from all configured profiles.",
+        help="Remove credentials from all configured local profiles.",
     ),
 ) -> None:
-    """Remove stored credentials without deleting profile metadata."""
+    """Remove stored credentials without deleting local profile metadata."""
     if all_profiles and profile:
         output.fatal("Use either `--profile` or `--all`, not both.")
 
@@ -594,16 +591,10 @@ def logout(
 @app.command("status")
 def status(
     profile: str | None = typer.Option(
-        None, "--profile", "-p", help="Profile to inspect (default: active profile)."
-    ),
-    verbose: bool = typer.Option(
-        False,
-        "--verbose",
-        "-v",
-        help="Show every resolved package repository endpoint.",
+        None, "--profile", "-p", help="Local profile to inspect (default: selected profile)."
     ),
 ) -> None:
-    """Show the local authentication state for a profile."""
+    """Show local credential state for a local profile."""
     cfg = cfg_mod.load()
     profile_name = _target_profile(profile, cfg)
     p = cfg.active_profile(profile_name)
@@ -617,14 +608,11 @@ def status(
 
     output.kv(
         {
-            "Profile": profile_name,
-            "API URL": p.api_url,
-            **_repository_status_fields(p.native_registries, verbose=verbose),
+            "Local profile": profile_name,
             "Authenticated": "yes" if token else "no",
             "Credential source": source or "none",
             "Credential store": credential_store,
             "Credential type": auth_mod.display_credential_type(p.credential_type) or "unknown",
-            "Owner ID": p.customer_id or "unknown",
             "Access expires at": p.expires_at or "unknown",
             "Refresh expires at": p.refresh_expires_at or "unknown",
         },
@@ -637,39 +625,28 @@ def status(
 @app.command("whoami")
 def whoami(
     profile: str | None = typer.Option(
-        None, "--profile", "-p", help="Profile to inspect (default: active profile)."
-    ),
-    verbose: bool = typer.Option(
-        False,
-        "--verbose",
-        "-v",
-        help="Show every resolved package repository endpoint.",
+        None, "--profile", "-p", help="Local profile to inspect (default: selected profile)."
     ),
 ) -> None:
-    """Verify and print the current identity using the package control API."""
+    """Verify and print the authenticated Ravenstash user through DevAPI."""
     cfg = cfg_mod.load()
     profile_name = _target_profile(profile, cfg)
-    p = cfg.active_profile(profile_name)
     try:
         identity = ApiClient.from_profile(profile_name).get("/v0/me").json()
     except ApiError as exc:
         output.fatal(f"Could not verify the current identity: {exc}")
     output.kv(
         {
-            "Profile": profile_name,
+            "Local profile": profile_name,
             "User": identity.get("email") or identity.get("id") or "unknown",
-            "Owner ID": identity.get("customer_id") or "unknown",
-            "Owner": identity.get("customer_unique_id") or "unknown",
-            "API URL": p.api_url,
-            **_repository_status_fields(p.native_registries, verbose=verbose),
         },
-        title="Current Ravenstash identity",
+        title="Authenticated Ravenstash user",
     )
 
 
 @profile_app.command("list")
 def profile_list() -> None:
-    """List configured local profiles."""
+    """List configured local CLI profiles."""
     cfg = cfg_mod.load()
     if not cfg.profiles:
         output.info("No profiles configured. Run `rvs auth login` first.")
@@ -680,46 +657,85 @@ def profile_list() -> None:
     for name, p in cfg.profiles.items():
         rows.append(
             [
-                f"{name} (active)" if name == active_profile else name,
+                name,
+                cfg_mod.profile_selection_source() if name == active_profile else "",
                 p.api_url,
-                p.customer_id or "unknown",
-                auth_mod.token_source(name) or "none",
+                cfg_mod.repository_domain_summary(p.native_registries),
             ]
         )
-    output.table(["Profile", "API URL", "Owner ID", "Credential source"], rows)
+    output.table(["Local profile", "Selection", "DevAPI URL", "Repository domain"], rows)
 
 
-@profile_app.command("switch")
-def profile_switch(
-    profile: str | None = typer.Argument(
+@profile_app.command("current")
+def profile_current(
+    profile: str | None = typer.Option(
         None,
-        help="Profile to activate. Omit to choose from an interactive list.",
+        "--profile",
+        "-p",
+        help="Local profile to inspect (default: selected profile).",
+    ),
+    verbose: bool = typer.Option(
+        False,
+        "--verbose",
+        "-v",
+        help="Show every resolved package repository endpoint.",
     ),
 ) -> None:
-    """Switch the active default profile."""
+    """Show the selected local CLI profile and its non-secret configuration."""
+    cfg = cfg_mod.load()
+    profile_name = _target_profile(profile, cfg)
+    _require_profile(cfg, profile_name)
+    selected = cfg.profiles[profile_name]
+    output.kv(
+        {
+            "Local profile": profile_name,
+            "Selection source": (
+                "command option (--profile)" if profile else cfg_mod.profile_selection_source()
+            ),
+            "DevAPI URL": selected.api_url,
+            **_repository_status_fields(selected.native_registries, verbose=verbose),
+            "Configured credential store": selected.credential_store or cfg.credential_store,
+        },
+        title="Current local Ravenstash profile",
+    )
+
+
+def _use_profile(profile: str | None) -> None:
     cfg = cfg_mod.load()
     try:
         selected_profile = profile or _select_profile_interactive(cfg)
     except KeyboardInterrupt:
-        output.fatal("Profile switch cancelled.")
+        output.fatal("Profile selection cancelled.")
 
     _require_profile(cfg, selected_profile)
+    scope = cfg_mod.profile_selection_write_scope()
     cfg_mod.set_default_profile(selected_profile)
-    output.success(f"Active profile set to '{selected_profile}'.")
+    output.success(f"Local profile '{selected_profile}' selected for {scope}.")
     _warn_env_profile_override()
+
+
+@profile_app.command("use")
+def profile_use(
+    profile: str | None = typer.Argument(
+        None,
+        help="Local profile to use. Omit to choose from an interactive list.",
+    ),
+) -> None:
+    """Use a local CLI profile in this shell or as the persisted default."""
+    _use_profile(profile)
 
 
 @profile_app.command("delete")
 def profile_delete(
     profile: str | None = typer.Argument(
         None,
-        help="Profile to delete (default: active profile).",
+        help="Local profile to delete (default: selected profile).",
     ),
     all_profiles: bool = typer.Option(
         False,
         "--all",
         "-a",
-        help="Delete all configured profiles.",
+        help="Delete all configured local profiles.",
     ),
 ) -> None:
     """Delete one or all profiles, including stored credentials."""
@@ -749,8 +765,8 @@ def profile_delete(
 
 @profile_app.command("rename")
 def profile_rename(
-    old: str = typer.Argument(..., help="Existing profile name."),
-    new: str = typer.Argument(..., help="New profile name."),
+    old: str = typer.Argument(..., help="Existing local profile name."),
+    new: str = typer.Argument(..., help="New local profile name."),
 ) -> None:
     """Rename a configured profile.
 

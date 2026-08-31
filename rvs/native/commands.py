@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import typer
 
+from .. import output
 from . import runner
 
 
@@ -16,7 +17,6 @@ PASSTHROUGH_CONTEXT = {
 
 def _options(
     profile: str | None,
-    repo: str | None,
     target: str | None,
     account: str | None,
     customer_id: str | None,
@@ -24,7 +24,6 @@ def _options(
 ) -> runner.NativeOptions:
     return runner.NativeOptions(
         profile=profile,
-        repo=repo,
         target=target,
         account=account,
         customer_id=customer_id,
@@ -33,6 +32,8 @@ def _options(
 
 
 def _run(tool: runner.NativeTool, ctx: typer.Context, options: runner.NativeOptions) -> None:
+    if any(arg == "--rvs-repo" or arg.startswith("--rvs-repo=") for arg in ctx.args):
+        output.fatal("Unknown option '--rvs-repo'. Use --rvs-target.")
     runner.run(tool, list(ctx.args), options)
 
 
@@ -42,12 +43,7 @@ def _native_config_option() -> str:
 
 def pip(
     ctx: typer.Context,
-    rvs_profile: str | None = typer.Option(None, "--rvs-profile", help="rvs auth profile."),
-    rvs_repo: str | None = typer.Option(
-        None,
-        "--rvs-repo",
-        help="Ravenstash PyPI repository override.",
-    ),
+    rvs_profile: str | None = typer.Option(None, "--rvs-profile", help="Local CLI profile."),
     rvs_target: str | None = typer.Option(None, "--rvs-target", help="Ravenstash target override."),
     rvs_account: str | None = typer.Option(None, "--rvs-account", help="Acting account override."),
     rvs_customer_id: str | None = typer.Option(
@@ -64,20 +60,13 @@ def pip(
     _run(
         "pip",
         ctx,
-        _options(
-            rvs_profile, rvs_repo, rvs_target, rvs_account, rvs_customer_id, rvs_native_config
-        ),
+        _options(rvs_profile, rvs_target, rvs_account, rvs_customer_id, rvs_native_config),
     )
 
 
 def uv(
     ctx: typer.Context,
-    rvs_profile: str | None = typer.Option(None, "--rvs-profile", help="rvs auth profile."),
-    rvs_repo: str | None = typer.Option(
-        None,
-        "--rvs-repo",
-        help="Ravenstash PyPI repository override.",
-    ),
+    rvs_profile: str | None = typer.Option(None, "--rvs-profile", help="Local CLI profile."),
     rvs_target: str | None = typer.Option(None, "--rvs-target", help="Ravenstash target override."),
     rvs_account: str | None = typer.Option(None, "--rvs-account", help="Acting account override."),
     rvs_customer_id: str | None = typer.Option(
@@ -94,20 +83,13 @@ def uv(
     _run(
         "uv",
         ctx,
-        _options(
-            rvs_profile, rvs_repo, rvs_target, rvs_account, rvs_customer_id, rvs_native_config
-        ),
+        _options(rvs_profile, rvs_target, rvs_account, rvs_customer_id, rvs_native_config),
     )
 
 
 def twine(
     ctx: typer.Context,
-    rvs_profile: str | None = typer.Option(None, "--rvs-profile", help="rvs auth profile."),
-    rvs_repo: str | None = typer.Option(
-        None,
-        "--rvs-repo",
-        help="Ravenstash PyPI repository override.",
-    ),
+    rvs_profile: str | None = typer.Option(None, "--rvs-profile", help="Local CLI profile."),
     rvs_target: str | None = typer.Option(None, "--rvs-target", help="Ravenstash target override."),
     rvs_account: str | None = typer.Option(None, "--rvs-account", help="Acting account override."),
     rvs_customer_id: str | None = typer.Option(
@@ -124,20 +106,13 @@ def twine(
     _run(
         "twine",
         ctx,
-        _options(
-            rvs_profile, rvs_repo, rvs_target, rvs_account, rvs_customer_id, rvs_native_config
-        ),
+        _options(rvs_profile, rvs_target, rvs_account, rvs_customer_id, rvs_native_config),
     )
 
 
 def npm(
     ctx: typer.Context,
-    rvs_profile: str | None = typer.Option(None, "--rvs-profile", help="rvs auth profile."),
-    rvs_repo: str | None = typer.Option(
-        None,
-        "--rvs-repo",
-        help="Ravenstash npm repository override.",
-    ),
+    rvs_profile: str | None = typer.Option(None, "--rvs-profile", help="Local CLI profile."),
     rvs_target: str | None = typer.Option(None, "--rvs-target", help="Ravenstash target override."),
     rvs_account: str | None = typer.Option(None, "--rvs-account", help="Acting account override."),
     rvs_customer_id: str | None = typer.Option(
@@ -154,20 +129,13 @@ def npm(
     _run(
         "npm",
         ctx,
-        _options(
-            rvs_profile, rvs_repo, rvs_target, rvs_account, rvs_customer_id, rvs_native_config
-        ),
+        _options(rvs_profile, rvs_target, rvs_account, rvs_customer_id, rvs_native_config),
     )
 
 
 def mvn(
     ctx: typer.Context,
-    rvs_profile: str | None = typer.Option(None, "--rvs-profile", help="rvs auth profile."),
-    rvs_repo: str | None = typer.Option(
-        None,
-        "--rvs-repo",
-        help="Ravenstash Maven repository override.",
-    ),
+    rvs_profile: str | None = typer.Option(None, "--rvs-profile", help="Local CLI profile."),
     rvs_target: str | None = typer.Option(None, "--rvs-target", help="Ravenstash target override."),
     rvs_account: str | None = typer.Option(None, "--rvs-account", help="Acting account override."),
     rvs_customer_id: str | None = typer.Option(
@@ -184,7 +152,5 @@ def mvn(
     _run(
         "mvn",
         ctx,
-        _options(
-            rvs_profile, rvs_repo, rvs_target, rvs_account, rvs_customer_id, rvs_native_config
-        ),
+        _options(rvs_profile, rvs_target, rvs_account, rvs_customer_id, rvs_native_config),
     )

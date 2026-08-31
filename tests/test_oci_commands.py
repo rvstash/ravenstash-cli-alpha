@@ -122,7 +122,7 @@ def test_docker_uses_exact_ephemeral_helper_without_secret_in_argv(
         app,
         [
             "docker",
-            "--rvs-repo",
+            "--rvs-target",
             "main/images",
             "push",
             "oci.rvsta.sh/main/images/backend:latest",
@@ -178,7 +178,13 @@ def test_docker_preserves_other_native_credentials_but_replaces_ravenstash(
 
     result = runner.invoke(
         app,
-        ["docker", "--rvs-repo", "images", "pull", "private.example.test/base:1"],
+        [
+            "docker",
+            "--rvs-target",
+            "main/images",
+            "pull",
+            "private.example.test/base:1",
+        ],
     )
 
     assert result.exit_code == 0, result.output
@@ -215,7 +221,7 @@ def test_native_signal_is_forwarded_with_shell_exit_code_and_secret_cleanup(
         app,
         [
             "docker",
-            "--rvs-repo",
+            "--rvs-target",
             "main/images",
             "push",
             "oci.rvsta.sh/w_abcdefgh/r_xyzabcde/backend:latest",
@@ -231,7 +237,7 @@ def test_oras_requires_kind_and_rejects_second_ravenstash_target(
     monkeypatch, tmp_path: Path
 ) -> None:
     _setup(monkeypatch, tmp_path)
-    missing = runner.invoke(app, ["oras", "--rvs-repo", "images", "discover"])
+    missing = runner.invoke(app, ["oras", "--rvs-target", "main/images", "discover"])
     assert missing.exit_code != 0
 
     rejected = runner.invoke(
@@ -240,8 +246,8 @@ def test_oras_requires_kind_and_rejects_second_ravenstash_target(
             "oras",
             "--rvs-kind",
             "container",
-            "--rvs-repo",
-            "images",
+            "--rvs-target",
+            "main/images",
             "cp",
             "oci.rvsta.sh/main/images/a:one",
             "oci.rvsta.sh/w_abcdefgh/r_23456789/b:two",
@@ -282,8 +288,8 @@ def test_oci_reference_prints_public_friendly_root_without_v2(monkeypatch, tmp_p
             "oci-reference",
             "--kind",
             "helm",
-            "--repo",
-            "charts",
+            "--target",
+            "main/charts",
             "--oci-path",
             "team/api",
             "--reference",
@@ -316,7 +322,7 @@ def test_oci_capability_rejects_noncanonical_native_path(monkeypatch, tmp_path: 
 
     result = runner.invoke(
         app,
-        ["oci-reference", "--kind", "container", "--repo", "images"],
+        ["oci-reference", "--kind", "container", "--target", "main/images"],
     )
 
     assert result.exit_code != 0

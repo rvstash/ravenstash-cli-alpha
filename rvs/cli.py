@@ -6,7 +6,9 @@ import typer
 
 from .account.commands import app as account_app
 from .auth.commands import app as auth_app
+from .auth.commands import profile_app
 from .ci.commands import app as ci_app
+from .context.commands import app as context_app
 from .native import commands as native_commands
 from .oci import commands as oci_commands
 from .pkg.commands import app as pkg_app
@@ -25,11 +27,12 @@ app = typer.Typer(
 )
 
 app.add_typer(auth_app, name="auth")
+app.add_typer(profile_app, name="profile")
 app.add_typer(account_app, name="account")
+app.add_typer(context_app, name="context")
 app.add_typer(runtime_app, name="runtime")
 app.add_typer(shell_app, name="shell")
 app.add_typer(pkg_app, name="pkg")
-app.add_typer(pkg_app, name="packages", help="Alias for `rvs pkg`.")
 app.add_typer(repo_app, name="repo")
 app.add_typer(ci_app, name="ci")
 app.command("update")(update)

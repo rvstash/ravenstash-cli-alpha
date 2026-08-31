@@ -11,13 +11,12 @@ Alpha command surface:
 | `rvs shell` | Session-aware context prompt integration |
 | `rvs runtime` | Local Python, Node, and Java runtime management |
 | `rvs pkg` | Package repositories and package-manager configuration |
-| `rvs packages` | Alias for `rvs pkg` |
 | `rvs pip` | Native pip passthrough with ephemeral Ravenstash auth injection |
 | `rvs uv` | Native uv passthrough with ephemeral Ravenstash auth injection |
 | `rvs twine` | Native twine passthrough with ephemeral Ravenstash auth injection |
 | `rvs npm` | Native npm passthrough with ephemeral Ravenstash auth injection |
 | `rvs mvn` | Native Maven passthrough with ephemeral Ravenstash auth injection |
-| `rvs repo` | Placeholder for future source repositories |
+| `rvs repo` | First-class package-repository management |
 | `rvs ci` | Placeholder for future CI |
 
 Removed from the alpha surface: previous experimental project lifecycle
@@ -118,7 +117,6 @@ rvs pkg select TARGET [--kind KIND] [--account ACCOUNT] [--profile NAME]
 rvs pkg current [--account ACCOUNT] [--profile NAME]
 rvs pkg clear [--account ACCOUNT] [--profile NAME]
 rvs pkg --target TARGET [--account ACCOUNT] [--kind KIND] install PACKAGE...
-rvs pkg --repo WORKSPACE/REPOSITORY [--account ACCOUNT] [--kind KIND] install PACKAGE...
 ```
 
 The authenticated user is the audit actor. The acting account is the personal or
@@ -127,9 +125,9 @@ target is selected inside that account. `rvs context current` verifies and shows
 the effective tuple and selection provenance without collapsing those concepts.
 
 Targets are `workspace/repository`, `mirror:official-slug`, or
-`custom-mirror:customer-name`. Resolution is always scoped to the active customer.
+`custom-mirror:customer-name`. Resolution is always scoped to the acting account.
 `--kind` is needed only when a generic operation or duplicate cross-kind custom
-cache name is ambiguous. Clearing a target does not change the login or account.
+mirror name is ambiguous. Clearing a target does not change the login or account.
 
 ## CLI updates
 
@@ -137,13 +135,13 @@ cache name is ambiguous. Clearing a target does not change the login or account.
 compatibility channel. `rvs update --apply` refreshes APT metadata and installs
 that compatible candidate. It never changes channels.
 
-Use `rvs upgrade --to 0.4` (or a later channel) to make a breaking compatibility
+Use `rvs upgrade --to 0.7` (or a later channel) to make a breaking compatibility
 transition explicit. The command authenticates Ravenstash's signed channel
 manifest, shows the migration notes, asks for confirmation, changes the APT
 source atomically, and restores the prior source if authentication or candidate
 validation fails.
 
-## `rvs pkg` / `rvs packages`
+## `rvs pkg`
 
 Repository commands:
 
@@ -155,8 +153,6 @@ rvs pkg repo rename REPOSITORY_NAME NEW_NAME [--profile NAME]
 rvs pkg repo delete REPOSITORY_NAME [--profile NAME] [--yes]
 rvs pkg repo set-default pypi|npm|maven|container|helm REPOSITORY_NAME [--profile NAME]
 rvs pkg repo defaults [--profile NAME]
-rvs pkg repo set-upstream REPOSITORY_NAME REMOTE_ID [--min-age-hours HOURS] [--profile NAME]
-rvs pkg repo clear-upstream REPOSITORY_NAME [--profile NAME]
 rvs pkg repo upstream list REPOSITORY KIND [--profile NAME]
 rvs pkg repo upstream add REPOSITORY KIND --private-repository WORKSPACE/REPOSITORY [--priority N] [--min-age-hours HOURS] [--max-age-hours HOURS] [--profile NAME]
 rvs pkg repo upstream add REPOSITORY KIND --remote-cache CACHE [--priority N] [--min-age-hours HOURS] [--max-age-hours HOURS] [--profile NAME]
@@ -165,8 +161,7 @@ rvs pkg repo upstream reorder REPOSITORY KIND ATTACHMENT... [--profile NAME]
 rvs pkg repo upstream remove REPOSITORY KIND ATTACHMENT [--profile NAME]
 ```
 
-`--registry-kind` (short form `-k`) is the canonical selector. The former
-`--ecosystem`/`-e` spelling remains accepted as a compatibility alias.
+`--registry-kind` (short form `-k`) is the registry-kind selector.
 
 Repository names use lowercase letters, numbers, and hyphens. Defaults are
 stored per profile under `[profiles.<name>.registries.<registry-kind>]`; legacy
@@ -182,8 +177,7 @@ private and remote sources. A private selector may be workspace-qualified and mu
 resolve to a same-customer, same-kind lane. Omitting `--priority` appends. Private
 sources default to a disabled minimum-age guard; remote sources retain their server
 recommendation when the option is omitted. Reordering replaces the full order
-atomically. The older `set-upstream`/`clear-upstream` commands remain remote-only
-compatibility commands.
+atomically.
 
 Private mirror commands:
 
@@ -263,15 +257,15 @@ No package-token command is exposed in the alpha CLI.
 ## Native Package-Manager Wrappers
 
 ```bash
-rvs pip [--rvs-profile NAME] [--rvs-target TARGET] [--rvs-account ACCOUNT] [--rvs-repo REPOSITORY_NAME] [--rvs-customer-id CUSTOMER_ID] [--rvs-native-config respect|override|isolate] PIP_ARGS...
-rvs uv [--rvs-profile NAME] [--rvs-target TARGET] [--rvs-account ACCOUNT] [--rvs-repo REPOSITORY_NAME] [--rvs-customer-id CUSTOMER_ID] [--rvs-native-config respect|override|isolate] UV_ARGS...
-rvs twine [--rvs-profile NAME] [--rvs-target TARGET] [--rvs-account ACCOUNT] [--rvs-repo REPOSITORY_NAME] [--rvs-customer-id CUSTOMER_ID] [--rvs-native-config respect|override|isolate] TWINE_ARGS...
-rvs npm [--rvs-profile NAME] [--rvs-target TARGET] [--rvs-account ACCOUNT] [--rvs-repo REPOSITORY_NAME] [--rvs-customer-id CUSTOMER_ID] [--rvs-native-config respect|override|isolate] NPM_ARGS...
-rvs mvn [--rvs-profile NAME] [--rvs-target TARGET] [--rvs-account ACCOUNT] [--rvs-repo REPOSITORY_NAME] [--rvs-customer-id CUSTOMER_ID] [--rvs-native-config respect|override|isolate] MVN_ARGS...
-rvs docker [--rvs-profile NAME] [--rvs-target TARGET] [--rvs-account ACCOUNT] [--rvs-repo REPOSITORY_NAME] [--rvs-customer-id CUSTOMER_ID] DOCKER_ARGS...
-rvs helm [--rvs-profile NAME] [--rvs-target TARGET] [--rvs-account ACCOUNT] [--rvs-repo REPOSITORY_NAME] [--rvs-customer-id CUSTOMER_ID] HELM_ARGS...
-rvs oras --rvs-kind container|helm [--rvs-profile NAME] [--rvs-target TARGET] [--rvs-account ACCOUNT] [--rvs-repo REPOSITORY_NAME] [--rvs-customer-id CUSTOMER_ID] ORAS_ARGS...
-rvs oci-reference --kind container|helm [--target TARGET] [--account ACCOUNT] [--repo REPOSITORY_NAME] [--oci-path PATH] [--reference TAG_OR_DIGEST] [--profile NAME] [--customer-id CUSTOMER_ID]
+rvs pip [--rvs-profile NAME] [--rvs-target TARGET] [--rvs-account ACCOUNT] [--rvs-customer-id CUSTOMER_ID] [--rvs-native-config respect|override|isolate] PIP_ARGS...
+rvs uv [--rvs-profile NAME] [--rvs-target TARGET] [--rvs-account ACCOUNT] [--rvs-customer-id CUSTOMER_ID] [--rvs-native-config respect|override|isolate] UV_ARGS...
+rvs twine [--rvs-profile NAME] [--rvs-target TARGET] [--rvs-account ACCOUNT] [--rvs-customer-id CUSTOMER_ID] [--rvs-native-config respect|override|isolate] TWINE_ARGS...
+rvs npm [--rvs-profile NAME] [--rvs-target TARGET] [--rvs-account ACCOUNT] [--rvs-customer-id CUSTOMER_ID] [--rvs-native-config respect|override|isolate] NPM_ARGS...
+rvs mvn [--rvs-profile NAME] [--rvs-target TARGET] [--rvs-account ACCOUNT] [--rvs-customer-id CUSTOMER_ID] [--rvs-native-config respect|override|isolate] MVN_ARGS...
+rvs docker [--rvs-profile NAME] [--rvs-target TARGET] [--rvs-account ACCOUNT] [--rvs-customer-id CUSTOMER_ID] DOCKER_ARGS...
+rvs helm [--rvs-profile NAME] [--rvs-target TARGET] [--rvs-account ACCOUNT] [--rvs-customer-id CUSTOMER_ID] HELM_ARGS...
+rvs oras --rvs-kind container|helm [--rvs-profile NAME] [--rvs-target TARGET] [--rvs-account ACCOUNT] [--rvs-customer-id CUSTOMER_ID] ORAS_ARGS...
+rvs oci-reference --kind container|helm [--target TARGET] [--account ACCOUNT] [--oci-path PATH] [--reference TAG_OR_DIGEST] [--profile NAME] [--customer-id CUSTOMER_ID]
 ```
 
 These commands run the named native package manager. They are not aliases for
@@ -280,9 +274,8 @@ selection alone, reads native config files and relevant environment variables,
 and injects short-lived Ravenstash credentials only when the invocation
 references Ravenstash registry URLs.
 
-Passing `--rvs-target` selects a private repository or direct cache for one
-invocation and overrides the saved selection. `--rvs-repo` remains a
-private-repository-only compatibility alias. `--rvs-native-config isolate` also disables
+Passing `--rvs-target` selects a private repository or private mirror for one
+invocation and overrides the saved selection. `--rvs-native-config isolate` also disables
 native config where the underlying tool supports it, such as `PIP_CONFIG_FILE`
 for pip and `UV_NO_CONFIG` for uv. Tokens are injected through subprocess
 environment variables or temporary files and are not written to persistent
@@ -292,22 +285,22 @@ Examples:
 
 ```bash
 rvs npm install @acme/widgets
-rvs npm --rvs-repo internal-npm install @acme/widgets
-rvs npm --rvs-repo internal-npm publish
+rvs npm --rvs-target acme/internal-npm install @acme/widgets
+rvs npm --rvs-target acme/internal-npm publish
 
 rvs pip install acme-utils
-rvs pip --rvs-repo internal-pypi install acme-utils
+rvs pip --rvs-target acme/internal-pypi install acme-utils
 
 rvs uv sync
-rvs uv --rvs-repo internal-pypi --rvs-native-config isolate sync
+rvs uv --rvs-target acme/internal-pypi --rvs-native-config isolate sync
 
-rvs twine --rvs-repo internal-pypi upload dist/*
-rvs mvn --rvs-repo internal-maven deploy
+rvs twine --rvs-target acme/internal-pypi upload dist/*
+rvs mvn --rvs-target acme/internal-maven deploy
 
-rvs docker --rvs-repo runtime-images pull oci.rvsta.sh/acme/runtime-images/api:latest
-rvs helm --rvs-repo deployment-charts show chart oci://oci.rvsta.sh/acme/deployment-charts/charts/api --version 1.2.3
-rvs oras --rvs-kind container --rvs-repo runtime-images discover oci.rvsta.sh/acme/runtime-images/api:latest
-rvs oci-reference --kind container --repo runtime-images --oci-path api --reference latest
+rvs docker --rvs-target acme/runtime-images pull oci.rvsta.sh/acme/runtime-images/api:latest
+rvs helm --rvs-target acme/deployment-charts show chart oci://oci.rvsta.sh/acme/deployment-charts/charts/api --version 1.2.3
+rvs oras --rvs-kind container --rvs-target acme/runtime-images discover oci.rvsta.sh/acme/runtime-images/api:latest
+rvs oci-reference --kind container --target acme/runtime-images --oci-path api --reference latest
 ```
 
 The OCI wrappers always scope one invocation to one exact logical repository.
@@ -320,17 +313,18 @@ native clients and is not part of the documented repository reference.
 
 ## `rvs repo`
 
-Placeholder commands:
+First-class package-repository commands:
 
 ```bash
 rvs repo list
-rvs repo create NAME
-rvs repo clone REPO
+rvs repo create NAME --registry-kind KIND
 rvs repo show REPO
+rvs repo rename REPO NEW_NAME
 rvs repo delete REPO
 ```
 
-Each command exits with "rvs repo is not implemented yet."
+These operate on the same package repositories as `rvs pkg repo`. Package,
+upstream, and private-mirror operations remain under `rvs pkg`.
 
 ## `rvs ci`
 

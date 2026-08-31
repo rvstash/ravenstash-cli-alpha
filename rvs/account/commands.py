@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+
 import typer
 
 from .. import config as cfg_mod
@@ -11,7 +13,7 @@ from ..client import ApiClient, ApiError
 
 app = typer.Typer(
     name="account",
-    help="Select the personal or organization account used by Ravenstash commands.",
+    help="Select the acting personal or organization account.",
     no_args_is_help=True,
 )
 
@@ -26,7 +28,7 @@ def customers(profile: str | None = None) -> list[dict]:
     except ApiError as exc:
         output.fatal(str(exc))
     if not isinstance(payload, list):
-        output.fatal("The Ravenstash account response is invalid.")
+        output.fatal("The Ravenstash acting-account response is invalid.")
     return [item for item in payload if isinstance(item, dict)]
 
 
@@ -34,7 +36,7 @@ def resolve_account(selector: str, profile: str | None = None) -> dict:
     items = customers(profile)
     value = selector.strip()
     if not value:
-        output.fatal("Account selector cannot be empty.")
+        output.fatal("Acting-account selector cannot be empty.")
 
     lowered = value.casefold()
     if lowered == "personal":
@@ -58,10 +60,12 @@ def resolve_account(selector: str, profile: str | None = None) -> dict:
             )
         ]
     if not matches:
-        output.fatal(f"Ravenstash account '{selector}' was not found for this login profile.")
+        output.fatal(
+            f"Acting account '{selector}' was not found for this local profile."
+        )
     if len(matches) > 1:
         refs = ", ".join(str(item.get("customer_unique_ref")) for item in matches)
-        output.fatal(f"Account selector '{selector}' is ambiguous. Use one of: {refs}")
+        output.fatal(f"Acting-account selector '{selector}' is ambiguous. Use one of: {refs}")
     selected = matches[0]
     cfg_mod.cache_account(
         profile=_profile_name(profile),
@@ -106,7 +110,7 @@ def ensure_active_account(
         items = customers(profile_name)
         personal = [item for item in items if item.get("account_type") == "personal"]
         if len(personal) != 1:
-            output.fatal("No Ravenstash account is selected. Run `rvs account switch`.")
+            output.fatal("No acting account is selected. Run `rvs account use`.")
         customer = personal[0]
     return profile_name, cfg_mod.cache_account(
         profile=profile_name,
@@ -125,7 +129,7 @@ def display_name(account: cfg_mod.AccountContext) -> str:
 def account_list(
     profile: str | None = typer.Option(None, "--profile", "-p"),
 ) -> None:
-    """List accounts available to one Ravenstash login profile."""
+    """List acting accounts available to one local profile."""
     profile_name = _profile_name(profile)
     active_id = cfg_mod.current_customer_id(profile_name)
     rows = []
@@ -140,36 +144,46 @@ def account_list(
                 str(item.get("organization_role", "")),
             ]
         )
-    output.table(["Account", "Stable reference", "Role"], rows)
+    output.table(["Acting account", "Stable reference", "Role"], rows)
 
 
 @app.command("current")
 def account_current(
     profile: str | None = typer.Option(None, "--profile", "-p"),
 ) -> None:
-    """Show the account currently used for authorization and metering."""
+    """Show the acting account used for authorization and metering."""
     profile_name, account = ensure_active_account(profile)
     output.kv(
         {
-            "Profile": profile_name,
-            "Account": display_name(account),
+            "Local profile": profile_name,
+            "Acting account": display_name(account),
+            "Selection source": cfg_mod.account_selection_source(profile_name),
             "Account label": account.account_label,
             "Stable reference": account.customer_unique_ref,
             "Role": account.organization_role or "unknown",
         },
-        title="Current Ravenstash account",
+        title="Current acting Ravenstash account",
     )
 
 
-@app.command("switch")
-def account_switch(
+def _use_account(account: str, profile: str | None) -> None:
+    profile_name = _profile_name(profile)
+    selected = resolve_account(account, profile_name)
+    scope = cfg_mod.account_selection_write_scope()
+    saved = cfg_mod.set_active_account(profile=profile_name, customer=selected)
+    output.success(f"Acting account '{display_name(saved)}' selected for {scope}.")
+    if os.environ.get("RVS_CUSTOMER_ID"):
+        output.warn(
+            "RVS_CUSTOMER_ID is set and still overrides the acting account in this shell."
+        )
+
+
+@app.command("use")
+def account_use(
     account: str = typer.Argument(
         ..., help="personal, org:<label>, or a stable account reference."
     ),
     profile: str | None = typer.Option(None, "--profile", "-p"),
 ) -> None:
-    """Switch the account used by this shell or the active profile."""
-    profile_name = _profile_name(profile)
-    selected = resolve_account(account, profile_name)
-    saved = cfg_mod.set_active_account(profile=profile_name, customer=selected)
-    output.success(f"Active Ravenstash account set to '{display_name(saved)}'.")
+    """Use an acting account in this shell or in the selected local profile."""
+    _use_account(account, profile)

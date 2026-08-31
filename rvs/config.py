@@ -1,7 +1,7 @@
 """Config file management for rvs.
 
 Config lives at ~/.rvs/config.toml and supports multiple named profiles.
-The active profile is resolved by:
+The effective local profile is resolved by:
   1. --profile CLI flag  (highest priority)
   2. RVS_PROFILE environment variable
   3. default_profile key in config file  (default: "default")
@@ -259,10 +259,19 @@ class RvsConfig:
 
 
 def current_profile_name(cfg: RvsConfig | None = None) -> str:
-    """Return the effective active profile name."""
+    """Return the effective named local CLI profile."""
     resolved_cfg = cfg or load()
     session = load_session()
     return os.environ.get("RVS_PROFILE") or session.profile or resolved_cfg.default_profile
+
+
+def profile_selection_source() -> str:
+    """Describe what selected the effective local CLI profile."""
+    if os.environ.get("RVS_PROFILE"):
+        return "environment (RVS_PROFILE)"
+    if load_session().profile:
+        return "shell session"
+    return "persisted default"
 
 
 def current_customer_id(
@@ -282,6 +291,38 @@ def current_customer_id(
     if profile is None:
         return None
     return profile.active_customer_id or profile.customer_id
+
+
+def account_selection_source(
+    profile_name: str | None = None,
+    cfg: RvsConfig | None = None,
+) -> str:
+    """Describe what selected the effective acting account."""
+    resolved_cfg = cfg or load()
+    effective_profile = profile_name or current_profile_name(resolved_cfg)
+    if os.environ.get("RVS_CUSTOMER_ID"):
+        return "environment (RVS_CUSTOMER_ID)"
+    session = load_session()
+    if session.customer_id and (session.profile is None or session.profile == effective_profile):
+        return "shell session"
+    profile = resolved_cfg.profiles.get(effective_profile)
+    if profile is None:
+        return "not selected"
+    if profile.active_customer_id:
+        return "persisted profile"
+    if profile.customer_id:
+        return "personal account default"
+    return "not selected"
+
+
+def profile_selection_write_scope() -> str:
+    """Return where a local-profile selection is persisted."""
+    return "shell session" if _session_file() is not None else "persisted default"
+
+
+def account_selection_write_scope() -> str:
+    """Return where an acting-account selection is persisted."""
+    return "shell session" if _session_file() is not None else "persisted profile"
 
 
 def _session_file() -> Path | None:
@@ -925,7 +966,7 @@ def set_active_account(
     profile: str,
     customer: dict,
 ) -> AccountContext:
-    """Select and cache one authorized customer for a login profile."""
+    """Select and cache one authorized customer for a local profile."""
     return cache_account(profile=profile, customer=customer, activate=True)
 
 
@@ -994,11 +1035,11 @@ def set_selected_package_target(
     profile_name = profile or current_profile_name(cfg)
     effective_customer_id = customer_id or current_customer_id(profile_name, cfg)
     if not effective_customer_id:
-        raise ValueError("No Ravenstash account is selected")
+        raise ValueError("No acting account is selected")
     profile_config = cfg.profiles.get(profile_name, _default_profile_config(profile_name))
     account = profile_config.accounts.get(effective_customer_id)
     if account is None:
-        raise ValueError("The selected Ravenstash account has not been resolved")
+        raise ValueError("The selected acting account has not been resolved")
     account.selected_target = target
     profile_config.accounts[effective_customer_id] = account
     cfg.profiles[profile_name] = profile_config

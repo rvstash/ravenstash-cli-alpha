@@ -52,7 +52,6 @@ _RVS_URL_KINDS: dict[NativeTool, tuple[RegistryKind, ...]] = {
 @dataclass(frozen=True)
 class NativeOptions:
     profile: str | None = None
-    repo: str | None = None
     target: str | None = None
     account: str | None = None
     customer_id: str | None = None
@@ -79,7 +78,7 @@ class RegistryRoute:
     @property
     def pypi_upload_url(self) -> str:
         if self.push_base_url is None:
-            output.fatal("The selected remote cache is read-only.")
+            output.fatal("The selected private mirror is read-only.")
         return _ROUTER.pypi_upload_url(
             self.push_base_url,
             self.workspace_unique_ref,
@@ -97,7 +96,7 @@ class RegistryRoute:
     @property
     def npm_upload_registry_url(self) -> str:
         if self.push_base_url is None:
-            output.fatal("The selected remote cache is read-only.")
+            output.fatal("The selected private mirror is read-only.")
         return _ROUTER.npm_upload_registry_url(
             self.push_base_url,
             self.workspace_unique_ref,
@@ -115,7 +114,7 @@ class RegistryRoute:
     @property
     def maven_upload_url(self) -> str:
         if self.push_base_url is None:
-            output.fatal("The selected remote cache is read-only.")
+            output.fatal("The selected private mirror is read-only.")
         return _ROUTER.maven_upload_url(
             self.push_base_url,
             self.workspace_unique_ref,
@@ -159,9 +158,7 @@ def _build_plan(
     native_arg_start = len(command_prefix)
     selected_customer_id = _selected_customer_id(options)
     saved_target = cfg_mod.selected_package_target(options.profile, selected_customer_id)
-    has_rvs_target = (
-        options.target is not None or options.repo is not None or saved_target is not None
-    )
+    has_rvs_target = options.target is not None or saved_target is not None
     effective_policy = (
         "override"
         if has_rvs_target and options.native_config == "respect"
@@ -185,7 +182,7 @@ def _build_plan(
         if len(route_scopes) != 1:
             output.fatal(
                 "Native configuration references multiple Ravenstash repositories. "
-                "Select one with --rvs-repo or use --rvs-native-config isolate."
+                "Select one with --rvs-target or use --rvs-native-config isolate."
             )
         token = _package_token_for_url(
             urls[0],
@@ -257,7 +254,7 @@ def _resolve_route(kind: RegistryKind, options: NativeOptions) -> RegistryRoute:
     context = registry_context(
         kind=kind,
         target=options.target,
-        repo=options.repo,
+        repo=None,
         profile=options.profile,
         customer_id=_selected_customer_id(options),
     )

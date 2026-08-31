@@ -282,7 +282,7 @@ def test_native_npm_repo_override_uses_upload_registry_for_publish(
     calls: list[dict[str, Any]] = []
     _capture_run(monkeypatch, calls)
 
-    result = runner.invoke(app, ["npm", "--rvs-repo", "repo-npm", "publish"])
+    result = runner.invoke(app, ["npm", "--rvs-target", "staging/repo-npm", "publish"])
 
     assert result.exit_code == 0
     assert calls[0]["cmd"] == [
@@ -310,8 +310,8 @@ def test_native_npm_repo_override_replaces_conflicting_registry_flag(
         app,
         [
             "npm",
-            "--rvs-repo",
-            "repo-npm",
+            "--rvs-target",
+            "staging/repo-npm",
             "install",
             "--registry",
             "https://registry.npmjs.org/",
@@ -459,8 +459,8 @@ def test_native_pip_isolate_overrides_index_without_writing_credentials(
         app,
         [
             "pip",
-            "--rvs-repo",
-            "repo-pypi",
+            "--rvs-target",
+            "staging/repo-pypi",
             "--rvs-native-config",
             "isolate",
             "install",
@@ -490,7 +490,9 @@ def test_native_pip_preserves_multi_part_pip_command_prefix(
     calls: list[dict[str, Any]] = []
     _capture_run(monkeypatch, calls)
 
-    result = runner.invoke(app, ["pip", "--rvs-repo", "repo-pypi", "install", "demo"])
+    result = runner.invoke(
+        app, ["pip", "--rvs-target", "staging/repo-pypi", "install", "demo"]
+    )
 
     assert result.exit_code == 0
     assert calls[0]["cmd"] == [
@@ -513,7 +515,9 @@ def test_native_uv_repo_override_sets_index_publish_env_and_netrc(
     calls: list[dict[str, Any]] = []
     _capture_run(monkeypatch, calls)
 
-    result = runner.invoke(app, ["uv", "--rvs-repo", "repo-pypi", "sync", "--locked"])
+    result = runner.invoke(
+        app, ["uv", "--rvs-target", "staging/repo-pypi", "sync", "--locked"]
+    )
 
     assert result.exit_code == 0
     assert calls[0]["cmd"] == ["/bin/uv", "sync", "--locked"]
@@ -533,7 +537,10 @@ def test_native_twine_repo_override_sets_ephemeral_upload_credentials(
     calls: list[dict[str, Any]] = []
     _capture_run(monkeypatch, calls)
 
-    result = runner.invoke(app, ["twine", "--rvs-repo", "repo-pypi", "upload", "dist/demo.whl"])
+    result = runner.invoke(
+        app,
+        ["twine", "--rvs-target", "staging/repo-pypi", "upload", "dist/demo.whl"],
+    )
 
     assert result.exit_code == 0
     assert calls[0]["cmd"] == ["/bin/twine", "upload", "dist/demo.whl"]
@@ -557,7 +564,7 @@ def test_native_maven_repo_override_generates_temp_settings(
 
     _capture_run(monkeypatch, calls, hook)
 
-    result = runner.invoke(app, ["mvn", "--rvs-repo", "repo-maven", "deploy"])
+    result = runner.invoke(app, ["mvn", "--rvs-target", "staging/repo-maven", "deploy"])
 
     assert result.exit_code == 0
     assert calls[0]["cmd"][0:2] == ["/bin/mvn", "--settings"]
