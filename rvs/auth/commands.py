@@ -342,7 +342,9 @@ def login(
         help="Profile to write credentials into (default: active profile).",
     ),
     api_url: str | None = typer.Option(
-        None, "--api-url", help="Override DevAPI base URL and save it to the profile."
+        None,
+        "--api-url",
+        hidden=True,
     ),
     no_browser: bool = typer.Option(
         False, "--no-browser", help="Suppress the browser-opening hint."

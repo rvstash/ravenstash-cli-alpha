@@ -14,15 +14,15 @@ if TYPE_CHECKING:
 
 
 runner = CliRunner()
-STAGING_API_URL = "https://staging.example.test"
-PYPI_READ_URL = "https://pypi.staging.example.test"
-PYPI_READ_HOST = "pypi.staging.example.test"
-PYPI_PUSH_URL = "https://push.pypi.staging.example.test"
-NPM_READ_URL = "https://npm.staging.example.test"
-NPM_READ_HOST = "npm.staging.example.test"
-NPM_PUSH_URL = "https://push.npm.staging.example.test"
-MAVEN_READ_URL = "https://maven.staging.example.test"
-MAVEN_PUSH_URL = "https://push.maven.staging.example.test"
+STAGING_API_URL = "https://control.example.test"
+PYPI_READ_URL = "https://pypi.packages.example.test"
+PYPI_READ_HOST = "pypi.packages.example.test"
+PYPI_PUSH_URL = "https://push.pypi.packages.example.test"
+NPM_READ_URL = "https://npm.packages.example.test"
+NPM_READ_HOST = "npm.packages.example.test"
+NPM_PUSH_URL = "https://push.npm.packages.example.test"
+MAVEN_READ_URL = "https://maven.packages.example.test"
+MAVEN_PUSH_URL = "https://push.maven.packages.example.test"
 
 
 class _JsonResponse:
@@ -132,7 +132,7 @@ default_repo = "_abcdefgh/_xyzabcde"
     monkeypatch.delenv("RVS_ENV_FILE", raising=False)
     monkeypatch.setenv("RVS_PROFILE_STAGING_API_URL", STAGING_API_URL)
     monkeypatch.setenv("RVS_PROFILE_STAGING_PKG_API_URL", "https://app-staging.example.test/api")
-    monkeypatch.setenv("RVS_PROFILE_STAGING_REPOSITORY_DOMAIN", "staging.example.test")
+    monkeypatch.setenv("RVS_PROFILE_STAGING_REPOSITORY_DOMAIN", "packages.example.test")
     _use_fake_client(monkeypatch, _FakeApiClient())
 
 

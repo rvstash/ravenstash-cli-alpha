@@ -162,6 +162,13 @@ api_url = "https://api.work.example"
     ]
 
 
+def test_auth_login_help_keeps_internal_api_override_hidden() -> None:
+    result = runner.invoke(auth_cmd.app, ["login", "--help"])
+
+    assert result.exit_code == 0
+    assert "--api-url" not in result.output
+
+
 def test_auth_login_stops_before_device_flow_when_store_preflight_fails(
     monkeypatch,
     tmp_path: Path,

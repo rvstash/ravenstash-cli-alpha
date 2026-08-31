@@ -199,14 +199,12 @@ def perform_device_login(
     credential_store: str | None = None,
 ) -> None:
     resolved_api_url = _resolve_api_url(profile, api_url)
-    existing_profile = cfg_mod.load().profiles.get(profile)
     previous_refresh_token: str | None = None
-    previous_refresh_api_url = existing_profile.api_url if existing_profile else resolved_api_url
+    previous_refresh_api_url = cfg_mod.stored_profile_api_url(profile) or resolved_api_url
     if auth_mod.has_active_expiring_session(profile):
         previous_refresh_token = auth_mod.get_refresh_token(profile)
         output.info(f"Profile '{profile}' is already authenticated; replacing it.")
 
-    cfg_mod.set_profile_metadata(profile, api_url=resolved_api_url)
     requested_duration_seconds: int | None = None
     if duration:
         try:

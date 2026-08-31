@@ -421,18 +421,15 @@ def test_device_login_handles_slow_down_and_stores_expiring_jwt(monkeypatch) -> 
 
     assert stored_tokens == [("default", "jwt-token")]
     assert stored_refresh_tokens == [("default", "refresh-token")]
-    assert metadata_writes[0] == {
-        "profile": "default",
-        "api_url": "https://api.ravenstash.com",
-    }
-    assert metadata_writes[-1]["profile"] == "default"
-    assert metadata_writes[-1]["api_url"] == "https://api.ravenstash.com"
-    assert metadata_writes[-1]["customer_id"] == "cus_123"
-    assert metadata_writes[-1]["customer_unique_id"] == "custpid1"
-    assert metadata_writes[-1]["native_registries"] == NATIVE_REGISTRIES
-    assert metadata_writes[-1]["credential_type"] == "expiring"
-    assert metadata_writes[-1]["expires_at"]
-    assert metadata_writes[-1]["refresh_expires_at"]
+    assert len(metadata_writes) == 1
+    assert metadata_writes[0]["profile"] == "default"
+    assert metadata_writes[0]["api_url"] == "https://api.ravenstash.com"
+    assert metadata_writes[0]["customer_id"] == "cus_123"
+    assert metadata_writes[0]["customer_unique_id"] == "custpid1"
+    assert metadata_writes[0]["native_registries"] == NATIVE_REGISTRIES
+    assert metadata_writes[0]["credential_type"] == "expiring"
+    assert metadata_writes[0]["expires_at"]
+    assert metadata_writes[0]["refresh_expires_at"]
     assert sleeps == [5, 10]
     assert [url for url, _payload, _headers in _FakeClient.requests] == [
         "https://api.ravenstash.com/v0/auth/device/code",
@@ -460,6 +457,7 @@ def test_device_login_replaces_active_profile_and_revokes_previous_refresh(
     _write_profiles_config(config_dir)
     monkeypatch.setattr(cfg_mod, "CONFIG_DIR", config_dir)
     monkeypatch.setattr(cfg_mod, "CONFIG_FILE", config_dir / "config.toml")
+    monkeypatch.setenv("RVS_API_URL", "https://api.redirect.example.test")
     monkeypatch.setattr(login_mod.auth_mod, "has_active_expiring_session", lambda profile: True)
     monkeypatch.setattr(login_mod.auth_mod, "get_refresh_token", lambda profile: "old-refresh")
     _FakeClient.requests = []
@@ -525,7 +523,32 @@ def test_device_login_replaces_active_profile_and_revokes_previous_refresh(
     assert revoked == [("https://api.ravenstash.com", "old-refresh")]
     assert any("already authenticated" in message for message in info_messages)
     profile = cfg_mod.load().profiles["default"]
+    assert profile.api_url == "https://api.redirect.example.test"
     assert profile.refresh_expires_at is not None
+
+
+def test_device_login_start_failure_does_not_replace_stored_api_origin(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    config_dir = tmp_path / ".rvs"
+    _write_profiles_config(config_dir)
+    monkeypatch.setattr(cfg_mod, "CONFIG_DIR", config_dir)
+    monkeypatch.setattr(cfg_mod, "CONFIG_FILE", config_dir / "config.toml")
+    monkeypatch.setenv("RVS_API_URL", "https://api.redirect.example.test")
+    monkeypatch.setattr(login_mod.auth_mod, "has_active_expiring_session", lambda profile: False)
+    _FakeClient.requests = []
+    _FakeClient.responses = [_FakeResponse(503, {"error": "unavailable"})]
+    monkeypatch.setattr(login_mod.httpx, "Client", _FakeClient)
+
+    with pytest.raises(SystemExit):
+        login_mod.perform_device_login(
+            profile="default",
+            api_url=None,
+            no_browser=True,
+        )
+
+    assert cfg_mod.stored_profile_api_url("default") == "https://api.ravenstash.com"
 
 
 def test_device_login_does_not_revoke_expired_previous_refresh(

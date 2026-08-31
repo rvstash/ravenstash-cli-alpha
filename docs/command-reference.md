@@ -36,7 +36,7 @@ and Maven subprocess output is not transformed.
 ## `rvs auth`
 
 ```bash
-rvs auth login [--profile NAME] [--api-url URL] [--duration 8h] [--no-browser]
+rvs auth login [--profile NAME] [--duration 8h] [--no-browser]
   [--credential-store auto|keyring|pass|vault|plaintext] [--allow-insecure-storage]
 rvs auth logout [--profile NAME]
 rvs auth logout --all

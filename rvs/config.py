@@ -428,9 +428,10 @@ def _repository_service_url(
 ) -> str:
     source = urlsplit(source_url) if source_url is not None else None
     scheme = source.scheme if source is not None else "https"
-    if domain == "localhost" or domain.endswith(".localhost"):
+    is_localhost = domain == "localhost" or domain.endswith(".localhost")
+    if is_localhost:
         scheme = "http"
-    host = f"{service}.{domain}"
+    host = "localhost" if is_localhost else f"{service}.{domain}"
     if source is not None and source.port is not None:
         host = f"{host}:{source.port}"
     path = source.path if source is not None else ""
@@ -634,6 +635,20 @@ def _load_raw() -> dict:
         return {}
     with CONFIG_FILE.open("rb") as f:
         return tomllib.load(f)
+
+
+def stored_profile_api_url(profile_name: str) -> str | None:
+    """Return a profile's persisted DevAPI URL without environment overrides."""
+    profiles = _load_raw().get("profiles")
+    if not isinstance(profiles, dict):
+        return None
+    profile = profiles.get(profile_name)
+    if not isinstance(profile, dict):
+        return None
+    value = profile.get("api_url")
+    if not isinstance(value, str):
+        return None
+    return validate_service_url(value, label=f"{profile_name} stored API URL")
 
 
 def load() -> RvsConfig:

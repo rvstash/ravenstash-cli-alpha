@@ -101,13 +101,13 @@ def test_profile_api_url_can_be_declared_in_gitignored_local_env_file(
     (tmp_path / ".rvs.env").write_text(
         """
 RVS_PROFILE_STAGING_API_URL=https://staging.example.test
-RVS_PROFILE_DEV_API_URL='http://localhost:8000'
+RVS_PROFILE_DEV_API_URL='http://localhost:43100'
 """.strip(),
         encoding="utf-8",
     )
 
     assert cfg_mod.profile_api_url("staging") == "https://staging.example.test"
-    assert cfg_mod.profile_api_url("dev") == "http://localhost:8000"
+    assert cfg_mod.profile_api_url("dev") == "http://localhost:43100"
 
 
 def test_profile_api_url_rejects_non_loopback_plain_http(monkeypatch, tmp_path: Path) -> None:
@@ -124,75 +124,80 @@ def test_repository_domain_formats_every_registry_service_for_profile(
 ) -> None:
     _point_config(monkeypatch, tmp_path)
     (tmp_path / ".rvs.env").write_text(
-        "RVS_PROFILE_STAGING_REPOSITORY_DOMAIN=packages.staging.example.test\n",
+        "RVS_PROFILE_STAGING_REPOSITORY_DOMAIN=packages.example.test\n",
         encoding="utf-8",
     )
 
     profile = cfg_mod.load().active_profile("staging")
 
     assert (
-        profile.native_registries.pypi.read_base_url == "https://pypi.packages.staging.example.test"
+        profile.native_registries.pypi.read_base_url == "https://pypi.packages.example.test"
     )
     assert (
         profile.native_registries.pypi.push_base_url
-        == "https://push.pypi.packages.staging.example.test"
+        == "https://push.pypi.packages.example.test"
     )
     assert (
         profile.native_registries.pypi.cache_base_url
-        == "https://cache.pypi.packages.staging.example.test"
+        == "https://cache.pypi.packages.example.test"
     )
     assert (
-        profile.native_registries.npm.read_base_url == "https://npm.packages.staging.example.test"
+        profile.native_registries.npm.read_base_url == "https://npm.packages.example.test"
     )
     assert (
         profile.native_registries.maven.push_base_url
-        == "https://push.maven.packages.staging.example.test"
+        == "https://push.maven.packages.example.test"
     )
     assert (
         profile.native_registries.oci_registry_base_url
-        == "https://oci.packages.staging.example.test"
+        == "https://oci.packages.example.test"
     )
 
 
-def test_repository_domain_override_rewrites_discovered_hosts_but_keeps_routes(
+@pytest.mark.parametrize(
+    "repository_domain",
+    ["localhost", "sandbox.localhost", "*.sandbox.localhost"],
+)
+def test_localhost_repository_domain_uses_literal_host_and_keeps_routes(
     monkeypatch,
     tmp_path: Path,
+    repository_domain: str,
 ) -> None:
     config_dir, config_file = _point_config(monkeypatch, tmp_path)
-    monkeypatch.setenv("RVS_PROFILE_DEV_REPOSITORY_DOMAIN", "*.dev.localhost")
+    monkeypatch.setenv("RVS_PROFILE_DEV_REPOSITORY_DOMAIN", repository_domain)
     config_dir.mkdir()
     config_file.write_text(
         """
 [profiles.dev.native_registries.pypi]
-read_base_url = "http://localhost:8788/native/pypi"
-push_base_url = "http://localhost:6001/native/pypi"
-cache_base_url = "http://localhost:8788/native/pypi"
+read_base_url = "https://download.example.test:43101/registry/pypi"
+push_base_url = "https://upload.example.test:43102/registry/pypi"
+cache_base_url = "https://cache.example.test:43101/registry/pypi"
 
 [profiles.dev.native_registries.npm]
-read_base_url = "http://localhost:8788/native/npm"
-push_base_url = "http://localhost:6001/native/npm"
-cache_base_url = "http://localhost:8788/native/npm"
+read_base_url = "https://download.example.test:43101/registry/npm"
+push_base_url = "https://upload.example.test:43102/registry/npm"
+cache_base_url = "https://cache.example.test:43101/registry/npm"
 
 [profiles.dev.native_registries.maven]
-read_base_url = "http://localhost:8788/native/maven"
-push_base_url = "http://localhost:6001/native/maven"
-cache_base_url = "http://localhost:8788/native/maven"
+read_base_url = "https://download.example.test:43101/registry/maven"
+push_base_url = "https://upload.example.test:43102/registry/maven"
+cache_base_url = "https://cache.example.test:43101/registry/maven"
 
 [profiles.dev.native_registries.oci]
-registry_base_url = "http://localhost:8788"
+registry_base_url = "https://images.example.test:43101"
 """.strip(),
         encoding="utf-8",
     )
 
     endpoints = cfg_mod.load().active_profile("dev").native_registries
 
-    assert endpoints.pypi.read_base_url == "http://pypi.dev.localhost:8788/native/pypi"
-    assert endpoints.pypi.push_base_url == "http://push.pypi.dev.localhost:6001/native/pypi"
-    assert endpoints.npm.cache_base_url == "http://cache.npm.dev.localhost:8788/native/npm"
-    assert endpoints.oci_registry_base_url == "http://oci.dev.localhost:8788"
+    assert endpoints.pypi.read_base_url == "http://localhost:43101/registry/pypi"
+    assert endpoints.pypi.push_base_url == "http://localhost:43102/registry/pypi"
+    assert endpoints.npm.cache_base_url == "http://localhost:43101/registry/npm"
+    assert endpoints.oci_registry_base_url == "http://localhost:43101"
 
 
-def test_discovered_non_suffix_host_family_is_retained_without_domain_override(
+def test_discovered_heterogeneous_host_family_is_retained_without_domain_override(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
@@ -200,40 +205,40 @@ def test_discovered_non_suffix_host_family_is_retained_without_domain_override(
     config_dir.mkdir()
     config_file.write_text(
         """
-[profiles.staging.native_registries.pypi]
-read_base_url = "https://pypi-staging-hxa159.rvsta.sh"
-push_base_url = "https://push.pypi-staging-hxa159.rvsta.sh"
-cache_base_url = "https://cache.pypi-staging-hxa159.rvsta.sh"
+[profiles.work.native_registries.pypi]
+read_base_url = "https://python-download.example.test"
+push_base_url = "https://python-upload.example.test"
+cache_base_url = "https://python-cache.example.test"
 
-[profiles.staging.native_registries.npm]
-read_base_url = "https://npm-staging-hxa159.rvsta.sh"
-push_base_url = "https://push.npm-staging-hxa159.rvsta.sh"
-cache_base_url = "https://cache.npm-staging-hxa159.rvsta.sh"
+[profiles.work.native_registries.npm]
+read_base_url = "https://javascript-download.example.test"
+push_base_url = "https://javascript-upload.example.test"
+cache_base_url = "https://javascript-cache.example.test"
 
-[profiles.staging.native_registries.maven]
-read_base_url = "https://maven-staging-hxa159.rvsta.sh"
-push_base_url = "https://push.maven-staging-hxa159.rvsta.sh"
-cache_base_url = "https://cache.maven-staging-hxa159.rvsta.sh"
+[profiles.work.native_registries.maven]
+read_base_url = "https://java-download.example.test"
+push_base_url = "https://java-upload.example.test"
+cache_base_url = "https://java-cache.example.test"
 
-[profiles.staging.native_registries.oci]
-registry_base_url = "https://oci-staging-hxa159.rvsta.sh"
+[profiles.work.native_registries.oci]
+registry_base_url = "https://images.example.test"
 """.strip(),
         encoding="utf-8",
     )
 
-    endpoints = cfg_mod.load().active_profile("staging").native_registries
+    endpoints = cfg_mod.load().active_profile("work").native_registries
 
-    assert endpoints.pypi.read_base_url == "https://pypi-staging-hxa159.rvsta.sh"
-    assert endpoints.pypi.push_base_url == "https://push.pypi-staging-hxa159.rvsta.sh"
-    assert endpoints.npm.cache_base_url == "https://cache.npm-staging-hxa159.rvsta.sh"
-    assert endpoints.oci_registry_base_url == "https://oci-staging-hxa159.rvsta.sh"
+    assert endpoints.pypi.read_base_url == "https://python-download.example.test"
+    assert endpoints.pypi.push_base_url == "https://python-upload.example.test"
+    assert endpoints.npm.cache_base_url == "https://javascript-cache.example.test"
+    assert endpoints.oci_registry_base_url == "https://images.example.test"
 
 
 def test_repository_domain_rejects_urls_and_ports(monkeypatch, tmp_path: Path) -> None:
     _point_config(monkeypatch, tmp_path)
     monkeypatch.setenv(
         "RVS_PROFILE_STAGING_REPOSITORY_DOMAIN",
-        "https://packages.staging.example.test:8443",
+        "https://packages.example.test:43103",
     )
 
     with pytest.raises(ValueError, match="without a scheme, port, or path"):

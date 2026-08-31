@@ -15,20 +15,20 @@ if TYPE_CHECKING:
 
 
 runner = CliRunner()
-STAGING_API_URL = "https://staging.example.test"
-PYPI_READ_URL = "https://pypi-staging.example.test"
-PYPI_PUSH_URL = "https://push.pypi-staging.example.test"
-PYPI_CACHE_URL = "https://cache.pypi-staging.example.test"
-NPM_READ_URL = "https://npm-staging.example.test"
-NPM_PUSH_URL = "https://push.npm-staging.example.test"
-NPM_CACHE_URL = "https://cache.npm-staging.example.test"
-MAVEN_READ_URL = "https://maven-staging.example.test"
-MAVEN_PUSH_URL = "https://push.maven-staging.example.test"
-MAVEN_CACHE_URL = "https://cache.maven-staging.example.test"
-PYPI_READ_HOST = "pypi-staging.example.test"
-PYPI_CACHE_HOST = "cache.pypi-staging.example.test"
-NPM_READ_HOST = "npm-staging.example.test"
-NPM_PUSH_HOST = "push.npm-staging.example.test"
+STAGING_API_URL = "https://control.example.test"
+PYPI_READ_URL = "https://python-read.example.test"
+PYPI_PUSH_URL = "https://python-write.example.test"
+PYPI_CACHE_URL = "https://python-cache.example.test"
+NPM_READ_URL = "https://javascript-read.example.test"
+NPM_PUSH_URL = "https://javascript-write.example.test"
+NPM_CACHE_URL = "https://javascript-cache.example.test"
+MAVEN_READ_URL = "https://java-read.example.test"
+MAVEN_PUSH_URL = "https://java-write.example.test"
+MAVEN_CACHE_URL = "https://java-cache.example.test"
+PYPI_READ_HOST = "python-read.example.test"
+PYPI_CACHE_HOST = "python-cache.example.test"
+NPM_READ_HOST = "javascript-read.example.test"
+NPM_PUSH_HOST = "javascript-write.example.test"
 
 
 def _native_endpoints() -> cfg_mod.NativeRegistryEndpoints:
@@ -36,7 +36,7 @@ def _native_endpoints() -> cfg_mod.NativeRegistryEndpoints:
         pypi=cfg_mod.PackageRegistryEndpoints(PYPI_READ_URL, PYPI_PUSH_URL, PYPI_CACHE_URL),
         npm=cfg_mod.PackageRegistryEndpoints(NPM_READ_URL, NPM_PUSH_URL, NPM_CACHE_URL),
         maven=cfg_mod.PackageRegistryEndpoints(MAVEN_READ_URL, MAVEN_PUSH_URL, MAVEN_CACHE_URL),
-        oci_registry_base_url="https://oci-staging.example.test",
+        oci_registry_base_url="https://images.example.test",
     )
 
 
@@ -128,7 +128,7 @@ push_base_url = "{MAVEN_PUSH_URL}"
 cache_base_url = "{MAVEN_CACHE_URL}"
 
 [profiles.staging.native_registries.oci]
-registry_base_url = "https://oci-staging.example.test"
+registry_base_url = "https://images.example.test"
 
 [profiles.staging.registries.pypi]
 default_repo = "_abcdefgh/_xyzabcde"
@@ -189,24 +189,24 @@ def test_ravenstash_url_kind_accepts_public_hosts_and_local_normalized_routes() 
     assert url_kind(f"{PYPI_READ_URL}/_abcdefgh/_xyzabcde/simple/") == "pypi"
     assert (
         url_kind(
-            "http://localhost:8788/native/maven/_abcdefgh/_xyzabcde/com/example/demo/",
+            "http://localhost:43101/registry/maven/_abcdefgh/_xyzabcde/com/example/demo/",
             endpoints=cfg_mod.NativeRegistryEndpoints(
                 pypi=cfg_mod.PackageRegistryEndpoints(
-                    "http://localhost:8788/native/pypi",
-                    "http://localhost:8789/native/pypi",
-                    "http://localhost:8788/native/pypi",
+                    "http://localhost:43101/registry/pypi",
+                    "http://localhost:43102/registry/pypi",
+                    "http://localhost:43101/registry/pypi",
                 ),
                 npm=cfg_mod.PackageRegistryEndpoints(
-                    "http://localhost:8788/native/npm",
-                    "http://localhost:8789/native/npm",
-                    "http://localhost:8788/native/npm",
+                    "http://localhost:43101/registry/npm",
+                    "http://localhost:43102/registry/npm",
+                    "http://localhost:43101/registry/npm",
                 ),
                 maven=cfg_mod.PackageRegistryEndpoints(
-                    "http://localhost:8788/native/maven",
-                    "http://localhost:8789/native/maven",
-                    "http://localhost:8788/native/maven",
+                    "http://localhost:43101/registry/maven",
+                    "http://localhost:43102/registry/maven",
+                    "http://localhost:43101/registry/maven",
                 ),
-                oci_registry_base_url="http://localhost:8788",
+                oci_registry_base_url="http://localhost:43101",
             ),
         )
         == "maven"
@@ -396,13 +396,13 @@ def test_native_pip_local_remote_cache_netrc_uses_hostname_without_port(
     config_path.write_text(
         config_path.read_text(encoding="utf-8").replace(
             PYPI_CACHE_URL,
-            "http://localhost:8788/native/pypi",
+            "http://localhost:43101/registry/pypi",
         ),
         encoding="utf-8",
     )
     monkeypatch.setenv(
         "PIP_INDEX_URL",
-        "http://localhost:8788/native/pypi/c/piwheels/simple/",
+        "http://localhost:43101/registry/pypi/c/piwheels/simple/",
     )
     calls: list[dict[str, Any]] = []
     netrc_texts: list[str] = []
