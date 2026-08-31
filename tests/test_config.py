@@ -197,6 +197,43 @@ registry_base_url = "http://localhost:8788"
     assert endpoints.oci_registry_base_url == "http://oci.dev.localhost:8788"
 
 
+def test_discovered_non_suffix_host_family_is_retained_without_domain_override(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    config_dir, config_file = _point_config(monkeypatch, tmp_path)
+    config_dir.mkdir()
+    config_file.write_text(
+        """
+[profiles.staging.native_registries.pypi]
+read_base_url = "https://pypi-staging-hxa159.rvsta.sh"
+push_base_url = "https://push.pypi-staging-hxa159.rvsta.sh"
+cache_base_url = "https://cache.pypi-staging-hxa159.rvsta.sh"
+
+[profiles.staging.native_registries.npm]
+read_base_url = "https://npm-staging-hxa159.rvsta.sh"
+push_base_url = "https://push.npm-staging-hxa159.rvsta.sh"
+cache_base_url = "https://cache.npm-staging-hxa159.rvsta.sh"
+
+[profiles.staging.native_registries.maven]
+read_base_url = "https://maven-staging-hxa159.rvsta.sh"
+push_base_url = "https://push.maven-staging-hxa159.rvsta.sh"
+cache_base_url = "https://cache.maven-staging-hxa159.rvsta.sh"
+
+[profiles.staging.native_registries.oci]
+registry_base_url = "https://oci-staging-hxa159.rvsta.sh"
+""".strip(),
+        encoding="utf-8",
+    )
+
+    endpoints = cfg_mod.load().active_profile("staging").native_registries
+
+    assert endpoints.pypi.read_base_url == "https://pypi-staging-hxa159.rvsta.sh"
+    assert endpoints.pypi.push_base_url == "https://push.pypi-staging-hxa159.rvsta.sh"
+    assert endpoints.npm.cache_base_url == "https://cache.npm-staging-hxa159.rvsta.sh"
+    assert endpoints.oci_registry_base_url == "https://oci-staging-hxa159.rvsta.sh"
+
+
 def test_repository_domain_rejects_urls_and_ports(monkeypatch, tmp_path: Path) -> None:
     _point_config(monkeypatch, tmp_path)
     monkeypatch.setenv(

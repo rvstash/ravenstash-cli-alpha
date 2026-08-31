@@ -20,6 +20,11 @@ Operational guidance for the `rvs` CLI package.
 - Keep the DevAPI control plane, package download, and package upload URLs
   distinct in profile metadata; never derive registry routes from the DevAPI
   URL. The CLI must never call Central directly.
+- Internal environment redirection may use one profile-scoped DevAPI URL and,
+  for DNS families shaped as `{service}.{domain}`, one repository-domain suffix.
+  When that suffix is configured, derive every PyPI, npm, Maven, cache, push,
+  and OCI host from it; otherwise retain the exact endpoints discovered from
+  DevAPI. Do not add per-format environment overrides.
 - Keep command modules thin and route shared behavior through common helpers.
 - Do not hardcode local, dev, or staging Ravenstash endpoints. Support them
   through user config, process environment variables, or ignored env files such
