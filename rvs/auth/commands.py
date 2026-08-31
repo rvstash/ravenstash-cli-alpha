@@ -68,6 +68,30 @@ def _require_profile(cfg: cfg_mod.RvsConfig, profile: str) -> None:
         )
 
 
+def _repository_status_fields(
+    endpoints: cfg_mod.NativeRegistryEndpoints,
+    *,
+    verbose: bool,
+) -> dict[str, str]:
+    fields = {"Repository domain": cfg_mod.repository_domain_summary(endpoints)}
+    if verbose:
+        fields.update(
+            {
+                "PyPI read URL": endpoints.pypi.read_base_url,
+                "PyPI push URL": endpoints.pypi.push_base_url,
+                "PyPI cache URL": endpoints.pypi.cache_base_url,
+                "npm read URL": endpoints.npm.read_base_url,
+                "npm push URL": endpoints.npm.push_base_url,
+                "npm cache URL": endpoints.npm.cache_base_url,
+                "Maven read URL": endpoints.maven.read_base_url,
+                "Maven push URL": endpoints.maven.push_base_url,
+                "Maven cache URL": endpoints.maven.cache_base_url,
+                "OCI registry URL": endpoints.oci_registry_base_url,
+            }
+        )
+    return fields
+
+
 @contextmanager
 def _raw_terminal() -> Iterator[None]:
     if sys.platform == "win32":
@@ -572,6 +596,12 @@ def status(
     profile: str | None = typer.Option(
         None, "--profile", "-p", help="Profile to inspect (default: active profile)."
     ),
+    verbose: bool = typer.Option(
+        False,
+        "--verbose",
+        "-v",
+        help="Show every resolved package repository endpoint.",
+    ),
 ) -> None:
     """Show the local authentication state for a profile."""
     cfg = cfg_mod.load()
@@ -589,16 +619,7 @@ def status(
         {
             "Profile": profile_name,
             "API URL": p.api_url,
-            "PyPI read URL": p.native_registries.pypi.read_base_url,
-            "PyPI push URL": p.native_registries.pypi.push_base_url,
-            "PyPI cache URL": p.native_registries.pypi.cache_base_url,
-            "npm read URL": p.native_registries.npm.read_base_url,
-            "npm push URL": p.native_registries.npm.push_base_url,
-            "npm cache URL": p.native_registries.npm.cache_base_url,
-            "Maven read URL": p.native_registries.maven.read_base_url,
-            "Maven push URL": p.native_registries.maven.push_base_url,
-            "Maven cache URL": p.native_registries.maven.cache_base_url,
-            "OCI registry URL": p.native_registries.oci_registry_base_url,
+            **_repository_status_fields(p.native_registries, verbose=verbose),
             "Authenticated": "yes" if token else "no",
             "Credential source": source or "none",
             "Credential store": credential_store,
@@ -618,6 +639,12 @@ def whoami(
     profile: str | None = typer.Option(
         None, "--profile", "-p", help="Profile to inspect (default: active profile)."
     ),
+    verbose: bool = typer.Option(
+        False,
+        "--verbose",
+        "-v",
+        help="Show every resolved package repository endpoint.",
+    ),
 ) -> None:
     """Verify and print the current identity using the package control API."""
     cfg = cfg_mod.load()
@@ -634,13 +661,7 @@ def whoami(
             "Owner ID": identity.get("customer_id") or "unknown",
             "Owner": identity.get("customer_unique_id") or "unknown",
             "API URL": p.api_url,
-            "PyPI read URL": p.native_registries.pypi.read_base_url,
-            "PyPI push URL": p.native_registries.pypi.push_base_url,
-            "npm read URL": p.native_registries.npm.read_base_url,
-            "npm push URL": p.native_registries.npm.push_base_url,
-            "Maven read URL": p.native_registries.maven.read_base_url,
-            "Maven push URL": p.native_registries.maven.push_base_url,
-            "OCI registry URL": p.native_registries.oci_registry_base_url,
+            **_repository_status_fields(p.native_registries, verbose=verbose),
         },
         title="Current Ravenstash identity",
     )

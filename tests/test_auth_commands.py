@@ -55,6 +55,27 @@ def test_auth_status_reports_env_token_for_builtin_staging_profile(
     assert "yes" in result.output
     assert "RVS_TOKEN" in result.output
     assert "not used (RVS_TOKEN)" in result.output
+    assert "Repository domain" in result.output
+    assert "rvsta.sh" in result.output
+    assert "PyPI read URL" not in result.output
+
+
+def test_auth_status_verbose_reports_resolved_repository_endpoints(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    _isolate_config(monkeypatch, tmp_path, 'default_profile = "default"')
+    monkeypatch.setenv("RVS_TOKEN", "env-token")
+
+    result = runner.invoke(auth_cmd.app, ["status", "--verbose"])
+
+    assert result.exit_code == 0
+    assert "Repository domain" in result.output
+    assert "rvsta.sh" in result.output
+    assert "PyPI read URL" in result.output
+    assert "https://pypi.rvsta.sh" in result.output
+    assert "OCI registry URL" in result.output
+    assert "https://oci.rvsta.sh" in result.output
 
 
 def test_auth_status_exits_one_when_profile_has_no_token(monkeypatch, tmp_path: Path) -> None:
@@ -117,6 +138,9 @@ customer_id = "cus_work"
     assert "cus_verified" in result.output
     assert "custpid1" in result.output
     assert "https://api.work.example" in result.output
+    assert "Repository domain" in result.output
+    assert "rvsta.sh" in result.output
+    assert "PyPI read URL" not in result.output
 
 
 def test_auth_login_delegates_to_device_login_with_active_profile(

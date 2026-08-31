@@ -40,13 +40,13 @@ Config file shape
     registry_base_url = "https://oci.rvsta.sh"
 
     [profiles.default.registries.pypi]
-    default_repo = "_abcdefgh/_m7nk3p4q"
+    default_repo = "w_abcdefgh/r_m7nk3p4q"
 
     [profiles.default.registries.npm]
-    default_repo = "_abcdefgh/_n4b6v8cx"
+    default_repo = "w_abcdefgh/r_n4b6v8cx"
 
     [profiles.default.registries.maven]
-    default_repo = "_abcdefgh/_p2q4r6st"
+    default_repo = "w_abcdefgh/r_p2q4r6st"
 """
 
 from __future__ import annotations
@@ -96,6 +96,38 @@ class NativeRegistryEndpoints:
 
     def package(self, kind: Literal["pypi", "npm", "maven"]) -> PackageRegistryEndpoints:
         return cast("PackageRegistryEndpoints", getattr(self, kind))
+
+
+def repository_domain_summary(endpoints: NativeRegistryEndpoints) -> str:
+    """Summarize a conventional native-registry endpoint family by DNS suffix."""
+    service_urls = (
+        ("pypi", endpoints.pypi.read_base_url),
+        ("push.pypi", endpoints.pypi.push_base_url),
+        ("cache.pypi", endpoints.pypi.cache_base_url),
+        ("npm", endpoints.npm.read_base_url),
+        ("push.npm", endpoints.npm.push_base_url),
+        ("cache.npm", endpoints.npm.cache_base_url),
+        ("maven", endpoints.maven.read_base_url),
+        ("push.maven", endpoints.maven.push_base_url),
+        ("cache.maven", endpoints.maven.cache_base_url),
+        ("oci", endpoints.oci_registry_base_url),
+    )
+    hosts = [urlsplit(url).hostname or "" for _service, url in service_urls]
+    domains = {
+        host.removeprefix(f"{service}.")
+        for (service, _url), host in zip(service_urls, hosts, strict=True)
+        if host.startswith(f"{service}.")
+    }
+    if len(domains) == 1 and all(
+        host == f"{service}.{next(iter(domains))}"
+        for (service, _url), host in zip(service_urls, hosts, strict=True)
+    ):
+        return next(iter(domains))
+
+    unique_hosts = set(hosts)
+    if len(unique_hosts) == 1 and hosts[0] and _is_loopback_host(hosts[0]):
+        return hosts[0]
+    return "custom endpoints"
 
 
 def _is_loopback_host(hostname: str) -> bool:
