@@ -200,7 +200,6 @@ class PackageTarget:
     remote_unique_ref: str | None = None
     remote_name_cache: str | None = None
     source_id: str | None = None
-    direct_access_enabled: bool | None = None
     is_available: bool = True
 
 
@@ -601,7 +600,6 @@ def _package_target_from_mapping(value: object) -> PackageTarget | None:
         remote_unique_ref=value.get("remote_unique_ref"),
         remote_name_cache=value.get("remote_name_cache"),
         source_id=value.get("source_id"),
-        direct_access_enabled=value.get("direct_access_enabled"),
         is_available=value.get("is_available", True),
     )
 

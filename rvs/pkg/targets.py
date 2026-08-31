@@ -117,7 +117,6 @@ def _remote_target(entry: dict, target_type: cfg_mod.PackageTargetType) -> cfg_m
         remote_unique_ref=unique_ref,
         remote_name_cache=public_name,
         source_id=remote.get("source_id"),
-        direct_access_enabled=True,
         is_available=True,
     )
 

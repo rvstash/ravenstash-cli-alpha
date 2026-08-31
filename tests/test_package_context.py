@@ -65,7 +65,6 @@ def remote(
             "remote_name": name if family == "custom" else None,
             "customer_id": owner["customer_id"],
             "registry_kind": kind,
-            "direct_access_enabled": True,
             "created_at": "2026-01-01T00:00:00Z",
         },
     }

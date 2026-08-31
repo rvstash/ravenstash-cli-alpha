@@ -419,7 +419,6 @@ def test_pkg_official_remote_list_reports_external_publication_control(
                         "official_slug": "pypi",
                         "source_family": "official",
                         "registry_kind": "pypi",
-                        "direct_access_enabled": True,
                     },
                 }
             ]
