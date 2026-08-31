@@ -313,7 +313,7 @@ def test_pkg_remote_management_and_upstream_configuration(monkeypatch, tmp_path:
     _use_fake_client(monkeypatch, fake)
 
     create_result = runner.invoke(
-        pkg_cmd.app, ["remote-cache", "create", "--registry-kind", "pypi"]
+        pkg_cmd.app, ["mirror", "create", "--registry-kind", "pypi"]
     )
     upstream_result = runner.invoke(
         pkg_cmd.app,
@@ -375,7 +375,7 @@ def test_pkg_custom_remote_requires_and_submits_publication_control(
     result = runner.invoke(
         pkg_cmd.app,
         [
-            "remote-cache",
+            "mirror",
             "create-custom",
             "company-packages",
             "--kind",
@@ -399,7 +399,6 @@ def test_pkg_custom_remote_requires_and_submits_publication_control(
                 "publication_control": "user_controlled",
                 "api_base_url": "https://packages.example.test/simple/",
                 "credential": {"auth_scheme": "none", "allowed_hosts": []},
-                "enable_direct_access": True,
             },
         )
     ]
@@ -434,7 +433,7 @@ def test_pkg_official_remote_list_reports_external_publication_control(
         lambda headers, rows, **_kwargs: tables.append((headers, rows)),
     )
 
-    result = runner.invoke(pkg_cmd.app, ["remote-cache", "list"])
+    result = runner.invoke(pkg_cmd.app, ["mirror", "list"])
 
     assert result.exit_code == 0
     assert tables[0][0][2] == "Publication"

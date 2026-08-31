@@ -296,7 +296,7 @@ def _package_token_for_url(
             effective_customer_id = customer_id or cfg_mod.current_customer_id(profile_name)
             if not effective_customer_id:
                 output.fatal(
-                    "A customer is required for direct remote-cache access. Pass --rvs-customer-id."
+                    "A customer is required for private-mirror access. Pass --rvs-customer-id."
                 )
             return client.post(
                 "/v0/remote-package-credentials",

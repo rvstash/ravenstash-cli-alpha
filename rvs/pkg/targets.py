@@ -43,9 +43,15 @@ def parse_target(value: str) -> TargetSpec:
     candidate = value.strip().strip("/")
     if not candidate:
         output.fatal("Package target cannot be empty.")
-    if candidate.startswith("cache:"):
-        selector = candidate.removeprefix("cache:").strip().strip("/")
+    if candidate.startswith("mirror:"):
+        selector = candidate.removeprefix("mirror:").strip().strip("/")
         target_type: cfg_mod.PackageTargetType = "official_cache"
+    elif candidate.startswith("custom-mirror:"):
+        selector = candidate.removeprefix("custom-mirror:").strip().strip("/")
+        target_type = "custom_cache"
+    elif candidate.startswith("cache:"):
+        selector = candidate.removeprefix("cache:").strip().strip("/")
+        target_type = "official_cache"
     elif candidate.startswith("custom-cache:"):
         selector = candidate.removeprefix("custom-cache:").strip().strip("/")
         target_type = "custom_cache"
@@ -53,8 +59,8 @@ def parse_target(value: str) -> TargetSpec:
         output.fatal("Public package targets are reserved for a future Ravenstash release.")
     elif ":" in candidate:
         output.fatal(
-            "Unknown package target type. Use workspace/repository, cache:<source>, "
-            "or custom-cache:<name>."
+            "Unknown package target type. Use workspace/repository, mirror:<source>, "
+            "or custom-mirror:<name>."
         )
     else:
         selector = candidate
@@ -104,12 +110,8 @@ def _remote_target(entry: dict, target_type: cfg_mod.PackageTargetType) -> cfg_m
     expected_family = "official" if target_type == "official_cache" else "custom"
     if family != expected_family:
         raise ValueError(f"Remote cache is {family or 'of an unknown type'}, not {expected_family}")
-    if not remote.get("direct_access_enabled"):
-        raise ValueError(
-            f"Direct access is disabled for {expected_family} cache '{remote.get('public_id')}'."
-        )
     public_name = remote.get("official_slug") or remote.get("remote_name") or remote["public_id"]
-    prefix = "cache" if target_type == "official_cache" else "custom-cache"
+    prefix = "mirror" if target_type == "official_cache" else "custom-mirror"
     unique_ref = remote.get("unique_ref") or remote.get("public_id")
     return cfg_mod.PackageTarget(
         target_type=target_type,
@@ -269,7 +271,7 @@ def effective_target(
         return resolved_profile, resolved_account, resolved_target
     if allow_official_default:
         return resolve_target(
-            f"cache:{DEFAULT_OFFICIAL_SOURCES[registry_kind]}",
+            f"mirror:{DEFAULT_OFFICIAL_SOURCES[registry_kind]}",
             profile=profile_name,
             customer_id=account.customer_id,
             kind=kind,

@@ -140,8 +140,11 @@ customer_unique_id = "personal-{profile}-uid"
     monkeypatch.delenv("RVS_SESSION_ID", raising=False)
 
 
-def test_target_parser_keeps_private_and_cache_namespaces_disjoint() -> None:
+def test_target_parser_keeps_private_and_mirror_namespaces_disjoint() -> None:
     assert parse_target("acme/backend").target_type == "private"
+    assert parse_target("mirror:pypiorg").target_type == "official_cache"
+    assert parse_target("custom-mirror:piwheels").target_type == "custom_cache"
+    # Pre-mirror selectors remain accepted as compatibility aliases.
     assert parse_target("cache:pypiorg").target_type == "official_cache"
     assert parse_target("custom-cache:piwheels").target_type == "custom_cache"
 
@@ -160,15 +163,15 @@ def test_account_and_official_cache_selection_are_visible_and_clearable(
     monkeypatch.setattr(ApiClient, "from_profile", staticmethod(lambda profile=None: fake))
 
     switched = runner.invoke(app, ["account", "switch", "org:acme"])
-    selected = runner.invoke(app, ["pkg", "select", "cache:pypiorg"])
+    selected = runner.invoke(app, ["pkg", "select", "mirror:pypiorg"])
 
     assert switched.exit_code == 0, switched.output
     assert selected.exit_code == 0, selected.output
     saved = cfg_mod.selected_package_target("alice", "acme")
     assert saved is not None
     assert saved.target_type == "official_cache"
-    assert saved.stable_selector == "cache:_pypi"
-    assert prompt_text() == "(alice · org:acme · cache:pypiorg) "
+    assert saved.stable_selector == "mirror:_pypi"
+    assert prompt_text() == "(alice · org:acme · mirror:pypiorg) "
 
     cleared = runner.invoke(app, ["pkg", "clear"])
     assert cleared.exit_code == 0, cleared.output
@@ -185,10 +188,10 @@ def test_custom_cache_kind_collision_requires_disambiguation(monkeypatch, tmp_pa
     fake = FakeApi([personal], remotes)
     monkeypatch.setattr(ApiClient, "from_profile", staticmethod(lambda profile=None: fake))
 
-    ambiguous = runner.invoke(app, ["pkg", "select", "custom-cache:piwheels"])
+    ambiguous = runner.invoke(app, ["pkg", "select", "custom-mirror:piwheels"])
     selected = runner.invoke(
         app,
-        ["pkg", "select", "custom-cache:piwheels", "--kind", "pypi"],
+        ["pkg", "select", "custom-mirror:piwheels", "--kind", "pypi"],
     )
 
     assert ambiguous.exit_code == 1
@@ -212,7 +215,7 @@ def test_two_login_profiles_keep_separate_actor_state_for_the_same_org(
         runner.invoke(app, ["account", "switch", "org:acme", "--profile", "alice"]).exit_code == 0
     )
     assert (
-        runner.invoke(app, ["pkg", "select", "cache:pypiorg", "--profile", "alice"]).exit_code == 0
+        runner.invoke(app, ["pkg", "select", "mirror:pypiorg", "--profile", "alice"]).exit_code == 0
     )
     assert runner.invoke(app, ["account", "switch", "org:acme", "--profile", "bob"]).exit_code == 0
 
@@ -290,7 +293,7 @@ def test_native_wrapper_uses_selected_cache_and_one_shot_does_not_mutate_it(
         "numpy",
     ]
     assert cfg_mod.selected_package_target("alice", "personal-alice").display_selector == (
-        "cache:pypiorg"
+        "mirror:pypiorg"
     )
 
 

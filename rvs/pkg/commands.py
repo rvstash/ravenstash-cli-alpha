@@ -37,7 +37,7 @@ app = typer.Typer(
 
 repo_app = typer.Typer(help="Manage Ravenstash package repositories.", no_args_is_help=True)
 upstream_app = typer.Typer(help="Manage ordered repository-lane upstreams.", no_args_is_help=True)
-remote_app = typer.Typer(help="Manage remote caches & proxies.", no_args_is_help=True)
+remote_app = typer.Typer(help="Manage private mirrors backed by remote caches.", no_args_is_help=True)
 package_app = typer.Typer(help="Manage packages hosted in a repository.", no_args_is_help=True)
 pypi_app = typer.Typer(help="PyPI package repository helpers.", no_args_is_help=True)
 npm_app = typer.Typer(help="npm package repository helpers.", no_args_is_help=True)
@@ -45,8 +45,9 @@ maven_app = typer.Typer(help="Maven package repository helpers.", no_args_is_hel
 
 app.add_typer(repo_app, name="repo")
 repo_app.add_typer(upstream_app, name="upstream")
-app.add_typer(remote_app, name="remote-cache")
-app.add_typer(remote_app, name="cache")
+app.add_typer(remote_app, name="mirror")
+app.add_typer(remote_app, name="remote-cache", hidden=True)
+app.add_typer(remote_app, name="cache", hidden=True)
 app.add_typer(package_app, name="package")
 app.add_typer(pypi_app, name="pypi")
 app.add_typer(npm_app, name="npm")
@@ -66,7 +67,7 @@ def package_context(
         None,
         "--target",
         "--repo",
-        help="One-shot package target: workspace/repository, cache:<source>, or custom-cache:<name>.",
+        help="One-shot package target: workspace/repository, mirror:<source>, or custom-mirror:<name>.",
     ),
     account: str | None = typer.Option(
         None,
@@ -76,7 +77,7 @@ def package_context(
     kind: str | None = typer.Option(
         None, "--kind", help="Registry kind when inference is ambiguous."
     ),
-    profile: str | None = typer.Option(None, "--profile", help="One-shot login profile."),
+    profile: str | None = typer.Option(None, "--profile", help="One-shot local CLI profile."),
 ) -> None:
     """Manage package targets and delegate package operations to native tools."""
     ctx.obj = {
@@ -109,7 +110,7 @@ def _customer_id(profile: str | None, explicit_customer_id: str | None = None) -
     customer_id = cfg_mod.current_customer_id(profile_name)
     if not customer_id:
         output.fatal(
-            "No Ravenstash account is selected. Run `rvs account switch` or pass --customer-id."
+            "No acting account is selected. Run `rvs account use` or pass --customer-id."
         )
     return customer_id
 
@@ -124,7 +125,7 @@ def _context_customer_id(profile: str | None, account: str | None) -> str | None
 def target_select(
     target: str = typer.Argument(
         ...,
-        help="workspace/repository, cache:<source>, or custom-cache:<name>.",
+        help="workspace/repository, mirror:<source>, or custom-mirror:<name>.",
     ),
     kind: str | None = typer.Option(None, "--kind", help="Registry kind if ambiguous."),
     account: str | None = typer.Option(None, "--account", help="Acting account selector."),
@@ -630,7 +631,7 @@ def repo_set_upstream(
     min_age_hours: float = typer.Option(24, "--min-age-hours", min=0),
     profile: str | None = typer.Option(None, "--profile", "-p"),
 ) -> None:
-    """Connect a remote cache & proxy to a private repository."""
+    """Connect a remote cache to a private repository."""
     client = _client(profile)
     try:
         remote_entry = client.get(f"/v0/remote-repositories/{remote}").json()
@@ -646,7 +647,7 @@ def repo_set_upstream(
         )
     except (ApiError, KeyError, TypeError) as exc:
         output.fatal(str(exc))
-    output.success(f"Connected remote cache & proxy '{remote}' to '{repo}'.")
+    output.success(f"Connected remote cache '{remote}' to '{repo}'.")
 
 
 @repo_app.command("clear-upstream")
@@ -859,7 +860,7 @@ def upstream_remove(
     output.success(f"Removed upstream '{attachment}' from '{repository}' ({registry_kind}).")
 
 
-# ── remote caches & proxies ───────────────────────────────────────────────────
+# ── private mirrors and their remote caches ──────────────────────────────────
 
 
 @remote_app.command("select")
@@ -870,8 +871,8 @@ def remote_select(
     account: str | None = typer.Option(None, "--account", help="Acting account selector."),
     profile: str | None = typer.Option(None, "--profile", "-p"),
 ) -> None:
-    """Select an official or customer-defined direct cache."""
-    prefix = "custom-cache" if custom else "cache"
+    """Select an official or customer-defined private mirror."""
+    prefix = "custom-mirror" if custom else "mirror"
     target_select(f"{prefix}:{cache}", kind=kind, account=account, profile=profile)
 
 
@@ -900,7 +901,7 @@ def remote_list(
     account: str | None = typer.Option(None, "--account"),
     kind: str | None = typer.Option(None, "--kind", "--registry-kind", "-k", "--ecosystem", "-e"),
 ) -> None:
-    """List remote caches & proxies for the selected customer."""
+    """List private mirrors for the selected customer."""
     if kind:
         _require_package_kind(kind)
     client = _client(profile)
@@ -922,10 +923,10 @@ def remote_list(
             entry for entry in items if entry["remote_repository"].get("registry_kind") == kind
         ]
     if not items:
-        output.info("No remote caches & proxies found.")
+        output.info("No private mirrors found.")
         return
     output.table(
-        ["Account", "Type", "Publication", "Target", "Registry kind", "Direct", "Age range"],
+        ["Account", "Cache type", "Publication", "Mirror target", "Registry kind", "Minimum age"],
         [
             [
                 str(entry.get("customer", {}).get("account_label", "")),
@@ -939,13 +940,12 @@ def remote_list(
                     )
                 ),
                 (
-                    f"cache:{item.get('official_slug') or item['public_id']}"
+                    f"mirror:{item.get('official_slug') or item['public_id']}"
                     if item.get("source_family") == "official"
-                    else f"custom-cache:{item.get('remote_name') or item['public_id']}"
+                    else f"custom-mirror:{item.get('remote_name') or item['public_id']}"
                 ),
                 str(item.get("registry_kind", "")),
-                "yes" if item.get("direct_access_enabled") else "no",
-                f"{item.get('min_age_hours') or 'none'} - {item.get('max_age_hours') or 'none'}",
+                f"{item.get('min_age_hours') or 'none'} hours",
             ]
             for entry in items
             for item in [entry["remote_repository"]]
@@ -960,7 +960,7 @@ def remote_create(
     customer_id: str | None = typer.Option(None, "--customer-id"),
     account: str | None = typer.Option(None, "--account"),
 ) -> None:
-    """Create a remote cache & proxy for a registry kind."""
+    """Initialize a remote cache and its private mirror for a registry kind."""
     _require_package_kind(kind)
     client = _client(profile)
     try:
@@ -975,21 +975,20 @@ def remote_create(
     except ApiError as exc:
         output.fatal(str(exc))
     remote_id = item["public_id"]
-    output.success(f"Created {kind} remote cache & proxy '{remote_id}'.")
+    output.success(f"Initialized {kind} remote cache and private mirror '{remote_id}'.")
 
 
 @remote_app.command("add")
 def remote_add_official(
     source: str = typer.Argument(..., help="Official source slug, such as pypiorg."),
     kind: str | None = typer.Option(None, "--kind", help="Registry kind if ambiguous."),
-    direct: bool = typer.Option(True, "--direct/--no-direct"),
     min_age_hours: float | None = typer.Option(None, "--min-age-hours", min=0),
     max_age_hours: float | None = typer.Option(None, "--max-age-hours", min=0),
-    select: bool = typer.Option(False, "--select", help="Select the cache after creating it."),
+    select: bool = typer.Option(False, "--select", help="Select the mirror after creating it."),
     profile: str | None = typer.Option(None, "--profile", "-p"),
     account: str | None = typer.Option(None, "--account"),
 ) -> None:
-    """Add a Ravenstash-curated official cache to the active account."""
+    """Initialize a Ravenstash-curated remote cache and private mirror."""
     customer_id = _context_customer_id(profile, account) or _customer_id(profile)
     if kind:
         _require_package_kind(kind)
@@ -1013,7 +1012,6 @@ def remote_add_official(
         payload: dict[str, object] = {
             "customer_id": customer_id,
             "official_source_id": selected_source["official_source_id"],
-            "enable_direct_access": direct,
         }
         if min_age_hours is not None:
             payload["min_age_hours"] = min_age_hours
@@ -1026,8 +1024,8 @@ def remote_add_official(
     except (ApiError, KeyError, TypeError) as exc:
         output.fatal(str(exc))
     item = entry["remote_repository"]
-    target_name = f"cache:{item.get('official_slug') or item['public_id']}"
-    output.success(f"Added official cache '{target_name}'.")
+    target_name = f"mirror:{item.get('official_slug') or item['public_id']}"
+    output.success(f"Added official remote cache with private mirror '{target_name}'.")
     if select:
         target_select(
             target_name,
@@ -1056,16 +1054,15 @@ def remote_create_custom(
         help="Environment variable containing the origin secret.",
     ),
     allowed_host: list[str] = typer.Option([], "--allowed-host"),
-    direct: bool = typer.Option(True, "--direct/--no-direct"),
     min_age_hours: float | None = typer.Option(None, "--min-age-hours", min=0),
     max_age_hours: float | None = typer.Option(None, "--max-age-hours", min=0),
     managed_location: str | None = typer.Option(None, "--managed-location"),
     storage_target: str | None = typer.Option(None, "--storage-target"),
-    select: bool = typer.Option(False, "--select", help="Select the cache after creating it."),
+    select: bool = typer.Option(False, "--select", help="Select the mirror after creating it."),
     profile: str | None = typer.Option(None, "--profile", "-p"),
     account: str | None = typer.Option(None, "--account"),
 ) -> None:
-    """Create a customer-defined cache backed by a secured HTTPS origin."""
+    """Create a custom remote cache and private mirror backed by HTTPS."""
     registry_kind = _require_package_kind(kind)
     customer_id = _context_customer_id(profile, account) or _customer_id(profile)
     if auth_scheme not in {"none", "basic", "bearer"}:
@@ -1094,7 +1091,6 @@ def remote_create_custom(
             "auth_scheme": auth_scheme,
             "allowed_hosts": allowed_host,
         },
-        "enable_direct_access": direct,
     }
     credential = payload["credential"]
     assert isinstance(credential, dict)
@@ -1134,21 +1130,21 @@ def remote_create_custom(
     except (ApiError, KeyError, TypeError) as exc:
         output.fatal(str(exc))
     item = entry["remote_repository"]
-    target_name = f"custom-cache:{item.get('remote_name') or item['public_id']}"
-    output.success(f"Created custom cache '{target_name}'.")
+    target_name = f"custom-mirror:{item.get('remote_name') or item['public_id']}"
+    output.success(f"Created custom remote cache with private mirror '{target_name}'.")
     if select:
         target_select(target_name, kind=kind, account=account, profile=profile)
 
 
 @remote_app.command("show")
 def remote_show(
-    remote: str = typer.Argument(..., help="Remote cache & proxy ID."),
+    remote: str = typer.Argument(..., help="Remote cache ID."),
     profile: str | None = typer.Option(None, "--profile", "-p"),
     account: str | None = typer.Option(None, "--account"),
     customer_id: str | None = typer.Option(None, "--customer-id", hidden=True),
     kind: str | None = typer.Option(None, "--kind", "--registry-kind", "-k"),
 ) -> None:
-    """Show a remote cache & proxy."""
+    """Show a private mirror and its backing remote cache."""
     if kind:
         _require_package_kind(kind)
     selected_customer = _context_customer_id(profile, account) or _customer_id(profile, customer_id)
@@ -1165,30 +1161,30 @@ def remote_show(
             "ID": item["public_id"],
             "Type": item.get("source_family"),
             "Target": (
-                f"cache:{item.get('official_slug') or item['public_id']}"
+                f"mirror:{item.get('official_slug') or item['public_id']}"
                 if item.get("source_family") == "official"
-                else f"custom-cache:{item.get('remote_name') or item['public_id']}"
+                else f"custom-mirror:{item.get('remote_name') or item['public_id']}"
             ),
             "Registry kind": item.get("registry_kind"),
             "Owner ID": item.get("customer_id"),
-            "Direct access": "yes" if item.get("direct_access_enabled") else "no",
-            "Minimum package age (hours)": str(item.get("min_age_hours", "")),
+            "Private mirror": "ready",
+            "Mirror minimum package age (hours)": str(item.get("min_age_hours", "")),
             "Maximum age hours": str(item.get("max_age_hours", "")),
         },
-        title=f"Remote cache & proxy {remote}",
+        title=f"Private mirror {remote}",
     )
 
 
 @remote_app.command("set-age")
 def remote_set_age(
-    remote: str = typer.Argument(..., help="Remote cache & proxy ID."),
+    remote: str = typer.Argument(..., help="Remote cache ID."),
     min_age_hours: float = typer.Option(..., "--min-age-hours", min=0),
     profile: str | None = typer.Option(None, "--profile", "-p"),
     account: str | None = typer.Option(None, "--account"),
     customer_id: str | None = typer.Option(None, "--customer-id", hidden=True),
     kind: str | None = typer.Option(None, "--kind", "--registry-kind", "-k"),
 ) -> None:
-    """Update the minimum package age for direct access."""
+    """Update the private mirror minimum package age."""
     if kind:
         _require_package_kind(kind)
     selected_customer = _context_customer_id(profile, account) or _customer_id(profile, customer_id)
@@ -1202,23 +1198,23 @@ def remote_set_age(
         )
     except ApiError as exc:
         output.fatal(str(exc))
-    output.success(f"Updated minimum package age for remote cache & proxy '{remote}'.")
+    output.success(f"Updated private mirror minimum package age for '{remote}'.")
 
 
 @remote_app.command("delete")
 def remote_delete(
-    remote: str = typer.Argument(..., help="Remote cache & proxy ID."),
+    remote: str = typer.Argument(..., help="Remote cache ID."),
     profile: str | None = typer.Option(None, "--profile", "-p"),
     customer_id: str | None = typer.Option(None, "--customer-id"),
     account: str | None = typer.Option(None, "--account"),
     kind: str | None = typer.Option(None, "--kind", "--registry-kind", "-k", "--ecosystem", "-e"),
     yes: bool = typer.Option(False, "--yes", "-y"),
 ) -> None:
-    """Delete a remote cache & proxy."""
+    """Delete a remote cache and its private mirror."""
     if kind:
         _require_package_kind(kind)
     if not yes:
-        typer.confirm(f"Delete remote cache & proxy '{remote}'?", abort=True)
+        typer.confirm(f"Delete remote cache and private mirror '{remote}'?", abort=True)
     selected_customer = _context_customer_id(profile, account) or _customer_id(profile, customer_id)
     params = {"customer_id": selected_customer, "registry_kind": kind}
     client = _client(profile)
@@ -1226,7 +1222,7 @@ def remote_delete(
         client.delete(f"/v0/remote-repositories/{remote}", params=params)
     except ApiError as exc:
         output.fatal(str(exc))
-    output.success(f"Deleted remote cache & proxy '{remote}'.")
+    output.success(f"Deleted remote cache and private mirror '{remote}'.")
 
 
 # ── package ──────────────────────────────────────────────────────────────────

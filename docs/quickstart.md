@@ -7,9 +7,16 @@ cases that matter when automating workflows.
 
 ## Mental Model
 
-`rvs auth login` authenticates one Ravenstash user profile with DevAPI. Select
-the personal customer or an organization separately, then select a typed private
-repository or direct cache target.
+`rvs auth login` authenticates one Ravenstash user through a named local CLI
+profile. Select the acting personal account or organization separately, then
+select a typed private repository or private-mirror target.
+
+The four context layers are intentionally distinct:
+
+- **user** — the authenticated human and audit actor;
+- **local profile** — a named CLI configuration and credential slot;
+- **acting account** — the personal or organization authorization and metering boundary;
+- **package target** — the repository or private mirror used inside that account.
 
 Package commands resolve a repository selector through DevAPI:
 
@@ -21,7 +28,7 @@ Package commands resolve a repository selector through DevAPI:
 When a package command needs a target, `rvs` resolves it in this order:
 
 1. Use the one-shot `--target`, if provided.
-2. Use the selected target for the active `(profile, customer)` pair.
+2. Use the selected target for the effective `(local profile, acting account)` pair.
 3. Read a legacy per-kind private default during migration.
 4. For `rvs pkg` read/install helpers, use the account-scoped official default
    (`pypiorg`, `npmjs`, or `maven-central`) when its direct binding is enabled.
@@ -65,7 +72,7 @@ For a named profile:
 
 ```bash
 rvs auth login --profile staging
-rvs auth profile switch staging
+rvs profile use staging
 ```
 
 Credential behavior:
@@ -75,15 +82,16 @@ Credential behavior:
 - If none is available, the first login runs credential-storage setup before
   browser authorization. Plaintext storage is an explicit discouraged option,
   never an automatic fallback.
-- Profile metadata lives in `~/.rvs/config.toml`.
+- Local profile metadata lives in `~/.rvs/config.toml`.
 - `RVS_TOKEN` overrides stored credentials and is the automation path.
 - Never commit real tokens or `.env` files containing secrets.
 
-After login, inspect the active profile:
+After login, inspect authentication and local-profile state separately:
 
 ```bash
 rvs auth status
 rvs auth whoami
+rvs profile current
 rvs auth storage doctor
 ```
 
@@ -91,31 +99,33 @@ Select the acting account and enable the persistent terminal hint:
 
 ```bash
 rvs account list
-rvs account switch org:acme
+rvs account use org:acme
+rvs context current
 rvs shell setup
 rvs pkg select acme/backend
 ```
 
-For a personal account, use `rvs account switch personal` instead. Account
+For a personal account, use `rvs account use personal` instead. Acting-account
 selection is mandatory in headless flows even immediately after device login.
-Direct official-cache use additionally requires an account binding created once
-with the matching command:
+Official private-mirror use requires its remote cache to be initialized once for
+the selected account:
 
 ```bash
-rvs pkg cache add pypiorg
-rvs pkg cache add npmjs
-rvs pkg cache add maven-central
+rvs pkg mirror add pypiorg
+rvs pkg mirror add npmjs
+rvs pkg mirror add maven-central
 ```
 
-Without that binding, `cache:pypiorg` (or its npm/Maven equivalent) returns 404 by
-design. Creating the binding grants direct access; merely knowing the curated slug
-does not.
+Without that binding, `mirror:pypiorg` (or its npm/Maven equivalent) returns 404
+by design. Initialization creates an authenticated private mirror with a 24-hour
+minimum-age default; merely knowing the curated slug does not grant access.
 
 The prompt becomes `(staging · org:acme · acme/backend)`. Two named login
 profiles may select the same organization while retaining distinct audit actors.
 
-`whoami` verifies the identity with DevAPI and reports the server-returned user
-and current customer default rather than trusting local profile data alone.
+`whoami` verifies and reports only the authenticated user through DevAPI.
+`context current` combines that user with the effective local profile, acting
+account, package target, and selection provenance.
 
 ## Create Or Select Repositories
 

@@ -4,9 +4,11 @@ Alpha command surface:
 
 | Command | Purpose |
 | --- | --- |
-| `rvs auth` | Browser/device login and local profile management |
+| `rvs auth` | Browser/device login and credential state |
+| `rvs profile` | Named local CLI profile management |
 | `rvs account` | Personal/organization acting-account selection |
-| `rvs shell` | Session-aware profile/account/target prompt integration |
+| `rvs context` | Effective user/profile/account/target inspection |
+| `rvs shell` | Session-aware context prompt integration |
 | `rvs runtime` | Local Python, Node, and Java runtime management |
 | `rvs pkg` | Package repositories and package-manager configuration |
 | `rvs packages` | Alias for `rvs pkg` |
@@ -42,11 +44,6 @@ rvs auth logout [--profile NAME]
 rvs auth logout --all
 rvs auth status [--profile NAME]
 rvs auth whoami [--profile NAME]
-rvs auth profile list
-rvs auth profile switch [NAME]
-rvs auth profile delete [NAME]
-rvs auth profile delete --all
-rvs auth profile rename OLD NEW
 rvs auth storage doctor [--profile NAME]
 rvs auth storage setup [--store vault|plaintext] [--allow-insecure-storage]
 rvs auth storage set auto|keyring|pass|vault|plaintext
@@ -54,6 +51,9 @@ rvs auth storage unlock
 rvs auth storage lock
 rvs auth storage change-passphrase
 ```
+
+`rvs auth status` reports only local credential state. `rvs auth whoami` verifies
+and reports only the authenticated Ravenstash user.
 
 Local profiles store metadata in `~/.rvs/config.toml`. Device login access and
 refresh tokens use an OS keyring, initialized `pass`, or the passphrase-encrypted
@@ -69,6 +69,22 @@ or a short multi-word passphrase and warns when an accepted passphrase is shorte
 
 Device login discovers package endpoints from DevAPI. The CLI never receives or
 calls a Central package-control URL.
+
+## `rvs profile`
+
+```bash
+rvs profile list
+rvs profile current [--profile NAME] [--verbose]
+rvs profile use [NAME]
+rvs profile delete [NAME]
+rvs profile delete --all
+rvs profile rename OLD NEW
+```
+
+A local profile is a named CLI configuration. It associates one DevAPI endpoint,
+one credential slot, discovered package endpoints, and cached context; it is not
+the authenticated user or the acting account. `current` reports non-secret local
+configuration and the source of the effective selection.
 
 ## `rvs runtime`
 
@@ -89,12 +105,13 @@ shell shims resolve `.python-version`, `.node-version`, and `.java-version` at
 invocation time, so project pins written by `runtime use` are effective after
 the shim was installed.
 
-## Account and package context
+## Acting account and combined context
 
 ```bash
 rvs account list [--profile NAME]
 rvs account current [--profile NAME]
-rvs account switch personal|org:LABEL|STABLE_REF [--profile NAME]
+rvs account use personal|org:LABEL|STABLE_REF [--profile NAME]
+rvs context current [--profile NAME]
 rvs shell setup [--shell bash|zsh|fish]
 
 rvs pkg select TARGET [--kind KIND] [--account ACCOUNT] [--profile NAME]
@@ -104,8 +121,16 @@ rvs pkg --target TARGET [--account ACCOUNT] [--kind KIND] install PACKAGE...
 rvs pkg --repo WORKSPACE/REPOSITORY [--account ACCOUNT] [--kind KIND] install PACKAGE...
 ```
 
-Targets are `workspace/repository`, `cache:official-slug`, or
-`custom-cache:customer-name`. Resolution is always scoped to the active customer.
+The authenticated user is the audit actor. The acting account is the personal or
+organization customer used for authorization, ownership, and metering. A package
+target is selected inside that account. `rvs context current` verifies and shows
+the effective tuple and selection provenance without collapsing those concepts.
+
+The former `rvs auth profile ...`, `rvs profile switch`, and `rvs account switch`
+forms remain callable as hidden compatibility aliases.
+
+Targets are `workspace/repository`, `mirror:official-slug`, or
+`custom-mirror:customer-name`. Resolution is always scoped to the active customer.
 `--kind` is needed only when a generic operation or duplicate cross-kind custom
 cache name is ambiguous. Clearing a target does not change the login or account.
 
@@ -163,22 +188,27 @@ recommendation when the option is omitted. Reordering replaces the full order
 atomically. The older `set-upstream`/`clear-upstream` commands remain remote-only
 compatibility commands.
 
-Remote cache & proxy commands:
+Private mirror commands:
 
 ```bash
-rvs pkg remote-cache list [--profile NAME] [--customer-id CUSTOMER_ID] [--registry-kind pypi|npm|maven]
-rvs pkg remote-cache create --registry-kind pypi|npm|maven [--profile NAME] [--customer-id CUSTOMER_ID]
-rvs pkg remote-cache show CACHE_ID [--profile NAME]
-rvs pkg remote-cache set-age CACHE_ID --min-age-hours HOURS [--profile NAME]
-rvs pkg remote-cache delete CACHE_ID [--profile NAME] [--yes]
-rvs pkg remote-cache delete CACHE_ID --customer-id CUSTOMER_ID --registry-kind pypi|npm|maven [--profile NAME] [--yes]
-rvs pkg cache add OFFICIAL_SOURCE [--direct|--no-direct] [--select]
-rvs pkg cache create-custom NAME --kind pypi|npm|maven --api-url URL --publication-control user-controlled|externally-controlled [--artifact-url URL] [--select]
-rvs pkg cache select SOURCE
-rvs pkg cache select --custom NAME [--kind KIND]
-rvs pkg cache current
-rvs pkg cache clear
+rvs pkg mirror list [--profile NAME] [--customer-id CUSTOMER_ID] [--registry-kind pypi|npm|maven]
+rvs pkg mirror create --registry-kind pypi|npm|maven [--profile NAME] [--customer-id CUSTOMER_ID]
+rvs pkg mirror show CACHE_ID [--profile NAME]
+rvs pkg mirror set-age CACHE_ID --min-age-hours HOURS [--profile NAME]
+rvs pkg mirror delete CACHE_ID [--profile NAME] [--yes]
+rvs pkg mirror delete CACHE_ID --customer-id CUSTOMER_ID --registry-kind pypi|npm|maven [--profile NAME] [--yes]
+rvs pkg mirror add OFFICIAL_SOURCE [--select]
+rvs pkg mirror create-custom NAME --kind pypi|npm|maven --api-url URL --publication-control user-controlled|externally-controlled [--artifact-url URL] [--select]
+rvs pkg mirror select SOURCE
+rvs pkg mirror select --custom NAME [--kind KIND]
+rvs pkg mirror current
+rvs pkg mirror clear
 ```
+
+`rvs pkg remote-cache`, `rvs pkg cache`, `cache:`, and `custom-cache:` remain
+accepted as compatibility aliases. New output and saved selections use mirror
+terminology. Repository upstream configuration continues to use `--remote-cache`
+because it attaches the backing cache rather than the direct private mirror.
 
 Package metadata commands:
 

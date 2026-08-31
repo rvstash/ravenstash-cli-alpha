@@ -12,9 +12,11 @@ history in `rvstash/ravenstash-cli`. The CLI is licensed under the
 ## Command Surface
 
 ```text
-rvs auth       Authenticate and manage local profiles
-rvs account    Select the personal or organization customer used for package work
-rvs shell      Install the visible profile/account/target prompt integration
+rvs auth       Authenticate a Ravenstash user and manage local credentials
+rvs profile    Manage named local CLI profiles
+rvs account    Select the acting personal or organization account
+rvs context    Inspect the effective user/profile/account/target tuple
+rvs shell      Install the visible context prompt integration
 rvs runtime    Install and select local Python, Node, and Java runtimes
 rvs pkg        Manage Ravenstash package repositories and package workflows
 rvs packages   Alias for rvs pkg
@@ -50,7 +52,7 @@ in the user's selected credential store. In `auto` mode it fully tests a working
 OS keyring (Secret Service, including GNOME Keyring, KWallet Secret Service, or
 compatible providers), then an initialized `pass` store, then an existing
 passphrase-encrypted Ravenstash vault. It never silently selects plaintext.
-Profile metadata lives in `~/.rvs/config.toml`. Automation should pass credentials
+Local profile metadata lives in `~/.rvs/config.toml`. Automation should pass credentials
 with `RVS_TOKEN`; that env var takes precedence over local profiles, requires no
 keyring, vault, or D-Bus session, and is never refreshed.
 
@@ -83,46 +85,60 @@ Device login discovers and stores the package transfer endpoints returned by
 DevAPI. Every control-plane operation goes through DevAPI; `rvs` never calls
 Central directly.
 
-Profile commands:
+Authentication commands operate on the user credential only:
 
 ```bash
 rvs auth status
 rvs auth whoami
 rvs auth logout
 rvs auth logout --all
-rvs auth profile list
-rvs auth profile switch work
-rvs auth profile delete work
-rvs auth profile delete --all
-rvs auth profile rename old-name new-name
 ```
 
-One login profile may access a personal customer and several organizations. Select
-the account used for authorization, metering, and unqualified target resolution:
+A local profile is a named CLI configuration containing its DevAPI endpoint,
+credential association, discovered repository endpoints, and cached context. It
+is not the Ravenstash user or acting account:
+
+```bash
+rvs profile list
+rvs profile current
+rvs profile use work
+rvs profile delete work
+rvs profile delete --all
+rvs profile rename old-name new-name
+```
+
+One local login profile may access a personal account and several organizations.
+Select the acting account used for authorization, metering, and unqualified target
+resolution:
 
 ```bash
 rvs account list
-rvs account switch personal
-rvs account switch org:acme
 rvs account current
+rvs account use personal
+rvs account use org:acme
+rvs context current
 rvs shell setup
 ```
 
 Headless automation must make this selection explicitly; device authentication
 does not imply a package customer. For a personal account use
-`rvs account switch personal`. Before selecting or directly installing from an
-official cache, attach that source to the selected account once, for example
-`rvs pkg cache add pypiorg`, `rvs pkg cache add npmjs`, or
-`rvs pkg cache add maven-central`. A direct `cache:<source>` request returns 404
-until that binding exists; it is an authorization boundary, not a transient cache
-miss.
+`rvs account use personal`. Before selecting an official private mirror,
+initialize its remote cache for the selected account once, for example
+`rvs pkg mirror add pypiorg`, `rvs pkg mirror add npmjs`, or
+`rvs pkg mirror add maven-central`. A `mirror:<source>` request returns 404 until
+that binding exists; it is an authorization boundary, not a transient cache miss.
 
 The shell prompt shows `(profile · personal)` or `(profile · org:acme)` and appends
 the selected package target. Shell-local profile/account state is non-secret;
 tokens remain in the selected credential store.
 
 `rvs auth whoami` verifies the current identity against Ravenstash; it does not
-infer identity solely from local profile metadata.
+infer identity solely from local profile metadata. `rvs context current` combines
+that verified user with the effective local profile, acting account, package
+target, and the source of each selection.
+
+The older `rvs auth profile ...`, `rvs profile switch`, and `rvs account switch`
+forms remain hidden compatibility aliases.
 
 ## Runtime
 
@@ -173,43 +189,45 @@ rvs pkg repo upstream update acme/app pypi <attachment-id> --min-age-hours 1
 rvs pkg repo upstream reorder acme/app pypi <attachment-id> <attachment-id>
 rvs pkg repo upstream remove acme/app pypi <attachment-id>
 
-rvs pkg remote-cache list
-rvs pkg remote-cache create --registry-kind pypi
-rvs pkg remote-cache show <cache-id>
-rvs pkg remote-cache set-age <cache-id> --min-age-hours 24
-rvs pkg remote-cache delete <cache-id>
+rvs pkg mirror list
+rvs pkg mirror create --registry-kind pypi
+rvs pkg mirror show <cache-id>
+rvs pkg mirror set-age <cache-id> --min-age-hours 24
+rvs pkg mirror delete <cache-id>
 ```
 
 Select one typed target without reserving workspace names:
 
 ```bash
 rvs pkg select acme/backend
-rvs pkg select cache:pypiorg
-rvs pkg select custom-cache:piwheels
+rvs pkg select mirror:pypiorg
+rvs pkg select custom-mirror:piwheels
 rvs pkg current
 rvs pkg clear
 
 rvs pkg --target acme/backend --kind pypi install internal-lib
 rvs pkg --repo acme/backend --kind pypi install internal-lib  # private-target alias
-rvs pkg --target cache:pypiorg install requests
-rvs pkg --target custom-cache:piwheels --kind pypi install numpy
+rvs pkg --target mirror:pypiorg install requests
+rvs pkg --target custom-mirror:piwheels --kind pypi install numpy
 ```
 
-`rvs pkg cache` is an alias for `rvs pkg remote-cache`. Official and custom cache
-management stays visibly distinct:
+`rvs pkg mirror` manages the private install surface backed by each remote cache.
+Official and custom mirrors stay visibly distinct:
 
 ```bash
-rvs pkg cache add pypiorg --select
-rvs pkg cache create-custom piwheels --kind pypi \
+rvs pkg mirror add pypiorg --select
+rvs pkg mirror create-custom piwheels --kind pypi \
   --api-url https://www.piwheels.org/simple/ \
   --publication-control externally-controlled --select
-rvs pkg cache select pypiorg
-rvs pkg cache select --custom piwheels
+rvs pkg mirror select pypiorg
+rvs pkg mirror select --custom piwheels
 ```
 
-A remote cache & proxy is a customer-owned read-only binding to a curated public
-registry. Use it directly with package managers or connect it to a private
-repository. A private PyPI, npm, or Maven lane can also attach a same-kind private
+A remote cache is a customer-owned read-only binding to a curated or custom
+registry. Its private mirror is always available to authorized users with an
+independent 24-hour minimum-age default. Connect the remote cache to a repository
+with `--remote-cache`; select `mirror:` for direct package-manager use. A private
+PyPI, npm, or Maven lane can also attach a same-kind private
 lane from the same customer, including another workspace. Private sources expose
 only their intrinsic packages; their own upstream plans are never traversed.
 Private attachments default to zero/disabled minimum age, while official remote
@@ -222,7 +240,7 @@ hyphens. When a name is ambiguous across authorized workspaces, use
 the CLI always builds native package URLs from the immutable
 `<workspace_unique_ref>/<repository_unique_ref>` pair.
 
-The active account and selected target are scoped by login profile and immutable
+The acting account and selected target are scoped by local login profile and immutable
 customer ID. Legacy per-kind repository defaults remain readable as a migration
 fallback. An explicit `--target` (or private `--repo` alias) is one-shot and
 never changes saved state.
@@ -308,7 +326,7 @@ rvs uv --rvs-repo my-python-packages --rvs-native-config isolate sync
 ```
 
 `rvs pkg ...` is Ravenstash-native: it selects a typed Ravenstash target through
-`--target` or the active profile/account context, and the underlying implementation may or may
+`--target` or the effective local-profile/acting-account context, and the underlying implementation may or may
 not use a native package manager. `rvs pip`, `rvs uv`, `rvs twine`, `rvs npm`,
 `rvs mvn`, `rvs docker`, `rvs helm`, and `rvs oras` are explicit native-tool passthroughs. The
 package-release wrappers respect native config
