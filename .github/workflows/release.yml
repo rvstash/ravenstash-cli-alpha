@@ -425,17 +425,26 @@ jobs:
         env:
           EXPECTED_INSTALLER: release-build/install.sh
         run: |
-          curl --proto '=https' --proto-redir '=https' --tlsv1.2 \
-            --max-redirs 0 -fsS \
-            --dump-header installer-headers.txt \
-            https://ravenstash.com/install.sh \
-            --output live-install.sh
-          cmp "$EXPECTED_INSTALLER" live-install.sh
-          bash -n live-install.sh
-          grep -Eiq '^content-type: text/plain([;[:space:]]|$)' installer-headers.txt
-          grep -Eiq '^cache-control: no-store' installer-headers.txt
-          grep -Eiq '^strict-transport-security: max-age=31536000; includeSubDomains' installer-headers.txt
-          grep -Eiq '^x-content-type-options: nosniff' installer-headers.txt
+          for attempt in {1..60}; do
+            if curl --proto '=https' --proto-redir '=https' --tlsv1.2 \
+                --max-redirs 0 -fsS \
+                --dump-header installer-headers.txt \
+                https://ravenstash.com/install.sh \
+                --output live-install.sh \
+              && cmp "$EXPECTED_INSTALLER" live-install.sh \
+              && bash -n live-install.sh \
+              && grep -Eiq '^content-type: text/plain([;[:space:]]|$)' installer-headers.txt \
+              && grep -Eiq '^cache-control: no-store' installer-headers.txt \
+              && grep -Eiq '^strict-transport-security: max-age=31536000; includeSubDomains' installer-headers.txt \
+              && grep -Eiq '^x-content-type-options: nosniff' installer-headers.txt; then
+              exit 0
+            fi
+            if [[ "$attempt" -lt 60 ]]; then
+              sleep 5
+            fi
+          done
+          echo "::error::Live installer did not converge to the deployed bytes and headers"
+          exit 1
 
       - name: Keep the current installer for a maintenance-only channel release
         if: ${{ !inputs.promote_channel }}
