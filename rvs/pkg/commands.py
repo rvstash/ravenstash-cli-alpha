@@ -34,7 +34,9 @@ app = typer.Typer(
 
 repo_app = typer.Typer(help="Manage Ravenstash package repositories.", no_args_is_help=True)
 upstream_app = typer.Typer(help="Manage ordered repository-lane upstreams.", no_args_is_help=True)
-remote_app = typer.Typer(help="Manage private mirrors backed by remote caches.", no_args_is_help=True)
+remote_app = typer.Typer(
+    help="Manage private mirrors backed by remote caches.", no_args_is_help=True
+)
 package_app = typer.Typer(help="Manage packages hosted in a repository.", no_args_is_help=True)
 pypi_app = typer.Typer(help="PyPI package repository helpers.", no_args_is_help=True)
 npm_app = typer.Typer(help="npm package repository helpers.", no_args_is_help=True)
@@ -53,6 +55,12 @@ _PACKAGE_KINDS = ("pypi", "npm", "maven")
 _MAX_UPSTREAM_PRIORITY = 3
 _ROUTER = CanonicalRouter()
 _REPOSITORY_NAME_HELP = "Package repository name: lowercase letters, numbers, and hyphens."
+
+
+def _format_age_hours(value: float | int | str | None, *, missing: str) -> str:
+    if value is None:
+        return missing
+    return f"{float(value):g} hours"
 
 
 @app.callback()
@@ -103,9 +111,7 @@ def _customer_id(profile: str | None, explicit_customer_id: str | None = None) -
     profile_name, _ = _profile(profile)
     customer_id = cfg_mod.current_customer_id(profile_name)
     if not customer_id:
-        output.fatal(
-            "No acting account is selected. Run `rvs account use` or pass --customer-id."
-        )
+        output.fatal("No acting account is selected. Run `rvs account use` or pass --customer-id.")
     return customer_id
 
 
@@ -645,8 +651,8 @@ def _print_upstreams(items: list[dict]) -> None:
                     if item.get("source_workspace_name")
                     else str(item.get("source_repository_name", ""))
                 ),
-                str(item.get("min_age_hours") or 0),
-                str(item.get("max_age_hours") or "none"),
+                _format_age_hours(item.get("min_age_hours"), missing="No minimum"),
+                _format_age_hours(item.get("max_age_hours"), missing="No maximum"),
             ]
             for item in items
         ],
@@ -887,7 +893,7 @@ def remote_list(
                     else f"custom-mirror:{item.get('remote_name') or item['public_id']}"
                 ),
                 str(item.get("registry_kind", "")),
-                f"{item.get('min_age_hours') or 'none'} hours",
+                _format_age_hours(item.get("min_age_hours"), missing="No minimum"),
             ]
             for entry in items
             for item in [entry["remote_repository"]]
@@ -1110,8 +1116,12 @@ def remote_show(
             "Registry kind": item.get("registry_kind"),
             "Owner ID": item.get("customer_id"),
             "Private mirror": "ready",
-            "Mirror minimum package age (hours)": str(item.get("min_age_hours", "")),
-            "Maximum age hours": str(item.get("max_age_hours", "")),
+            "Mirror minimum package age": _format_age_hours(
+                item.get("min_age_hours"), missing="No minimum"
+            ),
+            "Maximum package age": _format_age_hours(
+                item.get("max_age_hours"), missing="No maximum"
+            ),
         },
         title=f"Private mirror {remote}",
     )

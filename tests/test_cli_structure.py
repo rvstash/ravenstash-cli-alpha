@@ -110,9 +110,13 @@ default_repo = "private-pypi"
 def test_removed_compatibility_groups_are_rejected() -> None:
     packages_result = runner.invoke(app, ["packages", "--help"])
     keyring_result = runner.invoke(app, ["auth", "keyring", "doctor"])
+    cache_result = runner.invoke(app, ["pkg", "cache", "--help"])
+    remote_cache_result = runner.invoke(app, ["pkg", "remote-cache", "--help"])
 
     assert packages_result.exit_code != 0
     assert keyring_result.exit_code != 0
+    assert cache_result.exit_code != 0
+    assert remote_cache_result.exit_code != 0
 
 
 def test_repo_commands_are_registered() -> None:

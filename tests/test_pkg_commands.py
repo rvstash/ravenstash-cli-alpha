@@ -322,9 +322,7 @@ def test_pkg_remote_management_and_upstream_configuration(monkeypatch, tmp_path:
     )
     _use_fake_client(monkeypatch, fake)
 
-    create_result = runner.invoke(
-        pkg_cmd.app, ["mirror", "create", "--registry-kind", "pypi"]
-    )
+    create_result = runner.invoke(pkg_cmd.app, ["mirror", "create", "--registry-kind", "pypi"])
     upstream_result = runner.invoke(
         pkg_cmd.app,
         [
@@ -447,6 +445,7 @@ def test_pkg_official_remote_list_reports_external_publication_control(
                         "official_slug": "pypi",
                         "source_family": "official",
                         "registry_kind": "pypi",
+                        "min_age_hours": None,
                     },
                 }
             ]
@@ -465,6 +464,35 @@ def test_pkg_official_remote_list_reports_external_publication_control(
     assert result.exit_code == 0
     assert tables[0][0][2] == "Publication"
     assert tables[0][1][0][2] == "externally_controlled"
+    assert tables[0][1][0][-1] == "No minimum"
+
+
+def test_pkg_mirror_show_formats_absent_age_bounds(monkeypatch, tmp_path: Path) -> None:
+    _isolate_config(monkeypatch, tmp_path)
+    fake = _FakeApiClient(
+        [
+            {
+                "remote_repository": {
+                    "id": "remote_official_1",
+                    "public_id": "pypiorg",
+                    "official_slug": "pypiorg",
+                    "source_family": "official",
+                    "customer_id": "cus_123",
+                    "registry_kind": "pypi",
+                    "min_age_hours": None,
+                    "max_age_hours": None,
+                }
+            }
+        ]
+    )
+    _use_fake_client(monkeypatch, fake)
+
+    result = runner.invoke(pkg_cmd.app, ["mirror", "show", "pypiorg"])
+
+    assert result.exit_code == 0
+    assert "No minimum" in result.output
+    assert "No maximum" in result.output
+    assert "None hours" not in result.output
 
 
 def test_pkg_repo_upstream_add_private_uses_source_lane_and_zero_age_default(
