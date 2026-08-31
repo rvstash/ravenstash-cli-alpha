@@ -55,11 +55,13 @@ Local profile metadata lives in `~/.rvs/config.toml`. Automation should pass cre
 with `RVS_TOKEN`; that env var takes precedence over local profiles, requires no
 keyring, vault, or D-Bus session, and is never refreshed.
 
-If the first device login finds no usable keyring or `pass` store, setup runs
-before browser authorization. The recommended default creates an Argon2id/AES-GCM
-encrypted vault and unlocks it for the current Linux login session. An explicitly
-acknowledged plaintext file is available for constrained environments, but it is
-never an automatic fallback.
+If the first device login finds no usable keyring or `pass` store, it asks whether
+to install the dedicated Ravenstash encrypted vault before browser authorization.
+The prompt is a simple yes/no choice and names the installed store when setup
+finishes. The vault uses Argon2id/AES-GCM and unlocks for the current Linux login
+session. An explicitly acknowledged plaintext file remains available through the
+advanced storage commands for constrained environments, but it is never an
+automatic fallback.
 
 Inspect or select credential storage before logging in:
 

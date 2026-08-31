@@ -56,9 +56,11 @@ and reports only the authenticated Ravenstash user.
 
 Local profiles store metadata in `~/.rvs/config.toml`. Device login access and
 refresh tokens use an OS keyring, initialized `pass`, or the passphrase-encrypted
-Ravenstash vault. If none exists, first login performs storage setup before
-opening device authorization. Plaintext storage is available only after an exact
-risk acknowledgement and is never selected automatically. `RVS_TOKEN` is the
+Ravenstash vault. If none exists, first login asks whether to install the dedicated
+Ravenstash encrypted vault before opening device authorization. This onboarding
+prompt is yes/no and names the installed store. Plaintext storage is available
+only through the advanced storage options after an exact risk acknowledgement and
+is never selected automatically. `RVS_TOKEN` is the
 automation path and overrides local credentials; a rejected `RVS_TOKEN` is never
 replaced by a stored profile credential. `rvs auth whoami` verifies identity
 against the server rather than reporting local metadata as identity.

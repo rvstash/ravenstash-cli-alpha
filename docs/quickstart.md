@@ -79,9 +79,10 @@ Credential behavior:
 
 - Device login stores access and refresh tokens in the selected OS keyring,
   initialized `pass` store, or passphrase-encrypted Ravenstash vault.
-- If none is available, the first login runs credential-storage setup before
-  browser authorization. Plaintext storage is an explicit discouraged option,
-  never an automatic fallback.
+- If none is available, the first login asks yes/no whether to install the
+  dedicated Ravenstash encrypted vault before browser authorization and names it
+  after installation. Plaintext storage is available only through the advanced
+  storage commands and is never an automatic fallback.
 - Local profile metadata lives in `~/.rvs/config.toml`.
 - `RVS_TOKEN` overrides stored credentials and is the automation path.
 - Never commit real tokens or `.env` files containing secrets.

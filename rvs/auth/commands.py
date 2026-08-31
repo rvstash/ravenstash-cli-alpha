@@ -47,6 +47,8 @@ _KEY_ENTER = "enter"
 _KEY_CTRL_C = "ctrl-c"
 _ESCAPE_SEQUENCE_TIMEOUT_SECONDS = 0.25
 _ESCAPE_SEQUENCE_MAX_CHARS = 8
+_DEDICATED_STORE_LABEL = "Ravenstash encrypted vault"
+_DEDICATED_STORE_PROMPT = "Install a dedicated credential store for rvs?"
 
 
 def _current_profile_name(cfg: cfg_mod.RvsConfig) -> str:
@@ -323,6 +325,7 @@ def _configure_local_store(
     requested: str | None,
     *,
     allow_insecure_storage: bool,
+    first_login: bool = False,
 ) -> str:
     normalized = (requested or "auto").strip().lower()
     if normalized not in {"auto", "vault", "plaintext"}:
@@ -337,20 +340,30 @@ def _configure_local_store(
                 "interactively or use RVS_TOKEN for automation."
             )
         output.warn("No usable OS keyring or initialized pass store was detected.")
-        normalized = typer.prompt(
-            "Credential storage",
-            default="vault",
-            type=Choice(["vault", "plaintext", "cancel"], case_sensitive=False),
-            show_choices=True,
-        ).lower()
-        if normalized == "cancel":
-            output.fatal("Credential-storage setup was cancelled.")
+        if first_login:
+            if not typer.confirm(_DEDICATED_STORE_PROMPT, default=True):
+                output.fatal(
+                    "Login requires credential storage. Configure a store with "
+                    "`rvs auth storage setup` and try again."
+                )
+            normalized = "vault"
+        else:
+            normalized = typer.prompt(
+                "Credential storage",
+                default="vault",
+                type=Choice(["vault", "plaintext", "cancel"], case_sensitive=False),
+                show_choices=True,
+            ).lower()
+            if normalized == "cancel":
+                output.fatal("Credential-storage setup was cancelled.")
     selected = (
         _initialize_vault_interactively()
         if normalized == "vault"
         else _initialize_plaintext(allow_insecure_storage=allow_insecure_storage)
     )
     cfg_mod.set_credential_store(selected)
+    if first_login:
+        output.success(f"Installed dedicated credential store: {_DEDICATED_STORE_LABEL}.")
     return selected
 
 
@@ -395,6 +408,7 @@ def login(
         selected_store = _configure_local_store(
             auth_mod.credential_store_preference(profile_name, credential_store),
             allow_insecure_storage=allow_insecure_storage,
+            first_login=True,
         )
         try:
             selected_store = auth_mod.preflight_credential_store(profile_name, selected_store)

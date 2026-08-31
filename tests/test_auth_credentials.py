@@ -213,7 +213,8 @@ def test_auto_preflight_requests_setup_when_detected_store_fails(monkeypatch) ->
         auth_mod.preflight_credential_store("default", "auto")
 
 
-def test_auto_never_selects_plaintext_implicitly(monkeypatch) -> None:
+def test_auto_never_selects_plaintext_implicitly(monkeypatch, tmp_path: Path) -> None:
+    _isolate_config(monkeypatch, tmp_path, 'credential_store = "auto"')
     monkeypatch.setattr(auth_mod, "_store_available", lambda store: store == "plaintext")
 
     with pytest.raises(auth_mod.NoCredentialStoreError):

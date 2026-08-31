@@ -65,9 +65,11 @@ write/read/delete round trip before opening the browser. `rvs auth storage
 doctor` performs the same check.
 
 When no provider is usable, the first interactive login stops before browser
-authorization and offers first-time storage setup. The default Ravenstash vault
-encrypts all credential entries with AES-256-GCM under a key derived from the
-user's passphrase with Argon2id. Its session agent keeps that key only in memory
+authorization and asks yes/no whether to install the dedicated Ravenstash
+encrypted vault. After installation, the CLI names the selected store. Advanced
+users can still configure another provider with `rvs auth storage setup`. The
+Ravenstash vault encrypts all credential entries with AES-256-GCM under a key
+derived from the user's passphrase with Argon2id. Its session agent keeps that key only in memory
 and exposes a mode-0600, same-UID Unix socket below `XDG_RUNTIME_DIR` (or a
 private Ravenstash runtime directory). The agent forgets the key when explicitly
 locked or idle for eight hours.

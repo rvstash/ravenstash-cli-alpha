@@ -211,7 +211,7 @@ def test_auth_login_stops_before_device_flow_when_store_preflight_fails(
     assert called is False
 
 
-def test_auth_login_initializes_encrypted_vault_before_device_flow(
+def test_auth_login_offers_and_installs_dedicated_store_before_device_flow(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
@@ -244,14 +244,53 @@ def test_auth_login_initializes_encrypted_vault_before_device_flow(
     result = runner.invoke(
         auth_cmd.app,
         ["login", "--no-browser"],
-        input="vault\na sufficiently long passphrase\na sufficiently long passphrase\n",
+        input="y\na sufficiently long passphrase\na sufficiently long passphrase\n",
     )
 
     assert result.exit_code == 0
     assert initialized == ["a sufficiently long passphrase"]
     assert calls[0]["credential_store"] == "vault"
     assert cfg_mod.load().credential_store == "vault"
+    assert "Install a dedicated credential store for rvs?" in result.output
+    assert "Installed dedicated credential store: Ravenstash encrypted vault." in result.output
+    assert "vault, plaintext" not in result.output
     assert "before" not in result.output.lower()
+
+
+def test_auth_login_stops_when_dedicated_store_install_is_declined(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    _isolate_config(monkeypatch, tmp_path, 'default_profile = "default"')
+    initialized: list[str] = []
+    device_login_called = False
+
+    def unexpected_device_login(**_kwargs: Any) -> None:
+        nonlocal device_login_called
+        device_login_called = True
+
+    monkeypatch.setattr(auth_cmd, "_interactive_terminal_available", lambda: True)
+    monkeypatch.setattr(
+        auth_cmd.auth_mod,
+        "preflight_credential_store",
+        lambda profile, requested=None: (_ for _ in ()).throw(
+            auth_cmd.auth_mod.NoCredentialStoreError("no store")
+        ),
+    )
+    monkeypatch.setattr(
+        auth_cmd.stores.vault,
+        "initialize",
+        lambda passphrase: initialized.append(passphrase),
+    )
+    monkeypatch.setattr(auth_cmd, "perform_device_login", unexpected_device_login)
+
+    result = runner.invoke(auth_cmd.app, ["login", "--no-browser"], input="n\n")
+
+    assert result.exit_code == 1
+    assert initialized == []
+    assert device_login_called is False
+    assert "Install a dedicated credential store for rvs?" in result.output
+    assert "Login requires credential storage" in result.stderr
 
 
 def test_auth_login_warns_but_accepts_short_recommended_vault_passphrase(
@@ -286,7 +325,7 @@ def test_auth_login_warns_but_accepts_short_recommended_vault_passphrase(
     result = runner.invoke(
         auth_cmd.app,
         ["login", "--no-browser"],
-        input="vault\n12345678\n12345678\n",
+        input="y\n12345678\n12345678\n",
     )
 
     assert result.exit_code == 0
