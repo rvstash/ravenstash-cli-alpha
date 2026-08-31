@@ -1,8 +1,8 @@
 """Credential storage for rvs.
 
-Device-login credentials are stored in a selected secure provider (an OS
-keyring or ``pass``). Automation credentials must be supplied through
-``RVS_TOKEN``.
+Device-login credentials are stored in a selected provider: an OS keyring,
+``pass``, the passphrase-encrypted Ravenstash vault, or an explicitly accepted
+plaintext file. Automation credentials must be supplied through ``RVS_TOKEN``.
 
 Public API
 ----------
@@ -37,7 +37,11 @@ _REFRESHABLE_CREDENTIAL_TYPES = {
     EXPIRING_CREDENTIAL_TYPE,
     _LEGACY_TEMPORARY_CREDENTIAL_TYPE,
 }
-_CREDENTIAL_STORES = {"auto", "keyring", "pass"}
+_CREDENTIAL_STORES = {"auto", "keyring", "pass", "vault", "plaintext"}
+
+
+class NoCredentialStoreError(RuntimeError):
+    """No configured credential store can be used without first-time setup."""
 
 
 def is_refreshable_credential_type(credential_type: str | None) -> bool:
@@ -94,7 +98,12 @@ def _kr_delete(profile: str) -> None:
 
 def credential_store_statuses() -> list[stores.StoreStatus]:
     """Return non-secret diagnostics for supported local credential stores."""
-    return [stores.system_keyring_status(), stores.pass_status()]
+    return [
+        stores.system_keyring_status(),
+        stores.pass_status(),
+        stores.vault_status(),
+        stores.plaintext_status(),
+    ]
 
 
 def _credential_store_preference(profile: str, requested: str | None = None) -> str:
@@ -110,11 +119,16 @@ def _credential_store_preference(profile: str, requested: str | None = None) -> 
             else cfg.credential_store
         )
     if not isinstance(value, str):
-        raise RuntimeError("Credential store must be auto, keyring, or pass.")
+        raise RuntimeError("Credential store must be auto, keyring, pass, vault, or plaintext.")
     normalized = value.strip().lower()
     if normalized not in _CREDENTIAL_STORES:
-        raise RuntimeError("Credential store must be auto, keyring, or pass.")
+        raise RuntimeError("Credential store must be auto, keyring, pass, vault, or plaintext.")
     return normalized
+
+
+def credential_store_preference(profile: str, requested: str | None = None) -> str:
+    """Return the effective configured provider name without probing it."""
+    return _credential_store_preference(profile, requested)
 
 
 def _store_available(name: str) -> bool:
@@ -122,7 +136,19 @@ def _store_available(name: str) -> bool:
         return _keyring_available()
     if name == "pass":
         return stores.pass_status().available
+    if name == "vault":
+        return stores.vault_status().available
+    if name == "plaintext":
+        return stores.plaintext_status().available
     return False
+
+
+def _store_candidates(preference: str) -> tuple[str, ...]:
+    if preference == "auto":
+        # Plaintext is never selected implicitly. It is usable only after the
+        # user explicitly configures it globally, per profile, or per login.
+        return ("keyring", "pass", "vault")
+    return (preference,)
 
 
 def selected_credential_store(
@@ -131,9 +157,9 @@ def selected_credential_store(
     *,
     required: bool = False,
 ) -> str | None:
-    """Resolve the configured or automatically detected secure store."""
+    """Resolve the configured or automatically detected credential store."""
     preference = _credential_store_preference(profile, requested)
-    candidates = ("keyring", "pass") if preference == "auto" else (preference,)
+    candidates = _store_candidates(preference)
     for candidate in candidates:
         if _store_available(candidate):
             return candidate
@@ -144,10 +170,10 @@ def selected_credential_store(
     details = "; ".join(
         f"{candidate}: {statuses[candidate].detail.rstrip('.')}" for candidate in candidates
     )
-    raise RuntimeError(
-        "No usable secure credential store is available. "
-        f"{details}. Configure an existing store, choose one with "
-        "`rvs auth keyring set keyring|pass`, or use RVS_TOKEN for CI/headless runs."
+    raise NoCredentialStoreError(
+        "No usable credential store is available. "
+        f"{details}. Run `rvs auth storage setup` interactively, configure an existing "
+        "store, or use RVS_TOKEN for CI/headless runs."
     )
 
 
@@ -160,7 +186,11 @@ def _store_get(name: str, account: str, *, strict: bool = False) -> str | None:
                 raise RuntimeError(str(exc)) from exc
         return _kr_get(account)
     try:
-        return stores.pass_get(account)
+        if name == "pass":
+            return stores.pass_get(account)
+        if name == "vault":
+            return stores.vault_get(account)
+        return stores.plaintext_get(account)
     except stores.StoreError as exc:
         if strict:
             raise RuntimeError(str(exc)) from exc
@@ -172,17 +202,26 @@ def _store_set(name: str, account: str, token: str) -> None:
         _kr_set(account, token)
         return
     try:
-        stores.pass_set(account, token)
+        if name == "pass":
+            stores.pass_set(account, token)
+        elif name == "vault":
+            stores.vault_set(account, token)
+        else:
+            stores.plaintext_set(account, token)
     except stores.StoreError as exc:
-        raise RuntimeError(f"Could not store credentials with pass: {exc}") from exc
+        raise RuntimeError(f"Could not store credentials with {name}: {exc}") from exc
 
 
 def _store_delete(name: str, account: str, *, strict: bool = False) -> None:
     try:
         if name == "keyring":
             _kr_delete(account)
-        else:
+        elif name == "pass":
             stores.pass_delete(account)
+        elif name == "vault":
+            stores.vault_delete(account)
+        else:
+            stores.plaintext_delete(account)
     except stores.StoreError as exc:
         if strict:
             raise RuntimeError(str(exc)) from exc
@@ -190,9 +229,36 @@ def _store_delete(name: str, account: str, *, strict: bool = False) -> None:
 
 
 def preflight_credential_store(profile: str, requested: str | None = None) -> str:
-    """Verify a secure store with a disposable round trip before device auth."""
-    store = selected_credential_store(profile, requested, required=True)
-    assert store is not None
+    """Verify candidate stores with a disposable round trip before device auth."""
+    preference = _credential_store_preference(profile, requested)
+    candidates = _store_candidates(preference)
+    failures: list[str] = []
+    available = False
+    for store in candidates:
+        if not _store_available(store):
+            continue
+        available = True
+        try:
+            _preflight_store(store)
+        except RuntimeError as exc:
+            failures.append(f"{store}: {exc}")
+            continue
+        return store
+    if not available:
+        selected_credential_store(profile, requested, required=True)
+    if preference == "auto":
+        raise NoCredentialStoreError(
+            "No automatically detected credential store passed its write/read/delete check. "
+            + "; ".join(failures)
+            + ". Run `rvs auth storage setup` interactively or use RVS_TOKEN for "
+            "CI/headless runs."
+        )
+    raise RuntimeError(
+        "No credential store passed its write/read/delete check. " + "; ".join(failures)
+    )
+
+
+def _preflight_store(store: str) -> None:
     account = f"__probe__:{secrets.token_urlsafe(12)}"
     probe = secrets.token_urlsafe(24)
     failure: RuntimeError | None = None
@@ -207,15 +273,11 @@ def preflight_credential_store(profile: str, requested: str | None = None) -> st
     except RuntimeError as cleanup_error:
         if failure is not None:
             raise RuntimeError(
-                f"Credential-store preflight failed for {store}: {failure}; "
-                f"probe cleanup also failed: {cleanup_error}"
+                f"{failure}; probe cleanup also failed: {cleanup_error}"
             ) from failure
-        raise RuntimeError(
-            f"Credential-store preflight failed for {store}: probe cleanup failed: {cleanup_error}"
-        ) from cleanup_error
+        raise RuntimeError(f"probe cleanup failed: {cleanup_error}") from cleanup_error
     if failure is not None:
-        raise RuntimeError(f"Credential-store preflight failed for {store}: {failure}") from failure
-    return store
+        raise RuntimeError(str(failure)) from failure
 
 
 def _refresh_profile(profile: str) -> str:
@@ -412,8 +474,8 @@ def set_refresh_token(profile: str, token: str, credential_store: str | None = N
 
 def delete_token_from_store(profile: str, credential_store: str) -> None:
     """Remove both device credentials from one explicitly selected store."""
-    if credential_store not in {"keyring", "pass"}:
-        raise ValueError("Credential store must be keyring or pass")
+    if credential_store not in _CREDENTIAL_STORES - {"auto"}:
+        raise ValueError("Credential store is invalid")
     _store_delete(credential_store, profile)
     _store_delete(credential_store, _refresh_profile(profile))
 
@@ -421,7 +483,7 @@ def delete_token_from_store(profile: str, credential_store: str) -> None:
 def delete_token(profile: str) -> None:
     """Remove stored credentials for *profile*."""
     preference = _credential_store_preference(profile)
-    candidates = ("keyring", "pass") if preference == "auto" else (preference,)
+    candidates = _store_candidates(preference)
     for store in candidates:
         delete_token_from_store(profile, store)
     from .. import config as cfg_mod

@@ -79,7 +79,11 @@ rvs auth login --profile staging
 
 Credential behavior:
 
-- Device login stores access and refresh tokens in the OS keyring.
+- Device login stores access and refresh tokens in the selected OS keyring,
+  initialized `pass` store, or passphrase-encrypted Ravenstash vault.
+- If none is available, the first login runs credential-storage setup before
+  browser authorization. Plaintext storage is an explicit discouraged option,
+  never an automatic fallback.
 - Profile metadata lives in `~/.rvs/config.toml`.
 - `RVS_TOKEN` overrides stored credentials and is the automation path.
 - Never commit real tokens or `.env` files containing secrets.
@@ -89,6 +93,7 @@ After login, inspect the active profile:
 ```bash
 rvs auth status
 rvs auth whoami
+rvs auth storage doctor
 ```
 
 Select the acting account and enable the persistent terminal hint:

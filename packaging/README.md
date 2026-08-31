@@ -102,9 +102,9 @@ Source CI builds once on the glibc 2.28 compatibility floor and exercises the
 same frozen archive in pinned Ubuntu 22.04/24.04, Debian 12/13, Fedora, Rocky
 Linux 8/9, Amazon Linux 2023, and openSUSE Leap containers. Each headless smoke
 test verifies normal startup, both aliases, `RVS_TOKEN` authentication, and the
-expected no-keyring diagnostic. Desktop keyring behavior is covered separately
-by provider and disposable round-trip tests because containers do not supply a
-real graphical D-Bus session.
+expected no-provider diagnostic without creating a plaintext store. Desktop
+keyring behavior is covered separately by provider and disposable round-trip
+tests because containers do not supply a real graphical D-Bus session.
 
 Only protected GitHub environments in this repository define these Actions
 values:

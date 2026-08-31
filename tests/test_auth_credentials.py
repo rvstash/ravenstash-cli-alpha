@@ -28,10 +28,10 @@ def test_credential_type_display_keeps_legacy_temporary_user_facing_as_expiring(
     assert auth_mod.display_credential_type("expiring") == "expiring"
 
 
-def test_set_token_requires_keyring(monkeypatch) -> None:
+def test_set_token_requires_configured_store(monkeypatch) -> None:
     monkeypatch.setattr(auth_mod, "_keyring_available", lambda: False)
 
-    with pytest.raises(RuntimeError, match="No usable secure credential store"):
+    with pytest.raises(RuntimeError, match="No usable credential store"):
         auth_mod.set_token("default", "token")
 
 
@@ -158,11 +158,7 @@ def test_auto_store_prefers_usable_os_keyring(monkeypatch, tmp_path: Path) -> No
 def test_preflight_round_trips_disposable_secret(monkeypatch) -> None:
     values: dict[str, str] = {}
     deleted: list[str] = []
-    monkeypatch.setattr(
-        auth_mod,
-        "selected_credential_store",
-        lambda profile, requested=None, required=False: "pass",
-    )
+    monkeypatch.setattr(auth_mod, "_store_available", lambda store: store == "pass")
     monkeypatch.setattr(
         auth_mod,
         "_store_set",
@@ -183,3 +179,37 @@ def test_preflight_round_trips_disposable_secret(monkeypatch) -> None:
     assert values == {}
     assert len(deleted) == 1
     assert deleted[0].startswith("__probe__:")
+
+
+def test_auto_preflight_falls_back_after_keyring_round_trip_failure(monkeypatch) -> None:
+    attempts: list[str] = []
+    monkeypatch.setattr(auth_mod, "_store_available", lambda store: store in {"keyring", "pass"})
+
+    def preflight(store: str) -> None:
+        attempts.append(store)
+        if store == "keyring":
+            raise RuntimeError("keyring is locked")
+
+    monkeypatch.setattr(auth_mod, "_preflight_store", preflight)
+
+    assert auth_mod.preflight_credential_store("default", "auto") == "pass"
+    assert attempts == ["keyring", "pass"]
+
+
+def test_auto_preflight_requests_setup_when_detected_store_fails(monkeypatch) -> None:
+    monkeypatch.setattr(auth_mod, "_store_available", lambda store: store == "keyring")
+    monkeypatch.setattr(
+        auth_mod,
+        "_preflight_store",
+        lambda store: (_ for _ in ()).throw(RuntimeError("keyring is locked")),
+    )
+
+    with pytest.raises(auth_mod.NoCredentialStoreError, match="keyring is locked"):
+        auth_mod.preflight_credential_store("default", "auto")
+
+
+def test_auto_never_selects_plaintext_implicitly(monkeypatch) -> None:
+    monkeypatch.setattr(auth_mod, "_store_available", lambda store: store == "plaintext")
+
+    with pytest.raises(auth_mod.NoCredentialStoreError):
+        auth_mod.preflight_credential_store("default", "auto")

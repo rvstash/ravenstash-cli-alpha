@@ -47,21 +47,38 @@ the bundle into its final directory.
 
 ## Credential-provider selection
 
-Interactive device login never stores credentials as plaintext. Resolution is:
+Interactive device login resolves credential storage in this order:
 
 1. `--credential-store`, when provided for this login;
 2. `RVS_CREDENTIAL_STORE`, when provided by the process;
 3. the provider pinned to this profile by its last successful login;
-4. the global `rvs auth keyring set` preference; and
-5. `auto`, which chooses a working OS keyring, then an initialized `pass` store.
+4. the global `rvs auth storage set` preference; and
+5. `auto`, which fully tests a working OS keyring, then an initialized `pass`
+   store, then an existing encrypted Ravenstash vault.
 
 The OS-keyring adapter uses Python Keyring provider discovery. On Linux this
 includes Secret Service implementations such as GNOME Keyring, KWallet Secret
 Service, and compatible providers. `pass` is used only when its executable and
 initialized password store are both present. A provider is not accepted for
 login merely because its library exists: `rvs` performs a disposable
-write/read/delete round trip before opening the browser. `rvs auth keyring
+write/read/delete round trip before opening the browser. `rvs auth storage
 doctor` performs the same check.
+
+When no provider is usable, the first interactive login stops before browser
+authorization and offers first-time storage setup. The default Ravenstash vault
+encrypts all credential entries with AES-256-GCM under a key derived from the
+user's passphrase with Argon2id. Its session agent keeps that key only in memory
+and exposes a mode-0600, same-UID Unix socket below `XDG_RUNTIME_DIR` (or a
+private Ravenstash runtime directory). The agent forgets the key when explicitly
+locked or idle for eight hours.
+Vault passphrases have an 8-character minimum. The CLI recommends 12+ characters
+or a short multi-word passphrase and warns without rejecting lengths from 8 to 11.
+
+Plaintext storage is a supported last resort only after the user types the exact
+interactive acknowledgement `STORE PLAINTEXT`, or combines an explicit
+`--credential-store plaintext` request with `--allow-insecure-storage` for a
+non-interactive setup. It uses a mode-0600 file and prominent warnings, but is
+not encrypted and is never considered by `auto` selection.
 
 After authorization, access and refresh credentials are handled as one pair. A
 partial write removes both local entries and revokes the newly issued refresh
@@ -74,12 +91,16 @@ Desktop certification should cover these session states independently:
 - an initialized and uninitialized `pass` store, with and without a usable TTY;
 - WSL/server with no session bus;
 - both keyring and `pass` present with each explicit preference; and
+- encrypted-vault initialization, unlock, lock, idle expiry, passphrase change,
+  damaged-file rejection, and atomic credential-pair rollback;
+- plaintext setup acknowledgement, unsafe-permission rejection, and proof that
+  `auto` never selects it; and
 - CI with only `RVS_TOKEN` and no writable home directory assumption beyond CLI
   configuration commands that actually need one.
 
-Unit tests own provider selection, `pass` subprocess safety, disposable
-round-trip behavior, device-flow preflight, partial-write rollback, and refresh
-rollback. A real desktop-session matrix should run in VM-based release
+Unit tests own provider selection, local vault and plaintext-file behavior,
+`pass` subprocess safety, disposable round-trip behavior, device-flow preflight,
+partial-write rollback, and refresh rollback. A real desktop-session matrix should run in VM-based release
 certification; a minimal container is not a faithful substitute for a login
 manager, PAM unlock, and the user's D-Bus session.
 

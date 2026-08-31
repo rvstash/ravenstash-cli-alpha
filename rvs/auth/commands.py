@@ -8,6 +8,7 @@ from contextlib import contextmanager
 from typing import TYPE_CHECKING
 
 import typer
+from click import Choice
 from rich.live import Live
 from rich.markup import escape
 
@@ -15,6 +16,7 @@ from .. import auth as auth_mod
 from .. import config as cfg_mod
 from .. import output
 from ..client import ApiClient, ApiError
+from . import stores
 from .device import perform_device_login
 
 
@@ -32,13 +34,15 @@ profile_app = typer.Typer(
     help="Manage local authenticated profiles.",
     no_args_is_help=True,
 )
-keyring_app = typer.Typer(
-    name="keyring",
-    help="Select and diagnose secure credential storage.",
+storage_app = typer.Typer(
+    name="storage",
+    help="Set up, select, and diagnose credential storage.",
     no_args_is_help=True,
 )
+keyring_app = storage_app
 app.add_typer(profile_app, name="profile")
-app.add_typer(keyring_app, name="keyring")
+app.add_typer(storage_app, name="storage")
+app.add_typer(storage_app, name="keyring", hidden=True)
 
 _KEY_UP = "up"
 _KEY_DOWN = "down"
@@ -225,6 +229,110 @@ def _warn_env_profile_override() -> None:
         output.warn("RVS_PROFILE is set and still overrides the default profile in this shell.")
 
 
+def _interactive_terminal_available() -> bool:
+    return sys.stdin.isatty() and output.console.is_terminal and not output.is_json()
+
+
+def _warn_if_short_vault_passphrase(passphrase: str) -> None:
+    if (
+        stores.vault.MIN_PASSPHRASE_LENGTH
+        <= len(passphrase)
+        < stores.vault.RECOMMENDED_PASSPHRASE_LENGTH
+    ):
+        output.warn(
+            f"This passphrase is accepted, but {stores.vault.RECOMMENDED_PASSPHRASE_LENGTH}+ "
+            "characters or a short multi-word passphrase is recommended."
+        )
+
+
+def _initialize_vault_interactively() -> str:
+    if stores.vault.exists():
+        if not stores.vault.agent_running():
+            credential_storage_unlock()
+        return "vault"
+    if not _interactive_terminal_available():
+        output.fatal(
+            "The encrypted vault must be initialized in an interactive terminal. "
+            "Run `rvs auth storage setup --store vault`."
+        )
+    passphrase = typer.prompt(
+        "New Ravenstash vault passphrase (8 character minimum; 12+ recommended)",
+        hide_input=True,
+    )
+    confirmation = typer.prompt("Confirm vault passphrase", hide_input=True)
+    if passphrase != confirmation:
+        output.fatal("Vault passphrases do not match.")
+    _warn_if_short_vault_passphrase(passphrase)
+    try:
+        stores.vault.initialize(passphrase)
+    except stores.vault.VaultError as exc:
+        output.fatal(str(exc))
+    output.success("Encrypted Ravenstash credential vault initialized and unlocked.")
+    return "vault"
+
+
+def _initialize_plaintext(*, allow_insecure_storage: bool) -> str:
+    output.warn(
+        "PLAINTEXT STORAGE IS NOT ENCRYPTED. Any process or person able to read your "
+        "Linux home directory can copy the Ravenstash access and refresh tokens."
+    )
+    if stores.plaintext_store.exists():
+        output.warn(
+            f"Using existing plaintext credential storage at {stores.plaintext_store.path()}."
+        )
+        return "plaintext"
+    if not allow_insecure_storage:
+        if not _interactive_terminal_available():
+            output.fatal(
+                "Plaintext storage requires interactive acknowledgement or both "
+                "`--credential-store plaintext` and `--allow-insecure-storage`."
+            )
+        acknowledgement = typer.prompt("Type STORE PLAINTEXT to accept this risk")
+        if acknowledgement != "STORE PLAINTEXT":
+            output.fatal("Plaintext credential storage was not enabled.")
+    try:
+        stores.plaintext_store.initialize()
+    except stores.plaintext_store.PlaintextStoreError as exc:
+        output.fatal(str(exc))
+    output.warn(f"Plaintext credential storage enabled at {stores.plaintext_store.path()}.")
+    return "plaintext"
+
+
+def _configure_local_store(
+    requested: str | None,
+    *,
+    allow_insecure_storage: bool,
+) -> str:
+    normalized = (requested or "auto").strip().lower()
+    if normalized not in {"auto", "vault", "plaintext"}:
+        output.fatal(
+            f"Credential store '{normalized}' is unavailable. Configure it first or run "
+            "`rvs auth storage setup` to initialize the encrypted vault."
+        )
+    if normalized == "auto":
+        if not _interactive_terminal_available():
+            output.fatal(
+                "No credential store is configured. Run `rvs auth storage setup` "
+                "interactively or use RVS_TOKEN for automation."
+            )
+        output.warn("No usable OS keyring or initialized pass store was detected.")
+        normalized = typer.prompt(
+            "Credential storage",
+            default="vault",
+            type=Choice(["vault", "plaintext", "cancel"], case_sensitive=False),
+            show_choices=True,
+        ).lower()
+        if normalized == "cancel":
+            output.fatal("Credential-storage setup was cancelled.")
+    selected = (
+        _initialize_vault_interactively()
+        if normalized == "vault"
+        else _initialize_plaintext(allow_insecure_storage=allow_insecure_storage)
+    )
+    cfg_mod.set_credential_store(selected)
+    return selected
+
+
 @app.command("login")
 def login(
     profile: str | None = typer.Option(
@@ -247,7 +355,12 @@ def login(
     credential_store: str | None = typer.Option(
         None,
         "--credential-store",
-        help="Secure store for this login: auto, keyring, or pass.",
+        help="Store for this login: auto, keyring, pass, vault, or plaintext.",
+    ),
+    allow_insecure_storage: bool = typer.Option(
+        False,
+        "--allow-insecure-storage",
+        help="Acknowledge plaintext token storage for a non-interactive setup.",
     ),
 ) -> None:
     """Authenticate through Ravenstash browser/device login."""
@@ -255,6 +368,15 @@ def login(
     profile_name = _target_profile(profile, cfg)
     try:
         selected_store = auth_mod.preflight_credential_store(profile_name, credential_store)
+    except auth_mod.NoCredentialStoreError:
+        selected_store = _configure_local_store(
+            auth_mod.credential_store_preference(profile_name, credential_store),
+            allow_insecure_storage=allow_insecure_storage,
+        )
+        try:
+            selected_store = auth_mod.preflight_credential_store(profile_name, selected_store)
+        except RuntimeError as exc:
+            output.fatal(str(exc))
     except RuntimeError as exc:
         output.fatal(str(exc))
     perform_device_login(
@@ -272,7 +394,7 @@ def keyring_doctor(
         None, "--profile", "-p", help="Profile whose store selection should be resolved."
     ),
 ) -> None:
-    """Diagnose supported secure credential stores without exposing credentials."""
+    """Diagnose supported credential stores without exposing credentials."""
     cfg = cfg_mod.load()
     profile_name = _target_profile(profile, cfg)
     statuses = auth_mod.credential_store_statuses()
@@ -309,17 +431,97 @@ def keyring_doctor(
         raise typer.Exit(1)
 
 
+@keyring_app.command("setup")
+def credential_storage_setup(
+    store: str | None = typer.Option(
+        None,
+        "--store",
+        help="Local fallback to initialize: vault or plaintext (default: prompt).",
+    ),
+    allow_insecure_storage: bool = typer.Option(
+        False,
+        "--allow-insecure-storage",
+        help="Acknowledge plaintext token storage for a non-interactive setup.",
+    ),
+) -> None:
+    """Initialize credential storage before the first device login."""
+    selected = _configure_local_store(
+        store,
+        allow_insecure_storage=allow_insecure_storage,
+    )
+    try:
+        auth_mod.preflight_credential_store(cfg_mod.current_profile_name(cfg_mod.load()), selected)
+    except RuntimeError as exc:
+        output.fatal(str(exc))
+    output.success(f"Credential storage is ready using '{selected}'.")
+
+
+@keyring_app.command("unlock")
+def credential_storage_unlock() -> None:
+    """Unlock the encrypted vault for this Linux login session."""
+    if not stores.vault.exists():
+        output.fatal("Encrypted Ravenstash vault is not initialized.")
+    if stores.vault.agent_running():
+        output.info("Encrypted Ravenstash vault is already unlocked.")
+        return
+    if not _interactive_terminal_available():
+        output.fatal("Vault unlock requires an interactive terminal.")
+    passphrase = typer.prompt("Ravenstash vault passphrase", hide_input=True)
+    try:
+        stores.vault.unlock(passphrase)
+    except stores.vault.VaultError as exc:
+        output.fatal(str(exc))
+    output.success("Encrypted Ravenstash vault unlocked.")
+
+
+@keyring_app.command("lock")
+def credential_storage_lock() -> None:
+    """Forget the encrypted vault key held by the session agent."""
+    if stores.vault.lock():
+        output.success("Encrypted Ravenstash vault locked.")
+    else:
+        output.info("Encrypted Ravenstash vault is already locked.")
+
+
+@keyring_app.command("change-passphrase")
+def credential_storage_change_passphrase() -> None:
+    """Replace the encrypted vault passphrase."""
+    if not stores.vault.exists():
+        output.fatal("Encrypted Ravenstash vault is not initialized.")
+    if not _interactive_terminal_available():
+        output.fatal("Changing the vault passphrase requires an interactive terminal.")
+    old_passphrase = typer.prompt("Current Ravenstash vault passphrase", hide_input=True)
+    new_passphrase = typer.prompt(
+        "New Ravenstash vault passphrase (8 character minimum; 12+ recommended)",
+        hide_input=True,
+    )
+    confirmation = typer.prompt("Confirm new vault passphrase", hide_input=True)
+    if new_passphrase != confirmation:
+        output.fatal("Vault passphrases do not match.")
+    _warn_if_short_vault_passphrase(new_passphrase)
+    try:
+        stores.vault.change_passphrase(old_passphrase, new_passphrase)
+    except stores.vault.VaultError as exc:
+        output.fatal(str(exc))
+    output.success("Encrypted Ravenstash vault passphrase changed.")
+
+
 @keyring_app.command("set")
 def keyring_set(
-    store: str = typer.Argument(..., help="Preferred store: auto, keyring, or pass."),
+    store: str = typer.Argument(
+        ...,
+        help="Preferred store: auto, keyring, pass, vault, or plaintext.",
+    ),
 ) -> None:
-    """Set the preferred secure store for future device logins."""
+    """Set the preferred store for future device logins."""
     normalized = store.strip().lower()
     try:
         cfg_mod.set_credential_store(normalized)
     except ValueError as exc:
         output.fatal(str(exc))
     output.success(f"Credential-store preference set to '{normalized}'.")
+    if normalized == "plaintext":
+        output.warn("Plaintext credentials are not encrypted; prefer vault, keyring, or pass.")
     if normalized != "auto":
         status = next(
             item for item in auth_mod.credential_store_statuses() if item.name == normalized

@@ -809,8 +809,8 @@ def set_profile_metadata(
 
 def set_credential_store(store: str) -> None:
     """Set the preferred credential store for future device logins."""
-    if store not in {"auto", "keyring", "pass"}:
-        raise ValueError("Credential store must be auto, keyring, or pass")
+    if store not in {"auto", "keyring", "pass", "vault", "plaintext"}:
+        raise ValueError("Credential store must be auto, keyring, pass, vault, or plaintext")
     cfg = load()
     cfg.credential_store = store
     save(cfg)

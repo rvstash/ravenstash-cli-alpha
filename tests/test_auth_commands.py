@@ -187,10 +187,165 @@ def test_auth_login_stops_before_device_flow_when_store_preflight_fails(
     assert called is False
 
 
+def test_auth_login_initializes_encrypted_vault_before_device_flow(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    _isolate_config(monkeypatch, tmp_path, 'default_profile = "default"')
+    calls: list[dict[str, Any]] = []
+    initialized: list[str] = []
+    preflights = iter(
+        [
+            auth_cmd.auth_mod.NoCredentialStoreError("no store"),
+            "vault",
+        ]
+    )
+
+    def preflight(profile: str, requested: str | None = None) -> str:
+        result = next(preflights)
+        if isinstance(result, Exception):
+            raise result
+        return result
+
+    monkeypatch.setattr(auth_cmd, "_interactive_terminal_available", lambda: True)
+    monkeypatch.setattr(auth_cmd.auth_mod, "preflight_credential_store", preflight)
+    monkeypatch.setattr(auth_cmd.stores.vault, "exists", lambda: False)
+    monkeypatch.setattr(
+        auth_cmd.stores.vault,
+        "initialize",
+        lambda passphrase: initialized.append(passphrase),
+    )
+    monkeypatch.setattr(auth_cmd, "perform_device_login", lambda **kwargs: calls.append(kwargs))
+
+    result = runner.invoke(
+        auth_cmd.app,
+        ["login", "--no-browser"],
+        input="vault\na sufficiently long passphrase\na sufficiently long passphrase\n",
+    )
+
+    assert result.exit_code == 0
+    assert initialized == ["a sufficiently long passphrase"]
+    assert calls[0]["credential_store"] == "vault"
+    assert cfg_mod.load().credential_store == "vault"
+    assert "before" not in result.output.lower()
+
+
+def test_auth_login_warns_but_accepts_short_recommended_vault_passphrase(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    _isolate_config(monkeypatch, tmp_path, 'default_profile = "default"')
+    initialized: list[str] = []
+    preflights = iter(
+        [
+            auth_cmd.auth_mod.NoCredentialStoreError("no store"),
+            "vault",
+        ]
+    )
+
+    def preflight(profile: str, requested: str | None = None) -> str:
+        result = next(preflights)
+        if isinstance(result, Exception):
+            raise result
+        return result
+
+    monkeypatch.setattr(auth_cmd, "_interactive_terminal_available", lambda: True)
+    monkeypatch.setattr(auth_cmd.auth_mod, "preflight_credential_store", preflight)
+    monkeypatch.setattr(auth_cmd.stores.vault, "exists", lambda: False)
+    monkeypatch.setattr(
+        auth_cmd.stores.vault,
+        "initialize",
+        lambda passphrase: initialized.append(passphrase),
+    )
+    monkeypatch.setattr(auth_cmd, "perform_device_login", lambda **kwargs: None)
+
+    result = runner.invoke(
+        auth_cmd.app,
+        ["login", "--no-browser"],
+        input="vault\n12345678\n12345678\n",
+    )
+
+    assert result.exit_code == 0
+    assert initialized == ["12345678"]
+    assert "accepted" in result.output
+    assert "12+ characters" in result.output
+
+
+def test_auth_storage_setup_plaintext_requires_exact_acknowledgement(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    _isolate_config(monkeypatch, tmp_path, 'default_profile = "default"')
+    initialized: list[bool] = []
+    monkeypatch.setattr(auth_cmd, "_interactive_terminal_available", lambda: True)
+    monkeypatch.setattr(auth_cmd.stores.plaintext_store, "exists", lambda: False)
+    monkeypatch.setattr(
+        auth_cmd.stores.plaintext_store,
+        "initialize",
+        lambda: initialized.append(True),
+    )
+    monkeypatch.setattr(
+        auth_cmd.auth_mod,
+        "preflight_credential_store",
+        lambda profile, requested=None: "plaintext",
+    )
+
+    rejected = runner.invoke(
+        auth_cmd.app,
+        ["storage", "setup", "--store", "plaintext"],
+        input="yes\n",
+    )
+    accepted = runner.invoke(
+        auth_cmd.app,
+        ["storage", "setup", "--store", "plaintext"],
+        input="STORE PLAINTEXT\n",
+    )
+
+    assert rejected.exit_code == 1
+    assert initialized == [True]
+    assert accepted.exit_code == 0
+    assert cfg_mod.load().credential_store == "plaintext"
+    assert "NOT ENCRYPTED" in accepted.stderr
+
+
+def test_auth_storage_setup_plaintext_allows_explicit_noninteractive_acknowledgement(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    _isolate_config(monkeypatch, tmp_path, 'default_profile = "default"')
+    initialized: list[bool] = []
+    monkeypatch.setattr(auth_cmd, "_interactive_terminal_available", lambda: False)
+    monkeypatch.setattr(auth_cmd.stores.plaintext_store, "exists", lambda: False)
+    monkeypatch.setattr(
+        auth_cmd.stores.plaintext_store,
+        "initialize",
+        lambda: initialized.append(True),
+    )
+    monkeypatch.setattr(
+        auth_cmd.auth_mod,
+        "preflight_credential_store",
+        lambda profile, requested=None: "plaintext",
+    )
+
+    result = runner.invoke(
+        auth_cmd.app,
+        [
+            "storage",
+            "setup",
+            "--store",
+            "plaintext",
+            "--allow-insecure-storage",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert initialized == [True]
+
+
 def test_auth_keyring_doctor_performs_disposable_round_trip(monkeypatch, tmp_path: Path) -> None:
     _isolate_config(monkeypatch, tmp_path, 'default_profile = "default"')
     checked: list[tuple[str, str | None]] = []
-    status = auth_cmd.auth_mod.stores.StoreStatus(
+    status = auth_cmd.stores.StoreStatus(
         "keyring",
         True,
         "SecretService",

@@ -46,26 +46,38 @@ rvs auth login --duration 8h
 ```
 
 The CLI stores the short-lived CLI access token and profile-scoped refresh token
-in a secure store. In `auto` mode it uses a working OS keyring (Secret Service,
-including GNOME Keyring, KWallet Secret Service, or compatible providers) and
-then an initialized `pass` store. It never silently falls back to plaintext.
-Profile metadata lives in `~/.rvs/config.toml`. Automation should pass
-credentials with `RVS_TOKEN`; that env var takes precedence over local profiles,
-requires no keyring or D-Bus session, and is never refreshed.
+in the user's selected credential store. In `auto` mode it fully tests a working
+OS keyring (Secret Service, including GNOME Keyring, KWallet Secret Service, or
+compatible providers), then an initialized `pass` store, then an existing
+passphrase-encrypted Ravenstash vault. It never silently selects plaintext.
+Profile metadata lives in `~/.rvs/config.toml`. Automation should pass credentials
+with `RVS_TOKEN`; that env var takes precedence over local profiles, requires no
+keyring, vault, or D-Bus session, and is never refreshed.
+
+If the first device login finds no usable keyring or `pass` store, setup runs
+before browser authorization. The recommended default creates an Argon2id/AES-GCM
+encrypted vault and unlocks it for the current Linux login session. An explicitly
+acknowledged plaintext file is available for constrained environments, but it is
+never an automatic fallback.
 
 Inspect or select credential storage before logging in:
 
 ```bash
-rvs auth keyring doctor
-rvs auth keyring set auto       # detect an available secure provider
-rvs auth keyring set keyring    # use the desktop/system keyring
-rvs auth keyring set pass       # use the user's initialized pass store
+rvs auth storage doctor
+rvs auth storage setup          # encrypted vault by default
+rvs auth storage set auto       # detect an available provider
+rvs auth storage set keyring    # use the desktop/system keyring
+rvs auth storage set pass       # use the user's initialized pass store
+rvs auth storage unlock         # unlock the encrypted vault for this session
+rvs auth storage lock
 rvs auth login --credential-store pass
 ```
 
 The provider used by a successful login is pinned to that profile, so a machine
 with both desktop keyring and `pass` continues using the user's chosen store.
-`RVS_CREDENTIAL_STORE=auto|keyring|pass` supplies a non-persistent override.
+`RVS_CREDENTIAL_STORE=auto|keyring|pass|vault|plaintext` supplies a non-persistent
+override. The legacy `rvs auth keyring` command remains an alias for
+`rvs auth storage`.
 
 Device login discovers and stores the package transfer endpoints returned by
 DevAPI. Every control-plane operation goes through DevAPI; `rvs` never calls
@@ -128,8 +140,8 @@ until that binding exists; it is an authorization boundary, not a transient cach
 miss.
 
 The shell prompt shows `(profile · personal)` or `(profile · org:acme)` and appends
-the selected package target. Shell-local profile/account state is non-secret; tokens
-remain in the keyring.
+the selected package target. Shell-local profile/account state is non-secret;
+tokens remain in the selected credential store.
 
 `rvs auth whoami` verifies the current identity against Ravenstash; it does not
 infer identity solely from local profile metadata.
@@ -389,9 +401,12 @@ current `rvs update` and `rvs upgrade` commands deliberately modify only a
 recognized Ravenstash APT installation.
 
 WSL/headless/server note: `RVS_TOKEN` works without extra setup and is the
-recommended CI path. Persistent `rvs auth login` requires either a usable Secret
-Service provider or an initialized `pass` store. Run `rvs auth keyring doctor`
-before login to see exactly what this session can use.
+recommended CI path. Interactive WSL users without Secret Service or `pass` can
+use the encrypted Ravenstash vault; its passphrase is requested on creation and
+once after the vault agent is lost, locked, or idle for eight hours. Run
+`rvs auth storage doctor` before login to see exactly what this session can use.
+Vault passphrases require 8 characters; 12+ characters or a short multi-word
+passphrase is recommended, and shorter accepted passphrases display a warning.
 
 ## Release packaging
 

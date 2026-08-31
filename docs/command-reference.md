@@ -37,6 +37,7 @@ and Maven subprocess output is not transformed.
 
 ```bash
 rvs auth login [--profile NAME] [--api-url URL] [--duration 8h] [--no-browser]
+  [--credential-store auto|keyring|pass|vault|plaintext] [--allow-insecure-storage]
 rvs auth logout [--profile NAME]
 rvs auth logout --all
 rvs auth status [--profile NAME]
@@ -46,13 +47,25 @@ rvs auth profile switch [NAME]
 rvs auth profile delete [NAME]
 rvs auth profile delete --all
 rvs auth profile rename OLD NEW
+rvs auth storage doctor [--profile NAME]
+rvs auth storage setup [--store vault|plaintext] [--allow-insecure-storage]
+rvs auth storage set auto|keyring|pass|vault|plaintext
+rvs auth storage unlock
+rvs auth storage lock
+rvs auth storage change-passphrase
 ```
 
 Local profiles store metadata in `~/.rvs/config.toml`. Device login access and
-refresh tokens are stored in the OS keyring. `RVS_TOKEN` is the automation path
-and overrides local credentials; a rejected `RVS_TOKEN` is never replaced by a
-stored profile credential. `rvs auth whoami` verifies identity against the
-server rather than reporting local metadata as identity.
+refresh tokens use an OS keyring, initialized `pass`, or the passphrase-encrypted
+Ravenstash vault. If none exists, first login performs storage setup before
+opening device authorization. Plaintext storage is available only after an exact
+risk acknowledgement and is never selected automatically. `RVS_TOKEN` is the
+automation path and overrides local credentials; a rejected `RVS_TOKEN` is never
+replaced by a stored profile credential. `rvs auth whoami` verifies identity
+against the server rather than reporting local metadata as identity.
+
+Vault passphrases require at least 8 characters. The CLI recommends 12+ characters
+or a short multi-word passphrase and warns when an accepted passphrase is shorter.
 
 Device login discovers package endpoints from DevAPI. Non-production automation
 profiles that do not log in declare the DevAPI and transfer URLs outside git

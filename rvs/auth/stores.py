@@ -9,6 +9,8 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
+from . import plaintext_store, vault
+
 
 _COMMAND_TIMEOUT_SECONDS = 60
 
@@ -159,3 +161,86 @@ def pass_delete(account: str) -> None:
     result = _run_pass(["rm", "--force", _pass_entry(account)])
     if result.returncode != 0 and "not in the password store" not in result.stderr.lower():
         raise StoreError(result.stderr.strip() or "pass could not delete the credential")
+
+
+def vault_status() -> StoreStatus:
+    if not vault.exists():
+        return StoreStatus(
+            name="vault",
+            available=False,
+            backend="rvs encrypted vault",
+            detail="The encrypted Ravenstash vault is not initialized.",
+            guidance="Run `rvs auth storage setup` to initialize it.",
+        )
+    unlocked = vault.agent_running()
+    return StoreStatus(
+        name="vault",
+        available=True,
+        backend="rvs encrypted vault",
+        detail=(
+            "The encrypted Ravenstash vault is initialized and unlocked."
+            if unlocked
+            else "The encrypted Ravenstash vault is initialized and locked."
+        ),
+        guidance=("" if unlocked else "Run `rvs auth storage unlock` interactively."),
+    )
+
+
+def vault_get(account: str) -> str | None:
+    try:
+        return vault.get(account)
+    except vault.VaultError as exc:
+        raise StoreError(str(exc)) from exc
+
+
+def vault_set(account: str, secret: str) -> None:
+    try:
+        vault.set(account, secret)
+    except vault.VaultError as exc:
+        raise StoreError(str(exc)) from exc
+
+
+def vault_delete(account: str) -> None:
+    try:
+        vault.delete(account)
+    except vault.VaultError as exc:
+        raise StoreError(str(exc)) from exc
+
+
+def plaintext_status() -> StoreStatus:
+    if not plaintext_store.exists():
+        return StoreStatus(
+            name="plaintext",
+            available=False,
+            backend="rvs plaintext file",
+            detail="The explicitly insecure plaintext credential file is not initialized.",
+            guidance=("Run `rvs auth storage setup` only if encrypted storage cannot be used."),
+        )
+    return StoreStatus(
+        name="plaintext",
+        available=True,
+        backend="rvs plaintext file",
+        detail="WARNING: credentials are stored unencrypted in a user-readable file.",
+        guidance="Prefer keyring, pass, or the encrypted Ravenstash vault.",
+    )
+
+
+def plaintext_get(account: str) -> str | None:
+    try:
+        return plaintext_store.get(account)
+    except plaintext_store.PlaintextStoreError as exc:
+        raise StoreError(str(exc)) from exc
+
+
+def plaintext_set(account: str, secret: str) -> None:
+    try:
+        plaintext_store.set(account, secret)
+    except plaintext_store.PlaintextStoreError as exc:
+        raise StoreError(str(exc)) from exc
+
+
+def plaintext_delete(account: str) -> None:
+    try:
+        plaintext_store.delete(account)
+    except plaintext_store.PlaintextStoreError as exc:
+        raise StoreError(str(exc)) from exc
