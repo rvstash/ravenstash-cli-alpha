@@ -58,7 +58,9 @@ class _Api:
         return _Response(
             {
                 "access_token": "exact-secret-capability",
-                "native_path": "/w_abcdefgh/r_xyzabcde",
+                "native_path": "/main/images",
+                "workspace_unique_ref": "_abcdefgh",
+                "repository_unique_ref": "_xyzabcde",
             }
         )
 
@@ -123,7 +125,7 @@ def test_docker_uses_exact_ephemeral_helper_without_secret_in_argv(
             "--rvs-repo",
             "main/images",
             "push",
-            "oci.rvsta.sh/w_abcdefgh/r_xyzabcde/backend:latest",
+            "oci.rvsta.sh/main/images/backend:latest",
         ],
     )
 
@@ -131,7 +133,7 @@ def test_docker_uses_exact_ephemeral_helper_without_secret_in_argv(
     assert captured["cmd"] == [
         "/usr/bin/docker",
         "push",
-        "oci.rvsta.sh/w_abcdefgh/r_xyzabcde/backend:latest",
+        "oci.rvsta.sh/main/images/backend:latest",
     ]
     assert "exact-secret-capability" not in " ".join(captured["cmd"])
     assert not Path(captured["env"]["RVS_OCI_CREDENTIAL_FILE"]).exists()
@@ -241,7 +243,7 @@ def test_oras_requires_kind_and_rejects_second_ravenstash_target(
             "--rvs-repo",
             "images",
             "cp",
-            "oci.rvsta.sh/w_abcdefgh/r_xyzabcde/a:one",
+            "oci.rvsta.sh/main/images/a:one",
             "oci.rvsta.sh/w_abcdefgh/r_23456789/b:two",
         ],
     )
@@ -272,7 +274,7 @@ def test_credential_helper_is_exact_host_and_read_only(monkeypatch, tmp_path: Pa
     assert payload == {"Username": "helm", "Secret": "ephemeral-secret"}
 
 
-def test_oci_reference_prints_public_stable_root_without_v2(monkeypatch, tmp_path: Path) -> None:
+def test_oci_reference_prints_public_friendly_root_without_v2(monkeypatch, tmp_path: Path) -> None:
     _setup(monkeypatch, tmp_path)
     result = runner.invoke(
         app,
@@ -289,7 +291,7 @@ def test_oci_reference_prints_public_stable_root_without_v2(monkeypatch, tmp_pat
         ],
     )
     assert result.exit_code == 0, result.output
-    assert result.output.strip() == ("oci.rvsta.sh/w_abcdefgh/r_xyzabcde/team/api:1.2.3")
+    assert result.output.strip() == ("oci.rvsta.sh/main/images/team/api:1.2.3")
     assert "/v2/" not in result.output
 
 

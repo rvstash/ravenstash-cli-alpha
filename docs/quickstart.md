@@ -68,15 +68,6 @@ rvs auth login --profile staging
 rvs auth profile switch staging
 ```
 
-For local or staging environments, declare the DevAPI URL outside git. A
-successful device login stores the download and upload endpoints returned by
-that DevAPI environment; every control-plane request continues through DevAPI:
-
-```bash
-export RVS_PROFILE_STAGING_API_URL=https://<staging-devapi-host>
-rvs auth login --profile staging
-```
-
 Credential behavior:
 
 - Device login stores access and refresh tokens in the selected OS keyring,
@@ -205,9 +196,9 @@ rvs uv sync
 rvs twine upload dist/*
 rvs npm install @acme/widgets
 rvs mvn test
-rvs docker --rvs-repo <container-repo-name> pull oci.rvsta.sh/w_abcdefgh/r_23456789/api:latest
-rvs helm --rvs-repo <helm-repo-name> show chart oci://oci.rvsta.sh/w_abcdefgh/r_3456789a/charts/api --version 1.2.3
-rvs oras --rvs-kind container --rvs-repo <container-repo-name> discover oci.rvsta.sh/w_abcdefgh/r_23456789/api:latest
+rvs docker --rvs-repo <container-repo-name> pull oci.rvsta.sh/<workspace-name>/<container-repo-name>/api:latest
+rvs helm --rvs-repo <helm-repo-name> show chart oci://oci.rvsta.sh/<workspace-name>/<helm-repo-name>/charts/api --version 1.2.3
+rvs oras --rvs-kind container --rvs-repo <container-repo-name> discover oci.rvsta.sh/<workspace-name>/<container-repo-name>/api:latest
 ```
 
 By default, the wrappers respect native config such as `.npmrc`, `pip.conf`,
@@ -416,20 +407,6 @@ export RVS_PROFILE=ci
 
 rvs pkg repo set-default pypi <pypi-repo-name>
 rvs pkg pypi install private-package
-```
-
-Production service endpoints have canonical defaults. For a non-production
-automation profile, point `rvs` at that environment's DevAPI and provide the
-package transfer hosts when they differ from production:
-
-```bash
-export RVS_PROFILE_CI_API_URL=https://api.ravenstash.com
-export RVS_PROFILE_CI_PYPI_READ_URL=https://pypi.rvsta.sh
-export RVS_PROFILE_CI_PYPI_PUSH_URL=https://push.pypi.rvsta.sh
-export RVS_PROFILE_CI_PYPI_CACHE_URL=https://cache.pypi.rvsta.sh
-export RVS_TOKEN=<automation-token>
-
-rvs pkg pypi install private-package --repo <pypi-repo-name>
 ```
 
 Do not log tokens. Avoid echoing authenticated PyPI URLs because the token is

@@ -4,7 +4,6 @@ from typing import TYPE_CHECKING, Any
 
 import pytest
 from rvs import config as cfg_mod
-from rvs.client import ApiError
 from rvs.pkg import commands as pkg_cmd
 from rvs.pkg.registries.base import PublishResult
 from typer.testing import CliRunner
@@ -16,14 +15,14 @@ if TYPE_CHECKING:
 
 runner = CliRunner()
 STAGING_API_URL = "https://staging.example.test"
-PYPI_READ_URL = "https://pypi-staging.example.test"
-PYPI_READ_HOST = "pypi-staging.example.test"
-PYPI_PUSH_URL = "https://push.pypi-staging.example.test"
-NPM_READ_URL = "https://npm-staging.example.test"
-NPM_READ_HOST = "npm-staging.example.test"
-NPM_PUSH_URL = "https://push.npm-staging.example.test"
-MAVEN_READ_URL = "https://maven-staging.example.test"
-MAVEN_PUSH_URL = "https://push.maven-staging.example.test"
+PYPI_READ_URL = "https://pypi.staging.example.test"
+PYPI_READ_HOST = "pypi.staging.example.test"
+PYPI_PUSH_URL = "https://push.pypi.staging.example.test"
+NPM_READ_URL = "https://npm.staging.example.test"
+NPM_READ_HOST = "npm.staging.example.test"
+NPM_PUSH_URL = "https://push.npm.staging.example.test"
+MAVEN_READ_URL = "https://maven.staging.example.test"
+MAVEN_PUSH_URL = "https://push.maven.staging.example.test"
 
 
 class _JsonResponse:
@@ -48,7 +47,12 @@ class _FakeApiClient:
     def post(self, path: str, json: Any = None, **kwargs: Any) -> _JsonResponse:
         self.calls.append(("POST", path, json if json is not None else kwargs))
         if path == "/v0/package-credentials":
-            return _JsonResponse({"access_token": "secret-token"})
+            return _JsonResponse(
+                {
+                    "access_token": "secret-token",
+                    "native_path": "/test-account/repo",
+                }
+            )
         return _JsonResponse(self.responses.pop(0) if self.responses else {})
 
     def patch(self, path: str, json: Any = None) -> _JsonResponse:
@@ -128,12 +132,7 @@ default_repo = "_abcdefgh/_xyzabcde"
     monkeypatch.delenv("RVS_ENV_FILE", raising=False)
     monkeypatch.setenv("RVS_PROFILE_STAGING_API_URL", STAGING_API_URL)
     monkeypatch.setenv("RVS_PROFILE_STAGING_PKG_API_URL", "https://app-staging.example.test/api")
-    monkeypatch.setenv("RVS_PROFILE_STAGING_PYPI_READ_URL", PYPI_READ_URL)
-    monkeypatch.setenv("RVS_PROFILE_STAGING_PYPI_PUSH_URL", PYPI_PUSH_URL)
-    monkeypatch.setenv("RVS_PROFILE_STAGING_NPM_READ_URL", NPM_READ_URL)
-    monkeypatch.setenv("RVS_PROFILE_STAGING_NPM_PUSH_URL", NPM_PUSH_URL)
-    monkeypatch.setenv("RVS_PROFILE_STAGING_MAVEN_READ_URL", MAVEN_READ_URL)
-    monkeypatch.setenv("RVS_PROFILE_STAGING_MAVEN_PUSH_URL", MAVEN_PUSH_URL)
+    monkeypatch.setenv("RVS_PROFILE_STAGING_REPOSITORY_DOMAIN", "staging.example.test")
     _use_fake_client(monkeypatch, _FakeApiClient())
 
 
@@ -810,19 +809,19 @@ def test_pkg_package_mutations_call_expected_api_paths(monkeypatch, tmp_path: Pa
     [
         (
             ["pypi", "index-url", "--profile", "staging"],
-            f"{PYPI_READ_URL}/_abcdefgh/_xyzabcde/simple/",
+            f"{PYPI_READ_URL}/test-account/repo/simple/",
         ),
         (
             ["pypi", "upload-url", "--profile", "staging"],
-            f"{PYPI_PUSH_URL}/_abcdefgh/_xyzabcde/",
+            f"{PYPI_PUSH_URL}/test-account/repo/",
         ),
         (
             ["npm", "registry-url", "--profile", "staging"],
-            f"{NPM_READ_URL}/_abcdefgh/_xyzabcde/",
+            f"{NPM_READ_URL}/test-account/repo/",
         ),
         (
             ["maven", "repo-url", "--profile", "staging"],
-            f"{MAVEN_READ_URL}/_abcdefgh/_xyzabcde/",
+            f"{MAVEN_READ_URL}/test-account/repo/",
         ),
     ],
 )
@@ -853,13 +852,13 @@ def test_pkg_configure_snippets_are_printed_for_native_toolchains(
     assert pypi_result.exit_code == 0
     assert "index-url" in pypi_result.output
     assert "extra-index-url" not in pypi_result.output
-    assert "/_abcdefgh/_xyzabcde/" in pypi_result.output
+    assert "/test-account/repo/" in pypi_result.output
     assert npm_result.exit_code == 0
     assert "_authToken=${RVS_TOKEN}" in npm_result.output
-    assert "/_abcdefgh/_xyzabcde/" in npm_result.output
+    assert "/test-account/repo/" in npm_result.output
     assert maven_result.exit_code == 0
     assert "<settings" in maven_result.output
-    assert "/_abcdefgh/_xyzabcde/" in maven_result.output
+    assert "/test-account/repo/" in maven_result.output
 
 
 def test_pypi_install_uses_authenticated_primary_index_url(
@@ -881,11 +880,11 @@ def test_pypi_install_uses_authenticated_primary_index_url(
     assert result.exit_code == 0
     assert calls[0][0] == ["/bin/pip", "install", "demo"]
     assert calls[0][1]["PIP_INDEX_URL"] == (
-        f"https://__token__:secret-token@{PYPI_READ_HOST}/_abcdefgh/_xyzabcde/simple/"
+        f"https://__token__:secret-token@{PYPI_READ_HOST}/test-account/repo/simple/"
     )
 
 
-def test_pypi_install_holds_when_saved_target_name_changed(
+def test_pypi_install_refreshes_native_path_when_saved_target_name_changed(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
@@ -901,16 +900,11 @@ def test_pypi_install_holds_when_saved_target_name_changed(
         def post(self, path: str, json: Any = None, **kwargs: Any) -> _JsonResponse:
             self.calls.append(("POST", path, json if json is not None else kwargs))
             assert json["expected_target"]["repository_name"] == "old-name"
-            raise ApiError(
-                409,
+            return _JsonResponse(
                 {
-                    "code": "RepositoryTargetChanged",
-                    "expected": json["expected_target"],
-                    "current": {
-                        **json["expected_target"],
-                        "repository_name": "new-name",
-                    },
-                },
+                    "access_token": "secret-token",
+                    "native_path": "/test-account/new-name",
+                }
             )
 
     fake = ChangedTargetClient([_repository_entry("new-name")])
@@ -925,9 +919,8 @@ def test_pypi_install_holds_when_saved_target_name_changed(
 
     result = runner.invoke(pkg_cmd.app, ["pypi", "install", "demo", "--profile", "staging"])
 
-    assert result.exit_code == 1
-    assert native_calls == []
-    assert "no package operation was attempted" in result.output
+    assert result.exit_code == 0
+    assert native_calls == [["/bin/pip", "install", "demo"]]
     assert cfg_mod.load().registry_defaults("pypi", "staging").repository_name_cache == "old-name"
 
 
@@ -949,12 +942,11 @@ def test_npm_install_injects_token_for_registry_host(monkeypatch, tmp_path: Path
         "/bin/npm",
         "install",
         "--registry",
-        f"{NPM_READ_URL}/_abcdefgh/_xyzabcde/",
+        f"{NPM_READ_URL}/test-account/repo/",
         "@scope/demo",
     ]
     assert (
-        calls[0][1][f"NPM_CONFIG_//{NPM_READ_HOST}/_abcdefgh/_xyzabcde/:_authToken"]
-        == "secret-token"
+        calls[0][1][f"NPM_CONFIG_//{NPM_READ_HOST}/test-account/repo/:_authToken"] == "secret-token"
     )
 
 
@@ -1000,10 +992,10 @@ def test_npm_publish_calls_registry_adapter(monkeypatch, tmp_path: Path) -> None
     assert result.exit_code == 0
     assert calls == [
         {
-            "registry_url": f"{NPM_PUSH_URL}/_abcdefgh/_xyzabcde/",
+            "registry_url": f"{NPM_PUSH_URL}/test-account/repo/",
             "token": "secret-token",
             "package_dir": package_dir,
-            "download_registry_url": f"{NPM_READ_URL}/_abcdefgh/_xyzabcde/",
+            "download_registry_url": f"{NPM_READ_URL}/test-account/repo/",
         }
     ]
 
@@ -1041,7 +1033,7 @@ def test_maven_deploy_checks_file_and_calls_registry_adapter(monkeypatch, tmp_pa
     assert result.exit_code == 0
     assert calls == [
         {
-            "upload_url": f"{MAVEN_PUSH_URL}/_abcdefgh/_xyzabcde/",
+            "upload_url": f"{MAVEN_PUSH_URL}/test-account/repo/",
             "token": "secret-token",
             "group_id": "com.example",
             "artifact_id": "demo",

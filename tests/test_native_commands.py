@@ -89,7 +89,14 @@ class _FakeDevApi:
             assert json["route_kind"] in {"remote_custom", "remote_official"}
             return _JsonResponse({"access_token": "remote-secret-token"})
         assert path == "/v0/package-credentials"
-        return _JsonResponse({"access_token": "secret-token"})
+        return _JsonResponse(
+            {
+                "access_token": "secret-token",
+                "native_path": "/staging/repo",
+                "workspace_name": "staging",
+                "repository_name": "repo",
+            }
+        )
 
 
 def _isolate_config(monkeypatch: Any, tmp_path: Path) -> None:
@@ -282,12 +289,11 @@ def test_native_npm_repo_override_uses_upload_registry_for_publish(
         "/bin/npm",
         "publish",
         "--registry",
-        f"{NPM_PUSH_URL}/_abcdefgh/_xyzabcde/",
+        f"{NPM_PUSH_URL}/staging/repo/",
     ]
-    assert calls[0]["env"]["NPM_CONFIG_REGISTRY"] == (f"{NPM_PUSH_URL}/_abcdefgh/_xyzabcde/")
+    assert calls[0]["env"]["NPM_CONFIG_REGISTRY"] == (f"{NPM_PUSH_URL}/staging/repo/")
     assert (
-        calls[0]["env"][f"NPM_CONFIG_//{NPM_PUSH_HOST}/_abcdefgh/_xyzabcde/:_authToken"]
-        == "secret-token"
+        calls[0]["env"][f"NPM_CONFIG_//{NPM_PUSH_HOST}/staging/repo/:_authToken"] == "secret-token"
     )
 
 
@@ -318,7 +324,7 @@ def test_native_npm_repo_override_replaces_conflicting_registry_flag(
         "/bin/npm",
         "install",
         "--registry",
-        f"{NPM_READ_URL}/_abcdefgh/_xyzabcde/",
+        f"{NPM_READ_URL}/staging/repo/",
         "@acme/widgets",
     ]
 
@@ -467,7 +473,7 @@ def test_native_pip_isolate_overrides_index_without_writing_credentials(
         "/bin/pip",
         "install",
         "--index-url",
-        f"{PYPI_READ_URL}/_abcdefgh/_xyzabcde/simple/",
+        f"{PYPI_READ_URL}/staging/repo/simple/",
         "demo",
     ]
     assert calls[0]["env"]["PIP_CONFIG_FILE"] == os.devnull
@@ -493,7 +499,7 @@ def test_native_pip_preserves_multi_part_pip_command_prefix(
         "pip",
         "install",
         "--index-url",
-        f"{PYPI_READ_URL}/_abcdefgh/_xyzabcde/simple/",
+        f"{PYPI_READ_URL}/staging/repo/simple/",
         "demo",
     ]
 
@@ -511,8 +517,8 @@ def test_native_uv_repo_override_sets_index_publish_env_and_netrc(
 
     assert result.exit_code == 0
     assert calls[0]["cmd"] == ["/bin/uv", "sync", "--locked"]
-    assert calls[0]["env"]["UV_DEFAULT_INDEX"] == (f"{PYPI_READ_URL}/_abcdefgh/_xyzabcde/simple/")
-    assert calls[0]["env"]["UV_PUBLISH_URL"] == (f"{PYPI_PUSH_URL}/_abcdefgh/_xyzabcde/")
+    assert calls[0]["env"]["UV_DEFAULT_INDEX"] == (f"{PYPI_READ_URL}/staging/repo/simple/")
+    assert calls[0]["env"]["UV_PUBLISH_URL"] == (f"{PYPI_PUSH_URL}/staging/repo/")
     assert calls[0]["env"]["UV_PUBLISH_USERNAME"] == "__token__"
     assert calls[0]["env"]["UV_PUBLISH_PASSWORD"] == "secret-token"
     assert "NETRC" in calls[0]["env"]
@@ -531,7 +537,7 @@ def test_native_twine_repo_override_sets_ephemeral_upload_credentials(
 
     assert result.exit_code == 0
     assert calls[0]["cmd"] == ["/bin/twine", "upload", "dist/demo.whl"]
-    assert calls[0]["env"]["TWINE_REPOSITORY_URL"] == (f"{PYPI_PUSH_URL}/_abcdefgh/_xyzabcde/")
+    assert calls[0]["env"]["TWINE_REPOSITORY_URL"] == (f"{PYPI_PUSH_URL}/staging/repo/")
     assert calls[0]["env"]["TWINE_USERNAME"] == "__token__"
     assert calls[0]["env"]["TWINE_PASSWORD"] == "secret-token"
 
@@ -556,7 +562,7 @@ def test_native_maven_repo_override_generates_temp_settings(
     assert result.exit_code == 0
     assert calls[0]["cmd"][0:2] == ["/bin/mvn", "--settings"]
     assert calls[0]["cmd"][-1] == (
-        f"-DaltDeploymentRepository=rvs-private::default::{MAVEN_PUSH_URL}/_abcdefgh/_xyzabcde/"
+        f"-DaltDeploymentRepository=rvs-private::default::{MAVEN_PUSH_URL}/staging/repo/"
     )
     assert "<id>rvs-private</id>" in settings_texts[0]
     assert "<username>__token__</username>" in settings_texts[0]

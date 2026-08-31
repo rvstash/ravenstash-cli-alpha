@@ -77,6 +77,7 @@ LOCAL_ENV_FILE_NAME = ".rvs.env"
 SESSIONS_DIR_NAME = "sessions"
 
 DEFAULT_API_URL = "https://api.ravenstash.com"
+DEFAULT_REPOSITORY_DOMAIN = "rvsta.sh"
 
 
 @dataclass(frozen=True)
@@ -99,7 +100,7 @@ class NativeRegistryEndpoints:
 
 def _is_loopback_host(hostname: str) -> bool:
     normalized = hostname.rstrip(".").lower()
-    if normalized == "localhost":
+    if normalized == "localhost" or normalized.endswith(".localhost"):
         return True
     try:
         return ip_address(normalized).is_loopback
@@ -373,6 +374,10 @@ def _env_value(name: str) -> str | None:
 
 def profile_api_url(profile_name: str) -> str:
     """Return the default API URL for *profile_name* from env/config defaults."""
+    return _profile_api_url_override(profile_name) or DEFAULT_API_URL
+
+
+def _profile_api_url_override(profile_name: str) -> str | None:
     keys = [_profile_env_key(profile_name)]
     if profile_name == "default":
         keys.append("RVS_API_URL")
@@ -380,49 +385,86 @@ def profile_api_url(profile_name: str) -> str:
         value = _env_value(key)
         if value:
             return validate_service_url(value, label=f"{profile_name} API URL")
-    return DEFAULT_API_URL
+    return None
 
 
-def _profile_service_url(
-    profile_name: str,
-    *,
-    suffix: str,
-    default_env_key: str,
-    default_url: str,
-) -> str:
-    keys = [_profile_env_key(profile_name, suffix)]
+def validate_repository_domain(value: str, *, label: str) -> str:
+    """Validate and normalize a package-repository DNS suffix."""
+    candidate = value.strip().lower().rstrip(".")
+    if candidate.startswith("*."):
+        candidate = candidate[2:]
+    if not candidate or len(candidate) > 253:
+        raise ValueError(f"{label} must be a valid DNS domain")
+    invalid_label = any(
+        len(part) > 63
+        or not re.fullmatch(r"[a-z0-9](?:[a-z0-9-]*[a-z0-9])?", part)
+        for part in candidate.split(".")
+    )
+    if invalid_label:
+        raise ValueError(f"{label} must be a valid DNS domain without a scheme, port, or path")
+    return candidate
+
+
+def _profile_repository_domain_override(profile_name: str) -> str | None:
+    keys = [_profile_env_key(profile_name, "REPOSITORY_DOMAIN")]
     if profile_name == "default":
-        keys.append(default_env_key)
+        keys.append("RVS_REPOSITORY_DOMAIN")
     for key in keys:
         value = _env_value(key)
         if value:
-            return validate_service_url(value, label=f"{profile_name} {suffix.lower()} URL")
-    return validate_service_url(default_url, label=f"{profile_name} {suffix.lower()} URL")
+            return validate_repository_domain(value, label=f"{profile_name} repository domain")
+    return None
+
+
+def profile_repository_domain(profile_name: str) -> str:
+    """Return the repository DNS suffix selected for a profile."""
+    return _profile_repository_domain_override(profile_name) or DEFAULT_REPOSITORY_DOMAIN
+
+
+def _repository_service_url(
+    domain: str,
+    service: str,
+    *,
+    source_url: str | None = None,
+) -> str:
+    source = urlsplit(source_url) if source_url is not None else None
+    scheme = source.scheme if source is not None else "https"
+    if domain == "localhost" or domain.endswith(".localhost"):
+        scheme = "http"
+    host = f"{service}.{domain}"
+    if source is not None and source.port is not None:
+        host = f"{host}:{source.port}"
+    path = source.path if source is not None else ""
+    return validate_service_url(
+        urlunsplit((scheme, host, path, "", "")),
+        label=f"{service} repository URL",
+    )
 
 
 def _package_registry_endpoints(
     profile_name: str,
     kind: Literal["pypi", "npm", "maven"],
+    source: PackageRegistryEndpoints | None = None,
 ) -> PackageRegistryEndpoints:
-    upper = kind.upper()
+    domain_override = _profile_repository_domain_override(profile_name)
+    if source is not None and domain_override is None:
+        return source
+    domain = domain_override or DEFAULT_REPOSITORY_DOMAIN
     return PackageRegistryEndpoints(
-        read_base_url=_profile_service_url(
-            profile_name,
-            suffix=f"{upper}_READ_URL",
-            default_env_key=f"RVS_{upper}_READ_URL",
-            default_url=f"https://{kind}.rvsta.sh",
+        read_base_url=_repository_service_url(
+            domain,
+            kind,
+            source_url=source.read_base_url if source is not None else None,
         ),
-        push_base_url=_profile_service_url(
-            profile_name,
-            suffix=f"{upper}_PUSH_URL",
-            default_env_key=f"RVS_{upper}_PUSH_URL",
-            default_url=f"https://push.{kind}.rvsta.sh",
+        push_base_url=_repository_service_url(
+            domain,
+            f"push.{kind}",
+            source_url=source.push_base_url if source is not None else None,
         ),
-        cache_base_url=_profile_service_url(
-            profile_name,
-            suffix=f"{upper}_CACHE_URL",
-            default_env_key=f"RVS_{upper}_CACHE_URL",
-            default_url=f"https://cache.{kind}.rvsta.sh",
+        cache_base_url=_repository_service_url(
+            domain,
+            f"cache.{kind}",
+            source_url=source.cache_base_url if source is not None else None,
         ),
     )
 
@@ -432,11 +474,9 @@ def _default_native_registries(profile_name: str) -> NativeRegistryEndpoints:
         pypi=_package_registry_endpoints(profile_name, "pypi"),
         npm=_package_registry_endpoints(profile_name, "npm"),
         maven=_package_registry_endpoints(profile_name, "maven"),
-        oci_registry_base_url=_profile_service_url(
-            profile_name,
-            suffix="OCI_REGISTRY_URL",
-            default_env_key="RVS_OCI_REGISTRY_URL",
-            default_url="https://oci.rvsta.sh",
+        oci_registry_base_url=_repository_service_url(
+            profile_repository_domain(profile_name),
+            "oci",
         ),
     )
 
@@ -456,7 +496,7 @@ def _native_registries_from_mapping(
         if not isinstance(raw, dict):
             raise ValueError(f"{profile_name} {kind} registry endpoints are missing")
         try:
-            return PackageRegistryEndpoints(
+            discovered = PackageRegistryEndpoints(
                 read_base_url=validate_service_url(
                     str(raw["read_base_url"]), label=f"{profile_name} {kind} read URL"
                 ),
@@ -467,18 +507,25 @@ def _native_registries_from_mapping(
                     str(raw["cache_base_url"]), label=f"{profile_name} {kind} cache URL"
                 ),
             )
+            return _package_registry_endpoints(profile_name, kind, discovered)
         except KeyError as exc:
             raise ValueError(f"{profile_name} {kind} registry endpoints are incomplete") from exc
 
     raw_oci = value.get("oci")
     if not isinstance(raw_oci, dict) or "registry_base_url" not in raw_oci:
         raise ValueError(f"{profile_name} OCI registry endpoint is missing")
+    discovered_oci_url = validate_service_url(
+        str(raw_oci["registry_base_url"]), label=f"{profile_name} OCI registry URL"
+    )
+    domain_override = _profile_repository_domain_override(profile_name)
     return NativeRegistryEndpoints(
         pypi=package("pypi"),
         npm=package("npm"),
         maven=package("maven"),
-        oci_registry_base_url=validate_service_url(
-            str(raw_oci["registry_base_url"]), label=f"{profile_name} OCI registry URL"
+        oci_registry_base_url=(
+            _repository_service_url(domain_override, "oci", source_url=discovered_oci_url)
+            if domain_override is not None
+            else discovered_oci_url
         ),
     )
 
@@ -598,9 +645,10 @@ def load() -> RvsConfig:
     )
 
     for name, vals in raw.get("profiles", {}).items():
+        api_url_override = _profile_api_url_override(name)
         cfg.profiles[name] = ProfileConfig(
             api_url=validate_service_url(
-                vals.get("api_url", profile_api_url(name)),
+                api_url_override or vals.get("api_url", DEFAULT_API_URL),
                 label=f"{name} API URL",
             ),
             native_registries=_native_registries_from_mapping(

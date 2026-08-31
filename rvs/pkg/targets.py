@@ -320,14 +320,19 @@ def registry_context(
                     },
                 },
             ).json()
-            workspace_reference = (
-                credential.get("workspace_unique_ref") or selected.workspace_unique_ref
-            )
-            repository_reference = (
-                credential.get("repository_unique_ref") or selected.repository_unique_ref
-            )
-            if not workspace_reference or not repository_reference:
-                raise ValueError("Private repository resolution omitted its native references")
+            native_path = credential.get("native_path")
+            if not isinstance(native_path, str):
+                workspace_name = credential.get("workspace_name") or selected.workspace_name_cache
+                repository_name = (
+                    credential.get("repository_name") or selected.repository_name_cache
+                )
+                if not isinstance(workspace_name, str) or not isinstance(repository_name, str):
+                    raise ValueError("Private repository resolution omitted its native path")
+                native_path = f"/{workspace_name}/{repository_name}"
+            native_parts = native_path.strip("/").split("/")
+            if len(native_parts) != 2 or not all(native_parts):
+                raise ValueError("Private repository resolution returned an invalid native path")
+            workspace_reference, repository_reference = native_parts
             read_base_url = endpoints.read_base_url
             push_base_url: str | None = endpoints.push_base_url
         else:

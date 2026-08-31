@@ -640,6 +640,7 @@ def test_refresh_expiring_credential_rotates_tokens(
     _write_profiles_config(config_dir, credential_type=credential_type)
     monkeypatch.setattr(cfg_mod, "CONFIG_DIR", config_dir)
     monkeypatch.setattr(cfg_mod, "CONFIG_FILE", config_dir / "config.toml")
+    monkeypatch.setenv("RVS_REPOSITORY_DOMAIN", "packages.enterprise.example")
     monkeypatch.setattr(auth_mod, "_keyring_available", lambda: True)
     monkeypatch.setattr(
         auth_mod,
@@ -684,8 +685,18 @@ def test_refresh_expiring_credential_rotates_tokens(
     profile = cfg_mod.load().profiles["default"]
     assert profile.credential_type == "expiring"
     assert profile.customer_unique_id == "custpid1"
-    assert profile.native_registries.pypi.read_base_url == "https://pypi.rvsta.sh"
-    assert profile.native_registries.oci_registry_base_url == "https://oci.rvsta.sh"
+    assert (
+        profile.native_registries.pypi.read_base_url
+        == "https://pypi.packages.enterprise.example"
+    )
+    assert (
+        profile.native_registries.pypi.push_base_url
+        == "https://push.pypi.packages.enterprise.example"
+    )
+    assert (
+        profile.native_registries.oci_registry_base_url
+        == "https://oci.packages.enterprise.example"
+    )
     assert profile.refresh_expires_at is not None
 
 

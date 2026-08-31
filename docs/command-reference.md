@@ -67,29 +67,8 @@ against the server rather than reporting local metadata as identity.
 Vault passphrases require at least 8 characters. The CLI recommends 12+ characters
 or a short multi-word passphrase and warns when an accepted passphrase is shorter.
 
-Device login discovers package endpoints from DevAPI. Non-production automation
-profiles that do not log in declare the DevAPI and transfer URLs outside git
-through environment variables or an ignored env file. The CLI never receives
-or calls a Central package-control URL:
-
-```bash
-RVS_PROFILE_STAGING_API_URL=https://<staging-devapi-host>
-RVS_PROFILE_STAGING_PYPI_READ_URL=https://<staging-pypi-read-host>
-RVS_PROFILE_STAGING_PYPI_PUSH_URL=https://<staging-pypi-push-host>
-RVS_PROFILE_STAGING_PYPI_CACHE_URL=https://<staging-pypi-cache-host>
-RVS_PROFILE_STAGING_NPM_READ_URL=https://<staging-npm-read-host>
-RVS_PROFILE_STAGING_NPM_PUSH_URL=https://<staging-npm-push-host>
-RVS_PROFILE_STAGING_NPM_CACHE_URL=https://<staging-npm-cache-host>
-RVS_PROFILE_STAGING_MAVEN_READ_URL=https://<staging-maven-read-host>
-RVS_PROFILE_STAGING_MAVEN_PUSH_URL=https://<staging-maven-push-host>
-RVS_PROFILE_STAGING_MAVEN_CACHE_URL=https://<staging-maven-cache-host>
-RVS_PROFILE_STAGING_OCI_REGISTRY_URL=https://<staging-oci-host>
-RVS_PROFILE_DEV_API_URL=http://<local-devapi-host>
-```
-
-`rvs` reads process environment variables, a nearest `.rvs.env`, `~/.rvs/profiles.env`,
-or the file pointed to by `RVS_ENV_FILE`. Process environment values have the
-highest priority.
+Device login discovers package endpoints from DevAPI. The CLI never receives or
+calls a Central package-control URL.
 
 ## `rvs runtime`
 
@@ -300,9 +279,9 @@ rvs uv --rvs-repo internal-pypi --rvs-native-config isolate sync
 rvs twine --rvs-repo internal-pypi upload dist/*
 rvs mvn --rvs-repo internal-maven deploy
 
-rvs docker --rvs-repo runtime-images pull oci.rvsta.sh/w_abcdefgh/r_23456789/api:latest
-rvs helm --rvs-repo deployment-charts show chart oci://oci.rvsta.sh/w_abcdefgh/r_3456789a/charts/api --version 1.2.3
-rvs oras --rvs-kind container --rvs-repo runtime-images discover oci.rvsta.sh/w_abcdefgh/r_23456789/api:latest
+rvs docker --rvs-repo runtime-images pull oci.rvsta.sh/acme/runtime-images/api:latest
+rvs helm --rvs-repo deployment-charts show chart oci://oci.rvsta.sh/acme/deployment-charts/charts/api --version 1.2.3
+rvs oras --rvs-kind container --rvs-repo runtime-images discover oci.rvsta.sh/acme/runtime-images/api:latest
 rvs oci-reference --kind container --repo runtime-images --oci-path api --reference latest
 ```
 

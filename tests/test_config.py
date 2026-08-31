@@ -23,14 +23,11 @@ def _point_config(monkeypatch, tmp_path: Path) -> tuple[Path, Path]:
         "RVS_ENV_FILE",
         "RVS_PROFILE_DEV_API_URL",
         "RVS_PROFILE_STAGING_API_URL",
+        "RVS_REPOSITORY_DOMAIN",
+        "RVS_PROFILE_DEV_REPOSITORY_DOMAIN",
+        "RVS_PROFILE_STAGING_REPOSITORY_DOMAIN",
         "RVS_PKG_API_URL",
-        "RVS_PYPI_READ_URL",
-        "RVS_PYPI_PUSH_URL",
-        "RVS_PYPI_CACHE_URL",
         "RVS_PROFILE_STAGING_PKG_API_URL",
-        "RVS_PROFILE_STAGING_PYPI_READ_URL",
-        "RVS_PROFILE_STAGING_PYPI_PUSH_URL",
-        "RVS_PROFILE_STAGING_PYPI_CACHE_URL",
     ):
         monkeypatch.delenv(key, raising=False)
     return config_dir, config_file
@@ -81,6 +78,24 @@ customer_unique_id = "custpid1"
     assert profile.customer_unique_id == "custpid1"
 
 
+def test_env_api_url_overrides_saved_profile_url(monkeypatch, tmp_path: Path) -> None:
+    config_dir, config_file = _point_config(monkeypatch, tmp_path)
+    monkeypatch.setenv("RVS_PROFILE_STAGING_API_URL", "https://devapi.staging.example.test")
+    config_dir.mkdir()
+    config_file.write_text(
+        """
+[profiles.staging]
+api_url = "https://api.ravenstash.com"
+""".strip(),
+        encoding="utf-8",
+    )
+
+    assert (
+        cfg_mod.load().active_profile("staging").api_url
+        == "https://devapi.staging.example.test"
+    )
+
+
 def test_profile_api_url_can_be_declared_in_gitignored_local_env_file(
     monkeypatch,
     tmp_path: Path,
@@ -106,24 +121,91 @@ def test_profile_api_url_rejects_non_loopback_plain_http(monkeypatch, tmp_path: 
         cfg_mod.profile_api_url("dev")
 
 
-def test_package_service_urls_can_be_declared_per_profile(monkeypatch, tmp_path: Path) -> None:
+def test_repository_domain_formats_every_registry_service_for_profile(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
     _point_config(monkeypatch, tmp_path)
     (tmp_path / ".rvs.env").write_text(
-        """
-RVS_PROFILE_STAGING_PYPI_READ_URL=https://pypi-staging.example.test
-RVS_PROFILE_STAGING_PYPI_PUSH_URL=https://push.pypi-staging.example.test
-RVS_PROFILE_STAGING_PYPI_CACHE_URL=https://cache.pypi-staging.example.test
-""".strip(),
+        "RVS_PROFILE_STAGING_REPOSITORY_DOMAIN=packages.staging.example.test\n",
         encoding="utf-8",
     )
 
     profile = cfg_mod.load().active_profile("staging")
 
-    assert profile.native_registries.pypi.read_base_url == "https://pypi-staging.example.test"
-    assert profile.native_registries.pypi.push_base_url == "https://push.pypi-staging.example.test"
     assert (
-        profile.native_registries.pypi.cache_base_url == "https://cache.pypi-staging.example.test"
+        profile.native_registries.pypi.read_base_url
+        == "https://pypi.packages.staging.example.test"
     )
+    assert (
+        profile.native_registries.pypi.push_base_url
+        == "https://push.pypi.packages.staging.example.test"
+    )
+    assert (
+        profile.native_registries.pypi.cache_base_url
+        == "https://cache.pypi.packages.staging.example.test"
+    )
+    assert (
+        profile.native_registries.npm.read_base_url
+        == "https://npm.packages.staging.example.test"
+    )
+    assert (
+        profile.native_registries.maven.push_base_url
+        == "https://push.maven.packages.staging.example.test"
+    )
+    assert (
+        profile.native_registries.oci_registry_base_url
+        == "https://oci.packages.staging.example.test"
+    )
+
+
+def test_repository_domain_override_rewrites_discovered_hosts_but_keeps_routes(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    config_dir, config_file = _point_config(monkeypatch, tmp_path)
+    monkeypatch.setenv("RVS_PROFILE_DEV_REPOSITORY_DOMAIN", "*.dev.localhost")
+    config_dir.mkdir()
+    config_file.write_text(
+        """
+[profiles.dev.native_registries.pypi]
+read_base_url = "http://localhost:8788/native/pypi"
+push_base_url = "http://localhost:6001/native/pypi"
+cache_base_url = "http://localhost:8788/native/pypi"
+
+[profiles.dev.native_registries.npm]
+read_base_url = "http://localhost:8788/native/npm"
+push_base_url = "http://localhost:6001/native/npm"
+cache_base_url = "http://localhost:8788/native/npm"
+
+[profiles.dev.native_registries.maven]
+read_base_url = "http://localhost:8788/native/maven"
+push_base_url = "http://localhost:6001/native/maven"
+cache_base_url = "http://localhost:8788/native/maven"
+
+[profiles.dev.native_registries.oci]
+registry_base_url = "http://localhost:8788"
+""".strip(),
+        encoding="utf-8",
+    )
+
+    endpoints = cfg_mod.load().active_profile("dev").native_registries
+
+    assert endpoints.pypi.read_base_url == "http://pypi.dev.localhost:8788/native/pypi"
+    assert endpoints.pypi.push_base_url == "http://push.pypi.dev.localhost:6001/native/pypi"
+    assert endpoints.npm.cache_base_url == "http://cache.npm.dev.localhost:8788/native/npm"
+    assert endpoints.oci_registry_base_url == "http://oci.dev.localhost:8788"
+
+
+def test_repository_domain_rejects_urls_and_ports(monkeypatch, tmp_path: Path) -> None:
+    _point_config(monkeypatch, tmp_path)
+    monkeypatch.setenv(
+        "RVS_PROFILE_STAGING_REPOSITORY_DOMAIN",
+        "https://packages.staging.example.test:8443",
+    )
+
+    with pytest.raises(ValueError, match="without a scheme, port, or path"):
+        cfg_mod.load().active_profile("staging")
 
 
 def test_explicit_rvs_env_file_overrides_local_env_file(monkeypatch, tmp_path: Path) -> None:

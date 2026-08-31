@@ -81,29 +81,7 @@ override. The legacy `rvs auth keyring` command remains an alias for
 
 Device login discovers and stores the package transfer endpoints returned by
 DevAPI. Every control-plane operation goes through DevAPI; `rvs` never calls
-Central directly. For non-production automation that does not perform device
-login, declare the DevAPI and transfer endpoints through the shell environment
-or a gitignored local `.rvs.env` file:
-
-```bash
-# packages/rvs/.rvs.env, ~/.rvs/profiles.env, or a file pointed to by RVS_ENV_FILE
-RVS_PROFILE_STAGING_API_URL=https://<staging-devapi-host>
-RVS_PROFILE_STAGING_PYPI_READ_URL=https://<staging-pypi-read-host>
-RVS_PROFILE_STAGING_PYPI_PUSH_URL=https://<staging-pypi-push-host>
-RVS_PROFILE_STAGING_PYPI_CACHE_URL=https://<staging-pypi-cache-host>
-RVS_PROFILE_STAGING_NPM_READ_URL=https://<staging-npm-read-host>
-RVS_PROFILE_STAGING_NPM_PUSH_URL=https://<staging-npm-push-host>
-RVS_PROFILE_STAGING_NPM_CACHE_URL=https://<staging-npm-cache-host>
-RVS_PROFILE_STAGING_MAVEN_READ_URL=https://<staging-maven-read-host>
-RVS_PROFILE_STAGING_MAVEN_PUSH_URL=https://<staging-maven-push-host>
-RVS_PROFILE_STAGING_MAVEN_CACHE_URL=https://<staging-maven-cache-host>
-RVS_PROFILE_STAGING_OCI_REGISTRY_URL=https://<staging-oci-host>
-RVS_PROFILE_DEV_API_URL=http://<local-devapi-host>
-```
-
-Process environment variables override env-file values. `RVS_ENV_FILE` can point
-to a specific env file when you do not want to place `.rvs.env` in the current
-workspace.
+Central directly.
 
 Profile commands:
 
@@ -319,9 +297,9 @@ rvs uv sync
 rvs twine upload dist/*
 rvs npm install @acme/widgets
 rvs mvn test
-rvs docker --rvs-target acme/runtime-images pull oci.rvsta.sh/w_abcdefgh/r_23456789/api:latest
-rvs helm --rvs-target acme/deployment-charts show chart oci://oci.rvsta.sh/w_abcdefgh/r_3456789a/charts/api --version 1.2.3
-rvs oras --rvs-kind container --rvs-target acme/runtime-images discover oci.rvsta.sh/w_abcdefgh/r_23456789/api:latest
+rvs docker --rvs-target acme/runtime-images pull oci.rvsta.sh/acme/runtime-images/api:latest
+rvs helm --rvs-target acme/deployment-charts show chart oci://oci.rvsta.sh/acme/deployment-charts/charts/api --version 1.2.3
+rvs oras --rvs-kind container --rvs-target acme/runtime-images discover oci.rvsta.sh/acme/runtime-images/api:latest
 rvs oci-reference --kind container --target acme/runtime-images --oci-path api --reference latest
 
 rvs npm --rvs-repo my-node-packages install @acme/widgets

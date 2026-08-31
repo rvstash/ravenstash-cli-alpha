@@ -26,10 +26,7 @@ from ..runtime import tools
 OciTool = Literal["docker", "helm", "oras"]
 OciRegistryKind = Literal["container", "helm"]
 _OCI_COMPONENT = re.compile(r"^[a-z0-9]+(?:(?:[._]|__|-+)[a-z0-9]+)*$")
-_OCI_NATIVE_PATH = re.compile(
-    r"^/w_[23456789abcdefghijkmnpqrstuvwxyz]{8}/"
-    r"r_[23456789abcdefghijkmnpqrstuvwxyz]{8}$"
-)
+_UNIQUE_ID = re.compile(r"^[23456789abcdefghijkmnpqrstuvwxyz]{8}$")
 
 
 @dataclass(frozen=True)
@@ -48,7 +45,42 @@ class OciRoute:
     registry_url: str
     registry_host: str
     native_root: str
+    accepted_roots: frozenset[str]
     package_token: str
+
+
+def _native_route_parts(native_path: str) -> tuple[str, str] | None:
+    parts = native_path.strip("/").split("/")
+    if len(parts) != 2:
+        return None
+    workspace, repository = parts
+    stable = workspace.startswith("w_") or repository.startswith("r_")
+    if stable:
+        if not (
+            workspace.startswith("w_")
+            and repository.startswith("r_")
+            and _UNIQUE_ID.fullmatch(workspace.removeprefix("w_"))
+            and _UNIQUE_ID.fullmatch(repository.removeprefix("r_"))
+        ):
+            return None
+    elif (
+        not _OCI_COMPONENT.fullmatch(workspace)
+        or not _OCI_COMPONENT.fullmatch(repository)
+        or workspace.startswith(("w_", "r_"))
+        or repository.startswith(("w_", "r_"))
+    ):
+        return None
+    return workspace, repository
+
+
+def _stable_oci_root(workspace_unique_ref: object, repository_unique_ref: object) -> str:
+    if not isinstance(workspace_unique_ref, str) or not isinstance(repository_unique_ref, str):
+        output.fatal("Invalid OCI capability response: stable identity is missing.")
+    workspace_id = workspace_unique_ref.removeprefix("_")
+    repository_id = repository_unique_ref.removeprefix("_")
+    if not _UNIQUE_ID.fullmatch(workspace_id) or not _UNIQUE_ID.fullmatch(repository_id):
+        output.fatal("Invalid OCI capability response: stable identity is invalid.")
+    return f"w_{workspace_id}/r_{repository_id}"
 
 
 def _split_repo_ref(repo_ref: str) -> tuple[str | None, str]:
@@ -142,14 +174,20 @@ def resolve_route(tool: OciTool, options: OciOptions) -> OciRoute:
         output.fatal(str(exc))
     except (KeyError, TypeError, ValueError) as exc:
         output.fatal(f"Invalid OCI capability response: {exc}")
-    if not isinstance(native_path, str) or _OCI_NATIVE_PATH.fullmatch(native_path) is None:
+    if not isinstance(native_path, str) or _native_route_parts(native_path) is None:
         output.fatal("Invalid OCI capability response: native_path is not canonical.")
     registry_url, registry_host = _registry_url(config.active_profile(profile_name))
+    friendly_root = native_path.strip("/")
+    stable_root = _stable_oci_root(
+        credential.get("workspace_unique_ref"),
+        credential.get("repository_unique_ref"),
+    )
     return OciRoute(
         kind=kind,
         registry_url=registry_url,
         registry_host=registry_host,
         native_root=f"{registry_host}{native_path}",
+        accepted_roots=frozenset((friendly_root, stable_root)),
         package_token=token,
     )
 
@@ -163,7 +201,7 @@ def _ravenstash_routes(argv: list[str], registry_host: str) -> set[str]:
             suffix = argument[index + len(marker) :]
             candidate = re.split(r"[\s,;\]\[(){}]", suffix, maxsplit=1)[0]
             parts = candidate.split("/")
-            if len(parts) >= 2 and parts[0].startswith("w_") and parts[1].startswith("r_"):
+            if len(parts) >= 2 and _native_route_parts("/".join(parts[:2])) is not None:
                 routes.add("/".join(parts[:2]))
             start = index + len(marker)
     return routes
@@ -171,8 +209,7 @@ def _ravenstash_routes(argv: list[str], registry_host: str) -> set[str]:
 
 def _assert_exact_targets(argv: list[str], route: OciRoute) -> None:
     observed = _ravenstash_routes(argv, route.registry_host)
-    expected = "/".join(route.native_root.split("/")[-2:])
-    if any(value != expected for value in observed):
+    if any(value not in route.accepted_roots for value in observed):
         output.fatal(
             "This invocation references another Ravenstash logical repository. "
             "One native invocation may use only the exact --rvs-repo target."
