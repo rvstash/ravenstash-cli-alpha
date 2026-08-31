@@ -69,7 +69,8 @@ def test_auth_status_rejects_profile_configuration_options(
     result = runner.invoke(auth_cmd.app, ["status", "--verbose"])
 
     assert result.exit_code == 2
-    assert "No such option: --verbose" in result.output
+    assert "No such option" in result.output
+    assert "verbose" in result.output
 
 
 def test_auth_status_exits_one_when_profile_has_no_token(monkeypatch, tmp_path: Path) -> None:

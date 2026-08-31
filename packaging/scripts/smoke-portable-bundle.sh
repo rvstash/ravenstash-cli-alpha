@@ -34,7 +34,7 @@ test -x "${bundle_directory}/docker-credential-rvs"
 RVS_TOKEN="ci-smoke-token" "${bundle_directory}/rvs" auth status >/dev/null
 
 set +e
-doctor_output="$("${bundle_directory}/rvs" auth keyring doctor 2>&1)"
+doctor_output="$("${bundle_directory}/rvs" auth storage doctor 2>&1)"
 doctor_status=$?
 set -e
 [[ "$doctor_status" -eq 1 ]]
