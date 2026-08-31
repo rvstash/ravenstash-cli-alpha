@@ -323,7 +323,7 @@ def test_oci_capability_rejects_noncanonical_native_path(monkeypatch, tmp_path: 
     assert "native_path is not canonical" in result.output
 
 
-def test_package_and_remote_cache_commands_reject_oci_kinds() -> None:
+def test_package_and_mirror_commands_reject_oci_kinds() -> None:
     package = runner.invoke(
         app,
         [
@@ -338,7 +338,7 @@ def test_package_and_remote_cache_commands_reject_oci_kinds() -> None:
     )
     remote = runner.invoke(
         app,
-        ["pkg", "remote-cache", "create", "--registry-kind", "helm"],
+        ["pkg", "mirror", "create", "--registry-kind", "helm"],
     )
 
     assert package.exit_code != 0

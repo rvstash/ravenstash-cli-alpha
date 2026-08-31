@@ -49,12 +49,6 @@ def parse_target(value: str) -> TargetSpec:
     elif candidate.startswith("custom-mirror:"):
         selector = candidate.removeprefix("custom-mirror:").strip().strip("/")
         target_type = "custom_cache"
-    elif candidate.startswith("cache:"):
-        selector = candidate.removeprefix("cache:").strip().strip("/")
-        target_type = "official_cache"
-    elif candidate.startswith("custom-cache:"):
-        selector = candidate.removeprefix("custom-cache:").strip().strip("/")
-        target_type = "custom_cache"
     elif candidate.startswith("public:"):
         output.fatal("Public package targets are reserved for a future Ravenstash release.")
     elif ":" in candidate:

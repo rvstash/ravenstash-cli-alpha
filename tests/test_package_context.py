@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+import pytest
 from rvs import config as cfg_mod
 from rvs.cli import app
 from rvs.client import ApiClient
@@ -144,9 +145,12 @@ def test_target_parser_keeps_private_and_mirror_namespaces_disjoint() -> None:
     assert parse_target("acme/backend").target_type == "private"
     assert parse_target("mirror:pypiorg").target_type == "official_cache"
     assert parse_target("custom-mirror:piwheels").target_type == "custom_cache"
-    # Pre-mirror selectors remain accepted as compatibility aliases.
-    assert parse_target("cache:pypiorg").target_type == "official_cache"
-    assert parse_target("custom-cache:piwheels").target_type == "custom_cache"
+
+
+@pytest.mark.parametrize("selector", ["cache:pypiorg", "custom-cache:piwheels"])
+def test_target_parser_rejects_removed_cache_aliases(selector: str) -> None:
+    with pytest.raises(SystemExit):
+        parse_target(selector)
 
 
 def test_account_and_official_cache_selection_are_visible_and_clearable(
@@ -265,7 +269,7 @@ def test_native_wrapper_uses_selected_cache_and_one_shot_does_not_mutate_it(
     ]
     fake = FakeApi([personal], remotes)
     monkeypatch.setattr(ApiClient, "from_profile", staticmethod(lambda profile=None: fake))
-    assert runner.invoke(app, ["pkg", "select", "cache:pypiorg"]).exit_code == 0
+    assert runner.invoke(app, ["pkg", "select", "mirror:pypiorg"]).exit_code == 0
 
     calls: list[tuple[list[str], dict[str, str]]] = []
 
@@ -281,7 +285,7 @@ def test_native_wrapper_uses_selected_cache_and_one_shot_does_not_mutate_it(
 
     result = runner.invoke(
         app,
-        ["pip", "--rvs-target", "custom-cache:piwheels", "install", "numpy"],
+        ["pip", "--rvs-target", "custom-mirror:piwheels", "install", "numpy"],
     )
 
     assert result.exit_code == 0, result.output

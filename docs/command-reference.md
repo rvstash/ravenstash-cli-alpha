@@ -126,9 +126,6 @@ organization customer used for authorization, ownership, and metering. A package
 target is selected inside that account. `rvs context current` verifies and shows
 the effective tuple and selection provenance without collapsing those concepts.
 
-The former `rvs auth profile ...`, `rvs profile switch`, and `rvs account switch`
-forms remain callable as hidden compatibility aliases.
-
 Targets are `workspace/repository`, `mirror:official-slug`, or
 `custom-mirror:customer-name`. Resolution is always scoped to the active customer.
 `--kind` is needed only when a generic operation or duplicate cross-kind custom
@@ -205,9 +202,7 @@ rvs pkg mirror current
 rvs pkg mirror clear
 ```
 
-`rvs pkg remote-cache`, `rvs pkg cache`, `cache:`, and `custom-cache:` remain
-accepted as compatibility aliases. New output and saved selections use mirror
-terminology. Repository upstream configuration continues to use `--remote-cache`
+Repository upstream configuration continues to use `--remote-cache`
 because it attaches the backing cache rather than the direct private mirror.
 
 Package metadata commands:

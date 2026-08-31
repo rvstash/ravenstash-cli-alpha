@@ -46,8 +46,6 @@ maven_app = typer.Typer(help="Maven package repository helpers.", no_args_is_hel
 app.add_typer(repo_app, name="repo")
 repo_app.add_typer(upstream_app, name="upstream")
 app.add_typer(remote_app, name="mirror")
-app.add_typer(remote_app, name="remote-cache", hidden=True)
-app.add_typer(remote_app, name="cache", hidden=True)
 app.add_typer(package_app, name="package")
 app.add_typer(pypi_app, name="pypi")
 app.add_typer(npm_app, name="npm")
