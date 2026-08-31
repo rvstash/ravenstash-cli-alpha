@@ -90,10 +90,7 @@ api_url = "https://api.ravenstash.com"
         encoding="utf-8",
     )
 
-    assert (
-        cfg_mod.load().active_profile("staging").api_url
-        == "https://devapi.staging.example.test"
-    )
+    assert cfg_mod.load().active_profile("staging").api_url == "https://devapi.staging.example.test"
 
 
 def test_profile_api_url_can_be_declared_in_gitignored_local_env_file(
@@ -134,8 +131,7 @@ def test_repository_domain_formats_every_registry_service_for_profile(
     profile = cfg_mod.load().active_profile("staging")
 
     assert (
-        profile.native_registries.pypi.read_base_url
-        == "https://pypi.packages.staging.example.test"
+        profile.native_registries.pypi.read_base_url == "https://pypi.packages.staging.example.test"
     )
     assert (
         profile.native_registries.pypi.push_base_url
@@ -146,8 +142,7 @@ def test_repository_domain_formats_every_registry_service_for_profile(
         == "https://cache.pypi.packages.staging.example.test"
     )
     assert (
-        profile.native_registries.npm.read_base_url
-        == "https://npm.packages.staging.example.test"
+        profile.native_registries.npm.read_base_url == "https://npm.packages.staging.example.test"
     )
     assert (
         profile.native_registries.maven.push_base_url

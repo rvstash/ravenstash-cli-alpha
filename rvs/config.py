@@ -396,8 +396,7 @@ def validate_repository_domain(value: str, *, label: str) -> str:
     if not candidate or len(candidate) > 253:
         raise ValueError(f"{label} must be a valid DNS domain")
     invalid_label = any(
-        len(part) > 63
-        or not re.fullmatch(r"[a-z0-9](?:[a-z0-9-]*[a-z0-9])?", part)
+        len(part) > 63 or not re.fullmatch(r"[a-z0-9](?:[a-z0-9-]*[a-z0-9])?", part)
         for part in candidate.split(".")
     )
     if invalid_label:

@@ -686,16 +686,14 @@ def test_refresh_expiring_credential_rotates_tokens(
     assert profile.credential_type == "expiring"
     assert profile.customer_unique_id == "custpid1"
     assert (
-        profile.native_registries.pypi.read_base_url
-        == "https://pypi.packages.enterprise.example"
+        profile.native_registries.pypi.read_base_url == "https://pypi.packages.enterprise.example"
     )
     assert (
         profile.native_registries.pypi.push_base_url
         == "https://push.pypi.packages.enterprise.example"
     )
     assert (
-        profile.native_registries.oci_registry_base_url
-        == "https://oci.packages.enterprise.example"
+        profile.native_registries.oci_registry_base_url == "https://oci.packages.enterprise.example"
     )
     assert profile.refresh_expires_at is not None
 
