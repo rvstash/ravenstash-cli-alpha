@@ -490,9 +490,7 @@ def test_native_pip_preserves_multi_part_pip_command_prefix(
     calls: list[dict[str, Any]] = []
     _capture_run(monkeypatch, calls)
 
-    result = runner.invoke(
-        app, ["pip", "--rvs-target", "staging/repo-pypi", "install", "demo"]
-    )
+    result = runner.invoke(app, ["pip", "--rvs-target", "staging/repo-pypi", "install", "demo"])
 
     assert result.exit_code == 0
     assert calls[0]["cmd"] == [
@@ -515,9 +513,7 @@ def test_native_uv_repo_override_sets_index_publish_env_and_netrc(
     calls: list[dict[str, Any]] = []
     _capture_run(monkeypatch, calls)
 
-    result = runner.invoke(
-        app, ["uv", "--rvs-target", "staging/repo-pypi", "sync", "--locked"]
-    )
+    result = runner.invoke(app, ["uv", "--rvs-target", "staging/repo-pypi", "sync", "--locked"])
 
     assert result.exit_code == 0
     assert calls[0]["cmd"] == ["/bin/uv", "sync", "--locked"]

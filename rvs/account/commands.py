@@ -60,9 +60,7 @@ def resolve_account(selector: str, profile: str | None = None) -> dict:
             )
         ]
     if not matches:
-        output.fatal(
-            f"Acting account '{selector}' was not found for this local profile."
-        )
+        output.fatal(f"Acting account '{selector}' was not found for this local profile.")
     if len(matches) > 1:
         refs = ", ".join(str(item.get("customer_unique_ref")) for item in matches)
         output.fatal(f"Acting-account selector '{selector}' is ambiguous. Use one of: {refs}")
@@ -173,9 +171,7 @@ def _use_account(account: str, profile: str | None) -> None:
     saved = cfg_mod.set_active_account(profile=profile_name, customer=selected)
     output.success(f"Acting account '{display_name(saved)}' selected for {scope}.")
     if os.environ.get("RVS_CUSTOMER_ID"):
-        output.warn(
-            "RVS_CUSTOMER_ID is set and still overrides the acting account in this shell."
-        )
+        output.warn("RVS_CUSTOMER_ID is set and still overrides the acting account in this shell.")
 
 
 @app.command("use")

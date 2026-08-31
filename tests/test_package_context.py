@@ -214,9 +214,7 @@ def test_two_login_profiles_keep_separate_actor_state_for_the_same_org(
     )
     monkeypatch.setattr(ApiClient, "from_profile", staticmethod(lambda profile=None: fake))
 
-    assert (
-        runner.invoke(app, ["account", "use", "org:acme", "--profile", "alice"]).exit_code == 0
-    )
+    assert runner.invoke(app, ["account", "use", "org:acme", "--profile", "alice"]).exit_code == 0
     assert (
         runner.invoke(app, ["pkg", "select", "mirror:pypiorg", "--profile", "alice"]).exit_code == 0
     )

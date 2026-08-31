@@ -130,28 +130,16 @@ def test_repository_domain_formats_every_registry_service_for_profile(
 
     profile = cfg_mod.load().active_profile("staging")
 
+    assert profile.native_registries.pypi.read_base_url == "https://pypi.packages.example.test"
+    assert profile.native_registries.pypi.push_base_url == "https://push.pypi.packages.example.test"
     assert (
-        profile.native_registries.pypi.read_base_url == "https://pypi.packages.example.test"
+        profile.native_registries.pypi.cache_base_url == "https://cache.pypi.packages.example.test"
     )
+    assert profile.native_registries.npm.read_base_url == "https://npm.packages.example.test"
     assert (
-        profile.native_registries.pypi.push_base_url
-        == "https://push.pypi.packages.example.test"
+        profile.native_registries.maven.push_base_url == "https://push.maven.packages.example.test"
     )
-    assert (
-        profile.native_registries.pypi.cache_base_url
-        == "https://cache.pypi.packages.example.test"
-    )
-    assert (
-        profile.native_registries.npm.read_base_url == "https://npm.packages.example.test"
-    )
-    assert (
-        profile.native_registries.maven.push_base_url
-        == "https://push.maven.packages.example.test"
-    )
-    assert (
-        profile.native_registries.oci_registry_base_url
-        == "https://oci.packages.example.test"
-    )
+    assert profile.native_registries.oci_registry_base_url == "https://oci.packages.example.test"
 
 
 @pytest.mark.parametrize(
