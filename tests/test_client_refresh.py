@@ -96,14 +96,14 @@ def test_repository_target_conflict_has_an_actionable_message() -> None:
             "expected": {
                 "workspace_name": "old-workspace",
                 "repository_name": "old-repository",
-                "workspace_unique_ref": "_workspace",
-                "repository_unique_ref": "_repository",
+                "workspace_unique_ref": "w_abcdefgh",
+                "repository_unique_ref": "r_xyzabcde",
             },
             "current": {
                 "workspace_name": "new-workspace",
                 "repository_name": "new-repository",
-                "workspace_unique_ref": "_workspace",
-                "repository_unique_ref": "_repository",
+                "workspace_unique_ref": "w_abcdefgh",
+                "repository_unique_ref": "r_xyzabcde",
             },
         },
     )
@@ -111,7 +111,7 @@ def test_repository_target_conflict_has_an_actionable_message() -> None:
     assert "no package operation was attempted" in str(error)
     assert "old-workspace/old-repository" in str(error)
     assert "new-workspace/new-repository" in str(error)
-    assert "_workspace/_repository" in str(error)
+    assert "w_abcdefgh/r_xyzabcde" in str(error)
     assert "rvs pkg repo set-default" in str(error)
 
 

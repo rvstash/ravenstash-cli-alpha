@@ -39,8 +39,8 @@ class _Api:
                     "repository_name": "images",
                     "workspace_id": "workspace-1",
                     "workspace_name": "main",
-                    "workspace_unique_ref": "_abcdefgh",
-                    "repository_unique_ref": "_xyzabcde",
+                    "workspace_unique_ref": "w_abcdefgh",
+                    "repository_unique_ref": "r_xyzabcde",
                 },
             }
         )
@@ -49,18 +49,18 @@ class _Api:
         assert path == "/v0/package-credentials"
         assert json["expected_target"] == {
             "workspace_id": "workspace-1",
-            "workspace_unique_ref": "_abcdefgh",
+            "workspace_unique_ref": "w_abcdefgh",
             "workspace_name": "main",
             "repository_id": "repository-1",
-            "repository_unique_ref": "_xyzabcde",
+            "repository_unique_ref": "r_xyzabcde",
             "repository_name": "images",
         }
         return _Response(
             {
                 "access_token": "exact-secret-capability",
                 "native_path": "/main/images",
-                "workspace_unique_ref": "_abcdefgh",
-                "repository_unique_ref": "_xyzabcde",
+                "workspace_unique_ref": "w_abcdefgh",
+                "repository_unique_ref": "r_xyzabcde",
             }
         )
 

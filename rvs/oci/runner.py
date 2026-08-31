@@ -76,11 +76,13 @@ def _native_route_parts(native_path: str) -> tuple[str, str] | None:
 def _stable_oci_root(workspace_unique_ref: object, repository_unique_ref: object) -> str:
     if not isinstance(workspace_unique_ref, str) or not isinstance(repository_unique_ref, str):
         output.fatal("Invalid OCI capability response: stable identity is missing.")
-    workspace_id = workspace_unique_ref.removeprefix("_")
-    repository_id = repository_unique_ref.removeprefix("_")
+    if not workspace_unique_ref.startswith("w_") or not repository_unique_ref.startswith("r_"):
+        output.fatal("Invalid OCI capability response: stable identity is invalid.")
+    workspace_id = workspace_unique_ref.removeprefix("w_")
+    repository_id = repository_unique_ref.removeprefix("r_")
     if not _UNIQUE_ID.fullmatch(workspace_id) or not _UNIQUE_ID.fullmatch(repository_id):
         output.fatal("Invalid OCI capability response: stable identity is invalid.")
-    return f"w_{workspace_id}/r_{repository_id}"
+    return f"{workspace_unique_ref}/{repository_unique_ref}"
 
 
 def _split_repo_ref(repo_ref: str) -> tuple[str | None, str]:

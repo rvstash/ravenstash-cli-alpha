@@ -176,7 +176,7 @@ The CLI resolves that selector, saves immutable references for persistent
 defaults, and always generates native package URLs in this stable form:
 
 ```text
-/_abcdefgh/_m7nk3p4q/
+/w_abcdefgh/r_m7nk3p4q/
 ```
 
 Workspace and repository renames therefore do not break CLI defaults.

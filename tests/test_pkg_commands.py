@@ -80,8 +80,8 @@ def _repository_entry(name: str = "repo") -> dict[str, Any]:
             "repository_name": name,
             "workspace_id": "workspace-1",
             "workspace_name": "test-account",
-            "workspace_unique_ref": "_abcdefgh",
-            "repository_unique_ref": "_xyzabcde",
+            "workspace_unique_ref": "w_abcdefgh",
+            "repository_unique_ref": "r_xyzabcde",
             "registry_kinds": ["pypi", "npm", "maven"],
         },
     }
@@ -106,22 +106,22 @@ customer_id = "cus_123"
 customer_unique_id = "custpid1"
 
 [profiles.default.registries.pypi]
-default_repo = "_abcdefgh/_xyzabcde"
+default_repo = "w_abcdefgh/r_xyzabcde"
 
 [profiles.default.registries.npm]
-default_repo = "_abcdefgh/_xyzabcde"
+default_repo = "w_abcdefgh/r_xyzabcde"
 
 [profiles.default.registries.maven]
-default_repo = "_abcdefgh/_xyzabcde"
+default_repo = "w_abcdefgh/r_xyzabcde"
 
 [profiles.staging.registries.pypi]
-default_repo = "_abcdefgh/_xyzabcde"
+default_repo = "w_abcdefgh/r_xyzabcde"
 
 [profiles.staging.registries.npm]
-default_repo = "_abcdefgh/_xyzabcde"
+default_repo = "w_abcdefgh/r_xyzabcde"
 
 [profiles.staging.registries.maven]
-default_repo = "_abcdefgh/_xyzabcde"
+default_repo = "w_abcdefgh/r_xyzabcde"
 """.strip(),
         encoding="utf-8",
     )
@@ -195,7 +195,7 @@ def test_pkg_repo_create_can_set_default_repo(monkeypatch, tmp_path: Path) -> No
             },
         )
     ]
-    assert cfg_mod.load().registry_defaults("npm").default_repo == "_abcdefgh/_xyzabcde"
+    assert cfg_mod.load().registry_defaults("npm").default_repo == "w_abcdefgh/r_xyzabcde"
     assert "with registry kinds: npm" in result.output
 
 
@@ -281,7 +281,7 @@ def test_pkg_repo_rename_updates_matching_profile_default(monkeypatch, tmp_path:
         ),
     ]
     saved = cfg_mod.load().registry_defaults("pypi", "default")
-    assert saved.default_repo == "_abcdefgh/_xyzabcde"
+    assert saved.default_repo == "w_abcdefgh/r_xyzabcde"
     assert saved.workspace_name_cache == "test-account"
     assert saved.repository_name_cache == "renamed"
     assert saved.repository_id == "repository-1"

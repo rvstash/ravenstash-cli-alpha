@@ -74,9 +74,9 @@ class _FakeDevApi:
                     "id": "repository-1",
                     "repository_name": "repo",
                     "workspace_id": "workspace-1",
-                    "workspace_unique_ref": "_abcdefgh",
+                    "workspace_unique_ref": "w_abcdefgh",
                     "workspace_name": "staging",
-                    "repository_unique_ref": "_xyzabcde",
+                    "repository_unique_ref": "r_xyzabcde",
                 },
             }
         )
@@ -131,13 +131,13 @@ cache_base_url = "{MAVEN_CACHE_URL}"
 registry_base_url = "https://images.example.test"
 
 [profiles.staging.registries.pypi]
-default_repo = "_abcdefgh/_xyzabcde"
+default_repo = "w_abcdefgh/r_xyzabcde"
 
 [profiles.staging.registries.npm]
-default_repo = "_abcdefgh/_xyzabcde"
+default_repo = "w_abcdefgh/r_xyzabcde"
 
 [profiles.staging.registries.maven]
-default_repo = "_abcdefgh/_xyzabcde"
+default_repo = "w_abcdefgh/r_xyzabcde"
 """.strip(),
         encoding="utf-8",
     )
@@ -185,11 +185,11 @@ def test_ravenstash_url_kind_accepts_public_hosts_and_local_normalized_routes() 
             native_registries=endpoints or _native_endpoints(),
         )
 
-    assert url_kind(f"{NPM_READ_URL}/_abcdefgh/_xyzabcde/") == "npm"
-    assert url_kind(f"{PYPI_READ_URL}/_abcdefgh/_xyzabcde/simple/") == "pypi"
+    assert url_kind(f"{NPM_READ_URL}/w_abcdefgh/r_xyzabcde/") == "npm"
+    assert url_kind(f"{PYPI_READ_URL}/w_abcdefgh/r_xyzabcde/simple/") == "pypi"
     assert (
         url_kind(
-            "http://localhost:43101/registry/maven/_abcdefgh/_xyzabcde/com/example/demo/",
+            "http://localhost:43101/registry/maven/w_abcdefgh/r_xyzabcde/com/example/demo/",
             endpoints=cfg_mod.NativeRegistryEndpoints(
                 pypi=cfg_mod.PackageRegistryEndpoints(
                     "http://localhost:43101/registry/pypi",
@@ -219,12 +219,12 @@ def test_ravenstash_url_kind_accepts_public_hosts_and_local_normalized_routes() 
     )
     assert url_kind(f"{PYPI_CACHE_URL}/o/pypiorg/simple/") == "pypi"
     assert url_kind(f"{NPM_CACHE_URL}/c/_xyzabcde/") == "npm"
-    assert url_kind("https://npm.example.test/_abcdefgh/_xyzabcde/") is None
-    assert url_kind("https://pkg-staging.example.test/_abcdefgh/_xyzabcde/") is None
+    assert url_kind("https://npm.example.test/w_abcdefgh/r_xyzabcde/") is None
+    assert url_kind("https://pkg-staging.example.test/w_abcdefgh/r_xyzabcde/") is None
     assert url_kind(f"{NPM_READ_URL}/o/npmjs/") is None
     assert url_kind(f"{NPM_READ_URL}/c/private-upstream/") is None
-    assert url_kind(f"{NPM_CACHE_URL}/_abcdefgh/_xyzabcde/") is None
-    assert url_kind(f"{NPM_READ_URL}/_abcdefgh/") is None
+    assert url_kind(f"{NPM_CACHE_URL}/w_abcdefgh/r_xyzabcde/") is None
+    assert url_kind(f"{NPM_READ_URL}/w_abcdefgh/") is None
 
 
 def test_ravenstash_url_kind_rejects_attacker_lookalike_origins() -> None:
@@ -234,19 +234,19 @@ def test_ravenstash_url_kind_rejects_attacker_lookalike_origins() -> None:
             native_registries=_native_endpoints(),
         )
 
-    assert url_kind("https://npm.pkg.attacker.example/_abcdefgh/_xyzabcde/") is None
+    assert url_kind("https://npm.pkg.attacker.example/w_abcdefgh/r_xyzabcde/") is None
     assert url_kind("https://attacker.example/native/pypi/other/customer/simple/") is None
     assert (
-        url_kind("https://npm.pkg-staging.example.test.attacker.example/_abcdefgh/_xyzabcde/")
+        url_kind("https://npm.pkg-staging.example.test.attacker.example/w_abcdefgh/r_xyzabcde/")
         is None
     )
     assert (
-        url_kind("https://npm.pkg-staging.example.test@attacker.example/_abcdefgh/_xyzabcde/")
+        url_kind("https://npm.pkg-staging.example.test@attacker.example/w_abcdefgh/r_xyzabcde/")
         is None
     )
-    assert url_kind("http://npm.pkg-staging.example.test/_abcdefgh/_xyzabcde/") is None
-    assert url_kind("https://npm.pkg-staging.example.test:444/_abcdefgh/_xyzabcde/") is None
-    assert url_kind("https://npm.pkg-staging.example.test:bad/_abcdefgh/_xyzabcde/") is None
+    assert url_kind("http://npm.pkg-staging.example.test/w_abcdefgh/r_xyzabcde/") is None
+    assert url_kind("https://npm.pkg-staging.example.test:444/w_abcdefgh/r_xyzabcde/") is None
+    assert url_kind("https://npm.pkg-staging.example.test:bad/w_abcdefgh/r_xyzabcde/") is None
 
 
 def test_native_npm_respects_project_npmrc_and_injects_path_scoped_auth(
@@ -256,7 +256,7 @@ def test_native_npm_respects_project_npmrc_and_injects_path_scoped_auth(
     _isolate_config(monkeypatch, tmp_path)
     _mock_native_tools(monkeypatch)
     (tmp_path / ".npmrc").write_text(
-        f"@acme:registry={NPM_READ_URL}/_abcdefgh/_xyzabcde/\n",
+        f"@acme:registry={NPM_READ_URL}/w_abcdefgh/r_xyzabcde/\n",
         encoding="utf-8",
     )
     calls: list[dict[str, Any]] = []
@@ -268,7 +268,7 @@ def test_native_npm_respects_project_npmrc_and_injects_path_scoped_auth(
     assert calls[0]["cmd"] == ["/bin/npm", "install", "@acme/widgets"]
     assert "NPM_CONFIG_REGISTRY" not in calls[0]["env"]
     assert (
-        calls[0]["env"][f"NPM_CONFIG_//{NPM_READ_HOST}/_abcdefgh/_xyzabcde/:_authToken"]
+        calls[0]["env"][f"NPM_CONFIG_//{NPM_READ_HOST}/w_abcdefgh/r_xyzabcde/:_authToken"]
         == "secret-token"
     )
 
@@ -337,7 +337,7 @@ def test_native_pip_respects_existing_index_and_injects_temp_netrc(
     _mock_native_tools(monkeypatch)
     monkeypatch.setenv(
         "PIP_INDEX_URL",
-        f"{PYPI_READ_URL}/_abcdefgh/_xyzabcde/simple/",
+        f"{PYPI_READ_URL}/w_abcdefgh/r_xyzabcde/simple/",
     )
     calls: list[dict[str, Any]] = []
     netrc_texts: list[str] = []
@@ -351,7 +351,7 @@ def test_native_pip_respects_existing_index_and_injects_temp_netrc(
 
     assert result.exit_code == 0
     assert calls[0]["cmd"] == ["/bin/pip", "install", "demo"]
-    assert calls[0]["env"]["PIP_INDEX_URL"] == (f"{PYPI_READ_URL}/_abcdefgh/_xyzabcde/simple/")
+    assert calls[0]["env"]["PIP_INDEX_URL"] == (f"{PYPI_READ_URL}/w_abcdefgh/r_xyzabcde/simple/")
     assert netrc_texts == [f"machine {PYPI_READ_HOST} login __token__ password secret-token\n"]
 
 
