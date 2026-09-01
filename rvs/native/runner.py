@@ -40,6 +40,7 @@ if TYPE_CHECKING:
 
 NativeTool = Literal["pip", "uv", "twine", "npm", "mvn"]
 RegistryKind = Literal["pypi", "npm", "maven"]
+PackageOperation = Literal["download", "upload"]
 ConfigPolicy = Literal["respect", "override", "isolate"]
 
 POLICIES: tuple[ConfigPolicy, ...] = ("respect", "override", "isolate")
@@ -170,6 +171,7 @@ def _build_plan(
         if has_rvs_target and options.native_config == "respect"
         else options.native_config
     )
+    operations = _operations_for(tool, argv)
 
     if effective_policy == "respect":
         profile_config = _profile(options.profile)
@@ -195,11 +197,12 @@ def _build_plan(
             kind,
             options.profile,
             selected_customer_id,
+            operations,
         )
         _inject_for_detected_urls(tool, cmd, native_arg_start, env, urls, token, temp_dir)
         return ExecutionPlan(cmd=cmd, env=env)
 
-    route = _resolve_route(_kind_for_tool(tool), options)
+    route = _resolve_route(_kind_for_tool(tool), options, operations)
     _inject_override(
         tool,
         cmd,
@@ -242,13 +245,18 @@ def _profile(profile: str | None) -> cfg_mod.ProfileConfig:
     return cfg.active_profile(profile or cfg_mod.current_profile_name(cfg))
 
 
-def _resolve_route(kind: RegistryKind, options: NativeOptions) -> RegistryRoute:
+def _resolve_route(
+    kind: RegistryKind,
+    options: NativeOptions,
+    operations: tuple[PackageOperation, ...],
+) -> RegistryRoute:
     context = registry_context(
         kind=kind,
         target=options.target,
         repo=None,
         profile=options.profile,
         customer_id=_selected_customer_id(options),
+        operations=operations,
     )
     return RegistryRoute(
         kind=kind,
@@ -274,10 +282,13 @@ def _package_token_for_url(
     kind: RegistryKind,
     profile: str | None,
     customer_id: str | None,
+    operations: tuple[PackageOperation, ...],
 ) -> str:
     profile_config = _profile(profile)
     route_parts = _configured_route_parts(url, kind, profile_config.native_registries)
     if route_parts and route_parts[0] in {"o", "c"}:
+        if operations != ("download",):
+            output.fatal("Private mirrors are read-only package targets.")
         try:
             workspace_reference, repository_reference, route_kind = _remote_route_scope(route_parts)
             client = ApiClient.from_profile(profile)
@@ -317,6 +328,7 @@ def _package_token_for_url(
         credential_body: dict[str, object] = {
             "repository_id": entry["repository"]["id"],
             "registry_kind": kind,
+            "operations": list(operations),
             "expected_target": expected_target
             or cfg_mod.repository_target_snapshot(entry["repository"]),
         }
@@ -326,6 +338,21 @@ def _package_token_for_url(
         ).json()["access_token"]
     except (ApiError, KeyError, TypeError, ValueError) as exc:
         output.fatal(str(exc))
+
+
+def _operations_for(
+    tool: NativeTool,
+    argv: list[str],
+) -> tuple[PackageOperation, ...]:
+    if tool == "twine":
+        return ("upload",)
+    if tool == "uv" and any(arg == "publish" for arg in argv if not arg.startswith("-")):
+        return ("upload",)
+    if tool == "npm" and _npm_is_publish(argv):
+        return ("upload",)
+    if tool == "mvn" and _maven_has_goal(argv, "deploy"):
+        return ("download", "upload")
+    return ("download",)
 
 
 def _credential_route(

@@ -89,6 +89,8 @@ class _FakeDevApi:
             assert json["route_kind"] in {"remote_custom", "remote_official"}
             return _JsonResponse({"access_token": "remote-secret-token"})
         assert path == "/v0/package-credentials"
+        assert json is not None
+        assert json["operations"] in (["download"], ["upload"], ["download", "upload"])
         return _JsonResponse(
             {
                 "access_token": "secret-token",
@@ -177,6 +179,16 @@ def _capture_run(
         return _Completed()
 
     monkeypatch.setattr(native_runner.subprocess, "run", fake_run)
+
+
+def test_native_commands_request_only_the_operations_they_need() -> None:
+    assert native_runner._operations_for("pip", ["install", "demo"]) == ("download",)
+    assert native_runner._operations_for("uv", ["publish", "dist/demo.whl"]) == ("upload",)
+    assert native_runner._operations_for("twine", ["upload", "dist/*"]) == ("upload",)
+    assert native_runner._operations_for("npm", ["ci"]) == ("download",)
+    assert native_runner._operations_for("npm", ["publish"]) == ("upload",)
+    assert native_runner._operations_for("mvn", ["test"]) == ("download",)
+    assert native_runner._operations_for("mvn", ["deploy"]) == ("download", "upload")
 
 
 def test_ravenstash_url_kind_accepts_public_hosts_and_local_normalized_routes() -> None:

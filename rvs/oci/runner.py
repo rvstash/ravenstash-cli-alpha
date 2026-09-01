@@ -26,6 +26,7 @@ from ..subprocesses import child_environment
 
 OciTool = Literal["docker", "helm", "oras"]
 OciRegistryKind = Literal["container", "helm"]
+PackageOperation = Literal["download", "upload"]
 _OCI_COMPONENT = re.compile(r"^[a-z0-9]+(?:(?:[._]|__|-+)[a-z0-9]+)*$")
 _UNIQUE_ID = re.compile(r"^[23456789abcdefghijkmnpqrstuvwxyz]{8}$")
 
@@ -114,7 +115,11 @@ def _selected_kind(tool: OciTool, selected: OciRegistryKind | None) -> OciRegist
     return selected
 
 
-def resolve_route(tool: OciTool, options: OciOptions) -> OciRoute:
+def resolve_route(
+    tool: OciTool,
+    options: OciOptions,
+    operations: tuple[PackageOperation, ...] = ("download",),
+) -> OciRoute:
     kind = _selected_kind(tool, options.kind)
     config = cfg_mod.load()
     profile_name = options.profile or cfg_mod.current_profile_name(config)
@@ -145,6 +150,7 @@ def resolve_route(tool: OciTool, options: OciOptions) -> OciRoute:
         credential_body: dict[str, object] = {
             "repository_id": target.repository_id,
             "registry_kind": kind,
+            "operations": list(operations),
             "expected_target": {
                 "workspace_id": target.workspace_id,
                 "workspace_unique_ref": target.workspace_unique_ref,
@@ -300,8 +306,26 @@ def _executable(tool: OciTool) -> str:
     return path
 
 
+def _operations_for(
+    tool: OciTool,
+    argv: list[str],
+) -> tuple[PackageOperation, ...]:
+    arguments = {argument.lower() for argument in argv}
+    if tool == "docker" and (
+        "push" in arguments
+        or "--push" in arguments
+        or ("imagetools" in arguments and "create" in arguments)
+    ):
+        return ("download", "upload")
+    if tool == "helm" and "push" in arguments:
+        return ("download", "upload")
+    if tool == "oras" and arguments.intersection({"push", "cp", "copy", "attach", "tag", "delete"}):
+        return ("download", "upload")
+    return ("download",)
+
+
 def run(tool: OciTool, argv: list[str], options: OciOptions) -> None:
-    route = resolve_route(tool, options)
+    route = resolve_route(tool, options, _operations_for(tool, argv))
     _assert_exact_targets(argv, route)
     with tempfile.TemporaryDirectory(prefix="rvs-oci-") as temporary:
         temp_dir = Path(temporary)

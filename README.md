@@ -324,7 +324,9 @@ not use a native package manager. `rvs pip`, `rvs uv`, `rvs twine`, `rvs npm`,
 `rvs mvn`, `rvs docker`, `rvs helm`, and `rvs oras` are explicit native-tool passthroughs. The
 package-release wrappers respect native config
 by default, detect Ravenstash registry URLs, and inject only short-lived
-credentials for the child process. They do not write tokens to `.npmrc`,
+credentials for the child process. Install/read commands request download-only
+capabilities; publish/deploy/push commands request upload authority only when the
+native workflow needs it. They do not write tokens to `.npmrc`,
 `pip.conf`, `.pypirc`, `settings.xml`, `pyproject.toml`, or `uv.toml`.
 The controlling `RVS_TOKEN`, when present, is removed from every launched native
 process after the scoped package capability has been exchanged. Temporary netrc,

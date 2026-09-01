@@ -47,6 +47,7 @@ class _Api:
 
     def post(self, path: str, json=None) -> _Response:
         assert path == "/v0/package-credentials"
+        assert json["operations"] in (["download"], ["download", "upload"])
         assert json["expected_target"] == {
             "workspace_id": "workspace-1",
             "workspace_unique_ref": "w_abcdefgh",
@@ -63,6 +64,23 @@ class _Api:
                 "repository_unique_ref": "r_xyzabcde",
             }
         )
+
+
+def test_oci_commands_request_only_the_operations_they_need() -> None:
+    assert oci_runner._operations_for("docker", ["pull", "image:tag"]) == ("download",)
+    assert oci_runner._operations_for("docker", ["push", "image:tag"]) == (
+        "download",
+        "upload",
+    )
+    assert oci_runner._operations_for("helm", ["show", "chart", "oci://chart"]) == ("download",)
+    assert oci_runner._operations_for("helm", ["push", "chart.tgz"]) == (
+        "download",
+        "upload",
+    )
+    assert oci_runner._operations_for("oras", ["copy", "source", "target"]) == (
+        "download",
+        "upload",
+    )
 
 
 def _setup(monkeypatch, tmp_path: Path) -> None:

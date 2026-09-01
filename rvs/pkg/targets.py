@@ -13,6 +13,7 @@ from .routing import RepositoryRouteKind
 
 
 PackageKind = Literal["pypi", "npm", "maven"]
+PackageOperation = Literal["download", "upload"]
 DEFAULT_OFFICIAL_SOURCES: dict[PackageKind, str] = {
     "pypi": "pypiorg",
     "npm": "npmjs",
@@ -281,6 +282,7 @@ def registry_context(
     customer_id: str | None = None,
     allow_official_default: bool = False,
     require_private: bool = False,
+    operations: tuple[PackageOperation, ...] = ("download",),
 ) -> RegistryContext:
     profile_name, account, selected = effective_target(
         kind=kind,
@@ -305,6 +307,7 @@ def registry_context(
                 json={
                     "repository_id": selected.repository_id,
                     "registry_kind": kind,
+                    "operations": list(operations),
                     "expected_target": {
                         "workspace_id": selected.workspace_id,
                         "workspace_unique_ref": selected.workspace_unique_ref,

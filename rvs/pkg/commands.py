@@ -6,7 +6,7 @@ import os
 import subprocess
 import tempfile
 from pathlib import Path
-from typing import cast
+from typing import Literal, cast
 
 import click
 import typer
@@ -340,6 +340,7 @@ def _registry_context(
     *,
     require_private: bool = False,
     allow_official_default: bool = False,
+    operations: tuple[Literal["download", "upload"], ...] = ("download",),
 ) -> RegistryContext:
     options = _root_package_options()
     effective_profile = profile or options.get("profile")
@@ -354,6 +355,7 @@ def _registry_context(
         customer_id=effective_customer_id,
         allow_official_default=allow_official_default,
         require_private=require_private,
+        operations=operations,
     )
 
 
@@ -1406,7 +1408,14 @@ def pypi_upload_url(
     ),
 ) -> None:
     """Print the private PyPI upload URL."""
-    context = _registry_context("pypi", repo, profile, customer_id, require_private=True)
+    context = _registry_context(
+        "pypi",
+        repo,
+        profile,
+        customer_id,
+        require_private=True,
+        operations=("upload",),
+    )
     assert context.push_base_url is not None
     output.value(
         _ROUTER.pypi_upload_url(
@@ -1456,7 +1465,14 @@ def pypi_publish(
     ),
 ) -> None:
     """Upload wheel and sdist files to a PyPI package repository."""
-    context = _registry_context("pypi", repo, profile, customer_id, require_private=True)
+    context = _registry_context(
+        "pypi",
+        repo,
+        profile,
+        customer_id,
+        require_private=True,
+        operations=("upload",),
+    )
     assert context.push_base_url is not None
     files = list(dist_dir.glob("*.whl")) + list(dist_dir.glob("*.tar.gz"))
     if not files:
@@ -1576,7 +1592,14 @@ def npm_publish(
     ),
 ) -> None:
     """Publish an npm package to a Ravenstash npm repository."""
-    context = _registry_context("npm", repo, profile, customer_id, require_private=True)
+    context = _registry_context(
+        "npm",
+        repo,
+        profile,
+        customer_id,
+        require_private=True,
+        operations=("upload",),
+    )
     assert context.push_base_url is not None
     results = npm_reg.publish(
         registry_url=_ROUTER.npm_upload_registry_url(
@@ -1743,7 +1766,14 @@ def maven_deploy(
         maven_reg.validate_artifact_filename(artifact_file.name, artifact, version)
     except ValueError as exc:
         output.fatal(str(exc))
-    context = _registry_context("maven", repo, profile, customer_id, require_private=True)
+    context = _registry_context(
+        "maven",
+        repo,
+        profile,
+        customer_id,
+        require_private=True,
+        operations=("upload",),
+    )
     assert context.push_base_url is not None
     results = maven_reg.publish(
         upload_url=_ROUTER.maven_upload_url(
