@@ -164,7 +164,7 @@ api_url = "https://api.work.example"
 
     result = runner.invoke(
         auth_cmd.app,
-        ["login", "--api-url", "https://api.override.example", "--duration", "8h", "--no-browser"],
+        ["login", "--api-url", "https://api.override.example", "--duration", "12h", "--no-browser"],
     )
 
     assert result.exit_code == 0
@@ -173,7 +173,7 @@ api_url = "https://api.work.example"
             "profile": "work",
             "api_url": "https://api.override.example",
             "no_browser": True,
-            "duration": "8h",
+            "duration": "12h",
             "credential_store": "keyring",
         }
     ]

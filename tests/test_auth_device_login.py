@@ -158,21 +158,21 @@ def test_staging_profile_uses_env_api_url_when_not_configured(monkeypatch, tmp_p
     ("raw", "expected"),
     [
         ("12h", 12 * 60 * 60),
-        ("7hour", 7 * 60 * 60),
-        ("8hours", 8 * 60 * 60),
+        ("24hour", 24 * 60 * 60),
+        ("36hours", 36 * 60 * 60),
         ("1d", 24 * 60 * 60),
         ("5day", 5 * 24 * 60 * 60),
         ("3days", 3 * 24 * 60 * 60),
         ("1month", 30 * 24 * 60 * 60),
         ("2 months", 60 * 24 * 60 * 60),
-        ("1year", 365 * 24 * 60 * 60),
+        ("6months", 180 * 24 * 60 * 60),
     ],
 )
 def test_parse_duration_seconds(raw: str, expected: int) -> None:
     assert login_mod.parse_duration_seconds(raw) == expected
 
 
-@pytest.mark.parametrize("raw", ["59m", "0h", "366days", "2years", "abc"])
+@pytest.mark.parametrize("raw", ["59m", "0h", "11hours", "181days", "1year", "abc"])
 def test_parse_duration_seconds_rejects_out_of_range_or_invalid(raw: str) -> None:
     with pytest.raises(ValueError):
         login_mod.parse_duration_seconds(raw)
@@ -416,7 +416,7 @@ def test_device_login_handles_slow_down_and_stores_expiring_jwt(monkeypatch) -> 
         profile="default",
         api_url="https://api.ravenstash.com",
         no_browser=False,
-        duration="8h",
+        duration="12h",
     )
 
     assert stored_tokens == [("default", "jwt-token")]
@@ -440,7 +440,7 @@ def test_device_login_handles_slow_down_and_stores_expiring_jwt(monkeypatch) -> 
     first_payload = _FakeClient.requests[0][1]
     assert first_payload is not None
     assert first_payload["platform"] == "linux"
-    assert first_payload["requested_duration_seconds"] == 8 * 60 * 60
+    assert first_payload["requested_duration_seconds"] == 12 * 60 * 60
     assert [headers for _url, _payload, headers in _FakeClient.requests] == [
         {"User-Agent": "rvs/0.1.0"},
         {"User-Agent": "rvs/0.1.0"},

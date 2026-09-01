@@ -20,10 +20,10 @@ from .. import output
 _POLL_FRAMES = ("🔄", "🔃")
 _HOUR_SECONDS = 60 * 60
 _DAY_SECONDS = 24 * _HOUR_SECONDS
-_MIN_DURATION_SECONDS = _HOUR_SECONDS
-_MAX_DURATION_SECONDS = 365 * _DAY_SECONDS
+_MIN_DURATION_SECONDS = 12 * _HOUR_SECONDS
+_MAX_DURATION_SECONDS = 180 * _DAY_SECONDS
 _DURATION_RE = re.compile(
-    r"^\s*(?P<amount>\d+)\s*(?P<unit>h|hour|hours|d|day|days|month|months|year|years)\s*$",
+    r"^\s*(?P<amount>\d+)\s*(?P<unit>h|hour|hours|d|day|days|month|months)\s*$",
     re.IGNORECASE,
 )
 
@@ -76,7 +76,7 @@ def _error_code(response: httpx.Response) -> str | None:
 def parse_duration_seconds(value: str) -> int:
     match = _DURATION_RE.match(value)
     if not match:
-        raise ValueError("Use a duration like 8h, 3days, 1month, or 1year.")
+        raise ValueError("Use a duration like 12h, 3days, 1month, or 6months.")
 
     amount = int(match.group("amount"))
     unit = match.group("unit").lower()
@@ -84,13 +84,11 @@ def parse_duration_seconds(value: str) -> int:
         seconds = amount * _HOUR_SECONDS
     elif unit in {"d", "day", "days"}:
         seconds = amount * _DAY_SECONDS
-    elif unit in {"month", "months"}:
-        seconds = amount * 30 * _DAY_SECONDS
     else:
-        seconds = amount * 365 * _DAY_SECONDS
+        seconds = amount * 30 * _DAY_SECONDS
 
     if seconds < _MIN_DURATION_SECONDS or seconds > _MAX_DURATION_SECONDS:
-        raise ValueError("Duration must be between 1 hour and 1 year.")
+        raise ValueError("Duration must be between 12 hours and 180 days.")
     return seconds
 
 

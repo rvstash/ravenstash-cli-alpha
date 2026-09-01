@@ -386,7 +386,7 @@ def login(
     duration: str | None = typer.Option(
         None,
         "--duration",
-        help="Requested device session duration, for example 8h or 3days.",
+        help="Requested device session duration (12 hours to 180 days; default 180 days).",
     ),
     credential_store: str | None = typer.Option(
         None,

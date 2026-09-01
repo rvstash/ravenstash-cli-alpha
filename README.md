@@ -43,8 +43,11 @@ Interactive login uses Ravenstash device authorization:
 ```bash
 rvs auth login
 rvs auth login --profile staging
-rvs auth login --duration 8h
+rvs auth login --duration 12h
 ```
+
+Device sessions last 180 days by default. Use `--duration` to request a shorter
+session from 12 hours through 180 days.
 
 The CLI stores the short-lived CLI access token and profile-scoped refresh token
 in the user's selected credential store. In `auto` mode it fully tests a working
