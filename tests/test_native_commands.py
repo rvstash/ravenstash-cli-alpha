@@ -145,7 +145,7 @@ default_repo = "w_abcdefgh/r_xyzabcde"
     monkeypatch.setattr(cfg_mod, "CONFIG_FILE", config_file)
     monkeypatch.setattr(cfg_mod, "PROFILE_ENV_FILE", config_dir / "profiles.env")
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setenv("RVS_TOKEN", "secret-token")
+    monkeypatch.setenv("RVS_TOKEN", "raw-control-token")
     monkeypatch.setattr(
         native_runner.ApiClient,
         "from_profile",
@@ -170,6 +170,7 @@ def _capture_run(
 ) -> None:
     def fake_run(cmd: list[str], *, env: dict[str, str], check: bool) -> _Completed:
         del check
+        assert "RVS_TOKEN" not in env
         if hook:
             hook(cmd, env)
         calls.append({"cmd": cmd, "env": env.copy()})
@@ -355,6 +356,7 @@ def test_native_pip_respects_existing_index_and_injects_temp_netrc(
     assert calls[0]["env"]["PIP_INDEX_URL"] == (f"{PYPI_READ_URL}/w_abcdefgh/r_xyzabcde/simple/")
     assert "PIP_KEYRING_PROVIDER" not in calls[0]["env"]
     assert netrc_texts == [f"machine {PYPI_READ_HOST} login __token__ password secret-token\n"]
+    assert not Path(calls[0]["env"]["NETRC"]).exists()
 
 
 def test_native_pip_exchanges_profile_token_for_scoped_remote_credential(
@@ -524,6 +526,7 @@ def test_native_uv_repo_override_sets_index_publish_env_and_netrc(
     assert calls[0]["env"]["UV_PUBLISH_USERNAME"] == "__token__"
     assert calls[0]["env"]["UV_PUBLISH_PASSWORD"] == "secret-token"
     assert "NETRC" in calls[0]["env"]
+    assert not Path(calls[0]["env"]["NETRC"]).exists()
 
 
 def test_native_twine_repo_override_sets_ephemeral_upload_credentials(
@@ -572,3 +575,4 @@ def test_native_maven_repo_override_generates_temp_settings(
     assert "<id>rvs-private</id>" in settings_texts[0]
     assert "<username>__token__</username>" in settings_texts[0]
     assert "<password>secret-token</password>" in settings_texts[0]
+    assert not Path(calls[0]["cmd"][calls[0]["cmd"].index("--settings") + 1]).exists()

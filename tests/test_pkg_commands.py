@@ -928,7 +928,7 @@ def test_pypi_install_uses_ephemeral_netrc_auth(
 ) -> None:
     _isolate_config(monkeypatch, tmp_path)
     monkeypatch.delenv("PIP_KEYRING_PROVIDER", raising=False)
-    monkeypatch.setenv("RVS_TOKEN", "secret-token")
+    monkeypatch.setenv("RVS_TOKEN", "raw-control-token")
     monkeypatch.setattr(pkg_cmd.tools, "pip_cmd", lambda: ["/bin/pip"])
     calls: list[tuple[list[str], dict[str, str]]] = []
     netrc_texts: list[str] = []
@@ -945,8 +945,10 @@ def test_pypi_install_uses_ephemeral_netrc_auth(
     assert result.exit_code == 0
     assert calls[0][0] == ["/bin/pip", "install", "demo"]
     assert calls[0][1]["PIP_INDEX_URL"] == (f"https://{PYPI_READ_HOST}/test-account/repo/simple/")
+    assert "RVS_TOKEN" not in calls[0][1]
     assert "PIP_KEYRING_PROVIDER" not in calls[0][1]
     assert netrc_texts == [f"machine {PYPI_READ_HOST} login __token__ password secret-token\n"]
+    assert not Path(calls[0][1]["NETRC"]).exists()
 
 
 def test_pypi_install_refreshes_native_path_when_saved_target_name_changed(
@@ -991,7 +993,7 @@ def test_pypi_install_refreshes_native_path_when_saved_target_name_changed(
 
 def test_npm_install_injects_token_for_registry_host(monkeypatch, tmp_path: Path) -> None:
     _isolate_config(monkeypatch, tmp_path)
-    monkeypatch.setenv("RVS_TOKEN", "secret-token")
+    monkeypatch.setenv("RVS_TOKEN", "raw-control-token")
     monkeypatch.setattr(pkg_cmd.tools, "npm", lambda: "/bin/npm")
     calls: list[tuple[list[str], dict[str, str]]] = []
     monkeypatch.setattr(
@@ -1013,6 +1015,34 @@ def test_npm_install_injects_token_for_registry_host(monkeypatch, tmp_path: Path
     assert (
         calls[0][1][f"NPM_CONFIG_//{NPM_READ_HOST}/test-account/repo/:_authToken"] == "secret-token"
     )
+    assert "RVS_TOKEN" not in calls[0][1]
+
+
+def test_maven_install_does_not_forward_control_token(monkeypatch, tmp_path: Path) -> None:
+    _isolate_config(monkeypatch, tmp_path)
+    monkeypatch.setenv("RVS_TOKEN", "raw-control-token")
+    monkeypatch.setattr(pkg_cmd.tools, "require", lambda name, *, install_kind: f"/bin/{name}")
+    calls: list[tuple[list[str], dict[str, str]]] = []
+
+    def capture(cmd, *, env, check) -> None:
+        del check
+        settings_arg = next(arg for arg in cmd if arg.startswith("--settings="))
+        settings = Path(settings_arg.removeprefix("--settings="))
+        assert "secret-token" in settings.read_text(encoding="utf-8")
+        calls.append((cmd, env.copy()))
+
+    monkeypatch.setattr(pkg_cmd.subprocess, "run", capture)
+
+    result = runner.invoke(
+        pkg_cmd.app,
+        ["maven", "install", "com.example:demo:1.0.0", "--profile", "staging"],
+    )
+
+    assert result.exit_code == 0
+    assert calls[0][0][0] == "/bin/mvn"
+    assert "RVS_TOKEN" not in calls[0][1]
+    settings_arg = next(arg for arg in calls[0][0] if arg.startswith("--settings="))
+    assert not Path(settings_arg.removeprefix("--settings=")).exists()
 
 
 def test_pypi_publish_reports_failed_uploads(monkeypatch, tmp_path: Path) -> None:

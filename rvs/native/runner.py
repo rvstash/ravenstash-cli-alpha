@@ -31,6 +31,7 @@ from ..pkg.routing import (
 )
 from ..pkg.targets import registry_context
 from ..runtime import tools
+from ..subprocesses import child_environment
 
 
 if TYPE_CHECKING:
@@ -157,7 +158,7 @@ def _build_plan(
     options: NativeOptions,
     temp_dir: Path,
 ) -> ExecutionPlan:
-    env = {**os.environ}
+    env = child_environment()
     command_prefix = _command_prefix_for(tool)
     cmd = [*command_prefix, *argv]
     native_arg_start = len(command_prefix)

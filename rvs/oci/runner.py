@@ -21,6 +21,7 @@ from ..account.commands import resolve_account
 from ..client import ApiClient, ApiError
 from ..pkg.targets import resolve_target
 from ..runtime import tools
+from ..subprocesses import child_environment
 
 
 OciTool = Literal["docker", "helm", "oras"]
@@ -306,12 +307,13 @@ def run(tool: OciTool, argv: list[str], options: OciOptions) -> None:
         temp_dir = Path(temporary)
         broker = _write_broker(temp_dir, route)
         registry_config = _write_registry_config(temp_dir, route, tool)
-        env = {
-            **os.environ,
-            "DOCKER_CONFIG": str(temp_dir),
-            "HELM_REGISTRY_CONFIG": str(registry_config),
-            "RVS_OCI_CREDENTIAL_FILE": str(broker),
-        }
+        env = child_environment(
+            {
+                "DOCKER_CONFIG": str(temp_dir),
+                "HELM_REGISTRY_CONFIG": str(registry_config),
+                "RVS_OCI_CREDENTIAL_FILE": str(broker),
+            }
+        )
         process = subprocess.Popen([_executable(tool), *argv], env=env)
         forwarded_signals = tuple(
             candidate

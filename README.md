@@ -326,6 +326,16 @@ package-release wrappers respect native config
 by default, detect Ravenstash registry URLs, and inject only short-lived
 credentials for the child process. They do not write tokens to `.npmrc`,
 `pip.conf`, `.pypirc`, `settings.xml`, `pyproject.toml`, or `uv.toml`.
+The controlling `RVS_TOKEN`, when present, is removed from every launched native
+process after the scoped package capability has been exchanged. Temporary netrc,
+Maven settings, OCI config, and OCI broker files are removed when the wrapper exits.
+
+The registry protocol supports a broader native-client compatibility matrix than
+the passthrough command list. Poetry; Yarn, pnpm, and Bun; Gradle and sbt; and
+Podman, nerdctl, Skopeo, and Crane use their own native configuration with an
+`RVS_TOKEN`; there are no corresponding `rvs <tool>` passthroughs yet. A catalog
+client association means protocol compatibility, not the existence of an RVS
+wrapper.
 
 The OCI wrappers resolve one exact Container or Helm lane, request a scoped
 capability, and overlay an ephemeral `docker-credential-rvs` entry on a copy of

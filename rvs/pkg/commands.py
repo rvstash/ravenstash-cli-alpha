@@ -19,6 +19,7 @@ from ..account.commands import ensure_active_account, resolve_account
 from ..client import ApiClient, ApiError
 from ..native import runner as native_runner
 from ..runtime import tools
+from ..subprocesses import child_environment
 from .registries import maven as maven_reg
 from .registries import npm as npm_reg
 from .registries import pypi as pypi_reg
@@ -1422,7 +1423,7 @@ def pypi_install(
         context.read_base_url, context.workspace_reference, context.repository_reference
     )
     with tempfile.TemporaryDirectory(prefix="rvs-pip-") as temp_dir:
-        env = {**os.environ, "PIP_INDEX_URL": index_url}
+        env = child_environment({"PIP_INDEX_URL": index_url})
         if context.token:
             native_runner.inject_pip_auth(
                 env,
@@ -1547,7 +1548,7 @@ def npm_install(
         context.workspace_reference,
         context.repository_reference,
     )
-    env = {**os.environ}
+    env = child_environment()
     if context.token:
         env[f"NPM_CONFIG_{npm_auth_token_key(registry_url)}"] = context.token
     else:
@@ -1708,6 +1709,7 @@ def maven_install(
                 "dependency:get",
                 f"-Dartifact={coords}",
             ],
+            env=child_environment(),
             check=True,
         )
     finally:

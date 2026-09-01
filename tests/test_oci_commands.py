@@ -81,6 +81,7 @@ api_url = "https://api.example.test"
     monkeypatch.setattr(cfg_mod, "CONFIG_DIR", config_dir)
     monkeypatch.setattr(cfg_mod, "CONFIG_FILE", config_file)
     monkeypatch.setattr(cfg_mod, "PROFILE_ENV_FILE", config_dir / "profiles.env")
+    monkeypatch.setenv("RVS_TOKEN", "raw-control-token")
     monkeypatch.setattr(
         oci_runner.ApiClient, "from_profile", staticmethod(lambda profile=None: _Api())
     )
@@ -101,6 +102,7 @@ def test_docker_uses_exact_ephemeral_helper_without_secret_in_argv(
         def __init__(self, cmd, *, env):
             captured["cmd"] = cmd
             captured["env"] = env.copy()
+            assert "RVS_TOKEN" not in env
             broker = Path(env["RVS_OCI_CREDENTIAL_FILE"])
             config = Path(env["DOCKER_CONFIG"]) / "config.json"
             assert broker.stat().st_mode & 0o077 == 0

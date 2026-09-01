@@ -144,6 +144,29 @@ def test_npm_create_tarball_uses_native_npm_packlist(monkeypatch, tmp_path: Path
     assert "package/node_modules/dep.js" not in names
 
 
+def test_npm_pack_does_not_forward_control_token(monkeypatch, tmp_path: Path) -> None:
+    package_dir = tmp_path / "pkg"
+    package_dir.mkdir()
+    monkeypatch.setenv("RVS_TOKEN", "raw-control-token")
+    monkeypatch.setattr(npm_reg.tools, "npm", lambda: "/bin/npm")
+    captured: dict[str, Any] = {}
+
+    class Result:
+        stdout = '[{"filename":"demo-1.0.0.tgz"}]'
+
+    def fake_run(cmd, **kwargs):
+        captured.update({"cmd": cmd, **kwargs})
+        (tmp_path / "demo-1.0.0.tgz").write_bytes(b"tgz")
+        return Result()
+
+    monkeypatch.setattr(npm_reg.subprocess, "run", fake_run)
+
+    result = npm_reg._npm_pack(package_dir, tmp_path)
+
+    assert result == tmp_path / "demo-1.0.0.tgz"
+    assert "RVS_TOKEN" not in captured["env"]
+
+
 def test_npm_publish_builds_scoped_publish_body(monkeypatch, tmp_path: Path) -> None:
     package_dir = tmp_path / "pkg"
     package_dir.mkdir()

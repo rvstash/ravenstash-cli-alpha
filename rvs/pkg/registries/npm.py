@@ -22,7 +22,6 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
-import os
 import subprocess
 import tempfile
 from pathlib import Path
@@ -30,6 +29,7 @@ from pathlib import Path
 import httpx
 
 from ...runtime import tools
+from ...subprocesses import child_environment
 from .base import PublishResult
 
 
@@ -49,7 +49,7 @@ def _npm_pack(package_dir: Path, temp_dir: Path) -> Path:
         check=True,
         capture_output=True,
         text=True,
-        env={**os.environ, "NPM_CONFIG_CACHE": str(temp_dir / "cache")},
+        env=child_environment({"NPM_CONFIG_CACHE": str(temp_dir / "cache")}),
     )
     try:
         payload = json.loads(result.stdout)
