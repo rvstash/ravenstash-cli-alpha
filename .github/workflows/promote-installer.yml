@@ -45,6 +45,9 @@ jobs:
         with:
           cosign-release: v3.0.6
 
+      - name: Materialize pinned GPG keyring
+        run: packaging/repository/prepare_keyring.sh
+
       - name: Download the immutable published release
         env:
           GH_TOKEN: ${{ github.token }}
