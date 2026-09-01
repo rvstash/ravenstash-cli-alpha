@@ -366,16 +366,17 @@ def _resolve_repository_entry(
     kind: str | None = None,
     customer_id: str | None = None,
 ) -> dict:
+    params = {"selector": repo}
+    if customer_id is not None:
+        params["customer_id"] = customer_id
+    if kind is not None:
+        params["registry_kind"] = kind
     try:
         return (
             _client(profile)
             .get(
                 "/v0/repositories/resolve",
-                params={
-                    "selector": repo,
-                    "customer_id": customer_id,
-                    "registry_kind": kind,
-                },
+                params=params,
             )
             .json()
         )

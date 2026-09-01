@@ -248,11 +248,7 @@ def test_pkg_repo_show_renders_repository_details(monkeypatch, tmp_path: Path) -
         (
             "GET",
             "/v0/repositories/resolve",
-            {
-                "selector": "repo-pypi",
-                "customer_id": None,
-                "registry_kind": None,
-            },
+            {"selector": "repo-pypi"},
         )
     ]
     assert "repo-pypi" in result.output
@@ -279,11 +275,7 @@ def test_pkg_repo_rename_updates_matching_profile_default(monkeypatch, tmp_path:
         (
             "GET",
             "/v0/repositories/resolve",
-            {
-                "selector": "repo-pypi",
-                "customer_id": None,
-                "registry_kind": None,
-            },
+            {"selector": "repo-pypi"},
         ),
         (
             "PATCH",
@@ -362,7 +354,6 @@ def test_pkg_remote_management_and_upstream_configuration(monkeypatch, tmp_path:
             "/v0/repositories/resolve",
             {
                 "selector": "repo-pypi",
-                "customer_id": None,
                 "registry_kind": "pypi",
             },
         ),
@@ -754,7 +745,6 @@ def test_pkg_package_list_and_show_use_repository_package_paths(
             "/v0/repositories/resolve",
             {
                 "selector": "repo-pypi",
-                "customer_id": None,
                 "registry_kind": "pypi",
             },
         ),
@@ -768,7 +758,6 @@ def test_pkg_package_list_and_show_use_repository_package_paths(
             "/v0/repositories/resolve",
             {
                 "selector": "repo-pypi",
-                "customer_id": None,
                 "registry_kind": "pypi",
             },
         ),
@@ -839,7 +828,6 @@ def test_pkg_package_mutations_call_expected_api_paths(monkeypatch, tmp_path: Pa
             "/v0/repositories/resolve",
             {
                 "selector": "repo-pypi",
-                "customer_id": None,
                 "registry_kind": "pypi",
             },
         ),
@@ -853,7 +841,6 @@ def test_pkg_package_mutations_call_expected_api_paths(monkeypatch, tmp_path: Pa
             "/v0/repositories/resolve",
             {
                 "selector": "repo-pypi",
-                "customer_id": None,
                 "registry_kind": "pypi",
             },
         ),
@@ -867,7 +854,6 @@ def test_pkg_package_mutations_call_expected_api_paths(monkeypatch, tmp_path: Pa
             "/v0/repositories/resolve",
             {
                 "selector": "repo-pypi",
-                "customer_id": None,
                 "registry_kind": "pypi",
             },
         ),
