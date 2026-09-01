@@ -137,9 +137,7 @@ class ApiClient:
         for attempt in range(transport_attempts):
             try:
                 with httpx.Client(timeout=self._timeout) as hx:
-                    resp = hx.request(
-                        method, self._url(path), headers=self._headers(), **kwargs
-                    )
+                    resp = hx.request(method, self._url(path), headers=self._headers(), **kwargs)
                 break
             except httpx.TransportError:
                 if attempt + 1 == transport_attempts:

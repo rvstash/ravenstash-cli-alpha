@@ -75,9 +75,7 @@ def test_api_client_retries_idempotent_get_transport_failures(monkeypatch) -> No
     monkeypatch.setattr("rvs.client.httpx.Client", _FakeHttpClient)
     monkeypatch.setattr("rvs.client.time.sleep", lambda _seconds: None)
 
-    response = ApiClient("https://api.ravenstash.com", "access").get(
-        "/v0/repositories/resolve"
-    )
+    response = ApiClient("https://api.ravenstash.com", "access").get("/v0/repositories/resolve")
 
     assert response.json() == {"ok": True}
     assert len(_FakeHttpClient.requests) == 2
