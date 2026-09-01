@@ -7,7 +7,6 @@ import subprocess
 import tempfile
 from pathlib import Path
 from typing import cast
-from urllib.parse import urlparse, urlunparse
 
 import click
 import typer
@@ -23,7 +22,7 @@ from ..runtime import tools
 from .registries import maven as maven_reg
 from .registries import npm as npm_reg
 from .registries import pypi as pypi_reg
-from .routing import CanonicalRouter
+from .routing import CanonicalRouter, npm_auth_token_key
 from .targets import RegistryContext, registry_context, resolve_target
 
 
@@ -320,19 +319,6 @@ def _token(profile: str | None) -> str | None:
 def _registry_profile(profile: str | None) -> cfg_mod.ProfileConfig:
     _, p = _profile(profile)
     return p
-
-
-def _authed_url(url: str, token: str) -> str:
-    parsed = urlparse(url)
-    return urlunparse(parsed._replace(netloc=f"__token__:{token}@{parsed.netloc}"))
-
-
-def _npm_auth_token_key(registry_url: str) -> str:
-    parsed = urlparse(registry_url)
-    path = parsed.path or "/"
-    if not path.endswith("/"):
-        path += "/"
-    return f"//{parsed.netloc}{path}:_authToken"
 
 
 def _root_package_options() -> dict[str, str | None]:
@@ -1443,8 +1429,6 @@ def pypi_install(
                 [index_url],
                 context.token,
                 Path(temp_dir),
-                profile=context.profile_name,
-                customer_id=context.customer_id,
             )
         else:
             output.warn("No credentials found; running pip without private repository auth.")
@@ -1540,7 +1524,7 @@ def npmrc(
         context.workspace_reference,
         context.repository_reference,
     )
-    auth_key = _npm_auth_token_key(registry_url)
+    auth_key = npm_auth_token_key(registry_url)
     output.value(
         f"registry={registry_url}\n{auth_key}=${{RVS_TOKEN}}",
         key="configuration",
@@ -1565,7 +1549,7 @@ def npm_install(
     )
     env = {**os.environ}
     if context.token:
-        env[f"NPM_CONFIG_{_npm_auth_token_key(registry_url)}"] = context.token
+        env[f"NPM_CONFIG_{npm_auth_token_key(registry_url)}"] = context.token
     else:
         output.warn("No credentials found; running npm without private repository auth.")
     subprocess.run(

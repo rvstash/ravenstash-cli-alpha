@@ -12,6 +12,7 @@ Each service URL is an exact discovered endpoint. No hostname labels are derived
 from __future__ import annotations
 
 from enum import StrEnum
+from urllib.parse import urlparse
 
 
 class RepositoryRouteKind(StrEnum):
@@ -25,6 +26,15 @@ class RepositoryRouteKind(StrEnum):
 def native_base_url(service_url: str, kind: str) -> str:
     del kind
     return service_url.rstrip("/")
+
+
+def npm_auth_token_key(registry_url: str) -> str:
+    """Return npm's environment/config key for one exact registry URL."""
+    parsed = urlparse(registry_url)
+    path = parsed.path or "/"
+    if not path.endswith("/"):
+        path += "/"
+    return f"//{parsed.netloc}{path}:_authToken"
 
 
 class CanonicalRouter:

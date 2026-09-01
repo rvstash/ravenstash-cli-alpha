@@ -10,7 +10,6 @@ from .auth.commands import profile_app
 from .ci.commands import app as ci_app
 from .context.commands import app as context_app
 from .native import commands as native_commands
-from .native import pip_keyring
 from .oci import commands as oci_commands
 from .pkg.commands import app as pkg_app
 from .repo.commands import app as repo_app
@@ -79,16 +78,6 @@ app.command(
     help="Run ORAS with an exact Container or Helm Ravenstash credential.",
 )(oci_commands.oras)
 app.command("oci-reference")(oci_commands.oci_reference)
-
-
-@app.command(
-    "_pip-keyring",
-    hidden=True,
-    context_settings=native_commands.PASSTHROUGH_CONTEXT,
-)
-def _pip_keyring(ctx: typer.Context) -> None:
-    """Internal bridge used by pip's subprocess keyring provider."""
-    raise typer.Exit(pip_keyring.main(ctx.args))
 
 
 def _version_callback(value: bool) -> None:

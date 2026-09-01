@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 from pathlib import Path
 from typing import Any
 
@@ -923,11 +922,12 @@ def test_pkg_configure_snippets_are_printed_for_native_toolchains(
     assert "/test-account/repo/" in maven_result.output
 
 
-def test_pypi_install_uses_renewable_ephemeral_auth(
+def test_pypi_install_uses_ephemeral_netrc_auth(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
     _isolate_config(monkeypatch, tmp_path)
+    monkeypatch.delenv("PIP_KEYRING_PROVIDER", raising=False)
     monkeypatch.setenv("RVS_TOKEN", "secret-token")
     monkeypatch.setattr(pkg_cmd.tools, "pip_cmd", lambda: ["/bin/pip"])
     calls: list[tuple[list[str], dict[str, str]]] = []
@@ -936,7 +936,6 @@ def test_pypi_install_uses_renewable_ephemeral_auth(
     def capture(cmd, *, env, check) -> None:
         del check
         netrc_texts.append(Path(env["NETRC"]).read_text(encoding="utf-8"))
-        assert (Path(env["PYTHONPATH"].split(os.pathsep)[0]) / "keyring.py").exists()
         calls.append((cmd, env.copy()))
 
     monkeypatch.setattr(pkg_cmd.subprocess, "run", capture)
@@ -946,8 +945,7 @@ def test_pypi_install_uses_renewable_ephemeral_auth(
     assert result.exit_code == 0
     assert calls[0][0] == ["/bin/pip", "install", "demo"]
     assert calls[0][1]["PIP_INDEX_URL"] == (f"https://{PYPI_READ_HOST}/test-account/repo/simple/")
-    assert calls[0][1]["PIP_KEYRING_PROVIDER"] == "import"
-    assert calls[0][1]["RVS_PIP_KEYRING_PROFILE"] == "staging"
+    assert "PIP_KEYRING_PROVIDER" not in calls[0][1]
     assert netrc_texts == [f"machine {PYPI_READ_HOST} login __token__ password secret-token\n"]
 
 

@@ -84,18 +84,6 @@ def _stable_oci_root(workspace_unique_ref: object, repository_unique_ref: object
     return f"{workspace_unique_ref}/{repository_unique_ref}"
 
 
-def _split_repo_ref(repo_ref: str) -> tuple[str | None, str]:
-    value = repo_ref.strip().strip("/")
-    if not value:
-        output.fatal("Repository name cannot be empty.")
-    if "/" not in value:
-        return None, value
-    workspace, repository = value.split("/", 1)
-    if not workspace or not repository or "/" in repository:
-        output.fatal("Repository must be <repository> or <workspace>/<repository>.")
-    return workspace, repository
-
-
 def _registry_url(profile: cfg_mod.ProfileConfig) -> tuple[str, str]:
     raw = profile.native_registries.oci_registry_base_url
     try:
