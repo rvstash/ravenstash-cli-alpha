@@ -350,6 +350,8 @@ def _operations_for(
         return ("upload",)
     if tool == "npm" and _npm_is_publish(argv):
         return ("upload",)
+    if tool == "npm" and _npm_is_mutation(argv):
+        return ("download", "upload")
     if tool == "mvn" and _maven_is_upload(argv):
         return ("download", "upload")
     return ("download",)
@@ -769,6 +771,7 @@ def _inject_npm_override(
     registry_url = (
         route.npm_upload_registry_url
         if _npm_is_publish(cmd[native_arg_start:])
+        or _npm_is_mutation(cmd[native_arg_start:])
         else route.npm_registry_url
     )
     _replace_npm_registry_arg(cmd, native_arg_start, registry_url)
@@ -785,6 +788,20 @@ def _inject_npm_override(
 
 def _npm_is_publish(argv: list[str]) -> bool:
     return any(arg == "publish" for arg in argv if not arg.startswith("-"))
+
+
+def _npm_is_mutation(argv: list[str]) -> bool:
+    positional = [arg for arg in argv if not arg.startswith("-")]
+    if any(arg in {"unpublish", "deprecate", "tag"} for arg in positional):
+        return True
+    try:
+        dist_tag_index = positional.index("dist-tag")
+    except ValueError:
+        return False
+    return any(
+        arg in {"add", "set", "rm", "remove", "del", "delete"}
+        for arg in positional[dist_tag_index + 1 :]
+    )
 
 
 def _replace_npm_registry_arg(cmd: list[str], native_arg_start: int, registry_url: str) -> None:

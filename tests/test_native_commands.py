@@ -187,6 +187,21 @@ def test_native_commands_request_only_the_operations_they_need() -> None:
     assert native_runner._operations_for("twine", ["upload", "dist/*"]) == ("upload",)
     assert native_runner._operations_for("npm", ["ci"]) == ("download",)
     assert native_runner._operations_for("npm", ["publish"]) == ("upload",)
+    assert native_runner._operations_for("npm", ["unpublish", "demo@1.0.0"]) == (
+        "download",
+        "upload",
+    )
+    assert native_runner._operations_for("npm", ["deprecate", "demo@1", "old"]) == (
+        "download",
+        "upload",
+    )
+    assert native_runner._operations_for("npm", ["dist-tag", "add", "demo@1", "next"]) == (
+        "download",
+        "upload",
+    )
+    assert native_runner._operations_for("npm", ["dist-tag", "ls", "demo"]) == (
+        "download",
+    )
     assert native_runner._operations_for("mvn", ["test"]) == ("download",)
     assert native_runner._operations_for("mvn", ["deploy"]) == ("download", "upload")
     assert native_runner._operations_for(
@@ -309,6 +324,34 @@ def test_native_npm_repo_override_uses_upload_registry_for_publish(
         f"{NPM_PUSH_URL}/staging/repo/",
     ]
     assert calls[0]["env"]["NPM_CONFIG_REGISTRY"] == (f"{NPM_PUSH_URL}/staging/repo/")
+    assert (
+        calls[0]["env"][f"NPM_CONFIG_//{NPM_PUSH_HOST}/staging/repo/:_authToken"] == "secret-token"
+    )
+
+
+def test_native_npm_repo_override_uses_upload_registry_for_unpublish(
+    monkeypatch: Any,
+    tmp_path: Path,
+) -> None:
+    _isolate_config(monkeypatch, tmp_path)
+    _mock_native_tools(monkeypatch)
+    calls: list[dict[str, Any]] = []
+    _capture_run(monkeypatch, calls)
+
+    result = runner.invoke(
+        app,
+        ["npm", "--rvs-target", "staging/repo-npm", "unpublish", "demo@1.0.0"],
+    )
+
+    assert result.exit_code == 0
+    assert calls[0]["cmd"] == [
+        "/bin/npm",
+        "unpublish",
+        "--registry",
+        f"{NPM_PUSH_URL}/staging/repo/",
+        "demo@1.0.0",
+    ]
+    assert calls[0]["env"]["NPM_CONFIG_REGISTRY"] == f"{NPM_PUSH_URL}/staging/repo/"
     assert (
         calls[0]["env"][f"NPM_CONFIG_//{NPM_PUSH_HOST}/staging/repo/:_authToken"] == "secret-token"
     )
