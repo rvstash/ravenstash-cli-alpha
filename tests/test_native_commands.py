@@ -189,6 +189,10 @@ def test_native_commands_request_only_the_operations_they_need() -> None:
     assert native_runner._operations_for("npm", ["publish"]) == ("upload",)
     assert native_runner._operations_for("mvn", ["test"]) == ("download",)
     assert native_runner._operations_for("mvn", ["deploy"]) == ("download", "upload")
+    assert native_runner._operations_for(
+        "mvn",
+        ["org.apache.maven.plugins:maven-deploy-plugin:3.1.3:deploy-file"],
+    ) == ("download", "upload")
 
 
 def test_ravenstash_url_kind_accepts_public_hosts_and_local_normalized_routes() -> None:
@@ -632,3 +636,31 @@ def test_native_maven_repo_override_generates_temp_settings(
     assert "<username>__token__</username>" in settings_texts[0]
     assert "<password>secret-token</password>" in settings_texts[0]
     assert not Path(calls[0]["cmd"][calls[0]["cmd"].index("--settings") + 1]).exists()
+
+
+def test_native_maven_deploy_file_injects_upload_destination(
+    monkeypatch: Any,
+    tmp_path: Path,
+) -> None:
+    _isolate_config(monkeypatch, tmp_path)
+    _mock_native_tools(monkeypatch)
+    calls: list[dict[str, Any]] = []
+    _capture_run(monkeypatch, calls)
+
+    result = runner.invoke(
+        app,
+        [
+            "mvn",
+            "--rvs-target",
+            "staging/repo-maven",
+            "org.apache.maven.plugins:maven-deploy-plugin:3.1.3:deploy-file",
+            "-Dfile=demo.jar",
+            "-DpomFile=demo.pom",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert calls[0]["cmd"][-2:] == [
+        "-DrepositoryId=rvs-private",
+        f"-Durl={MAVEN_PUSH_URL}/staging/repo/",
+    ]

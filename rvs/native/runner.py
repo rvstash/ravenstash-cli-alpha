@@ -350,7 +350,7 @@ def _operations_for(
         return ("upload",)
     if tool == "npm" and _npm_is_publish(argv):
         return ("upload",)
-    if tool == "mvn" and _maven_has_goal(argv, "deploy"):
+    if tool == "mvn" and _maven_is_upload(argv):
         return ("download", "upload")
     return ("download",)
 
@@ -667,9 +667,17 @@ def _inject_override(
                 route=route,
             )
             _replace_maven_settings_arg(cmd, settings_path, native_arg_start)
-            if _maven_has_goal(cmd[native_arg_start:], "deploy"):
+            maven_args = cmd[native_arg_start:]
+            if _maven_has_goal(maven_args, "deploy"):
                 cmd.append(
                     f"-DaltDeploymentRepository=rvs-private::default::{route.maven_upload_url}"
+                )
+            if _maven_has_goal(maven_args, "deploy-file"):
+                cmd.extend(
+                    [
+                        "-DrepositoryId=rvs-private",
+                        f"-Durl={route.maven_upload_url}",
+                    ]
                 )
 
 
@@ -965,6 +973,10 @@ def _maven_settings_arg(argv: list[str]) -> str | None:
 
 def _maven_has_goal(argv: list[str], goal: str) -> bool:
     return any(arg == goal or arg.endswith(f":{goal}") for arg in argv if not arg.startswith("-"))
+
+
+def _maven_is_upload(argv: list[str]) -> bool:
+    return _maven_has_goal(argv, "deploy") or _maven_has_goal(argv, "deploy-file")
 
 
 def _ensure_xml_child(parent: ET.Element, tag: str) -> ET.Element:
