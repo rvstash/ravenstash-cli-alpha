@@ -321,9 +321,8 @@ def test_pkg_install_uses_account_scoped_official_default_without_selection(
 
     assert result.exit_code == 0, result.output
     assert calls[0][0] == ["/bin/pip", "install", "requests"]
-    assert calls[0][1]["PIP_INDEX_URL"].startswith(
-        "https://__token__:cache-token@cache.pypi.rvsta.sh/o/pypiorg/simple/"
-    )
+    assert calls[0][1]["PIP_INDEX_URL"] == ("https://cache.pypi.rvsta.sh/o/pypiorg/simple/")
+    assert calls[0][1]["PIP_KEYRING_PROVIDER"] == "import"
     assert cfg_mod.selected_package_target("alice", "personal-alice") is None
 
 

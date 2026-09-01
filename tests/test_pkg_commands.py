@@ -1,16 +1,14 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+import os
+from pathlib import Path
+from typing import Any
 
 import pytest
 from rvs import config as cfg_mod
 from rvs.pkg import commands as pkg_cmd
 from rvs.pkg.registries.base import PublishResult
 from typer.testing import CliRunner
-
-
-if TYPE_CHECKING:
-    from pathlib import Path
 
 
 runner = CliRunner()
@@ -925,7 +923,7 @@ def test_pkg_configure_snippets_are_printed_for_native_toolchains(
     assert "/test-account/repo/" in maven_result.output
 
 
-def test_pypi_install_uses_authenticated_primary_index_url(
+def test_pypi_install_uses_renewable_ephemeral_auth(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
@@ -933,19 +931,24 @@ def test_pypi_install_uses_authenticated_primary_index_url(
     monkeypatch.setenv("RVS_TOKEN", "secret-token")
     monkeypatch.setattr(pkg_cmd.tools, "pip_cmd", lambda: ["/bin/pip"])
     calls: list[tuple[list[str], dict[str, str]]] = []
-    monkeypatch.setattr(
-        pkg_cmd.subprocess,
-        "run",
-        lambda cmd, *, env, check: calls.append((cmd, env)),
-    )
+    netrc_texts: list[str] = []
+
+    def capture(cmd, *, env, check) -> None:
+        del check
+        netrc_texts.append(Path(env["NETRC"]).read_text(encoding="utf-8"))
+        assert (Path(env["PYTHONPATH"].split(os.pathsep)[0]) / "keyring.py").exists()
+        calls.append((cmd, env.copy()))
+
+    monkeypatch.setattr(pkg_cmd.subprocess, "run", capture)
 
     result = runner.invoke(pkg_cmd.app, ["pypi", "install", "demo", "--profile", "staging"])
 
     assert result.exit_code == 0
     assert calls[0][0] == ["/bin/pip", "install", "demo"]
-    assert calls[0][1]["PIP_INDEX_URL"] == (
-        f"https://__token__:secret-token@{PYPI_READ_HOST}/test-account/repo/simple/"
-    )
+    assert calls[0][1]["PIP_INDEX_URL"] == (f"https://{PYPI_READ_HOST}/test-account/repo/simple/")
+    assert calls[0][1]["PIP_KEYRING_PROVIDER"] == "import"
+    assert calls[0][1]["RVS_PIP_KEYRING_PROFILE"] == "staging"
+    assert netrc_texts == [f"machine {PYPI_READ_HOST} login __token__ password secret-token\n"]
 
 
 def test_pypi_install_refreshes_native_path_when_saved_target_name_changed(

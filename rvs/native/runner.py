@@ -10,6 +10,7 @@ from __future__ import annotations
 import os
 import re
 import subprocess
+import sys
 import tempfile
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
@@ -191,6 +192,13 @@ def _build_plan(
             selected_customer_id,
         )
         _inject_for_detected_urls(tool, cmd, native_arg_start, env, urls, token, temp_dir)
+        if tool == "pip":
+            _configure_pip_keyring(
+                env,
+                temp_dir,
+                profile=options.profile,
+                customer_id=selected_customer_id,
+            )
         return ExecutionPlan(cmd=cmd, env=env)
 
     route = _resolve_route(_kind_for_tool(tool), options)
@@ -204,6 +212,13 @@ def _build_plan(
         temp_dir,
         isolate=effective_policy == "isolate",
     )
+    if tool == "pip":
+        _configure_pip_keyring(
+            env,
+            temp_dir,
+            profile=options.profile,
+            customer_id=selected_customer_id,
+        )
     return ExecutionPlan(cmd=cmd, env=env)
 
 
@@ -816,6 +831,91 @@ def _write_netrc(
     netrc_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     netrc_path.chmod(0o600)
     env["NETRC"] = str(netrc_path)
+
+
+def inject_pip_auth(
+    env: dict[str, str],
+    urls: list[str],
+    token: str,
+    temp_dir: Path,
+    *,
+    profile: str | None,
+    customer_id: str | None,
+) -> None:
+    """Inject an initial capability plus an on-401 renewal helper for pip."""
+    _write_netrc(env, urls, token, temp_dir)
+    _configure_pip_keyring(
+        env,
+        temp_dir,
+        profile=profile,
+        customer_id=customer_id,
+    )
+
+
+def _configure_pip_keyring(
+    env: dict[str, str],
+    temp_dir: Path,
+    *,
+    profile: str | None,
+    customer_id: str | None,
+) -> None:
+    if getattr(sys, "frozen", False):
+        command = [sys.executable, "_pip-keyring"]
+    else:
+        command = [sys.executable, "-m", "rvs.native.pip_keyring"]
+    bridge = temp_dir / "keyring.py"
+    bridge.write_text(
+        """from __future__ import annotations
+
+import json
+import subprocess
+from collections import namedtuple
+
+
+_COMMAND = __RVS_KEYRING_COMMAND__
+_Credential = namedtuple("Credential", ("username", "password"))
+
+
+def _lookup(service, username=None):
+    command = [*_COMMAND, "--mode=creds", "--output=json", "get", service]
+    if username:
+        command.append(username)
+    result = subprocess.run(command, capture_output=True, text=True, check=False)
+    if result.returncode:
+        return None
+    try:
+        payload = json.loads(result.stdout)
+        return _Credential(payload["username"], payload["password"])
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
+def get_credential(service, username=None):
+    return _lookup(service, username)
+
+
+def get_password(service, username):
+    credential = _lookup(service, username)
+    return credential.password if credential is not None else None
+
+
+def set_password(service, username, password):
+    del service, username, password
+""".replace("__RVS_KEYRING_COMMAND__", repr(command)),
+        encoding="utf-8",
+    )
+    bridge.chmod(0o600)
+    python_path = env.get("PYTHONPATH")
+    env["PYTHONPATH"] = f"{temp_dir}{os.pathsep}{python_path}" if python_path else str(temp_dir)
+    env["PIP_KEYRING_PROVIDER"] = "import"
+    if profile:
+        env["RVS_PIP_KEYRING_PROFILE"] = profile
+    else:
+        env.pop("RVS_PIP_KEYRING_PROFILE", None)
+    if customer_id:
+        env["RVS_PIP_KEYRING_CUSTOMER_ID"] = customer_id
+    else:
+        env.pop("RVS_PIP_KEYRING_CUSTOMER_ID", None)
 
 
 def _write_maven_settings(

@@ -18,6 +18,7 @@ from .. import output
 from ..account.commands import display_name as account_display_name
 from ..account.commands import ensure_active_account, resolve_account
 from ..client import ApiClient, ApiError
+from ..native import runner as native_runner
 from ..runtime import tools
 from .registries import maven as maven_reg
 from .registries import npm as npm_reg
@@ -1434,14 +1435,22 @@ def pypi_install(
     index_url = _ROUTER.pypi_index_url(
         context.read_base_url, context.workspace_reference, context.repository_reference
     )
-    env = {**os.environ}
-    if context.token:
-        env["PIP_INDEX_URL"] = _authed_url(index_url, context.token)
-    else:
-        output.warn("No credentials found; running pip without private repository auth.")
+    with tempfile.TemporaryDirectory(prefix="rvs-pip-") as temp_dir:
+        env = {**os.environ, "PIP_INDEX_URL": index_url}
+        if context.token:
+            native_runner.inject_pip_auth(
+                env,
+                [index_url],
+                context.token,
+                Path(temp_dir),
+                profile=context.profile_name,
+                customer_id=context.customer_id,
+            )
+        else:
+            output.warn("No credentials found; running pip without private repository auth.")
 
-    cmd = [*tools.pip_cmd(), "install", *packages]
-    subprocess.run(cmd, env=env, check=True)
+        cmd = [*tools.pip_cmd(), "install", *packages]
+        subprocess.run(cmd, env=env, check=True)
 
 
 @pypi_app.command("publish")

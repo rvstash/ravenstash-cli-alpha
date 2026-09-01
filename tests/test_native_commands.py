@@ -352,6 +352,8 @@ def test_native_pip_respects_existing_index_and_injects_temp_netrc(
     assert result.exit_code == 0
     assert calls[0]["cmd"] == ["/bin/pip", "install", "demo"]
     assert calls[0]["env"]["PIP_INDEX_URL"] == (f"{PYPI_READ_URL}/w_abcdefgh/r_xyzabcde/simple/")
+    assert calls[0]["env"]["PIP_KEYRING_PROVIDER"] == "import"
+    assert calls[0]["env"]["RVS_PIP_KEYRING_CUSTOMER_ID"] == "cus_staging"
     assert netrc_texts == [f"machine {PYPI_READ_HOST} login __token__ password secret-token\n"]
 
 
