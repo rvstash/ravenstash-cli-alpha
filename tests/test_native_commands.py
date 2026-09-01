@@ -330,6 +330,50 @@ def test_native_npm_repo_override_replaces_conflicting_registry_flag(
     ]
 
 
+def test_native_npm_isolate_uses_distinct_empty_config_files(
+    monkeypatch: Any,
+    tmp_path: Path,
+) -> None:
+    _isolate_config(monkeypatch, tmp_path)
+    _mock_native_tools(monkeypatch)
+    calls: list[dict[str, Any]] = []
+    config_snapshots: list[tuple[Path, Path, str, str]] = []
+
+    def hook(_cmd: list[str], env: dict[str, str]) -> None:
+        user_config = Path(env["NPM_CONFIG_USERCONFIG"])
+        global_config = Path(env["NPM_CONFIG_GLOBALCONFIG"])
+        config_snapshots.append(
+            (
+                user_config,
+                global_config,
+                user_config.read_text(encoding="utf-8"),
+                global_config.read_text(encoding="utf-8"),
+            )
+        )
+
+    _capture_run(monkeypatch, calls, hook)
+
+    result = runner.invoke(
+        app,
+        [
+            "npm",
+            "--rvs-target",
+            "staging/repo-npm",
+            "--rvs-native-config",
+            "isolate",
+            "install",
+            "@acme/widgets",
+        ],
+    )
+
+    assert result.exit_code == 0
+    user_config, global_config, user_text, global_text = config_snapshots[0]
+    assert user_config != global_config
+    assert user_text == global_text == ""
+    assert not user_config.exists()
+    assert not global_config.exists()
+
+
 def test_native_pip_respects_existing_index_and_injects_temp_netrc(
     monkeypatch: Any,
     tmp_path: Path,

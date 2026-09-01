@@ -740,10 +740,12 @@ def _inject_npm_override(
     env["NPM_CONFIG_REGISTRY"] = registry_url
     _inject_npm_auth(env, [registry_url], token)
     if isolate:
-        empty_npmrc = temp_dir / "npmrc"
-        empty_npmrc.write_text("", encoding="utf-8")
-        env["NPM_CONFIG_USERCONFIG"] = str(empty_npmrc)
-        env["NPM_CONFIG_GLOBALCONFIG"] = str(empty_npmrc)
+        user_npmrc = temp_dir / "user.npmrc"
+        global_npmrc = temp_dir / "global.npmrc"
+        user_npmrc.write_text("", encoding="utf-8")
+        global_npmrc.write_text("", encoding="utf-8")
+        env["NPM_CONFIG_USERCONFIG"] = str(user_npmrc)
+        env["NPM_CONFIG_GLOBALCONFIG"] = str(global_npmrc)
 
 
 def _npm_is_publish(argv: list[str]) -> bool:
