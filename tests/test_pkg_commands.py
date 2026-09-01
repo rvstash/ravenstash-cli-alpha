@@ -164,10 +164,24 @@ def test_pkg_repo_list_filters_by_kind_and_uses_profile_customer(
         (
             "GET",
             "/v0/repositories",
-            {"customer_id": None, "registry_kind": "pypi"},
+            {"registry_kind": "pypi"},
         )
     ]
     assert "repo-pypi" in result.output
+
+
+def test_pkg_repo_list_omits_unset_query_filters(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    _isolate_config(monkeypatch, tmp_path)
+    fake = _FakeApiClient([[]])
+    _use_fake_client(monkeypatch, fake)
+
+    result = runner.invoke(pkg_cmd.app, ["repo", "list"])
+
+    assert result.exit_code == 0
+    assert fake.calls == [("GET", "/v0/repositories", {})]
 
 
 def test_pkg_repo_create_can_set_default_repo(monkeypatch, tmp_path: Path) -> None:

@@ -412,10 +412,18 @@ def repo_list(
     if kind:
         _require_kind(kind)
     client = _client(profile)
+    params = {
+        key: value
+        for key, value in {
+            "customer_id": customer_id,
+            "registry_kind": kind,
+        }.items()
+        if value is not None
+    }
     try:
         data = client.get(
             "/v0/repositories",
-            params={"customer_id": customer_id, "registry_kind": kind},
+            params=params,
         ).json()
     except ApiError as exc:
         output.fatal(str(exc))
