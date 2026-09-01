@@ -10,7 +10,7 @@ from rvs.client import ApiClient, ApiError
 
 
 class _FakeHttpClient:
-    responses: ClassVar[list[httpx.Response]] = []
+    responses: ClassVar[list[httpx.Response | Exception]] = []
     requests: ClassVar[list[tuple[str, str, dict[str, str], dict[str, Any]]]] = []
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
@@ -31,7 +31,10 @@ class _FakeHttpClient:
         **kwargs: Any,
     ) -> httpx.Response:
         self.requests.append((method, url, headers, kwargs))
-        return self.responses.pop(0)
+        response = self.responses.pop(0)
+        if isinstance(response, Exception):
+            raise response
+        return response
 
 
 def test_api_client_refreshes_and_retries_once(monkeypatch) -> None:
@@ -59,6 +62,41 @@ def test_api_client_refreshes_and_retries_once(monkeypatch) -> None:
         "Bearer old-access",
         "Bearer new-access",
     ]
+
+
+def test_api_client_retries_idempotent_get_transport_failures(monkeypatch) -> None:
+    _FakeHttpClient.requests = []
+    request = httpx.Request("GET", "https://api.ravenstash.com/v0/repositories/resolve")
+    _FakeHttpClient.responses = [
+        httpx.ReadTimeout("timed out", request=request),
+        httpx.Response(200, json={"ok": True}),
+    ]
+
+    monkeypatch.setattr("rvs.client.httpx.Client", _FakeHttpClient)
+    monkeypatch.setattr("rvs.client.time.sleep", lambda _seconds: None)
+
+    response = ApiClient("https://api.ravenstash.com", "access").get(
+        "/v0/repositories/resolve"
+    )
+
+    assert response.json() == {"ok": True}
+    assert len(_FakeHttpClient.requests) == 2
+
+
+def test_api_client_does_not_retry_post_transport_failures(monkeypatch) -> None:
+    _FakeHttpClient.requests = []
+    request = httpx.Request("POST", "https://api.ravenstash.com/v0/package-credentials")
+    _FakeHttpClient.responses = [httpx.ReadTimeout("timed out", request=request)]
+
+    monkeypatch.setattr("rvs.client.httpx.Client", _FakeHttpClient)
+
+    with pytest.raises(httpx.ReadTimeout):
+        ApiClient("https://api.ravenstash.com", "access").post(
+            "/v0/package-credentials",
+            json={"repository_id": "repo-1"},
+        )
+
+    assert len(_FakeHttpClient.requests) == 1
 
 
 def test_api_client_without_profile_does_not_refresh(monkeypatch) -> None:

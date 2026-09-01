@@ -12,6 +12,7 @@ Usage
 from __future__ import annotations
 
 import importlib.metadata
+import time
 from typing import TYPE_CHECKING, Any
 
 import httpx
@@ -132,8 +133,18 @@ class ApiClient:
     def _request(
         self, method: str, path: str, *, retry: bool = True, **kwargs: Any
     ) -> httpx.Response:
-        with httpx.Client(timeout=self._timeout) as hx:
-            resp = hx.request(method, self._url(path), headers=self._headers(), **kwargs)
+        transport_attempts = 3 if method.upper() == "GET" else 1
+        for attempt in range(transport_attempts):
+            try:
+                with httpx.Client(timeout=self._timeout) as hx:
+                    resp = hx.request(
+                        method, self._url(path), headers=self._headers(), **kwargs
+                    )
+                break
+            except httpx.TransportError:
+                if attempt + 1 == transport_attempts:
+                    raise
+                time.sleep((0.25, 1.0)[attempt])
         if resp.status_code == 401 and retry and self._refresh():
             return self._request(method, path, retry=False, **kwargs)
         self._raise(resp)
