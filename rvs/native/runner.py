@@ -303,8 +303,8 @@ def _package_token_for_url(
                 json={
                     "customer_id": effective_customer_id,
                     "route_kind": route_kind,
-                    "namespace_reference": namespace_reference,
-                    "repository_reference": repository_reference,
+                    "namespace_unique_reference": namespace_reference,
+                    "repository_unique_reference": repository_reference,
                     "registry_kind": kind,
                 },
             ).json()["access_token"]

@@ -60,6 +60,8 @@ class _Api:
                 "native_path": "/main/images",
                 "namespace_unique_ref": "in_abcdefgh",
                 "repository_unique_ref": "r_xyzabcde",
+                "namespace_name": "main",
+                "repository_name": "images",
             }
         )
 
@@ -155,6 +157,35 @@ def test_docker_uses_exact_ephemeral_helper_without_secret_in_argv(
     ]
     assert "exact-secret-capability" not in " ".join(captured["cmd"])
     assert not Path(captured["env"]["RVS_OCI_CREDENTIAL_FILE"]).exists()
+
+
+def test_explicit_internal_target_accepts_current_friendly_native_root(
+    monkeypatch, tmp_path: Path
+) -> None:
+    _setup(monkeypatch, tmp_path)
+
+    class StablePathApi(_Api):
+        def post(self, path: str, json=None) -> _Response:
+            response = super().post(path, json)
+            response.value["native_path"] = "/in_abcdefgh/r_xyzabcde"
+            return response
+
+    monkeypatch.setattr(
+        oci_runner.ApiClient,
+        "from_profile",
+        staticmethod(lambda profile=None: StablePathApi()),
+    )
+
+    route = oci_runner.resolve_route(
+        "docker",
+        oci_runner.OciOptions(target="internal:main/images"),
+        ("download", "upload"),
+    )
+
+    assert route.native_root == "oci.rvsta.sh/in_abcdefgh/r_xyzabcde"
+    assert route.accepted_roots == frozenset(
+        {"main/images", "in_abcdefgh/r_xyzabcde"}
+    )
 
 
 def test_docker_preserves_other_native_credentials_but_replaces_ravenstash(

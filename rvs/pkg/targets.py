@@ -377,13 +377,13 @@ def registry_context(
                 json={
                     "customer_id": account.customer_id,
                     "route_kind": route_kind,
-                    "namespace_reference": namespace_reference,
-                    "repository_reference": selected.remote_unique_ref,
+                    "namespace_unique_reference": namespace_reference,
+                    "repository_unique_reference": selected.remote_unique_ref,
                     "registry_kind": kind,
                 },
             ).json()
-            namespace_reference = credential["namespace_reference"]
-            repository_reference = credential["repository_reference"]
+            namespace_reference = credential["namespace_unique_reference"]
+            repository_reference = credential["repository_unique_reference"]
             read_base_url = endpoints.mirror_base_url
             push_base_url = None
     except (ApiError, KeyError, TypeError, ValueError) as exc:

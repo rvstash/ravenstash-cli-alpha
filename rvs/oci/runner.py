@@ -88,6 +88,15 @@ def _stable_oci_root(namespace_unique_ref: object, repository_unique_ref: object
     return f"{namespace_unique_ref}/{repository_unique_ref}"
 
 
+def _friendly_oci_root(namespace_name: object, repository_name: object) -> str:
+    if not isinstance(namespace_name, str) or not isinstance(repository_name, str):
+        output.fatal("Invalid OCI capability response: current names are missing.")
+    root = f"{namespace_name}/{repository_name}"
+    if _native_route_parts(root) is None:
+        output.fatal("Invalid OCI capability response: current names are invalid.")
+    return root
+
+
 def _registry_url(profile: cfg_mod.ProfileConfig) -> tuple[str, str]:
     raw = profile.native_registries.oci_registry_base_url
     try:
@@ -174,7 +183,11 @@ def resolve_route(
     if not isinstance(native_path, str) or _native_route_parts(native_path) is None:
         output.fatal("Invalid OCI capability response: native_path is not canonical.")
     registry_url, registry_host = _registry_url(config.active_profile(profile_name))
-    friendly_root = native_path.strip("/")
+    response_root = native_path.strip("/")
+    friendly_root = _friendly_oci_root(
+        credential.get("namespace_name"),
+        credential.get("repository_name"),
+    )
     stable_root = _stable_oci_root(
         credential.get("namespace_unique_ref"),
         credential.get("repository_unique_ref"),
@@ -184,7 +197,7 @@ def resolve_route(
         registry_url=registry_url,
         registry_host=registry_host,
         native_root=f"{registry_host}{native_path}",
-        accepted_roots=frozenset((friendly_root, stable_root)),
+        accepted_roots=frozenset((response_root, friendly_root, stable_root)),
         package_token=token,
     )
 

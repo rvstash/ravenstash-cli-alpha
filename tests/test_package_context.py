@@ -108,8 +108,8 @@ class FakeApi:
             return Response(
                 {
                     "access_token": "cache-token",
-                    "namespace_reference": prefix,
-                    "repository_reference": name,
+                    "namespace_unique_reference": prefix,
+                    "repository_unique_reference": name,
                 }
             )
         raise AssertionError(path)

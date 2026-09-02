@@ -86,6 +86,10 @@ class _FakeDevApi:
             assert json["customer_id"] == "cus_staging"
             assert json["registry_kind"] == "pypi"
             assert json["route_kind"] in {"remote_custom", "remote_official"}
+            assert json["namespace_unique_reference"] in {"o", "c"}
+            assert json["repository_unique_reference"]
+            assert "namespace_reference" not in json
+            assert "repository_reference" not in json
             return _JsonResponse({"access_token": "remote-secret-token"})
         assert path == "/v0/package-credentials"
         assert json is not None
