@@ -46,9 +46,7 @@ def test_repository_domain_summary_recognizes_legacy_cache_host_aliases() -> Non
         oci_registry_base_url=endpoints.oci_registry_base_url,
     )
 
-    assert cfg_mod.repository_domain_summary(legacy_endpoints) == (
-        "packages.enterprise.example"
-    )
+    assert cfg_mod.repository_domain_summary(legacy_endpoints) == ("packages.enterprise.example")
 
 
 def test_repository_domain_summary_recognizes_localhost_routes() -> None:

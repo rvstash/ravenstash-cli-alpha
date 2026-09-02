@@ -575,7 +575,9 @@ def test_native_pip_exchanges_official_remote_credential(
     result = runner.invoke(app, ["pip", "download", "demo"])
 
     assert result.exit_code == 0
-    assert captured == [f"machine {PYPI_MIRROR_HOST} login __token__ password remote-secret-token\n"]
+    assert captured == [
+        f"machine {PYPI_MIRROR_HOST} login __token__ password remote-secret-token\n"
+    ]
 
 
 def test_native_pip_isolate_overrides_index_without_writing_credentials(

@@ -49,7 +49,8 @@ def test_load_missing_config_uses_production_default_without_profile_env(
     assert cfg.active_profile().native_registries.pypi.read_base_url == "https://pypi.rvsta.sh"
     assert cfg.active_profile().native_registries.pypi.push_base_url == "https://push.pypi.rvsta.sh"
     assert (
-        cfg.active_profile().native_registries.pypi.mirror_base_url == "https://mirror.pypi.rvsta.sh"
+        cfg.active_profile().native_registries.pypi.mirror_base_url
+        == "https://mirror.pypi.rvsta.sh"
     )
 
 
@@ -133,7 +134,8 @@ def test_repository_domain_formats_every_registry_service_for_profile(
     assert profile.native_registries.pypi.read_base_url == "https://pypi.packages.example.test"
     assert profile.native_registries.pypi.push_base_url == "https://push.pypi.packages.example.test"
     assert (
-        profile.native_registries.pypi.mirror_base_url == "https://mirror.pypi.packages.example.test"
+        profile.native_registries.pypi.mirror_base_url
+        == "https://mirror.pypi.packages.example.test"
     )
     assert profile.native_registries.npm.read_base_url == "https://npm.packages.example.test"
     assert (
