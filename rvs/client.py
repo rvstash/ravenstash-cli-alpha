@@ -134,7 +134,7 @@ class ApiClient:
     def _refresh(self) -> bool:
         if not self._profile or not self._allow_refresh:
             return False
-        token = auth_mod.refresh_expiring_credential(self._profile)
+        token = auth_mod.refresh_expiring_credential(self._profile, stale_access_token=self._token)
         if not token:
             return False
         self._token = token

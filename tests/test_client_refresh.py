@@ -48,7 +48,7 @@ def test_api_client_refreshes_and_retries_once(monkeypatch) -> None:
     monkeypatch.setattr(
         auth_mod,
         "refresh_expiring_credential",
-        lambda profile: "new-access" if profile == "default" else None,
+        lambda profile, **_kwargs: "new-access" if profile == "default" else None,
     )
 
     response = ApiClient(

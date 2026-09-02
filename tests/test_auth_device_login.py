@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import threading
+from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, ClassVar
 
@@ -702,8 +704,8 @@ def test_refresh_expiring_credential_rotates_tokens(
 
     assert auth_mod.refresh_expiring_credential("default") == "new-jwt"
     assert stored == [
-        ("default", "new-jwt"),
         ("default:refresh", "new-refresh"),
+        ("default", "new-jwt"),
     ]
     assert _FakeClient.requests == [
         (
@@ -780,7 +782,7 @@ def test_refresh_storage_failure_revokes_and_removes_partial_pair(
 
     def fail_second_write(profile: str, _token: str) -> None:
         writes.append(profile)
-        if profile.endswith(":refresh"):
+        if profile == "default":
             raise RuntimeError("locked during write")
 
     monkeypatch.setattr(auth_mod.httpx, "Client", _FakeClient)
@@ -799,7 +801,7 @@ def test_refresh_storage_failure_revokes_and_removes_partial_pair(
     )
 
     assert auth_mod.refresh_expiring_credential("default") is None
-    assert writes == ["default", "default:refresh"]
+    assert writes == ["default:refresh", "default"]
     assert deleted == [("default", "keyring")]
     assert revoked == [("https://api.ravenstash.com", "new-refresh")]
     assert cfg_mod.load().profiles["default"].credential_type is None
@@ -836,3 +838,93 @@ def test_refresh_expiring_credential_failure_clears_profile(monkeypatch, tmp_pat
             {"User-Agent": "rvs/0.1.0"},
         )
     ]
+
+
+def test_concurrent_refresh_reuses_rotated_pair(monkeypatch, tmp_path: Path) -> None:
+    config_dir = tmp_path / ".rvs"
+    _write_profiles_config(config_dir)
+    monkeypatch.setattr(cfg_mod, "CONFIG_DIR", config_dir)
+    monkeypatch.setattr(cfg_mod, "CONFIG_FILE", config_dir / "config.toml")
+    monkeypatch.setattr(auth_mod, "_keyring_available", lambda: True)
+
+    credentials = {
+        "default": "old-access",
+        "default:refresh": "old-refresh",
+    }
+    credentials_guard = threading.Lock()
+    first_has_lock = threading.Event()
+    second_read_old_refresh = threading.Event()
+    original_refresh_lock = auth_mod._profile_refresh_lock
+
+    def credential_get(account: str) -> str | None:
+        with credentials_guard:
+            value = credentials.get(account)
+        if (
+            threading.current_thread().name == "refresh-two"
+            and account == "default:refresh"
+            and value == "old-refresh"
+        ):
+            second_read_old_refresh.set()
+        return value
+
+    def credential_set(account: str, value: str) -> None:
+        with credentials_guard:
+            credentials[account] = value
+
+    @contextmanager
+    def tracked_refresh_lock(profile: str):
+        with original_refresh_lock(profile):
+            if threading.current_thread().name == "refresh-one":
+                first_has_lock.set()
+            yield
+
+    http_calls: list[str] = []
+
+    class CoordinatedClient:
+        def __init__(self, *args, **kwargs) -> None:
+            del args, kwargs
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args) -> None:
+            del args
+
+        def post(self, _url, *, headers, json):
+            del headers
+            http_calls.append(json["refresh_token"])
+            assert second_read_old_refresh.wait(timeout=5)
+            return _FakeResponse(
+                200,
+                {
+                    "access_token": "new-access",
+                    "refresh_token": "new-refresh",
+                    "expires_in": 900,
+                    "refresh_expires_in": 14400,
+                },
+            )
+
+    monkeypatch.setattr(auth_mod, "_kr_get", credential_get)
+    monkeypatch.setattr(auth_mod, "_kr_set", credential_set)
+    monkeypatch.setattr(auth_mod, "_profile_refresh_lock", tracked_refresh_lock)
+    monkeypatch.setattr(auth_mod.httpx, "Client", CoordinatedClient)
+
+    results: dict[str, str | None] = {}
+
+    def refresh() -> None:
+        results[threading.current_thread().name] = auth_mod.refresh_expiring_credential(
+            "default", stale_access_token="old-access"
+        )
+
+    first = threading.Thread(target=refresh, name="refresh-one")
+    second = threading.Thread(target=refresh, name="refresh-two")
+    first.start()
+    assert first_has_lock.wait(timeout=5)
+    second.start()
+    first.join(timeout=5)
+    second.join(timeout=5)
+
+    assert not first.is_alive()
+    assert not second.is_alive()
+    assert results == {"refresh-one": "new-access", "refresh-two": "new-access"}
+    assert http_calls == ["old-refresh"]

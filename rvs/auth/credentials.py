@@ -14,16 +14,24 @@ token_source(profile) -> str | None
 
 from __future__ import annotations
 
+import fcntl
+import hashlib
 import importlib.metadata
 import logging
 import os
 import platform as platform_mod
 import secrets
+from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
+from typing import IO, TYPE_CHECKING
 
 import httpx
 
 from . import stores
+
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
 
 
 logger = logging.getLogger(__name__)
@@ -284,6 +292,31 @@ def _refresh_profile(profile: str) -> str:
     return f"{profile}{_REFRESH_SUFFIX}"
 
 
+@contextmanager
+def _profile_refresh_lock(profile: str) -> Iterator[None]:
+    """Serialize refresh-token rotation across processes for one profile."""
+    from .. import config as cfg_mod
+
+    cfg_mod.CONFIG_DIR.mkdir(mode=0o700, parents=True, exist_ok=True)
+    cfg_mod.CONFIG_DIR.chmod(0o700)
+    digest = hashlib.sha256(profile.encode("utf-8")).hexdigest()[:24]
+    lock_path = cfg_mod.CONFIG_DIR / f".refresh-{digest}.lock"
+    descriptor = os.open(lock_path, os.O_CREAT | os.O_RDWR, 0o600)
+    lock_file: IO[bytes] | None = None
+    try:
+        os.chmod(lock_path, 0o600)
+        lock_file = os.fdopen(descriptor, "rb", closefd=True)
+        descriptor = -1
+        fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+        yield
+    finally:
+        if lock_file is not None:
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+            lock_file.close()
+        elif descriptor >= 0:
+            os.close(descriptor)
+
+
 def _stored_profile_expired(profile: str) -> bool:
     from .. import config as cfg_mod
 
@@ -347,80 +380,102 @@ def revoke_device_refresh_token(api_url: str, refresh_token: str) -> bool:
     return response.is_success
 
 
-def refresh_expiring_credential(profile: str) -> str | None:
+def refresh_expiring_credential(
+    profile: str, *, stale_access_token: str | None = None
+) -> str | None:
     """Refresh an expired expiring device credential for *profile*."""
     from .. import config as cfg_mod
 
-    store = selected_credential_store(profile)
-    if store is None:
-        return None
+    initial_store = selected_credential_store(profile)
+    initial_refresh_token = (
+        _store_get(initial_store, _refresh_profile(profile)) if initial_store else None
+    )
 
-    cfg = cfg_mod.load()
-    p = cfg.profiles.get(profile)
-    if not p or not is_refreshable_credential_type(p.credential_type):
-        return None
+    with _profile_refresh_lock(profile):
+        store = selected_credential_store(profile)
+        if store is None:
+            return None
 
-    refresh_token = _store_get(store, _refresh_profile(profile))
-    if not refresh_token:
-        return None
+        cfg = cfg_mod.load()
+        p = cfg.profiles.get(profile)
+        if not p or not is_refreshable_credential_type(p.credential_type):
+            return None
 
-    try:
-        with httpx.Client(timeout=15.0) as client:
-            response = client.post(
-                f"{p.api_url.rstrip('/')}/v0/auth/device/refresh",
-                headers={"User-Agent": _rvs_user_agent()},
-                json={
-                    "refresh_token": refresh_token,
-                    "platform": _device_platform(),
-                },
+        refresh_token = _store_get(store, _refresh_profile(profile))
+        if not refresh_token:
+            return None
+        current_access_token = _store_get(store, profile)
+        refresh_was_rotated = (
+            initial_refresh_token is not None and refresh_token != initial_refresh_token
+        )
+        access_was_replaced = (
+            stale_access_token is not None
+            and current_access_token is not None
+            and current_access_token != stale_access_token
+        )
+        if current_access_token is not None and (refresh_was_rotated or access_was_replaced):
+            return current_access_token
+
+        try:
+            with httpx.Client(timeout=15.0) as client:
+                response = client.post(
+                    f"{p.api_url.rstrip('/')}/v0/auth/device/refresh",
+                    headers={"User-Agent": _rvs_user_agent()},
+                    json={
+                        "refresh_token": refresh_token,
+                        "platform": _device_platform(),
+                    },
+                )
+        except httpx.HTTPError:
+            logger.info("Device credential refresh failed for profile %s", profile)
+            return None
+
+        if not response.is_success:
+            logger.info(
+                "Device credential refresh rejected for profile %s: HTTP %s",
+                profile,
+                response.status_code,
             )
-    except httpx.HTTPError:
-        logger.info("Device credential refresh failed for profile %s", profile)
-        return None
+            if response.status_code in {400, 401, 403}:
+                delete_token(profile)
+            return None
 
-    if not response.is_success:
-        logger.info(
-            "Device credential refresh rejected for profile %s: HTTP %s",
-            profile,
-            response.status_code,
-        )
-        delete_token(profile)
-        return None
+        payload = response.json()
+        access_token = payload.get("access_token")
+        new_refresh_token = payload.get("refresh_token")
+        expires_in = int(payload.get("expires_in") or 0)
+        refresh_expires_in = int(payload.get("refresh_expires_in") or 0)
+        if not isinstance(access_token, str) or not isinstance(new_refresh_token, str):
+            delete_token(profile)
+            return None
 
-    payload = response.json()
-    access_token = payload.get("access_token")
-    new_refresh_token = payload.get("refresh_token")
-    expires_in = int(payload.get("expires_in") or 0)
-    refresh_expires_in = int(payload.get("refresh_expires_in") or 0)
-    if not isinstance(access_token, str) or not isinstance(new_refresh_token, str):
-        delete_token(profile)
-        return None
-
-    try:
-        _store_set(store, profile, access_token)
-        _store_set(store, _refresh_profile(profile), new_refresh_token)
-        expires_at = datetime.now(UTC) + timedelta(seconds=expires_in)
-        refresh_expires_at = datetime.now(UTC) + timedelta(seconds=refresh_expires_in)
-        cfg_mod.set_profile_metadata(
-            profile,
-            api_url=p.api_url,
-            native_registries=payload.get("native_registries"),
-            customer_id=payload.get("customer_id"),
-            customer_unique_id=payload.get("customer_unique_id"),
-            credential_store=store,
-            credential_type=EXPIRING_CREDENTIAL_TYPE,
-            expires_at=expires_at.isoformat(),
-            refresh_expires_at=refresh_expires_at.isoformat(),
-        )
-    except OSError, RuntimeError, ValueError:
-        # A rotated pair is useful only when both secrets and its metadata are
-        # durable. Revoke and remove a partial pair rather than leaving an
-        # access token whose refresh state is ambiguous.
-        revoke_device_refresh_token(p.api_url, new_refresh_token)
-        delete_token_from_store(profile, store)
-        cfg_mod.clear_profile_credential_metadata(profile)
-        return None
-    return access_token
+        try:
+            # Store the rotated refresh token first. A process interruption can
+            # then recover with it instead of retaining the invalidated token.
+            _store_set(store, _refresh_profile(profile), new_refresh_token)
+            _store_set(store, profile, access_token)
+            expires_at = datetime.now(UTC) + timedelta(seconds=expires_in)
+            refresh_expires_at = datetime.now(UTC) + timedelta(seconds=refresh_expires_in)
+            cfg_mod.set_profile_metadata(
+                profile,
+                api_url=p.api_url,
+                native_registries=payload.get("native_registries"),
+                customer_id=payload.get("customer_id"),
+                customer_unique_id=payload.get("customer_unique_id"),
+                credential_store=store,
+                credential_type=EXPIRING_CREDENTIAL_TYPE,
+                expires_at=expires_at.isoformat(),
+                refresh_expires_at=refresh_expires_at.isoformat(),
+            )
+        except OSError, RuntimeError, ValueError:
+            # A rotated pair is useful only when both secrets and its metadata are
+            # durable. Revoke and remove a partial pair rather than leaving an
+            # access token whose refresh state is ambiguous.
+            revoke_device_refresh_token(p.api_url, new_refresh_token)
+            delete_token_from_store(profile, store)
+            cfg_mod.clear_profile_credential_metadata(profile)
+            return None
+        return access_token
 
 
 # ── Public API ────────────────────────────────────────────────────────────────
