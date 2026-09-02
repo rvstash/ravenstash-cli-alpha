@@ -25,30 +25,6 @@ def test_repository_domain_summary_recognizes_service_domain_family() -> None:
     assert cfg_mod.repository_domain_summary(endpoints) == "packages.enterprise.example"
 
 
-def test_repository_domain_summary_recognizes_legacy_cache_host_aliases() -> None:
-    endpoints = _domain_endpoints("packages.enterprise.example")
-    legacy_endpoints = cfg_mod.NativeRegistryEndpoints(
-        pypi=cfg_mod.PackageRegistryEndpoints(
-            endpoints.pypi.read_base_url,
-            endpoints.pypi.push_base_url,
-            "https://cache.pypi.packages.enterprise.example",
-        ),
-        npm=cfg_mod.PackageRegistryEndpoints(
-            endpoints.npm.read_base_url,
-            endpoints.npm.push_base_url,
-            "https://cache.npm.packages.enterprise.example",
-        ),
-        maven=cfg_mod.PackageRegistryEndpoints(
-            endpoints.maven.read_base_url,
-            endpoints.maven.push_base_url,
-            "https://cache.maven.packages.enterprise.example",
-        ),
-        oci_registry_base_url=endpoints.oci_registry_base_url,
-    )
-
-    assert cfg_mod.repository_domain_summary(legacy_endpoints) == ("packages.enterprise.example")
-
-
 def test_repository_domain_summary_recognizes_localhost_routes() -> None:
     endpoints = cfg_mod.NativeRegistryEndpoints(
         pypi=cfg_mod.PackageRegistryEndpoints(

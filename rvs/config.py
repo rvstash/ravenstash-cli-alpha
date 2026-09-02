@@ -103,13 +103,13 @@ def repository_domain_summary(endpoints: NativeRegistryEndpoints) -> str:
     service_urls = (
         (("pypi",), endpoints.pypi.read_base_url),
         (("push.pypi",), endpoints.pypi.push_base_url),
-        (("mirror.pypi", "cache.pypi"), endpoints.pypi.mirror_base_url),
+        (("mirror.pypi",), endpoints.pypi.mirror_base_url),
         (("npm",), endpoints.npm.read_base_url),
         (("push.npm",), endpoints.npm.push_base_url),
-        (("mirror.npm", "cache.npm"), endpoints.npm.mirror_base_url),
+        (("mirror.npm",), endpoints.npm.mirror_base_url),
         (("maven",), endpoints.maven.read_base_url),
         (("push.maven",), endpoints.maven.push_base_url),
-        (("mirror.maven", "cache.maven"), endpoints.maven.mirror_base_url),
+        (("mirror.maven",), endpoints.maven.mirror_base_url),
         (("oci",), endpoints.oci_registry_base_url),
     )
     hosts = [urlsplit(url).hostname or "" for _services, url in service_urls]
@@ -569,10 +569,6 @@ def _native_registries_from_mapping(
         if not isinstance(raw, dict):
             raise ValueError(f"{profile_name} {kind} registry endpoints are missing")
         try:
-            mirror_base_url = raw.get("mirror_base_url")
-            if mirror_base_url is None:
-                # Read released pre-rename profiles once; save() writes only mirror_base_url.
-                mirror_base_url = raw["cache_base_url"]
             discovered = PackageRegistryEndpoints(
                 read_base_url=validate_service_url(
                     str(raw["read_base_url"]), label=f"{profile_name} {kind} read URL"
@@ -581,7 +577,8 @@ def _native_registries_from_mapping(
                     str(raw["push_base_url"]), label=f"{profile_name} {kind} push URL"
                 ),
                 mirror_base_url=validate_service_url(
-                    str(mirror_base_url), label=f"{profile_name} {kind} mirror URL"
+                    str(raw["mirror_base_url"]),
+                    label=f"{profile_name} {kind} mirror URL",
                 ),
             )
             return _package_registry_endpoints(profile_name, kind, discovered)

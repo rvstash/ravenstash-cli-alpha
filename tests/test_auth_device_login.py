@@ -356,7 +356,13 @@ class _FakeClient:
         return self.responses.pop(0)
 
 
-def test_device_login_handles_slow_down_and_stores_expiring_jwt(monkeypatch) -> None:
+def test_device_login_handles_slow_down_and_stores_expiring_jwt(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    config_dir = tmp_path / ".rvs"
+    monkeypatch.setattr(cfg_mod, "CONFIG_DIR", config_dir)
+    monkeypatch.setattr(cfg_mod, "CONFIG_FILE", config_dir / "config.toml")
     _FakeClient.requests = []
     _FakeClient.responses = [
         _FakeResponse(

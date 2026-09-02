@@ -224,48 +224,6 @@ registry_base_url = "https://images.example.test"
     assert endpoints.oci_registry_base_url == "https://images.example.test"
 
 
-def test_load_migrates_legacy_cache_endpoint_keys_on_next_save(
-    monkeypatch,
-    tmp_path: Path,
-) -> None:
-    config_dir, config_file = _point_config(monkeypatch, tmp_path)
-    config_dir.mkdir()
-    config_file.write_text(
-        """
-[profiles.work.native_registries.pypi]
-read_base_url = "https://pypi.example.test"
-push_base_url = "https://push.pypi.example.test"
-cache_base_url = "https://cache.pypi.example.test"
-
-[profiles.work.native_registries.npm]
-read_base_url = "https://npm.example.test"
-push_base_url = "https://push.npm.example.test"
-cache_base_url = "https://cache.npm.example.test"
-
-[profiles.work.native_registries.maven]
-read_base_url = "https://maven.example.test"
-push_base_url = "https://push.maven.example.test"
-cache_base_url = "https://cache.maven.example.test"
-
-[profiles.work.native_registries.oci]
-registry_base_url = "https://oci.example.test"
-""".strip(),
-        encoding="utf-8",
-    )
-
-    cfg = cfg_mod.load()
-
-    assert cfg.active_profile("work").native_registries.pypi.mirror_base_url == (
-        "https://cache.pypi.example.test"
-    )
-
-    cfg_mod.save(cfg)
-
-    saved = config_file.read_text(encoding="utf-8")
-    assert "mirror_base_url" in saved
-    assert "cache_base_url" not in saved
-
-
 def test_repository_domain_rejects_urls_and_ports(monkeypatch, tmp_path: Path) -> None:
     _point_config(monkeypatch, tmp_path)
     monkeypatch.setenv(
