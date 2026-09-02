@@ -93,7 +93,7 @@ def oci_reference(
     profile: str | None = typer.Option(None, "--profile", "-p"),
     customer_id: str | None = typer.Option(None, "--customer-id"),
 ) -> None:
-    """Print the readable customer-facing OCI root; never the internal /v2 route."""
+    """Print the immutable customer-facing OCI root; never the internal /v2 route."""
     typer.echo(
         runner.reference(
             kind=kind,

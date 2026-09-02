@@ -329,8 +329,20 @@ def test_credential_helper_is_exact_host_and_read_only(monkeypatch, tmp_path: Pa
     assert payload == {"Username": "helm", "Secret": "ephemeral-secret"}
 
 
-def test_oci_reference_prints_public_friendly_root_without_v2(monkeypatch, tmp_path: Path) -> None:
+def test_oci_reference_prints_stable_root_without_v2(monkeypatch, tmp_path: Path) -> None:
     _setup(monkeypatch, tmp_path)
+
+    class StablePathApi(_Api):
+        def post(self, path: str, json=None) -> _Response:
+            response = super().post(path, json)
+            response.value["native_path"] = "/in_abcdefgh/r_xyzabcde"
+            return response
+
+    monkeypatch.setattr(
+        oci_runner.ApiClient,
+        "from_profile",
+        staticmethod(lambda profile=None: StablePathApi()),
+    )
     result = runner.invoke(
         app,
         [
@@ -346,7 +358,9 @@ def test_oci_reference_prints_public_friendly_root_without_v2(monkeypatch, tmp_p
         ],
     )
     assert result.exit_code == 0, result.output
-    assert result.output.strip() == ("oci.rvsta.sh/main/images/team/api:1.2.3")
+    assert result.output.strip() == (
+        "oci.rvsta.sh/in_abcdefgh/r_xyzabcde/team/api:1.2.3"
+    )
     assert "/v2/" not in result.output
 
 
