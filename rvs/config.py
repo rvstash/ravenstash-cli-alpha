@@ -747,20 +747,14 @@ def _migrate_config_v0_to_v1(raw: dict) -> None:
                     continue
                 legacy_url = endpoints.pop("cache_base_url", None)
                 if "mirror_base_url" not in endpoints and legacy_url is not None:
-                    endpoints["mirror_base_url"] = _canonical_mirror_url(
-                        str(legacy_url), kind
-                    )
+                    endpoints["mirror_base_url"] = _canonical_mirror_url(str(legacy_url), kind)
     raw["config_version"] = 1
 
 
 def _migrate_raw_config(raw: dict) -> bool:
     """Apply every config migration needed by this CLI release in order."""
     raw_version = raw.get("config_version", 0)
-    if (
-        isinstance(raw_version, bool)
-        or not isinstance(raw_version, int)
-        or raw_version < 0
-    ):
+    if isinstance(raw_version, bool) or not isinstance(raw_version, int) or raw_version < 0:
         raise ValueError("config_version must be a non-negative integer")
     version: int = raw_version
     if version > CURRENT_CONFIG_VERSION:

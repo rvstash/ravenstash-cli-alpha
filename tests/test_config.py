@@ -287,7 +287,7 @@ registry_base_url = "http://localhost:8788"
     migrated = config_file.read_text(encoding="utf-8")
     assert config_file.stat().st_ino != original_inode
     assert "config_version = 1" in migrated
-    assert "custom_setting = \"preserved\"" in migrated
+    assert 'custom_setting = "preserved"' in migrated
     assert "cache_base_url" not in migrated
     assert migrated.count("mirror_base_url") == 6
     assert "https://mirror.pypi.rvsta.sh" in migrated
@@ -338,7 +338,7 @@ def test_load_rejects_config_written_by_newer_cli_without_rewriting_it(
 ) -> None:
     config_dir, config_file = _point_config(monkeypatch, tmp_path)
     config_dir.mkdir()
-    original = "config_version = 999\ndefault_profile = \"default\"\n"
+    original = 'config_version = 999\ndefault_profile = "default"\n'
     config_file.write_text(original, encoding="utf-8")
 
     with pytest.raises(ValueError, match="requires a newer rvs release"):
