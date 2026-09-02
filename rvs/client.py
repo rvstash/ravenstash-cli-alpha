@@ -46,14 +46,14 @@ class ApiError(Exception):
             current = self.detail.get("current")
             if isinstance(expected, dict) and isinstance(current, dict):
                 expected_name = "/".join(
-                    str(expected.get(key) or "?") for key in ("workspace_name", "repository_name")
+                    str(expected.get(key) or "?") for key in ("namespace_name", "repository_name")
                 )
                 current_name = "/".join(
-                    str(current.get(key) or "?") for key in ("workspace_name", "repository_name")
+                    str(current.get(key) or "?") for key in ("namespace_name", "repository_name")
                 )
                 stable = "/".join(
                     str(current.get(key) or expected.get(key) or "?")
-                    for key in ("workspace_unique_ref", "repository_unique_ref")
+                    for key in ("namespace_unique_ref", "repository_unique_ref")
                 )
                 return (
                     "Repository target changed; no package operation was attempted. "

@@ -25,6 +25,7 @@ DEFAULT_OFFICIAL_SOURCES: dict[PackageKind, str] = {
 class TargetSpec:
     target_type: cfg_mod.PackageTargetType
     selector: str
+    namespace_realm: cfg_mod.NamespaceRealm | None = None
 
 
 @dataclass(frozen=True)
@@ -35,7 +36,7 @@ class RegistryContext:
     target: cfg_mod.PackageTarget
     read_base_url: str
     push_base_url: str | None
-    workspace_reference: str
+    namespace_reference: str
     repository_reference: str
     token: str
 
@@ -47,22 +48,51 @@ def parse_target(value: str) -> TargetSpec:
     if candidate.startswith("mirror:"):
         selector = candidate.removeprefix("mirror:").strip().strip("/")
         target_type: cfg_mod.PackageTargetType = "official_cache"
+        namespace_realm = None
     elif candidate.startswith("custom-mirror:"):
         selector = candidate.removeprefix("custom-mirror:").strip().strip("/")
         target_type = "custom_cache"
-    elif candidate.startswith("public:"):
-        output.fatal("Public package targets are reserved for a future Ravenstash release.")
+        namespace_realm = None
+    elif candidate.startswith("internal:"):
+        selector = candidate.removeprefix("internal:").strip().strip("/")
+        target_type = "repository"
+        namespace_realm = "internal"
+    elif candidate.startswith("global:"):
+        selector = candidate.removeprefix("global:").strip().strip("/")
+        target_type = "repository"
+        namespace_realm = "global"
     elif ":" in candidate:
         output.fatal(
-            "Unknown package target type. Use workspace/repository, mirror:<source>, "
+            "Unknown package target type. Use namespace/repository, mirror:<source>, "
             "or custom-mirror:<name>."
         )
     else:
         selector = candidate
-        target_type = "private"
-    if not selector or (target_type != "private" and "/" in selector):
+        target_type = "repository"
+        namespace_realm = "internal"
+    if not selector or (target_type != "repository" and "/" in selector):
         output.fatal("The package target selector is invalid.")
-    return TargetSpec(target_type=target_type, selector=selector)
+    if target_type == "repository":
+        parts = selector.split("/")
+        if len(parts) != 2 or not all(parts):
+            output.fatal("Repository targets must use namespace/repository.")
+        namespace_part, repository_part = parts
+        if namespace_part.startswith("w_"):
+            output.fatal("w_ namespace references are retired; use an in_ reference.")
+        typed = namespace_part.startswith(("in_", "gl_", "r_")) or repository_part.startswith(
+            ("in_", "gl_", "r_")
+        )
+        expected_namespace_prefix = "in_" if namespace_realm == "internal" else "gl_"
+        if typed and not (
+            namespace_part.startswith(expected_namespace_prefix)
+            and repository_part.startswith("r_")
+        ):
+            output.fatal("Stable repository targets require a matching typed namespace/r_ pair.")
+    return TargetSpec(
+        target_type=target_type,
+        selector=selector,
+        namespace_realm=namespace_realm,
+    )
 
 
 def _package_kind(kind: str | None) -> PackageKind | None:
@@ -73,7 +103,7 @@ def _package_kind(kind: str | None) -> PackageKind | None:
     return cast("PackageKind", kind)
 
 
-def _private_target(entry: dict) -> cfg_mod.PackageTarget:
+def _repository_target(entry: dict) -> cfg_mod.PackageTarget:
     customer = entry["customer"]
     repository = entry["repository"]
     package_kinds = [
@@ -81,17 +111,16 @@ def _private_target(entry: dict) -> cfg_mod.PackageTarget:
     ]
     inferred_kind = package_kinds[0] if len(package_kinds) == 1 else None
     return cfg_mod.PackageTarget(
-        target_type="private",
+        target_type="repository",
         customer_id=customer["customer_id"],
         stable_selector=(
-            f"{repository['workspace_unique_ref']}/{repository['repository_unique_ref']}"
+            f"{repository['namespace_unique_ref']}/{repository['repository_unique_ref']}"
         ),
-        display_selector=f"{repository['workspace_name']}/{repository['repository_name']}",
+        display_selector=f"{repository['namespace_name']}/{repository['repository_name']}",
         registry_kind=cast("cfg_mod.RegistryKind | None", inferred_kind),
-        workspace_id=repository["workspace_id"],
-        workspace_unique_ref=repository["workspace_unique_ref"],
-        workspace_name_cache=repository["workspace_name"],
-        repository_id=repository["id"],
+        namespace_realm=repository["namespace_realm"],
+        namespace_unique_ref=repository["namespace_unique_ref"],
+        namespace_name_cache=repository["namespace_name"],
         repository_unique_ref=repository["repository_unique_ref"],
         repository_name_cache=repository["repository_name"],
         is_available=True,
@@ -133,16 +162,22 @@ def resolve_target(
     profile_name = profile or cfg_mod.current_profile_name()
     if kind is not None and kind not in {"pypi", "npm", "maven", "container", "helm"}:
         output.fatal(f"Unknown registry kind '{kind}'.")
-    if spec.target_type != "private":
+    if spec.target_type != "repository":
         registry_kind: str | None = _package_kind(kind)
     else:
         registry_kind = kind
     client = ApiClient.from_profile(profile_name)
     try:
-        if spec.target_type == "private":
+        if spec.target_type == "repository":
+            if spec.namespace_realm == "global":
+                output.fatal(
+                    "GlobalNamespacesUnavailable: global namespaces are reserved for a future "
+                    "Ravenstash release."
+                )
             effective_customer_id = customer_id or cfg_mod.current_customer_id(profile_name)
             params = {
                 "selector": spec.selector,
+                "namespace_realm": spec.namespace_realm,
                 "registry_kind": registry_kind,
             }
             if effective_customer_id is not None:
@@ -161,7 +196,7 @@ def resolve_target(
                 customer=raw_customer,
                 activate=customer_id is None,
             )
-            target = _private_target(entry)
+            target = _repository_target(entry)
         else:
             profile_name, account = ensure_active_account(profile_name, customer_id)
             entries = client.get(
@@ -245,20 +280,18 @@ def effective_target(
         )
         if all(
             (
-                legacy.workspace_id,
-                legacy.workspace_unique_ref,
-                legacy.workspace_name_cache,
-                legacy.repository_id,
+                legacy.namespace_realm,
+                legacy.namespace_unique_ref,
+                legacy.namespace_name_cache,
                 legacy.repository_unique_ref,
                 legacy.repository_name_cache,
             )
         ):
             resolved_target = replace(
                 resolved_target,
-                workspace_id=legacy.workspace_id,
-                workspace_unique_ref=legacy.workspace_unique_ref,
-                workspace_name_cache=legacy.workspace_name_cache,
-                repository_id=legacy.repository_id,
+                namespace_realm=legacy.namespace_realm,
+                namespace_unique_ref=legacy.namespace_unique_ref,
+                namespace_name_cache=legacy.namespace_name_cache,
                 repository_unique_ref=legacy.repository_unique_ref,
                 repository_name_cache=legacy.repository_name_cache,
             )
@@ -292,27 +325,26 @@ def registry_context(
         customer_id=customer_id,
         allow_official_default=allow_official_default,
     )
-    if require_private and selected.target_type != "private":
+    if require_private and selected.target_type != "repository":
         output.fatal(f"'{selected.display_selector}' is read-only; select a private repository.")
     client = ApiClient.from_profile(profile_name)
     profile_config = cfg_mod.load().active_profile(profile_name)
     registry_kind = cast("PackageKind", kind)
     endpoints = profile_config.native_registries.package(registry_kind)
     try:
-        if selected.target_type == "private":
-            if not selected.repository_id:
+        if selected.target_type == "repository":
+            if not selected.repository_unique_ref:
                 raise ValueError("Selected private repository has no stable identity")
             credential = client.post(
                 "/v0/package-credentials",
                 json={
-                    "repository_id": selected.repository_id,
+                    "repository_unique_ref": selected.repository_unique_ref,
                     "registry_kind": kind,
                     "operations": list(operations),
                     "expected_target": {
-                        "workspace_id": selected.workspace_id,
-                        "workspace_unique_ref": selected.workspace_unique_ref,
-                        "workspace_name": selected.workspace_name_cache,
-                        "repository_id": selected.repository_id,
+                        "namespace_unique_ref": selected.namespace_unique_ref,
+                        "namespace_name": selected.namespace_name_cache,
+                        "namespace_realm": selected.namespace_realm,
                         "repository_unique_ref": selected.repository_unique_ref,
                         "repository_name": selected.repository_name_cache,
                     },
@@ -320,17 +352,17 @@ def registry_context(
             ).json()
             native_path = credential.get("native_path")
             if not isinstance(native_path, str):
-                workspace_name = credential.get("workspace_name") or selected.workspace_name_cache
+                namespace_name = credential.get("namespace_name") or selected.namespace_name_cache
                 repository_name = (
                     credential.get("repository_name") or selected.repository_name_cache
                 )
-                if not isinstance(workspace_name, str) or not isinstance(repository_name, str):
+                if not isinstance(namespace_name, str) or not isinstance(repository_name, str):
                     raise ValueError("Private repository resolution omitted its native path")
-                native_path = f"/{workspace_name}/{repository_name}"
+                native_path = f"/{namespace_name}/{repository_name}"
             native_parts = native_path.strip("/").split("/")
             if len(native_parts) != 2 or not all(native_parts):
                 raise ValueError("Private repository resolution returned an invalid native path")
-            workspace_reference, repository_reference = native_parts
+            namespace_reference, repository_reference = native_parts
             read_base_url = endpoints.read_base_url
             push_base_url: str | None = endpoints.push_base_url
         else:
@@ -339,18 +371,18 @@ def registry_context(
                 if selected.target_type == "official_cache"
                 else RepositoryRouteKind.REMOTE_CUSTOM
             )
-            workspace_reference = "o" if selected.target_type == "official_cache" else "c"
+            namespace_reference = "o" if selected.target_type == "official_cache" else "c"
             credential = client.post(
                 "/v0/remote-package-credentials",
                 json={
                     "customer_id": account.customer_id,
                     "route_kind": route_kind,
-                    "workspace_reference": workspace_reference,
+                    "namespace_reference": namespace_reference,
                     "repository_reference": selected.remote_unique_ref,
                     "registry_kind": kind,
                 },
             ).json()
-            workspace_reference = credential["workspace_reference"]
+            namespace_reference = credential["namespace_reference"]
             repository_reference = credential["repository_reference"]
             read_base_url = endpoints.mirror_base_url
             push_base_url = None
@@ -363,7 +395,7 @@ def registry_context(
         target=selected,
         read_base_url=read_base_url,
         push_base_url=push_base_url,
-        workspace_reference=workspace_reference,
+        namespace_reference=namespace_reference,
         repository_reference=repository_reference,
         token=credential["access_token"],
     )

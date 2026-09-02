@@ -18,12 +18,17 @@ The four context layers are intentionally distinct:
 - **acting account** — the personal or organization authorization and metering boundary;
 - **package target** — the repository or private mirror used inside that account.
 
-Package commands resolve a repository selector through DevAPI:
+Package commands resolve a complete repository selector through DevAPI:
 
-- a bare repository name works when it matches exactly one authorized object;
-- `<workspace>/<repository-name>` disambiguates mutable names;
+- `<namespace>/<repository-name>` selects an internal namespace by default;
+- `internal:<namespace>/<repository-name>` makes the realm explicit;
+- `global:<namespace>/<repository-name>` is reserved and currently returns
+  `GlobalNamespacesUnavailable`;
 - saved defaults contain immutable
-  `<workspace_unique_ref>/<repository_unique_ref>` pairs.
+  `<namespace_unique_ref>/<repository_unique_ref>` pairs.
+
+Repository-management commands also accept a repository name alone when it is
+unique in the selected account.
 
 When a package command needs a target, `rvs` resolves it in this order:
 
@@ -177,20 +182,20 @@ rvs pkg npm install lodash --repo <npm-repo-name>
 rvs pkg maven install com.example:lib:1.0.0 --repo <maven-repo-name>
 ```
 
-Use `<workspace>/<repo-name>` to disambiguate equal repository names:
+Use `<namespace>/<repo-name>` to disambiguate equal repository names:
 
 ```bash
-rvs pkg pypi index-url --repo <workspace>/<repo-name>
+rvs pkg pypi index-url --repo <namespace>/<repo-name>
 ```
 
 The CLI resolves that selector, saves immutable references for persistent
 defaults, and always generates native package URLs in this stable form:
 
 ```text
-/w_abcdefgh/r_m7nk3p4q/
+/in_abcdefgh/r_m7nk3p4q/
 ```
 
-Workspace and repository renames therefore do not break CLI defaults.
+Namespace and repository renames therefore do not break CLI defaults.
 
 ## `rvs pkg` vs Native Package-Manager Wrappers
 
@@ -207,9 +212,9 @@ rvs uv sync
 rvs twine upload dist/*
 rvs npm install @acme/widgets
 rvs mvn test
-rvs docker --rvs-target <workspace>/<container-repo-name> pull oci.rvsta.sh/<workspace-name>/<container-repo-name>/api:latest
-rvs helm --rvs-target <workspace>/<helm-repo-name> show chart oci://oci.rvsta.sh/<workspace-name>/<helm-repo-name>/charts/api --version 1.2.3
-rvs oras --rvs-kind container --rvs-target <workspace>/<container-repo-name> discover oci.rvsta.sh/<workspace-name>/<container-repo-name>/api:latest
+rvs docker --rvs-target <namespace>/<container-repo-name> pull oci.rvsta.sh/<namespace-name>/<container-repo-name>/api:latest
+rvs helm --rvs-target <namespace>/<helm-repo-name> show chart oci://oci.rvsta.sh/<namespace-name>/<helm-repo-name>/charts/api --version 1.2.3
+rvs oras --rvs-kind container --rvs-target <namespace>/<container-repo-name> discover oci.rvsta.sh/<namespace-name>/<container-repo-name>/api:latest
 ```
 
 By default, the wrappers respect native config such as `.npmrc`, `pip.conf`,
@@ -230,20 +235,20 @@ Use `--rvs-target` when the wrapper should override native registry selection fo
 one invocation:
 
 ```bash
-rvs npm --rvs-target <workspace>/<npm-repo-name> install @acme/widgets
-rvs npm --rvs-target <workspace>/<npm-repo-name> publish
-rvs pip --rvs-target <workspace>/<pypi-repo-name> install private-package
-rvs uv --rvs-target <workspace>/<pypi-repo-name> sync
-rvs twine --rvs-target <workspace>/<pypi-repo-name> upload dist/*
-rvs mvn --rvs-target <workspace>/<maven-repo-name> deploy
+rvs npm --rvs-target <namespace>/<npm-repo-name> install @acme/widgets
+rvs npm --rvs-target <namespace>/<npm-repo-name> publish
+rvs pip --rvs-target <namespace>/<pypi-repo-name> install private-package
+rvs uv --rvs-target <namespace>/<pypi-repo-name> sync
+rvs twine --rvs-target <namespace>/<pypi-repo-name> upload dist/*
+rvs mvn --rvs-target <namespace>/<maven-repo-name> deploy
 ```
 
 Use `--rvs-native-config isolate` for a cleaner subprocess environment where
 the native tool supports disabling persistent config:
 
 ```bash
-rvs pip --rvs-target <workspace>/<pypi-repo-name> --rvs-native-config isolate install private-package
-rvs uv --rvs-target <workspace>/<pypi-repo-name> --rvs-native-config isolate sync
+rvs pip --rvs-target <namespace>/<pypi-repo-name> --rvs-native-config isolate install private-package
+rvs uv --rvs-target <namespace>/<pypi-repo-name> --rvs-native-config isolate sync
 ```
 
 ## PyPI
@@ -264,7 +269,7 @@ rvs pkg pypi install requests
 For this command, `rvs` delegates to `pip` and injects:
 
 ```text
-PIP_INDEX_URL=https://__token__:<token>@<pypi-read-host>/<workspace_unique_ref>/<repository_unique_ref>/simple/
+PIP_INDEX_URL=https://__token__:<token>@<pypi-read-host>/<namespace_unique_ref>/<repository_unique_ref>/simple/
 ```
 
 That environment variable is scoped to the subprocess. It is not written to a
@@ -283,7 +288,7 @@ Current behavior: `rvs pkg pypi publish` does not shell out to `twine`. It
 implements the legacy PyPI upload protocol directly and posts to:
 
 ```text
-https://<pypi-push-host>/<workspace_unique_ref>/<repository_unique_ref>/
+https://<pypi-push-host>/<namespace_unique_ref>/<repository_unique_ref>/
 ```
 
 To print a pip configuration snippet instead of running an install:
@@ -309,13 +314,13 @@ rvs pkg npm install lodash
 For this command, `rvs` delegates to `npm` and runs the equivalent of:
 
 ```bash
-npm install --registry https://<npm-read-host>/<workspace_unique_ref>/<repository_unique_ref>/ lodash
+npm install --registry https://<npm-read-host>/<namespace_unique_ref>/<repository_unique_ref>/ lodash
 ```
 
 It injects the auth token through npm's environment-backed config key:
 
 ```text
-NPM_CONFIG_//<npm-read-host>/<workspace_unique_ref>/<repository_unique_ref>/:_authToken=<token>
+NPM_CONFIG_//<npm-read-host>/<namespace_unique_ref>/<repository_unique_ref>/:_authToken=<token>
 ```
 
 Publish the package in the current directory:
@@ -329,14 +334,14 @@ runs native `npm pack`, reads `package.json`, builds the npm publish JSON body,
 and PUTs it to:
 
 ```text
-https://<npm-push-host>/<workspace_unique_ref>/<repository_unique_ref>/<package-name>
+https://<npm-push-host>/<namespace_unique_ref>/<repository_unique_ref>/<package-name>
 ```
 
 It writes package metadata with download tarball URLs pointing at the private
 download registry:
 
 ```text
-https://<npm-read-host>/<workspace_unique_ref>/<repository_unique_ref>/<package-name>/-/<tarball>
+https://<npm-read-host>/<namespace_unique_ref>/<repository_unique_ref>/<package-name>/-/<tarball>
 ```
 
 Using `npm pack` honors npm's normal packlist, lifecycle hooks, bundled
@@ -372,7 +377,7 @@ For this command, `rvs` writes a temporary `settings.xml` containing:
 - username `__token__`
 - the active token as the password
 - repository URL
-  `https://<maven-read-host>/<workspace_unique_ref>/<repository_unique_ref>/`
+  `https://<maven-read-host>/<namespace_unique_ref>/<repository_unique_ref>/`
 
 It then runs:
 
@@ -395,7 +400,7 @@ Current behavior: `rvs pkg maven deploy` does not shell out to `mvn deploy`. It
 uploads the artifact and checksum sidecars with HTTP PUTs under:
 
 ```text
-https://<maven-push-host>/<workspace_unique_ref>/<repository_unique_ref>/<group-path>/<artifact>/<version>/
+https://<maven-push-host>/<namespace_unique_ref>/<repository_unique_ref>/<group-path>/<artifact>/<version>/
 ```
 
 To print a reusable Maven `settings.xml` snippet:
@@ -440,7 +445,7 @@ rvs auth status
 rvs auth login
 ```
 
-Pass `<workspace>/<repo-name>` or the immutable underscore pair shown by
+Pass `<namespace>/<repo-name>` or the immutable underscore pair shown by
 `rvs pkg repo list` when equal names exist in several authorized scopes.
 
 Not authenticated:
@@ -474,10 +479,10 @@ LLM agents should follow these rules when using `rvs`:
 - Prefer `--repo <repo-name>` for one-off commands.
 - Use `rvs pkg repo set-default <registry-kind> <repo-name>` only when changing persistent
   local CLI state is intended.
-- Treat customer, workspace, and repository internal IDs as different from
+- Treat customer, namespace, and repository internal IDs as different from
   their immutable generated references.
 - Private registry URLs always use
-  `/<workspace_unique_ref>/<repository_unique_ref>`; never construct them
+  `/<namespace_unique_ref>/<repository_unique_ref>`; never construct them
   from a customer identifier.
 - The CLI control plane is DevAPI. Do not configure or call Central directly.
 - Use `RVS_TOKEN` for CI/headless flows.

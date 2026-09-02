@@ -196,10 +196,13 @@ rvs pkg mirror set-age <cache-id> --min-age-hours 24
 rvs pkg mirror delete <cache-id>
 ```
 
-Select one typed target without reserving workspace names:
+Select one typed target without reserving namespace names:
 
 ```bash
 rvs pkg select acme/backend
+rvs pkg select internal:acme/backend
+# Reserved syntax; global namespaces are not available yet.
+rvs pkg select global:acme/backend
 rvs pkg select mirror:pypiorg
 rvs pkg select custom-mirror:piwheels
 rvs pkg current
@@ -227,24 +230,26 @@ registry. Its private mirror is always available to authorized users with an
 independent 24-hour minimum-age default. Connect the remote cache to a repository
 with `--remote-cache`; select `mirror:` for direct package-manager use. A private
 PyPI, npm, or Maven lane can also attach a same-kind private
-lane from the same customer, including another workspace. Private sources expose
+lane from the same customer, including another namespace. Private sources expose
 only their intrinsic packages; their own upstream plans are never traversed.
 Private attachments default to zero/disabled minimum age, while official remote
 attachments retain the server recommendation. Container and Helm are private-only.
 
-Repository references use the package repository name, such as
-`my-python-packages`. Repository names use lowercase letters, numbers, and
-hyphens. When a name is ambiguous across authorized workspaces, use
-`<workspace>/<repo-name>` or pass `--customer-id`. After resolving the target,
-the CLI always builds native package URLs from the immutable
-`<workspace_unique_ref>/<repository_unique_ref>` pair.
+Repository names use lowercase letters, numbers, and hyphens. Package targets
+use `<namespace>/<repo-name>` and default to the internal realm;
+`internal:<namespace>/<repo-name>` is the explicit equivalent. The reserved
+`global:<namespace>/<repo-name>` form is recognized and fails with
+`GlobalNamespacesUnavailable` until global namespaces launch. When equal names
+are authorized across accounts, select the account explicitly. After resolving
+the target, the CLI always builds native package URLs from the immutable
+`<namespace_unique_ref>/<repository_unique_ref>` pair.
 
 The acting account and selected target are scoped by local profile and immutable
 customer ID. Legacy per-kind repository defaults remain readable as a migration
 fallback. An explicit `--target` is one-shot and never changes saved state.
 
-Saved defaults store immutable workspace and repository references as identity
-and keep names only as display hints. A later workspace or repository rename
+Saved defaults store immutable namespace and repository references as identity
+and keep names only as display hints. A later namespace or repository rename
 therefore requires no local migration: list and resolve calls return the current
 name while native URLs continue using the same stable references. Remote-cache
 commands use immutable public cache IDs returned by DevAPI and do not persist a
@@ -350,7 +355,7 @@ the native registry config. Existing credentials for other registries are
 preserved; stale Ravenstash auth entries are removed from the copy. The token is
 never placed in argv or written to the user's Docker or Helm config. Docker,
 Helm, and ORAS all use the same `oci.rvsta.sh` host and the stable
-`/<workspace-ref>/<repository-ref>/...` namespace. `rvs oras` requires
+`/<namespace-ref>/<repository-ref>/...` namespace. `rvs oras` requires
 `--rvs-kind container` or `--rvs-kind helm` because ORAS supports both lanes.
 
 ## Installation on Linux / WSL

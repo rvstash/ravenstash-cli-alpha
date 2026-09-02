@@ -35,11 +35,10 @@ class _Api:
             {
                 "customer": {"customer_id": "customer-1"},
                 "repository": {
-                    "id": "repository-1",
                     "repository_name": "images",
-                    "workspace_id": "workspace-1",
-                    "workspace_name": "main",
-                    "workspace_unique_ref": "w_abcdefgh",
+                    "namespace_name": "main",
+                    "namespace_realm": "internal",
+                    "namespace_unique_ref": "in_abcdefgh",
                     "repository_unique_ref": "r_xyzabcde",
                 },
             }
@@ -49,10 +48,9 @@ class _Api:
         assert path == "/v0/package-credentials"
         assert json["operations"] in (["download"], ["download", "upload"])
         assert json["expected_target"] == {
-            "workspace_id": "workspace-1",
-            "workspace_unique_ref": "w_abcdefgh",
-            "workspace_name": "main",
-            "repository_id": "repository-1",
+            "namespace_unique_ref": "in_abcdefgh",
+            "namespace_name": "main",
+            "namespace_realm": "internal",
             "repository_unique_ref": "r_xyzabcde",
             "repository_name": "images",
         }
@@ -60,7 +58,7 @@ class _Api:
             {
                 "access_token": "exact-secret-capability",
                 "native_path": "/main/images",
-                "workspace_unique_ref": "w_abcdefgh",
+                "namespace_unique_ref": "in_abcdefgh",
                 "repository_unique_ref": "r_xyzabcde",
             }
         )
@@ -244,7 +242,7 @@ def test_native_signal_is_forwarded_with_shell_exit_code_and_secret_cleanup(
             "--rvs-target",
             "main/images",
             "push",
-            "oci.rvsta.sh/w_abcdefgh/r_xyzabcde/backend:latest",
+            "oci.rvsta.sh/in_abcdefgh/r_xyzabcde/backend:latest",
         ],
     )
 
@@ -270,7 +268,7 @@ def test_oras_requires_kind_and_rejects_second_ravenstash_target(
             "main/images",
             "cp",
             "oci.rvsta.sh/main/images/a:one",
-            "oci.rvsta.sh/w_abcdefgh/r_23456789/b:two",
+            "oci.rvsta.sh/in_abcdefgh/r_23456789/b:two",
         ],
     )
     assert rejected.exit_code != 0

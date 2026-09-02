@@ -8,7 +8,7 @@ from rvs.cli import app
 from rvs.client import ApiClient
 from rvs.native import runner as native_runner
 from rvs.pkg import commands as pkg_commands
-from rvs.pkg.targets import parse_target
+from rvs.pkg.targets import parse_target, resolve_target
 from rvs.shell.commands import prompt_text
 from typer.testing import CliRunner
 
@@ -108,7 +108,7 @@ class FakeApi:
             return Response(
                 {
                     "access_token": "cache-token",
-                    "workspace_reference": prefix,
+                    "namespace_reference": prefix,
                     "repository_reference": name,
                 }
             )
@@ -141,9 +141,33 @@ customer_unique_id = "personal-{profile}-uid"
 
 
 def test_target_parser_keeps_private_and_mirror_namespaces_disjoint() -> None:
-    assert parse_target("acme/backend").target_type == "private"
+    bare = parse_target("acme/backend")
+    explicit_internal = parse_target("internal:acme/backend")
+    reserved_global = parse_target("global:acme/backend")
+
+    assert bare.target_type == "repository"
+    assert bare.namespace_realm == "internal"
+    assert explicit_internal.selector == bare.selector
+    assert explicit_internal.namespace_realm == "internal"
+    assert reserved_global.selector == bare.selector
+    assert reserved_global.namespace_realm == "global"
     assert parse_target("mirror:pypiorg").target_type == "official_cache"
     assert parse_target("custom-mirror:piwheels").target_type == "custom_cache"
+
+
+def test_global_target_fails_before_repository_probe(monkeypatch) -> None:
+    class NoProbeClient:
+        def get(self, *_args, **_kwargs):
+            raise AssertionError("global target must not probe private repositories")
+
+    monkeypatch.setattr(
+        ApiClient,
+        "from_profile",
+        staticmethod(lambda profile=None: NoProbeClient()),
+    )
+
+    with pytest.raises(SystemExit):
+        resolve_target("global:acme/backend", profile="alice")
 
 
 @pytest.mark.parametrize("selector", ["cache:pypiorg", "custom-cache:piwheels"])

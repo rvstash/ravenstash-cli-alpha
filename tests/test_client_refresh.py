@@ -91,7 +91,7 @@ def test_api_client_does_not_retry_post_transport_failures(monkeypatch) -> None:
     with pytest.raises(httpx.ReadTimeout):
         ApiClient("https://api.ravenstash.com", "access").post(
             "/v0/package-credentials",
-            json={"repository_id": "repo-1"},
+            json={"repository_unique_ref": "repo-1"},
         )
 
     assert len(_FakeHttpClient.requests) == 1
@@ -130,24 +130,26 @@ def test_repository_target_conflict_has_an_actionable_message() -> None:
         {
             "code": "RepositoryTargetChanged",
             "expected": {
-                "workspace_name": "old-workspace",
+                "namespace_name": "old-namespace",
+                "namespace_realm": "internal",
                 "repository_name": "old-repository",
-                "workspace_unique_ref": "w_abcdefgh",
+                "namespace_unique_ref": "in_abcdefgh",
                 "repository_unique_ref": "r_xyzabcde",
             },
             "current": {
-                "workspace_name": "new-workspace",
+                "namespace_name": "new-namespace",
+                "namespace_realm": "internal",
                 "repository_name": "new-repository",
-                "workspace_unique_ref": "w_abcdefgh",
+                "namespace_unique_ref": "in_abcdefgh",
                 "repository_unique_ref": "r_xyzabcde",
             },
         },
     )
 
     assert "no package operation was attempted" in str(error)
-    assert "old-workspace/old-repository" in str(error)
-    assert "new-workspace/new-repository" in str(error)
-    assert "w_abcdefgh/r_xyzabcde" in str(error)
+    assert "old-namespace/old-repository" in str(error)
+    assert "new-namespace/new-repository" in str(error)
+    assert "in_abcdefgh/r_xyzabcde" in str(error)
     assert "rvs pkg repo set-default" in str(error)
 
 

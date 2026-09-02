@@ -54,36 +54,38 @@ def _native_route_parts(native_path: str) -> tuple[str, str] | None:
     parts = native_path.strip("/").split("/")
     if len(parts) != 2:
         return None
-    workspace, repository = parts
-    stable = workspace.startswith("w_") or repository.startswith("r_")
+    namespace, repository = parts
+    stable = namespace.startswith(("in_", "gl_", "w_", "r_")) or repository.startswith(
+        ("in_", "gl_", "w_", "r_")
+    )
     if stable:
         if not (
-            workspace.startswith("w_")
+            namespace.startswith("in_")
             and repository.startswith("r_")
-            and _UNIQUE_ID.fullmatch(workspace.removeprefix("w_"))
+            and _UNIQUE_ID.fullmatch(namespace.removeprefix("in_"))
             and _UNIQUE_ID.fullmatch(repository.removeprefix("r_"))
         ):
             return None
     elif (
-        not _OCI_COMPONENT.fullmatch(workspace)
+        not _OCI_COMPONENT.fullmatch(namespace)
         or not _OCI_COMPONENT.fullmatch(repository)
-        or workspace.startswith(("w_", "r_"))
-        or repository.startswith(("w_", "r_"))
+        or namespace.startswith(("in_", "gl_", "w_", "r_"))
+        or repository.startswith(("in_", "gl_", "w_", "r_"))
     ):
         return None
-    return workspace, repository
+    return namespace, repository
 
 
-def _stable_oci_root(workspace_unique_ref: object, repository_unique_ref: object) -> str:
-    if not isinstance(workspace_unique_ref, str) or not isinstance(repository_unique_ref, str):
+def _stable_oci_root(namespace_unique_ref: object, repository_unique_ref: object) -> str:
+    if not isinstance(namespace_unique_ref, str) or not isinstance(repository_unique_ref, str):
         output.fatal("Invalid OCI capability response: stable identity is missing.")
-    if not workspace_unique_ref.startswith("w_") or not repository_unique_ref.startswith("r_"):
+    if not namespace_unique_ref.startswith("in_") or not repository_unique_ref.startswith("r_"):
         output.fatal("Invalid OCI capability response: stable identity is invalid.")
-    workspace_id = workspace_unique_ref.removeprefix("w_")
-    repository_id = repository_unique_ref.removeprefix("r_")
-    if not _UNIQUE_ID.fullmatch(workspace_id) or not _UNIQUE_ID.fullmatch(repository_id):
+    namespace_id = namespace_unique_ref.removeprefix("in_")
+    repository_unique_id = repository_unique_ref.removeprefix("r_")
+    if not _UNIQUE_ID.fullmatch(namespace_id) or not _UNIQUE_ID.fullmatch(repository_unique_id):
         output.fatal("Invalid OCI capability response: stable identity is invalid.")
-    return f"{workspace_unique_ref}/{repository_unique_ref}"
+    return f"{namespace_unique_ref}/{repository_unique_ref}"
 
 
 def _registry_url(profile: cfg_mod.ProfileConfig) -> tuple[str, str]:
@@ -130,7 +132,7 @@ def resolve_route(
     selected = cfg_mod.selected_package_target(profile_name, customer_id)
     repo_ref = options.target
     if repo_ref is None and selected is not None:
-        if selected.target_type != "private":
+        if selected.target_type != "repository":
             output.fatal("OCI commands require a private repository target.")
         repo_ref = selected.stable_selector
     if repo_ref is None:
@@ -143,19 +145,18 @@ def resolve_route(
         customer_id=customer_id,
         kind=kind,
     )
-    if target.target_type != "private" or target.repository_id is None:
+    if target.target_type != "repository" or target.repository_unique_ref is None:
         output.fatal("OCI commands require a private repository target.")
     try:
         client = ApiClient.from_profile(profile_name)
         credential_body: dict[str, object] = {
-            "repository_id": target.repository_id,
+            "repository_unique_ref": target.repository_unique_ref,
             "registry_kind": kind,
             "operations": list(operations),
             "expected_target": {
-                "workspace_id": target.workspace_id,
-                "workspace_unique_ref": target.workspace_unique_ref,
-                "workspace_name": target.workspace_name_cache,
-                "repository_id": target.repository_id,
+                "namespace_unique_ref": target.namespace_unique_ref,
+                "namespace_name": target.namespace_name_cache,
+                "namespace_realm": target.namespace_realm,
                 "repository_unique_ref": target.repository_unique_ref,
                 "repository_name": target.repository_name_cache,
             },
@@ -175,7 +176,7 @@ def resolve_route(
     registry_url, registry_host = _registry_url(config.active_profile(profile_name))
     friendly_root = native_path.strip("/")
     stable_root = _stable_oci_root(
-        credential.get("workspace_unique_ref"),
+        credential.get("namespace_unique_ref"),
         credential.get("repository_unique_ref"),
     )
     return OciRoute(

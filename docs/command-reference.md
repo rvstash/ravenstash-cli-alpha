@@ -126,10 +126,14 @@ organization customer used for authorization, ownership, and metering. A package
 target is selected inside that account. `rvs context current` verifies and shows
 the effective tuple and selection provenance without collapsing those concepts.
 
-Targets are `workspace/repository`, `mirror:official-slug`, or
-`custom-mirror:customer-name`. Resolution is always scoped to the acting account.
-`--kind` is needed only when a generic operation or duplicate cross-kind custom
-mirror name is ambiguous. Clearing a target does not change the login or account.
+Repository targets are `namespace/repository` (internal by default) or the
+explicit `internal:namespace/repository` form. The reserved
+`global:namespace/repository` form is parsed but fails with
+`GlobalNamespacesUnavailable` until global namespaces launch. Mirrors remain
+separate targets: `mirror:official-slug` or `custom-mirror:customer-name`.
+Resolution is always scoped to the acting account. `--kind` is needed only when
+a generic operation or duplicate cross-kind custom mirror name is ambiguous.
+Clearing a target does not change the login or account.
 
 ## CLI updates
 
@@ -156,7 +160,7 @@ rvs pkg repo delete REPOSITORY_NAME [--profile NAME] [--yes]
 rvs pkg repo set-default pypi|npm|maven|container|helm REPOSITORY_NAME [--profile NAME]
 rvs pkg repo defaults [--profile NAME]
 rvs pkg repo upstream list REPOSITORY KIND [--profile NAME]
-rvs pkg repo upstream add REPOSITORY KIND --private-repository WORKSPACE/REPOSITORY [--priority N] [--min-age-hours HOURS] [--max-age-hours HOURS] [--profile NAME]
+rvs pkg repo upstream add REPOSITORY KIND --private-repository NAMESPACE/REPOSITORY [--priority N] [--min-age-hours HOURS] [--max-age-hours HOURS] [--profile NAME]
 rvs pkg repo upstream add REPOSITORY KIND --remote-cache CACHE [--priority N] [--min-age-hours HOURS] [--max-age-hours HOURS] [--profile NAME]
 rvs pkg repo upstream update REPOSITORY KIND ATTACHMENT [--priority N] [--min-age-hours HOURS] [--max-age-hours HOURS] [--profile NAME]
 rvs pkg repo upstream reorder REPOSITORY KIND ATTACHMENT... [--profile NAME]
@@ -175,7 +179,7 @@ attachments or remote caches. Classic non-OCI Helm repositories are not
 supported.
 
 The `upstream` subgroup manages the complete ordered plan of at most four mixed
-private and remote sources. A private selector may be workspace-qualified and must
+private and remote sources. A private selector may be namespace-qualified and must
 resolve to a same-customer, same-kind lane. Omitting `--priority` appends. Private
 sources default to a disabled minimum-age guard; remote sources retain their server
 recommendation when the option is omitted. Reordering replaces the full order

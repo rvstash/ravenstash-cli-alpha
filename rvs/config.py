@@ -10,7 +10,7 @@ Config file shape
 -----------------
 ::
 
-    config_version = 1
+    config_version = 2
     default_profile = "default"
 
     [profiles.default]
@@ -41,13 +41,13 @@ Config file shape
     registry_base_url = "https://oci.rvsta.sh"
 
     [profiles.default.registries.pypi]
-    default_repo = "w_abcdefgh/r_m7nk3p4q"
+    default_repo = "in_abcdefgh/r_m7nk3p4q"
 
     [profiles.default.registries.npm]
-    default_repo = "w_abcdefgh/r_n4b6v8cx"
+    default_repo = "in_abcdefgh/r_n4b6v8cx"
 
     [profiles.default.registries.maven]
-    default_repo = "w_abcdefgh/r_p2q4r6st"
+    default_repo = "in_abcdefgh/r_p2q4r6st"
 """
 
 from __future__ import annotations
@@ -69,7 +69,8 @@ from .paths import rvs_home
 
 
 RegistryKind = Literal["pypi", "npm", "maven", "container", "helm"]
-PackageTargetType = Literal["private", "official_cache", "custom_cache"]
+PackageTargetType = Literal["repository", "official_cache", "custom_cache"]
+NamespaceRealm = Literal["internal", "global"]
 
 CONFIG_DIR = rvs_home()
 CONFIG_FILE = CONFIG_DIR / "config.toml"
@@ -79,7 +80,7 @@ SESSIONS_DIR_NAME = "sessions"
 
 DEFAULT_API_URL = "https://api.ravenstash.com"
 DEFAULT_REPOSITORY_DOMAIN = "rvsta.sh"
-CURRENT_CONFIG_VERSION = 1
+CURRENT_CONFIG_VERSION = 2
 
 
 @dataclass(frozen=True)
@@ -193,10 +194,9 @@ class PackageTarget:
     stable_selector: str
     display_selector: str
     registry_kind: RegistryKind | None = None
-    workspace_id: str | None = None
-    workspace_unique_ref: str | None = None
-    workspace_name_cache: str | None = None
-    repository_id: str | None = None
+    namespace_realm: NamespaceRealm | None = None
+    namespace_unique_ref: str | None = None
+    namespace_name_cache: str | None = None
     repository_unique_ref: str | None = None
     repository_name_cache: str | None = None
     remote_id: str | None = None
@@ -228,10 +228,9 @@ class RegistryDefaults:
     default_repo: str | None = None
     customer_id: str | None = None
     customer_unique_ref: str | None = None
-    workspace_id: str | None = None
-    workspace_unique_ref: str | None = None
-    workspace_name_cache: str | None = None
-    repository_id: str | None = None
+    namespace_realm: NamespaceRealm | None = None
+    namespace_unique_ref: str | None = None
+    namespace_name_cache: str | None = None
     repository_unique_ref: str | None = None
     repository_name_cache: str | None = None
     organization_role: str | None = None
@@ -620,7 +619,7 @@ def _package_target_from_mapping(value: object) -> PackageTarget | None:
     customer_id = value.get("customer_id")
     stable_selector = value.get("stable_selector")
     display_selector = value.get("display_selector")
-    if target_type not in {"private", "official_cache", "custom_cache"}:
+    if target_type not in {"repository", "official_cache", "custom_cache"}:
         return None
     if not all(
         isinstance(item, str) and item for item in (customer_id, stable_selector, display_selector)
@@ -635,10 +634,9 @@ def _package_target_from_mapping(value: object) -> PackageTarget | None:
         stable_selector=cast("str", stable_selector),
         display_selector=cast("str", display_selector),
         registry_kind=cast("RegistryKind | None", registry_kind),
-        workspace_id=value.get("workspace_id"),
-        workspace_unique_ref=value.get("workspace_unique_ref"),
-        workspace_name_cache=value.get("workspace_name_cache"),
-        repository_id=value.get("repository_id"),
+        namespace_realm=value.get("namespace_realm"),
+        namespace_unique_ref=value.get("namespace_unique_ref"),
+        namespace_name_cache=value.get("namespace_name_cache"),
         repository_unique_ref=value.get("repository_unique_ref"),
         repository_name_cache=value.get("repository_name_cache"),
         remote_id=value.get("remote_id"),
@@ -751,6 +749,92 @@ def _migrate_config_v0_to_v1(raw: dict) -> None:
     raw["config_version"] = 1
 
 
+def _migrate_config_v1_to_v2(raw: dict) -> None:
+    """Rename persisted workspace fields and retire service-private identifiers."""
+
+    def normalized_namespace_ref(value: object) -> object:
+        if isinstance(value, str) and value.startswith("w_"):
+            return f"in_{value[2:]}"
+        return value
+
+    def rename_field(value: dict, old: str, new: str, *, path: str) -> None:
+        if old not in value:
+            return
+        old_value = value[old]
+        new_value = value.get(new)
+        normalized_old = (
+            normalized_namespace_ref(old_value) if old == "workspace_unique_ref" else old_value
+        )
+        normalized_new = (
+            normalized_namespace_ref(new_value) if new == "namespace_unique_ref" else new_value
+        )
+        if new in value and normalized_new != normalized_old:
+            raise ValueError(f"conflicting legacy and current values at {path}.{new}")
+        value[new] = normalized_old
+        value.pop(old)
+
+    def migrate_target(value: object, *, path: str) -> None:
+        if not isinstance(value, dict):
+            return
+        if value.get("target_type") == "private":
+            value["target_type"] = "repository"
+        for old, new in (
+            ("workspace_unique_ref", "namespace_unique_ref"),
+            ("workspace_name_cache", "namespace_name_cache"),
+        ):
+            rename_field(value, old, new, path=path)
+        value.pop("workspace_id", None)
+        value.pop("namespace_id", None)
+        value.pop("repository_id", None)
+        if "namespace_unique_ref" in value:
+            value["namespace_unique_ref"] = normalized_namespace_ref(value["namespace_unique_ref"])
+        for selector_key in ("stable_selector", "default_repo"):
+            selector = value.get(selector_key)
+            if isinstance(selector, str) and selector.startswith("w_"):
+                value[selector_key] = f"in_{selector[2:]}"
+            elif (
+                isinstance(selector, str)
+                and value.get("target_type", "repository") == "repository"
+                and ":" not in selector
+                and selector.count("/") == 1
+                and not selector.startswith(("in_", "gl_"))
+            ):
+                value[selector_key] = f"internal:{selector}"
+        display_selector = value.get("display_selector")
+        if (
+            isinstance(display_selector, str)
+            and value.get("target_type") == "repository"
+            and ":" not in display_selector
+            and display_selector.count("/") == 1
+            and not display_selector.startswith(("in_", "gl_"))
+        ):
+            value["display_selector"] = f"internal:{display_selector}"
+        if value.get("target_type") == "repository":
+            value["namespace_realm"] = "internal"
+
+    profiles = raw.get("profiles")
+    if isinstance(profiles, dict):
+        for profile_name, profile in profiles.items():
+            if not isinstance(profile, dict):
+                continue
+            accounts = profile.get("accounts")
+            if isinstance(accounts, dict):
+                for customer_id, account in accounts.items():
+                    if isinstance(account, dict):
+                        migrate_target(
+                            account.get("selected_target"),
+                            path=f"profiles.{profile_name}.accounts.{customer_id}.selected_target",
+                        )
+            registries = profile.get("registries")
+            if isinstance(registries, dict):
+                for registry_kind, defaults in registries.items():
+                    migrate_target(
+                        defaults,
+                        path=f"profiles.{profile_name}.registries.{registry_kind}",
+                    )
+    raw["config_version"] = 2
+
+
 def _migrate_raw_config(raw: dict) -> bool:
     """Apply every config migration needed by this CLI release in order."""
     raw_version = raw.get("config_version", 0)
@@ -767,6 +851,8 @@ def _migrate_raw_config(raw: dict) -> bool:
     while version < CURRENT_CONFIG_VERSION:
         if version == 0:
             _migrate_config_v0_to_v1(raw)
+        elif version == 1:
+            _migrate_config_v1_to_v2(raw)
         else:
             raise RuntimeError(f"rvs has no config migration from version {version}")
         next_version = raw.get("config_version")
@@ -808,10 +894,34 @@ def _write_raw(raw: dict) -> None:
             temporary_path.unlink(missing_ok=True)
 
 
+def _backup_pre_v2_config() -> None:
+    """Create the owner-only, one-time source backup before a v2 replacement."""
+    backup_path = CONFIG_FILE.with_name("config.v1.toml.bak")
+    try:
+        descriptor = os.open(
+            backup_path,
+            os.O_WRONLY | os.O_CREAT | os.O_EXCL,
+            0o600,
+        )
+    except FileExistsError:
+        return
+    try:
+        with os.fdopen(descriptor, "wb") as backup:
+            backup.write(CONFIG_FILE.read_bytes())
+            backup.flush()
+            os.fsync(backup.fileno())
+    except Exception:
+        backup_path.unlink(missing_ok=True)
+        raise
+
+
 def stored_profile_api_url(profile_name: str) -> str | None:
     """Return a profile's persisted DevAPI URL without environment overrides."""
+    # Device login may use this accessor before any other config call. Run the
+    # ordinary validated loader first so every pending migration is durably
+    # committed (and backed up) before the caller can make a network request.
+    load()
     raw = _load_raw()
-    _migrate_raw_config(raw)
     profiles = raw.get("profiles")
     if not isinstance(profiles, dict):
         return None
@@ -827,6 +937,7 @@ def stored_profile_api_url(profile_name: str) -> str | None:
 def load() -> RvsConfig:
     config_exists = CONFIG_FILE.exists()
     raw = _load_raw()
+    original_version = raw.get("config_version", 0)
     migrated = _migrate_raw_config(raw)
     cfg = RvsConfig(
         default_profile=raw.get("default_profile", "default"),
@@ -856,10 +967,9 @@ def load() -> RvsConfig:
                     default_repo=defaults.get("default_repo"),
                     customer_id=defaults.get("customer_id"),
                     customer_unique_ref=defaults.get("customer_unique_ref"),
-                    workspace_id=defaults.get("workspace_id"),
-                    workspace_unique_ref=defaults.get("workspace_unique_ref"),
-                    workspace_name_cache=defaults.get("workspace_name_cache"),
-                    repository_id=defaults.get("repository_id"),
+                    namespace_realm=defaults.get("namespace_realm"),
+                    namespace_unique_ref=defaults.get("namespace_unique_ref"),
+                    namespace_name_cache=defaults.get("namespace_name_cache"),
                     repository_unique_ref=defaults.get("repository_unique_ref"),
                     repository_name_cache=defaults.get("repository_name_cache"),
                     organization_role=defaults.get("organization_role"),
@@ -871,6 +981,8 @@ def load() -> RvsConfig:
         )
 
     if migrated and config_exists:
+        if isinstance(original_version, int) and original_version < 2:
+            _backup_pre_v2_config()
         _write_raw(raw)
     return cfg
 
@@ -913,10 +1025,9 @@ def save(cfg: RvsConfig) -> None:
                                 "default_repo": defaults.default_repo,
                                 "customer_id": defaults.customer_id,
                                 "customer_unique_ref": defaults.customer_unique_ref,
-                                "workspace_id": defaults.workspace_id,
-                                "workspace_unique_ref": defaults.workspace_unique_ref,
-                                "workspace_name_cache": defaults.workspace_name_cache,
-                                "repository_id": defaults.repository_id,
+                                "namespace_realm": defaults.namespace_realm,
+                                "namespace_unique_ref": defaults.namespace_unique_ref,
+                                "namespace_name_cache": defaults.namespace_name_cache,
                                 "repository_unique_ref": defaults.repository_unique_ref,
                                 "repository_name_cache": defaults.repository_name_cache,
                                 "organization_role": defaults.organization_role,
@@ -1183,15 +1294,14 @@ def set_registry_default_target(
     cfg = load()
     profile_name = profile or current_profile_name(cfg)
     profile_config = cfg.profiles.get(profile_name, _default_profile_config(profile_name))
-    stable_selector = f"{repository['workspace_unique_ref']}/{repository['repository_unique_ref']}"
+    stable_selector = f"{repository['namespace_unique_ref']}/{repository['repository_unique_ref']}"
     profile_config.registries[kind] = RegistryDefaults(
         default_repo=stable_selector,
         customer_id=customer["customer_id"],
         customer_unique_ref=customer["customer_unique_ref"],
-        workspace_id=repository["workspace_id"],
-        workspace_unique_ref=repository["workspace_unique_ref"],
-        workspace_name_cache=repository["workspace_name"],
-        repository_id=repository["id"],
+        namespace_realm=repository["namespace_realm"],
+        namespace_unique_ref=repository["namespace_unique_ref"],
+        namespace_name_cache=repository["namespace_name"],
         repository_unique_ref=repository["repository_unique_ref"],
         repository_name_cache=repository["repository_name"],
         organization_role=customer.get("organization_role"),
@@ -1212,17 +1322,16 @@ def registry_target_expectation(
     profile_name = profile or current_profile_name(cfg)
     target = cfg.registry_defaults(kind, profile_name)
     stable_selector = (
-        f"{target.workspace_unique_ref}/{target.repository_unique_ref}"
-        if target.workspace_unique_ref and target.repository_unique_ref
+        f"{target.namespace_unique_ref}/{target.repository_unique_ref}"
+        if target.namespace_unique_ref and target.repository_unique_ref
         else None
     )
     if selector != stable_selector:
         return None
     expected = {
-        "workspace_id": target.workspace_id,
-        "workspace_unique_ref": target.workspace_unique_ref,
-        "workspace_name": target.workspace_name_cache,
-        "repository_id": target.repository_id,
+        "namespace_unique_ref": target.namespace_unique_ref,
+        "namespace_name": target.namespace_name_cache,
+        "namespace_realm": target.namespace_realm,
         "repository_unique_ref": target.repository_unique_ref,
         "repository_name": target.repository_name_cache,
     }
@@ -1234,10 +1343,9 @@ def registry_target_expectation(
 def repository_target_snapshot(repository: dict) -> dict[str, str]:
     """Build the identity/name guard returned by repository resolution."""
     keys = (
-        "workspace_id",
-        "workspace_unique_ref",
-        "workspace_name",
-        "id",
+        "namespace_unique_ref",
+        "namespace_name",
+        "namespace_realm",
         "repository_unique_ref",
         "repository_name",
     )
@@ -1245,10 +1353,9 @@ def repository_target_snapshot(repository: dict) -> dict[str, str]:
     if not all(isinstance(value, str) and value for value in values.values()):
         raise ValueError("Repository resolution omitted target identity or name metadata")
     return {
-        "workspace_id": cast("str", values["workspace_id"]),
-        "workspace_unique_ref": cast("str", values["workspace_unique_ref"]),
-        "workspace_name": cast("str", values["workspace_name"]),
-        "repository_id": cast("str", values["id"]),
+        "namespace_unique_ref": cast("str", values["namespace_unique_ref"]),
+        "namespace_name": cast("str", values["namespace_name"]),
+        "namespace_realm": cast("str", values["namespace_realm"]),
         "repository_unique_ref": cast("str", values["repository_unique_ref"]),
         "repository_name": cast("str", values["repository_name"]),
     }
@@ -1264,7 +1371,7 @@ def refresh_matching_registry_targets(
     cfg = load()
     profile_name = profile or current_profile_name(cfg)
     profile_config = cfg.profiles.get(profile_name, _default_profile_config(profile_name))
-    stable_selector = f"{repository['workspace_unique_ref']}/{repository['repository_unique_ref']}"
+    stable_selector = f"{repository['namespace_unique_ref']}/{repository['repository_unique_ref']}"
     for kind, target in tuple(profile_config.registries.items()):
         if target.default_repo != stable_selector:
             continue
@@ -1272,10 +1379,9 @@ def refresh_matching_registry_targets(
             default_repo=stable_selector,
             customer_id=customer["customer_id"],
             customer_unique_ref=customer["customer_unique_ref"],
-            workspace_id=repository["workspace_id"],
-            workspace_unique_ref=repository["workspace_unique_ref"],
-            workspace_name_cache=repository["workspace_name"],
-            repository_id=repository["id"],
+            namespace_realm=repository["namespace_realm"],
+            namespace_unique_ref=repository["namespace_unique_ref"],
+            namespace_name_cache=repository["namespace_name"],
             repository_unique_ref=repository["repository_unique_ref"],
             repository_name_cache=repository["repository_name"],
             organization_role=customer.get("organization_role"),

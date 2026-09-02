@@ -24,7 +24,7 @@ from .registries import maven as maven_reg
 from .registries import npm as npm_reg
 from .registries import pypi as pypi_reg
 from .routing import CanonicalRouter, npm_auth_token_key
-from .targets import RegistryContext, registry_context, resolve_target
+from .targets import RegistryContext, parse_target, registry_context, resolve_target
 
 
 app = typer.Typer(
@@ -70,7 +70,7 @@ def package_context(
     target: str | None = typer.Option(
         None,
         "--target",
-        help="One-shot package target: workspace/repository, mirror:<source>, or custom-mirror:<name>.",
+        help="One-shot package target: namespace/repository, mirror:<source>, or custom-mirror:<name>.",
     ),
     account: str | None = typer.Option(
         None,
@@ -126,7 +126,7 @@ def _context_customer_id(profile: str | None, account: str | None) -> str | None
 def target_select(
     target: str = typer.Argument(
         ...,
-        help="workspace/repository, mirror:<source>, or custom-mirror:<name>.",
+        help="namespace/repository, mirror:<source>, or custom-mirror:<name>.",
     ),
     kind: str | None = typer.Option(None, "--kind", help="Registry kind if ambiguous."),
     account: str | None = typer.Option(None, "--account", help="Acting account selector."),
@@ -264,12 +264,12 @@ def _split_repo_ref(repo_ref: str) -> tuple[str | None, str]:
         output.fatal("Repository name cannot be empty.")
     if "/" not in value:
         return None, value
-    workspace_selector, repository_name = value.split("/", 1)
-    workspace_selector = workspace_selector.strip()
+    namespace_selector, repository_name = value.split("/", 1)
+    namespace_selector = namespace_selector.strip()
     repository_name = repository_name.strip().strip("/")
-    if not workspace_selector or not repository_name or "/" in repository_name:
-        output.fatal("Repository must be <repository-name> or <workspace>/<repository-name>.")
-    return workspace_selector, repository_name
+    if not namespace_selector or not repository_name or "/" in repository_name:
+        output.fatal("Repository must be <repository-name> or <namespace>/<repository-name>.")
+    return namespace_selector, repository_name
 
 
 def _repository_name_from_response(repo: dict, fallback_repository_name: str = "") -> str:
@@ -283,10 +283,10 @@ def _repository_name_from_response(repo: dict, fallback_repository_name: str = "
 
 
 def _repo_ref_from_response(repo: dict, fallback_repository_name: str) -> str:
-    workspace_ref = repo.get("workspace_unique_ref")
+    namespace_ref = repo.get("namespace_unique_ref")
     repository_ref = repo.get("repository_unique_ref")
-    if workspace_ref and repository_ref:
-        return f"{workspace_ref}/{repository_ref}"
+    if namespace_ref and repository_ref:
+        return f"{namespace_ref}/{repository_ref}"
     return _repository_name_from_response(repo, fallback_repository_name)
 
 
@@ -366,7 +366,29 @@ def _resolve_repository_entry(
     kind: str | None = None,
     customer_id: str | None = None,
 ) -> dict:
-    params = {"selector": repo}
+    candidate = repo.strip().strip("/")
+    if not candidate:
+        output.fatal("Repository selector cannot be empty.")
+    if "/" in candidate or ":" in candidate:
+        spec = parse_target(candidate)
+        if spec.target_type != "repository":
+            output.fatal("Repository commands require a repository target.")
+        if spec.namespace_realm == "global":
+            output.fatal(
+                "GlobalNamespacesUnavailable: global namespaces are reserved for a future "
+                "Ravenstash release."
+            )
+        selector = spec.selector
+        namespace_realm = spec.namespace_realm
+    else:
+        # Repository-management commands retain the convenient unique-name/ref
+        # lookup. Saved package targets still require the complete namespace pair.
+        selector = candidate
+        namespace_realm = "internal"
+    params = {
+        "selector": selector,
+        "namespace_realm": namespace_realm,
+    }
     if customer_id is not None:
         params["customer_id"] = customer_id
     if kind is not None:
@@ -384,7 +406,7 @@ def _resolve_repository_entry(
         output.fatal(str(exc))
 
 
-def _resolved_repository_id(
+def _resolved_repository_unique_ref(
     repo: str,
     profile: str | None,
     *,
@@ -394,7 +416,7 @@ def _resolved_repository_id(
         repo,
         profile,
         kind=kind,
-    )["repository"]["id"]
+    )["repository"]["repository_unique_ref"]
 
 
 # ── repo ─────────────────────────────────────────────────────────────────────
@@ -411,7 +433,7 @@ def repo_list(
         help="Registry-kind filter: pypi | npm | maven | container | helm.",
     ),
 ) -> None:
-    """List repositories across every authorized customer and workspace."""
+    """List repositories across every authorized customer and namespace."""
     if kind:
         _require_kind(kind)
     client = _client(profile)
@@ -438,13 +460,13 @@ def repo_list(
         return
 
     output.table(
-        ["Account", "Workspace", "Repository", "Stable reference", "Registry kinds"],
+        ["Account", "Namespace", "Repository", "Stable reference", "Registry kinds"],
         [
             [
                 entry["customer"]["account_label"],
-                entry["repository"]["workspace_name"],
+                entry["repository"]["namespace_name"],
                 _repository_name_from_response(item),
-                (f"{item['workspace_unique_ref']}/{item['repository_unique_ref']}"),
+                (f"{item['namespace_unique_ref']}/{item['repository_unique_ref']}"),
                 ", ".join(item.get("registry_kinds", [])),
             ]
             for entry, item in zip(entries, items, strict=True)
@@ -513,8 +535,8 @@ def repo_show(
         {
             "Name": _repository_name_from_response(item, repo),
             "Account": entry["customer"]["account_label"],
-            "Workspace": item["workspace_name"],
-            "Workspace reference": item["workspace_unique_ref"],
+            "Namespace": item["namespace_name"],
+            "Namespace reference": item["namespace_unique_ref"],
             "Repository reference": item["repository_unique_ref"],
             "Registry kinds": ", ".join(item.get("registry_kinds", [])),
             "Packages": str(item.get("aggregate_package_count", item.get("package_count", "0"))),
@@ -542,7 +564,7 @@ def repo_delete(
     client = _client(profile)
     try:
         entry = _resolve_repository_entry(repo, profile)
-        client.delete(f"/v0/repositories/{entry['repository']['id']}")
+        client.delete(f"/v0/repositories/{entry['repository']['repository_unique_ref']}")
     except ApiError as exc:
         output.fatal(str(exc))
     output.success(f"Deleted package repository '{repo}'.")
@@ -559,7 +581,7 @@ def repo_rename(
     try:
         entry = _resolve_repository_entry(repo, profile)
         updated = client.patch(
-            f"/v0/repositories/{entry['repository']['id']}",
+            f"/v0/repositories/{entry['repository']['repository_unique_ref']}",
             json={"repository_name": new_name},
         ).json()
         item = updated["repository"]
@@ -589,7 +611,7 @@ def repo_set_default(
     profile_name = _profile_name(profile)
     entry = _resolve_repository_entry(repo, profile, kind=kind)
     repository = entry["repository"]
-    stable = f"{repository['workspace_unique_ref']}/{repository['repository_unique_ref']}"
+    stable = f"{repository['namespace_unique_ref']}/{repository['repository_unique_ref']}"
     cfg_mod.set_registry_default_target(
         registry_kind,
         customer=entry["customer"],
@@ -619,8 +641,8 @@ def repo_defaults(
     )
 
 
-def _upstream_path(repository_id: str, registry_kind: str) -> str:
-    return f"/v0/repositories/{repository_id}/lanes/{registry_kind}/upstreams"
+def _upstream_path(repository_unique_ref: str, registry_kind: str) -> str:
+    return f"/v0/repositories/{repository_unique_ref}/lanes/{registry_kind}/upstreams"
 
 
 def _repository_lane_id(entry: dict, registry_kind: str) -> str:
@@ -646,8 +668,8 @@ def _print_upstreams(items: list[dict]) -> None:
                 str(item.get("priority", "")),
                 str(item.get("source_type", "")),
                 (
-                    f"{item.get('source_workspace_name')}/{item.get('source_repository_name')}"
-                    if item.get("source_workspace_name")
+                    f"{item.get('source_namespace_name')}/{item.get('source_repository_name')}"
+                    if item.get("source_namespace_name")
                     else str(item.get("source_repository_name", ""))
                 ),
                 _format_age_hours(item.get("min_age_hours"), missing="No minimum"),
@@ -670,7 +692,9 @@ def upstream_list(
     client = _client(profile)
     try:
         entry = _resolve_repository_entry(repository, profile, kind=registry_kind)
-        items = client.get(_upstream_path(entry["repository"]["id"], registry_kind)).json()
+        items = client.get(
+            _upstream_path(entry["repository"]["repository_unique_ref"], registry_kind)
+        ).json()
     except (ApiError, KeyError, TypeError) as exc:
         output.fatal(str(exc))
     _print_upstreams(items)
@@ -707,7 +731,7 @@ def upstream_add(
             source_type = "remote"
         if priority is None:
             current = client.get(
-                _upstream_path(destination["repository"]["id"], registry_kind)
+                _upstream_path(destination["repository"]["repository_unique_ref"], registry_kind)
             ).json()
             effective_priority = len(current)
         else:
@@ -723,7 +747,7 @@ def upstream_add(
         elif source_type == "private":
             body["min_age_hours"] = 0.0
         item = client.post(
-            _upstream_path(destination["repository"]["id"], registry_kind),
+            _upstream_path(destination["repository"]["repository_unique_ref"], registry_kind),
             json=body,
         ).json()
     except (ApiError, KeyError, TypeError) as exc:
@@ -758,7 +782,7 @@ def upstream_update(
     try:
         destination = _resolve_repository_entry(repository, profile, kind=registry_kind)
         item = client.patch(
-            f"{_upstream_path(destination['repository']['id'], registry_kind)}/{attachment}",
+            f"{_upstream_path(destination['repository']['repository_unique_ref'], registry_kind)}/{attachment}",
             json=body,
         ).json()
     except (ApiError, KeyError, TypeError) as exc:
@@ -779,7 +803,7 @@ def upstream_reorder(
     try:
         destination = _resolve_repository_entry(repository, profile, kind=registry_kind)
         items = client.put(
-            f"{_upstream_path(destination['repository']['id'], registry_kind)}/order",
+            f"{_upstream_path(destination['repository']['repository_unique_ref'], registry_kind)}/order",
             json={"attachment_ids": attachments},
         ).json()
     except (ApiError, KeyError, TypeError) as exc:
@@ -800,7 +824,7 @@ def upstream_remove(
     try:
         destination = _resolve_repository_entry(repository, profile, kind=registry_kind)
         client.delete(
-            f"{_upstream_path(destination['repository']['id'], registry_kind)}/{attachment}"
+            f"{_upstream_path(destination['repository']['repository_unique_ref'], registry_kind)}/{attachment}"
         )
     except (ApiError, KeyError, TypeError) as exc:
         output.fatal(str(exc))
@@ -1194,8 +1218,10 @@ def package_list(
     registry_kind = _require_package_kind(kind)
     client = _client(profile)
     try:
-        repository_id = _resolved_repository_id(repo, profile, kind=registry_kind)
-        data = client.get(f"/v0/repositories/{repository_id}/lanes/{registry_kind}/packages").json()
+        repository_unique_ref = _resolved_repository_unique_ref(repo, profile, kind=registry_kind)
+        data = client.get(
+            f"/v0/repositories/{repository_unique_ref}/lanes/{registry_kind}/packages"
+        ).json()
     except ApiError as exc:
         output.fatal(str(exc))
 
@@ -1237,9 +1263,9 @@ def package_show(
     registry_kind = _require_package_kind(kind)
     client = _client(profile)
     try:
-        repository_id = _resolved_repository_id(repo, profile, kind=registry_kind)
+        repository_unique_ref = _resolved_repository_unique_ref(repo, profile, kind=registry_kind)
         item = client.get(
-            f"/v0/repositories/{repository_id}/lanes/{registry_kind}/package",
+            f"/v0/repositories/{repository_unique_ref}/lanes/{registry_kind}/package",
             params={"package_name": name},
         ).json()
     except ApiError as exc:
@@ -1247,7 +1273,7 @@ def package_show(
 
     output.kv(
         {
-            "Repository": item.get("repository_id", repo),
+            "Repository": item.get("repository_unique_ref", repo),
             "Name": item.get("package_name") or item.get("normalized_name", name),
             "Latest": item.get("latest_version") or "",
             "Versions": str(item.get("version_count", "")),
@@ -1309,9 +1335,9 @@ def package_delete(
     registry_kind = _require_package_kind(kind)
     client = _client(profile)
     try:
-        repository_id = _resolved_repository_id(repo, profile, kind=registry_kind)
+        repository_unique_ref = _resolved_repository_unique_ref(repo, profile, kind=registry_kind)
         client.delete(
-            f"/v0/repositories/{repository_id}/lanes/{registry_kind}/package",
+            f"/v0/repositories/{repository_unique_ref}/lanes/{registry_kind}/package",
             params={"package_name": name},
         )
     except ApiError as exc:
@@ -1339,9 +1365,9 @@ def package_delete_version(
     registry_kind = _require_package_kind(kind)
     client = _client(profile)
     try:
-        repository_id = _resolved_repository_id(repo, profile, kind=registry_kind)
+        repository_unique_ref = _resolved_repository_unique_ref(repo, profile, kind=registry_kind)
         client.delete(
-            f"/v0/repositories/{repository_id}/lanes/{registry_kind}/package-version",
+            f"/v0/repositories/{repository_unique_ref}/lanes/{registry_kind}/package-version",
             params={"package_name": name, "version": version},
         )
     except ApiError as exc:
@@ -1368,9 +1394,9 @@ def package_yank(
     client = _client(profile)
     body = {"reason": reason} if reason else None
     try:
-        repository_id = _resolved_repository_id(repo, profile, kind=registry_kind)
+        repository_unique_ref = _resolved_repository_unique_ref(repo, profile, kind=registry_kind)
         client.post(
-            f"/v0/repositories/{repository_id}/lanes/{registry_kind}/package-version/yank",
+            f"/v0/repositories/{repository_unique_ref}/lanes/{registry_kind}/package-version/yank",
             params={"package_name": name, "version": version},
             json=body,
         )
@@ -1394,7 +1420,7 @@ def pypi_index_url(
     context = _registry_context("pypi", repo, profile, customer_id, allow_official_default=True)
     output.value(
         _ROUTER.pypi_index_url(
-            context.read_base_url, context.workspace_reference, context.repository_reference
+            context.read_base_url, context.namespace_reference, context.repository_reference
         ),
         key="index_url",
     )
@@ -1420,7 +1446,7 @@ def pypi_upload_url(
     assert context.push_base_url is not None
     output.value(
         _ROUTER.pypi_upload_url(
-            context.push_base_url, context.workspace_reference, context.repository_reference
+            context.push_base_url, context.namespace_reference, context.repository_reference
         ),
         key="upload_url",
     )
@@ -1438,7 +1464,7 @@ def pypi_install(
     """Install Python packages using pip with Ravenstash credentials injected."""
     context = _registry_context("pypi", repo, profile, customer_id, allow_official_default=True)
     index_url = _ROUTER.pypi_index_url(
-        context.read_base_url, context.workspace_reference, context.repository_reference
+        context.read_base_url, context.namespace_reference, context.repository_reference
     )
     with tempfile.TemporaryDirectory(prefix="rvs-pip-") as temp_dir:
         env = child_environment({"PIP_INDEX_URL": index_url})
@@ -1481,7 +1507,7 @@ def pypi_publish(
     results = pypi_reg.publish(
         upload_url=_ROUTER.pypi_upload_url(
             context.push_base_url,
-            context.workspace_reference,
+            context.namespace_reference,
             context.repository_reference,
         ),
         token=context.token,
@@ -1509,7 +1535,7 @@ def pypi_configure(
     """Print pip configuration for the private PyPI repository."""
     context = _registry_context("pypi", repo, profile, customer_id, allow_official_default=True)
     index_url = _ROUTER.pypi_index_url(
-        context.read_base_url, context.workspace_reference, context.repository_reference
+        context.read_base_url, context.namespace_reference, context.repository_reference
     )
     output.value(f"[global]\nindex-url = {index_url}", key="configuration")
 
@@ -1529,7 +1555,7 @@ def npm_registry_url(
     context = _registry_context("npm", repo, profile, customer_id, allow_official_default=True)
     output.value(
         _ROUTER.npm_registry_url(
-            context.read_base_url, context.workspace_reference, context.repository_reference
+            context.read_base_url, context.namespace_reference, context.repository_reference
         ),
         key="registry_url",
     )
@@ -1547,7 +1573,7 @@ def npmrc(
     context = _registry_context("npm", repo, profile, customer_id, allow_official_default=True)
     registry_url = _ROUTER.npm_registry_url(
         context.read_base_url,
-        context.workspace_reference,
+        context.namespace_reference,
         context.repository_reference,
     )
     auth_key = npm_auth_token_key(registry_url)
@@ -1570,7 +1596,7 @@ def npm_install(
     context = _registry_context("npm", repo, profile, customer_id, allow_official_default=True)
     registry_url = _ROUTER.npm_registry_url(
         context.read_base_url,
-        context.workspace_reference,
+        context.namespace_reference,
         context.repository_reference,
     )
     env = child_environment()
@@ -1605,14 +1631,14 @@ def npm_publish(
     results = npm_reg.publish(
         registry_url=_ROUTER.npm_upload_registry_url(
             context.push_base_url,
-            context.workspace_reference,
+            context.namespace_reference,
             context.repository_reference,
         ),
         token=context.token,
         package_dir=package_dir,
         download_registry_url=_ROUTER.npm_registry_url(
             context.read_base_url,
-            context.workspace_reference,
+            context.namespace_reference,
             context.repository_reference,
         ),
     )
@@ -1655,7 +1681,7 @@ def maven_repo_url(
     output.value(
         _ROUTER.maven_repo_url(
             context.read_base_url,
-            context.workspace_reference,
+            context.namespace_reference,
             context.repository_reference,
         ),
         key="repository_url",
@@ -1704,7 +1730,7 @@ def maven_settings(
         _settings_xml(
             _ROUTER.maven_repo_url(
                 context.read_base_url,
-                context.workspace_reference,
+                context.namespace_reference,
                 context.repository_reference,
             )
         ),
@@ -1724,7 +1750,7 @@ def maven_install(
     """Fetch a Maven artifact into the local Maven cache."""
     context = _registry_context("maven", repo, profile, customer_id, allow_official_default=True)
     repo_url = _ROUTER.maven_repo_url(
-        context.read_base_url, context.workspace_reference, context.repository_reference
+        context.read_base_url, context.namespace_reference, context.repository_reference
     )
     settings_xml = maven_reg._build_settings_xml(repo_url, context.token)
     with tempfile.NamedTemporaryFile(
@@ -1779,7 +1805,7 @@ def maven_deploy(
     results = maven_reg.publish(
         upload_url=_ROUTER.maven_upload_url(
             context.push_base_url,
-            context.workspace_reference,
+            context.namespace_reference,
             context.repository_reference,
         ),
         token=context.token,

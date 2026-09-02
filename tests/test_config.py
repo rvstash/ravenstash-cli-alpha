@@ -286,7 +286,7 @@ registry_base_url = "http://localhost:8788"
     )
     migrated = config_file.read_text(encoding="utf-8")
     assert config_file.stat().st_ino != original_inode
-    assert "config_version = 1" in migrated
+    assert "config_version = 2" in migrated
     assert 'custom_setting = "preserved"' in migrated
     assert "cache_base_url" not in migrated
     assert migrated.count("mirror_base_url") == 6
@@ -330,6 +330,94 @@ registry_base_url = "https://oci.rvsta.sh"
         cfg_mod.load()
 
     assert config_file.read_text(encoding="utf-8") == original
+
+
+def test_v1_namespace_migration_rewrites_targets_and_creates_one_time_backup(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    config_dir, config_file = _point_config(monkeypatch, tmp_path)
+    config_dir.mkdir()
+    original = """
+config_version = 1
+default_profile = "default"
+
+[profiles.default]
+api_url = "https://api.ravenstash.com"
+
+[profiles.default.accounts.customer-1]
+customer_unique_ref = "_abcdefgh"
+account_type = "personal"
+account_label = "Me"
+
+[profiles.default.accounts.customer-1.selected_target]
+target_type = "private"
+customer_id = "customer-1"
+stable_selector = "w_abcdefgh/r_23456789"
+display_selector = "engineering/packages"
+workspace_id = "namespace-pkid"
+workspace_unique_ref = "w_abcdefgh"
+workspace_name_cache = "engineering"
+repository_id = "repository-pkid"
+repository_unique_ref = "r_23456789"
+repository_name_cache = "packages"
+
+[profiles.default.registries.pypi]
+target_type = "private"
+default_repo = "engineering/packages"
+workspace_unique_ref = "w_abcdefgh"
+workspace_name_cache = "engineering"
+repository_unique_ref = "r_23456789"
+repository_name_cache = "packages"
+""".strip()
+    config_file.write_text(original, encoding="utf-8")
+
+    assert cfg_mod.stored_profile_api_url("default") == "https://api.ravenstash.com"
+    loaded = cfg_mod.load()
+
+    target = loaded.profiles["default"].accounts["customer-1"].selected_target
+    assert target is not None
+    assert target.target_type == "repository"
+    assert target.namespace_realm == "internal"
+    assert target.namespace_unique_ref == "in_abcdefgh"
+    assert target.stable_selector == "in_abcdefgh/r_23456789"
+    assert target.display_selector == "internal:engineering/packages"
+    defaults = loaded.registry_defaults("pypi")
+    assert defaults.default_repo == "internal:engineering/packages"
+    assert defaults.namespace_unique_ref == "in_abcdefgh"
+
+    backup = config_dir / "config.v1.toml.bak"
+    assert backup.read_text(encoding="utf-8") == original
+    assert stat.S_IMODE(backup.stat().st_mode) == 0o600
+    migrated = config_file.read_text(encoding="utf-8")
+    assert "workspace" not in migrated
+    assert "namespace-pkid" not in migrated
+    assert "repository-pkid" not in migrated
+
+    cfg_mod.load()
+    assert backup.read_text(encoding="utf-8") == original
+
+
+def test_v1_namespace_migration_rejects_conflicting_old_and_new_fields(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    config_dir, config_file = _point_config(monkeypatch, tmp_path)
+    config_dir.mkdir()
+    original = """
+config_version = 1
+
+[profiles.default.registries.pypi]
+workspace_unique_ref = "w_abcdefgh"
+namespace_unique_ref = "in_23456789"
+""".strip()
+    config_file.write_text(original, encoding="utf-8")
+
+    with pytest.raises(ValueError, match=r"profiles\.default\.registries\.pypi"):
+        cfg_mod.load()
+
+    assert config_file.read_text(encoding="utf-8") == original
+    assert not (config_dir / "config.v1.toml.bak").exists()
 
 
 def test_load_rejects_config_written_by_newer_cli_without_rewriting_it(
@@ -438,8 +526,8 @@ def test_save_and_load_round_trips_profiles_and_registry_defaults(
                 expires_at="2099-01-01T00:00:00+00:00",
                 refresh_expires_at="2099-01-02T00:00:00+00:00",
                 registries={
-                    "pypi": cfg_mod.RegistryDefaults(default_repo="w_abcdefgh/r_23456789"),
-                    "npm": cfg_mod.RegistryDefaults(default_repo="w_abcdefgh/r_xyzabcde"),
+                    "pypi": cfg_mod.RegistryDefaults(default_repo="in_abcdefgh/r_23456789"),
+                    "npm": cfg_mod.RegistryDefaults(default_repo="in_abcdefgh/r_xyzabcde"),
                 },
             )
         },
@@ -465,8 +553,8 @@ def test_save_and_load_round_trips_profiles_and_registry_defaults(
     assert loaded.profiles["work"].customer_id == "cus_work"
     assert loaded.profiles["work"].customer_unique_id == "custpid1"
     assert loaded.profiles["work"].credential_store == "pass"
-    assert loaded.registry_defaults("pypi").default_repo == "w_abcdefgh/r_23456789"
-    assert loaded.registry_defaults("npm").default_repo == "w_abcdefgh/r_xyzabcde"
+    assert loaded.registry_defaults("pypi").default_repo == "in_abcdefgh/r_23456789"
+    assert loaded.registry_defaults("npm").default_repo == "in_abcdefgh/r_xyzabcde"
     assert loaded.registry_defaults("maven").default_repo is None
 
 
@@ -481,8 +569,8 @@ def test_saved_target_retains_identity_when_authority_marks_it_unavailable(
                 "default": cfg_mod.ProfileConfig(
                     registries={
                         "pypi": cfg_mod.RegistryDefaults(
-                            default_repo="w_abcdefgh/r_23456789",
-                            repository_id="repository-1",
+                            default_repo="in_abcdefgh/r_23456789",
+                            repository_unique_ref="repository-1",
                             authority_revision=4,
                         )
                     }
@@ -494,8 +582,8 @@ def test_saved_target_retains_identity_when_authority_marks_it_unavailable(
     cfg_mod.mark_registry_default_unavailable("pypi")
     saved = cfg_mod.load().registry_defaults("pypi")
 
-    assert saved.default_repo == "w_abcdefgh/r_23456789"
-    assert saved.repository_id == "repository-1"
+    assert saved.default_repo == "in_abcdefgh/r_23456789"
+    assert saved.repository_unique_ref == "repository-1"
     assert saved.authority_revision == 4
     assert saved.is_available is False
 

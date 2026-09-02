@@ -73,11 +73,10 @@ def _repository_entry(name: str = "repo") -> dict[str, Any]:
             "account_label": "Test account",
         },
         "repository": {
-            "id": "repository-1",
             "repository_name": name,
-            "workspace_id": "workspace-1",
-            "workspace_name": "test-account",
-            "workspace_unique_ref": "w_abcdefgh",
+            "namespace_name": "test-account",
+            "namespace_realm": "internal",
+            "namespace_unique_ref": "in_abcdefgh",
             "repository_unique_ref": "r_xyzabcde",
             "registry_kinds": ["pypi", "npm", "maven"],
         },
@@ -103,22 +102,22 @@ customer_id = "cus_123"
 customer_unique_id = "custpid1"
 
 [profiles.default.registries.pypi]
-default_repo = "w_abcdefgh/r_xyzabcde"
+default_repo = "in_abcdefgh/r_xyzabcde"
 
 [profiles.default.registries.npm]
-default_repo = "w_abcdefgh/r_xyzabcde"
+default_repo = "in_abcdefgh/r_xyzabcde"
 
 [profiles.default.registries.maven]
-default_repo = "w_abcdefgh/r_xyzabcde"
+default_repo = "in_abcdefgh/r_xyzabcde"
 
 [profiles.staging.registries.pypi]
-default_repo = "w_abcdefgh/r_xyzabcde"
+default_repo = "in_abcdefgh/r_xyzabcde"
 
 [profiles.staging.registries.npm]
-default_repo = "w_abcdefgh/r_xyzabcde"
+default_repo = "in_abcdefgh/r_xyzabcde"
 
 [profiles.staging.registries.maven]
-default_repo = "w_abcdefgh/r_xyzabcde"
+default_repo = "in_abcdefgh/r_xyzabcde"
 """.strip(),
         encoding="utf-8",
     )
@@ -206,7 +205,7 @@ def test_pkg_repo_create_can_set_default_repo(monkeypatch, tmp_path: Path) -> No
             },
         )
     ]
-    assert cfg_mod.load().registry_defaults("npm").default_repo == "w_abcdefgh/r_xyzabcde"
+    assert cfg_mod.load().registry_defaults("npm").default_repo == "in_abcdefgh/r_xyzabcde"
     assert "with registry kinds: npm" in result.output
 
 
@@ -248,7 +247,7 @@ def test_pkg_repo_show_renders_repository_details(monkeypatch, tmp_path: Path) -
         (
             "GET",
             "/v0/repositories/resolve",
-            {"selector": "repo-pypi"},
+            {"selector": "repo-pypi", "namespace_realm": "internal"},
         )
     ]
     assert "repo-pypi" in result.output
@@ -275,19 +274,19 @@ def test_pkg_repo_rename_updates_matching_profile_default(monkeypatch, tmp_path:
         (
             "GET",
             "/v0/repositories/resolve",
-            {"selector": "repo-pypi"},
+            {"selector": "repo-pypi", "namespace_realm": "internal"},
         ),
         (
             "PATCH",
-            "/v0/repositories/repository-1",
+            "/v0/repositories/r_xyzabcde",
             {"repository_name": "renamed"},
         ),
     ]
     saved = cfg_mod.load().registry_defaults("pypi", "default")
-    assert saved.default_repo == "w_abcdefgh/r_xyzabcde"
-    assert saved.workspace_name_cache == "test-account"
+    assert saved.default_repo == "in_abcdefgh/r_xyzabcde"
+    assert saved.namespace_name_cache == "test-account"
     assert saved.repository_name_cache == "renamed"
-    assert saved.repository_id == "repository-1"
+    assert saved.repository_unique_ref == "r_xyzabcde"
 
 
 def test_pkg_remote_management_and_upstream_configuration(monkeypatch, tmp_path: Path) -> None:
@@ -354,6 +353,7 @@ def test_pkg_remote_management_and_upstream_configuration(monkeypatch, tmp_path:
             "/v0/repositories/resolve",
             {
                 "selector": "repo-pypi",
+                "namespace_realm": "internal",
                 "registry_kind": "pypi",
             },
         ),
@@ -364,12 +364,12 @@ def test_pkg_remote_management_and_upstream_configuration(monkeypatch, tmp_path:
         ),
         (
             "GET",
-            "/v0/repositories/repository-1/lanes/pypi/upstreams",
+            "/v0/repositories/r_xyzabcde/lanes/pypi/upstreams",
             None,
         ),
         (
             "POST",
-            "/v0/repositories/repository-1/lanes/pypi/upstreams",
+            "/v0/repositories/r_xyzabcde/lanes/pypi/upstreams",
             {
                 "source_type": "remote",
                 "source_repository_lane_id": "remote_1",
@@ -506,15 +506,16 @@ def test_pkg_repo_upstream_add_private_uses_source_lane_and_zero_age_default(
     source = _repository_entry("shared")
     source["repository"] = {
         **source["repository"],
-        "id": "repository-2",
-        "workspace_name": "libraries",
+        "repository_unique_ref": "r_shared01",
+        "namespace_name": "libraries",
+        "namespace_realm": "internal",
         "lanes": [{"id": "lane-b-pypi", "registry_kind": "pypi"}],
     }
     attachment = {
         "id": "attachment-a-b",
         "priority": 0,
         "source_type": "private",
-        "source_workspace_name": "libraries",
+        "source_namespace_name": "libraries",
         "source_repository_name": "shared",
         "registry_kind": "pypi",
         "min_age_hours": None,
@@ -539,7 +540,7 @@ def test_pkg_repo_upstream_add_private_uses_source_lane_and_zero_age_default(
     assert result.exit_code == 0
     assert fake.calls[-1] == (
         "POST",
-        "/v0/repositories/repository-1/lanes/pypi/upstreams",
+        "/v0/repositories/r_xyzabcde/lanes/pypi/upstreams",
         {
             "source_type": "private",
             "source_repository_lane_id": "lane-b-pypi",
@@ -559,15 +560,16 @@ def test_pkg_repo_upstream_add_appends_after_existing_plan(
     source = _repository_entry("shared")
     source["repository"] = {
         **source["repository"],
-        "id": "repository-2",
-        "workspace_name": "libraries",
+        "repository_unique_ref": "r_shared01",
+        "namespace_name": "libraries",
+        "namespace_realm": "internal",
         "lanes": [{"id": "lane-b-pypi", "registry_kind": "pypi"}],
     }
     attachment = {
         "id": "attachment-a-b",
         "priority": 2,
         "source_type": "private",
-        "source_workspace_name": "libraries",
+        "source_namespace_name": "libraries",
         "source_repository_name": "shared",
         "registry_kind": "pypi",
         "min_age_hours": None,
@@ -629,12 +631,12 @@ def test_pkg_repo_upstream_reorder_and_remove_use_generic_routes(
     assert removed.exit_code == 0
     assert (
         "PUT",
-        "/v0/repositories/repository-1/lanes/npm/upstreams/order",
+        "/v0/repositories/r_xyzabcde/lanes/npm/upstreams/order",
         {"attachment_ids": ["attachment-b", "attachment-r"]},
     ) in fake.calls
     assert (
         "DELETE",
-        "/v0/repositories/repository-1/lanes/npm/upstreams/attachment-b",
+        "/v0/repositories/r_xyzabcde/lanes/npm/upstreams/attachment-b",
         None,
     ) in fake.calls
 
@@ -711,7 +713,7 @@ def test_pkg_package_list_and_show_use_repository_package_paths(
             },
             _repository_entry("repo-pypi"),
             {
-                "repository_id": "repo-pypi",
+                "repository_unique_ref": "repo-pypi",
                 "package_name": "demo",
                 "latest_version": "1.2.3",
                 "version_count": 2,
@@ -745,12 +747,13 @@ def test_pkg_package_list_and_show_use_repository_package_paths(
             "/v0/repositories/resolve",
             {
                 "selector": "repo-pypi",
+                "namespace_realm": "internal",
                 "registry_kind": "pypi",
             },
         ),
         (
             "GET",
-            "/v0/repositories/repository-1/lanes/pypi/packages",
+            "/v0/repositories/r_xyzabcde/lanes/pypi/packages",
             None,
         ),
         (
@@ -758,12 +761,13 @@ def test_pkg_package_list_and_show_use_repository_package_paths(
             "/v0/repositories/resolve",
             {
                 "selector": "repo-pypi",
+                "namespace_realm": "internal",
                 "registry_kind": "pypi",
             },
         ),
         (
             "GET",
-            "/v0/repositories/repository-1/lanes/pypi/package",
+            "/v0/repositories/r_xyzabcde/lanes/pypi/package",
             {"package_name": "demo"},
         ),
     ]
@@ -828,12 +832,13 @@ def test_pkg_package_mutations_call_expected_api_paths(monkeypatch, tmp_path: Pa
             "/v0/repositories/resolve",
             {
                 "selector": "repo-pypi",
+                "namespace_realm": "internal",
                 "registry_kind": "pypi",
             },
         ),
         (
             "DELETE",
-            "/v0/repositories/repository-1/lanes/pypi/package",
+            "/v0/repositories/r_xyzabcde/lanes/pypi/package",
             {"package_name": "demo"},
         ),
         (
@@ -841,12 +846,13 @@ def test_pkg_package_mutations_call_expected_api_paths(monkeypatch, tmp_path: Pa
             "/v0/repositories/resolve",
             {
                 "selector": "repo-pypi",
+                "namespace_realm": "internal",
                 "registry_kind": "pypi",
             },
         ),
         (
             "DELETE",
-            "/v0/repositories/repository-1/lanes/pypi/package-version",
+            "/v0/repositories/r_xyzabcde/lanes/pypi/package-version",
             {"package_name": "demo", "version": "1.0.0"},
         ),
         (
@@ -854,12 +860,13 @@ def test_pkg_package_mutations_call_expected_api_paths(monkeypatch, tmp_path: Pa
             "/v0/repositories/resolve",
             {
                 "selector": "repo-pypi",
+                "namespace_realm": "internal",
                 "registry_kind": "pypi",
             },
         ),
         (
             "POST",
-            "/v0/repositories/repository-1/lanes/pypi/package-version/yank",
+            "/v0/repositories/r_xyzabcde/lanes/pypi/package-version/yank",
             {"reason": "bad build"},
         ),
     ]

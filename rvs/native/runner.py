@@ -70,7 +70,7 @@ class RegistryRoute:
     kind: RegistryKind
     read_base_url: str
     push_base_url: str | None
-    workspace_unique_ref: str
+    namespace_unique_ref: str
     repository_unique_ref: str
     package_token: str
 
@@ -78,7 +78,7 @@ class RegistryRoute:
     def pypi_index_url(self) -> str:
         return _ROUTER.pypi_index_url(
             self.read_base_url,
-            self.workspace_unique_ref,
+            self.namespace_unique_ref,
             self.repository_unique_ref,
         )
 
@@ -88,7 +88,7 @@ class RegistryRoute:
             output.fatal("The selected private mirror is read-only.")
         return _ROUTER.pypi_upload_url(
             self.push_base_url,
-            self.workspace_unique_ref,
+            self.namespace_unique_ref,
             self.repository_unique_ref,
         )
 
@@ -96,7 +96,7 @@ class RegistryRoute:
     def npm_registry_url(self) -> str:
         return _ROUTER.npm_registry_url(
             self.read_base_url,
-            self.workspace_unique_ref,
+            self.namespace_unique_ref,
             self.repository_unique_ref,
         )
 
@@ -106,7 +106,7 @@ class RegistryRoute:
             output.fatal("The selected private mirror is read-only.")
         return _ROUTER.npm_upload_registry_url(
             self.push_base_url,
-            self.workspace_unique_ref,
+            self.namespace_unique_ref,
             self.repository_unique_ref,
         )
 
@@ -114,7 +114,7 @@ class RegistryRoute:
     def maven_repo_url(self) -> str:
         return _ROUTER.maven_repo_url(
             self.read_base_url,
-            self.workspace_unique_ref,
+            self.namespace_unique_ref,
             self.repository_unique_ref,
         )
 
@@ -124,7 +124,7 @@ class RegistryRoute:
             output.fatal("The selected private mirror is read-only.")
         return _ROUTER.maven_upload_url(
             self.push_base_url,
-            self.workspace_unique_ref,
+            self.namespace_unique_ref,
             self.repository_unique_ref,
         )
 
@@ -262,7 +262,7 @@ def _resolve_route(
         kind=kind,
         read_base_url=context.read_base_url,
         push_base_url=context.push_base_url,
-        workspace_unique_ref=context.workspace_reference,
+        namespace_unique_ref=context.namespace_reference,
         repository_unique_ref=context.repository_reference,
         package_token=context.token,
     )
@@ -290,7 +290,7 @@ def _package_token_for_url(
         if operations != ("download",):
             output.fatal("Private mirrors are read-only package targets.")
         try:
-            workspace_reference, repository_reference, route_kind = _remote_route_scope(route_parts)
+            namespace_reference, repository_reference, route_kind = _remote_route_scope(route_parts)
             client = ApiClient.from_profile(profile)
             profile_name = profile or cfg_mod.current_profile_name()
             effective_customer_id = customer_id or cfg_mod.current_customer_id(profile_name)
@@ -303,7 +303,7 @@ def _package_token_for_url(
                 json={
                     "customer_id": effective_customer_id,
                     "route_kind": route_kind,
-                    "workspace_reference": workspace_reference,
+                    "namespace_reference": namespace_reference,
                     "repository_reference": repository_reference,
                     "registry_kind": kind,
                 },
@@ -311,7 +311,7 @@ def _package_token_for_url(
         except (ApiError, KeyError, TypeError) as exc:
             output.fatal(str(exc))
     if len(route_parts) < 2:
-        output.fatal("Detected Ravenstash URL is not a canonical <workspace>/<repository> URL.")
+        output.fatal("Detected Ravenstash URL is not a canonical <namespace>/<repository> URL.")
     selector = f"{route_parts[0]}/{route_parts[1]}"
     try:
         client = ApiClient.from_profile(profile)
@@ -321,12 +321,13 @@ def _package_token_for_url(
             "/v0/repositories/resolve",
             params={
                 "selector": selector,
+                "namespace_realm": "internal",
                 "customer_id": customer_id,
                 "registry_kind": kind,
             },
         ).json()
         credential_body: dict[str, object] = {
-            "repository_id": entry["repository"]["id"],
+            "repository_unique_ref": entry["repository"]["repository_unique_ref"],
             "registry_kind": kind,
             "operations": list(operations),
             "expected_target": expected_target
@@ -366,8 +367,8 @@ def _credential_route(
     if not parts:
         output.fatal("Detected Ravenstash URL has no repository route.")
     if parts[0] in {"o", "c"}:
-        workspace_reference, repository_reference, route_kind = _remote_route_scope(parts)
-        return (route_kind, workspace_reference, repository_reference)
+        namespace_reference, repository_reference, route_kind = _remote_route_scope(parts)
+        return (route_kind, namespace_reference, repository_reference)
     return (RepositoryRouteKind.PRIVATE, parts[0], parts[1])
 
 

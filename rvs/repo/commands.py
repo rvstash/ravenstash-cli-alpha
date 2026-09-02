@@ -20,7 +20,7 @@ def list_repos(
     customer_id: str | None = typer.Option(None, "--customer-id"),
     registry_kind: str | None = typer.Option(None, "--registry-kind", "-k"),
 ) -> None:
-    """List authorized repositories grouped by account and workspace."""
+    """List authorized repositories grouped by account and namespace."""
     pkg_commands.repo_list(
         profile=profile,
         customer_id=customer_id,
@@ -41,7 +41,7 @@ def create(
     customer_id: str | None = typer.Option(None, "--customer-id"),
     set_default: bool = typer.Option(False, "--default"),
 ) -> None:
-    """Create a repository in the customer's default workspace."""
+    """Create a repository in the customer's default namespace."""
     pkg_commands.repo_create(
         name=name,
         kind=registry_kind,
@@ -55,11 +55,11 @@ def create(
 def show(
     repository: str = typer.Argument(
         ...,
-        help="<workspace>/<repository>, stable references, or a unique repository name.",
+        help="<namespace>/<repository>, stable references, or a unique repository name.",
     ),
     profile: str | None = typer.Option(None, "--profile", "-p"),
 ) -> None:
-    """Show stable repository and workspace identity."""
+    """Show stable repository and namespace identity."""
     pkg_commands.repo_show(repo=repository, profile=profile)
 
 
