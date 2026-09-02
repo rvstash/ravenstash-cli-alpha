@@ -625,8 +625,9 @@ def test_device_login_does_not_revoke_expired_previous_refresh(
     assert not any("already authenticated" in message for message in info_messages)
 
 
+@pytest.mark.parametrize("error", [OSError("disk full"), ValueError("invalid schema")])
 def test_store_expiring_credential_rolls_back_when_metadata_cannot_be_saved(
-    monkeypatch,
+    monkeypatch, error: Exception
 ) -> None:
     deleted: list[tuple[str, str]] = []
     monkeypatch.setattr(login_mod.auth_mod, "set_token", lambda *_args: None)
@@ -639,10 +640,10 @@ def test_store_expiring_credential_rolls_back_when_metadata_cannot_be_saved(
     monkeypatch.setattr(
         login_mod.cfg_mod,
         "set_profile_metadata",
-        lambda *_args, **_kwargs: (_ for _ in ()).throw(OSError("disk full")),
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(error),
     )
 
-    with pytest.raises(RuntimeError, match="disk full"):
+    with pytest.raises(RuntimeError, match=str(error)):
         login_mod._store_expiring_credential(
             profile="default",
             api_url="https://api.ravenstash.com",

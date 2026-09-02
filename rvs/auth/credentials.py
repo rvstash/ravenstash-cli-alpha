@@ -412,7 +412,7 @@ def refresh_expiring_credential(profile: str) -> str | None:
             expires_at=expires_at.isoformat(),
             refresh_expires_at=refresh_expires_at.isoformat(),
         )
-    except OSError, RuntimeError:
+    except OSError, RuntimeError, ValueError:
         # A rotated pair is useful only when both secrets and its metadata are
         # durable. Revoke and remove a partial pair rather than leaving an
         # access token whose refresh state is ambiguous.

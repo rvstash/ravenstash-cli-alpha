@@ -10,6 +10,7 @@ Config file shape
 -----------------
 ::
 
+    config_version = 1
     default_profile = "default"
 
     [profiles.default]
@@ -78,6 +79,7 @@ SESSIONS_DIR_NAME = "sessions"
 
 DEFAULT_API_URL = "https://api.ravenstash.com"
 DEFAULT_REPOSITORY_DOMAIN = "rvsta.sh"
+CURRENT_CONFIG_VERSION = 1
 
 
 @dataclass(frozen=True)
@@ -710,9 +712,113 @@ def _load_raw() -> dict:
         return tomllib.load(f)
 
 
+def _canonical_mirror_url(value: str, kind: Literal["pypi", "npm", "maven"]) -> str:
+    """Move a conventional pre-rename cache host to its mirror hostname."""
+    parsed = urlsplit(value)
+    hostname = parsed.hostname
+    legacy_prefix = f"cache.{kind}."
+    if (
+        hostname is None
+        or parsed.username is not None
+        or parsed.password is not None
+        or not hostname.lower().startswith(legacy_prefix)
+    ):
+        return value
+    canonical_hostname = f"mirror.{kind}.{hostname[len(legacy_prefix) :]}"
+    netloc = canonical_hostname
+    if parsed.port is not None:
+        netloc = f"{netloc}:{parsed.port}"
+    return urlunsplit((parsed.scheme, netloc, parsed.path, parsed.query, parsed.fragment))
+
+
+def _migrate_config_v0_to_v1(raw: dict) -> None:
+    """Rename discovered cache endpoints without disturbing unrelated profile data."""
+    profiles = raw.get("profiles")
+    if isinstance(profiles, dict):
+        for profile in profiles.values():
+            if not isinstance(profile, dict):
+                continue
+            native_registries = profile.get("native_registries")
+            if not isinstance(native_registries, dict):
+                continue
+            for kind in ("pypi", "npm", "maven"):
+                endpoints = native_registries.get(kind)
+                if not isinstance(endpoints, dict):
+                    continue
+                legacy_url = endpoints.pop("cache_base_url", None)
+                if "mirror_base_url" not in endpoints and legacy_url is not None:
+                    endpoints["mirror_base_url"] = _canonical_mirror_url(
+                        str(legacy_url), kind
+                    )
+    raw["config_version"] = 1
+
+
+def _migrate_raw_config(raw: dict) -> bool:
+    """Apply every config migration needed by this CLI release in order."""
+    raw_version = raw.get("config_version", 0)
+    if (
+        isinstance(raw_version, bool)
+        or not isinstance(raw_version, int)
+        or raw_version < 0
+    ):
+        raise ValueError("config_version must be a non-negative integer")
+    version: int = raw_version
+    if version > CURRENT_CONFIG_VERSION:
+        raise ValueError(
+            f"config version {version} requires a newer rvs release "
+            f"(this release supports version {CURRENT_CONFIG_VERSION})"
+        )
+
+    changed = False
+    while version < CURRENT_CONFIG_VERSION:
+        if version == 0:
+            _migrate_config_v0_to_v1(raw)
+        else:
+            raise RuntimeError(f"rvs has no config migration from version {version}")
+        next_version = raw.get("config_version")
+        if (
+            isinstance(next_version, bool)
+            or not isinstance(next_version, int)
+            or next_version != version + 1
+        ):
+            raise RuntimeError(
+                f"config migration from version {version} did not produce version {version + 1}"
+            )
+        version = next_version
+        changed = True
+    return changed
+
+
+def _write_raw(raw: dict) -> None:
+    """Atomically persist an already validated config mapping."""
+    CONFIG_DIR.mkdir(mode=0o700, parents=True, exist_ok=True)
+    CONFIG_DIR.chmod(0o700)
+    temporary_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="wb",
+            dir=CONFIG_DIR,
+            prefix=".config.",
+            suffix=".tmp",
+            delete=False,
+        ) as temporary:
+            temporary_path = Path(temporary.name)
+            os.fchmod(temporary.fileno(), 0o600)
+            tomli_w.dump(raw, temporary)
+            temporary.flush()
+            os.fsync(temporary.fileno())
+        os.replace(temporary_path, CONFIG_FILE)
+        CONFIG_FILE.chmod(0o600)
+    finally:
+        if temporary_path is not None:
+            temporary_path.unlink(missing_ok=True)
+
+
 def stored_profile_api_url(profile_name: str) -> str | None:
     """Return a profile's persisted DevAPI URL without environment overrides."""
-    profiles = _load_raw().get("profiles")
+    raw = _load_raw()
+    _migrate_raw_config(raw)
+    profiles = raw.get("profiles")
     if not isinstance(profiles, dict):
         return None
     profile = profiles.get(profile_name)
@@ -725,7 +831,9 @@ def stored_profile_api_url(profile_name: str) -> str | None:
 
 
 def load() -> RvsConfig:
+    config_exists = CONFIG_FILE.exists()
     raw = _load_raw()
+    migrated = _migrate_raw_config(raw)
     cfg = RvsConfig(
         default_profile=raw.get("default_profile", "default"),
         credential_store=raw.get("credential_store", "auto"),
@@ -768,13 +876,14 @@ def load() -> RvsConfig:
             },
         )
 
+    if migrated and config_exists:
+        _write_raw(raw)
     return cfg
 
 
 def save(cfg: RvsConfig) -> None:
-    CONFIG_DIR.mkdir(mode=0o700, parents=True, exist_ok=True)
-    CONFIG_DIR.chmod(0o700)
     raw: dict = {
+        "config_version": CURRENT_CONFIG_VERSION,
         "default_profile": cfg.default_profile,
         "credential_store": cfg.credential_store,
     }
@@ -832,25 +941,7 @@ def save(cfg: RvsConfig) -> None:
             for name, p in cfg.profiles.items()
         }
 
-    temporary_path: Path | None = None
-    try:
-        with tempfile.NamedTemporaryFile(
-            mode="wb",
-            dir=CONFIG_DIR,
-            prefix=".config.",
-            suffix=".tmp",
-            delete=False,
-        ) as temporary:
-            temporary_path = Path(temporary.name)
-            os.fchmod(temporary.fileno(), 0o600)
-            tomli_w.dump(raw, temporary)
-            temporary.flush()
-            os.fsync(temporary.fileno())
-        os.replace(temporary_path, CONFIG_FILE)
-        CONFIG_FILE.chmod(0o600)
-    finally:
-        if temporary_path is not None:
-            temporary_path.unlink(missing_ok=True)
+    _write_raw(raw)
 
 
 # ── Convenience setters ───────────────────────────────────────────────────────

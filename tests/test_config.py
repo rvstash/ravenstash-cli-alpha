@@ -37,7 +37,7 @@ def test_load_missing_config_uses_production_default_without_profile_env(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
-    _point_config(monkeypatch, tmp_path)
+    _config_dir, config_file = _point_config(monkeypatch, tmp_path)
 
     cfg = cfg_mod.load()
 
@@ -52,6 +52,7 @@ def test_load_missing_config_uses_production_default_without_profile_env(
         cfg.active_profile().native_registries.pypi.mirror_base_url
         == "https://mirror.pypi.rvsta.sh"
     )
+    assert not config_file.exists()
 
 
 def test_load_uses_env_api_url_for_configured_profile_without_api_url(
@@ -222,6 +223,128 @@ registry_base_url = "https://images.example.test"
     assert endpoints.pypi.push_base_url == "https://python-upload.example.test"
     assert endpoints.npm.mirror_base_url == "https://javascript-mirror.example.test"
     assert endpoints.oci_registry_base_url == "https://images.example.test"
+
+
+def test_load_directly_migrates_unversioned_v07_config_atomically(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    config_dir, config_file = _point_config(monkeypatch, tmp_path)
+    config_dir.mkdir()
+    config_file.write_text(
+        """
+default_profile = "default"
+custom_setting = "preserved"
+
+[profiles.default.native_registries.pypi]
+read_base_url = "https://pypi.rvsta.sh"
+push_base_url = "https://push.pypi.rvsta.sh"
+cache_base_url = "https://cache.pypi.rvsta.sh"
+
+[profiles.default.native_registries.npm]
+read_base_url = "https://npm.rvsta.sh"
+push_base_url = "https://push.npm.rvsta.sh"
+cache_base_url = "https://cache.npm.rvsta.sh"
+
+[profiles.default.native_registries.maven]
+read_base_url = "https://maven.rvsta.sh"
+push_base_url = "https://push.maven.rvsta.sh"
+cache_base_url = "https://cache.maven.rvsta.sh"
+
+[profiles.default.native_registries.oci]
+registry_base_url = "https://oci.rvsta.sh"
+
+[profiles.dev.native_registries.pypi]
+read_base_url = "http://localhost:8788/native/pypi"
+push_base_url = "http://localhost:6001/native/pypi"
+cache_base_url = "http://localhost:8788/native/pypi"
+
+[profiles.dev.native_registries.npm]
+read_base_url = "http://localhost:8788/native/npm"
+push_base_url = "http://localhost:6001/native/npm"
+cache_base_url = "http://localhost:8788/native/npm"
+
+[profiles.dev.native_registries.maven]
+read_base_url = "http://localhost:8788/native/maven"
+push_base_url = "http://localhost:6001/native/maven"
+cache_base_url = "http://localhost:8788/native/maven"
+
+[profiles.dev.native_registries.oci]
+registry_base_url = "http://localhost:8788"
+""".strip(),
+        encoding="utf-8",
+    )
+    original_inode = config_file.stat().st_ino
+
+    cfg = cfg_mod.load()
+
+    assert cfg.active_profile().native_registries.pypi.mirror_base_url == (
+        "https://mirror.pypi.rvsta.sh"
+    )
+    assert cfg.active_profile("dev").native_registries.pypi.mirror_base_url == (
+        "http://localhost:8788/native/pypi"
+    )
+    migrated = config_file.read_text(encoding="utf-8")
+    assert config_file.stat().st_ino != original_inode
+    assert "config_version = 1" in migrated
+    assert "custom_setting = \"preserved\"" in migrated
+    assert "cache_base_url" not in migrated
+    assert migrated.count("mirror_base_url") == 6
+    assert "https://mirror.pypi.rvsta.sh" in migrated
+
+    migrated_inode = config_file.stat().st_ino
+    cfg_mod.load()
+
+    assert config_file.stat().st_ino == migrated_inode
+    assert config_file.read_text(encoding="utf-8") == migrated
+
+
+def test_failed_config_migration_does_not_replace_source_file(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    config_dir, config_file = _point_config(monkeypatch, tmp_path)
+    config_dir.mkdir()
+    original = """
+[profiles.default.native_registries.pypi]
+read_base_url = "not-a-url"
+push_base_url = "https://push.pypi.rvsta.sh"
+cache_base_url = "https://cache.pypi.rvsta.sh"
+
+[profiles.default.native_registries.npm]
+read_base_url = "https://npm.rvsta.sh"
+push_base_url = "https://push.npm.rvsta.sh"
+cache_base_url = "https://cache.npm.rvsta.sh"
+
+[profiles.default.native_registries.maven]
+read_base_url = "https://maven.rvsta.sh"
+push_base_url = "https://push.maven.rvsta.sh"
+cache_base_url = "https://cache.maven.rvsta.sh"
+
+[profiles.default.native_registries.oci]
+registry_base_url = "https://oci.rvsta.sh"
+""".strip()
+    config_file.write_text(original, encoding="utf-8")
+
+    with pytest.raises(ValueError, match="read URL must be an absolute"):
+        cfg_mod.load()
+
+    assert config_file.read_text(encoding="utf-8") == original
+
+
+def test_load_rejects_config_written_by_newer_cli_without_rewriting_it(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    config_dir, config_file = _point_config(monkeypatch, tmp_path)
+    config_dir.mkdir()
+    original = "config_version = 999\ndefault_profile = \"default\"\n"
+    config_file.write_text(original, encoding="utf-8")
+
+    with pytest.raises(ValueError, match="requires a newer rvs release"):
+        cfg_mod.load()
+
+    assert config_file.read_text(encoding="utf-8") == original
 
 
 def test_repository_domain_rejects_urls_and_ports(monkeypatch, tmp_path: Path) -> None:

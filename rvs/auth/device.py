@@ -125,7 +125,7 @@ def _store_expiring_credential(
             expires_at=expires_at.isoformat(),
             refresh_expires_at=refresh_expires_at.isoformat(),
         )
-    except (OSError, RuntimeError) as exc:
+    except (OSError, RuntimeError, ValueError) as exc:
         if credential_store is not None:
             auth_mod.delete_token_from_store(profile, credential_store)
         raise RuntimeError(str(exc)) from exc

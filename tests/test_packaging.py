@@ -92,3 +92,14 @@ def test_installer_prints_ravenstash_banner_after_success() -> None:
     assert "█████████████████████████▄▄▄" in source
     assert "CLI installed successfully" in source
     assert 'print_success_banner\nsay "next: rvs auth login"' in source
+
+
+def test_apt_installer_redirects_managed_portable_links() -> None:
+    source = INSTALLER.read_text(encoding="utf-8")
+
+    assert "reconcile_legacy_portable_links()" in source
+    assert 'install_root="${HOME}/.local/share/rvs"' in source
+    assert '"${install_root}/"*/"${command_name}")' in source
+    assert 'ln -sfn "/usr/bin/${command_name}" "$link_path"' in source
+    assert "reconcile_legacy_portable_links\n" in source
+    assert "was not installed by Ravenstash and may shadow" in source

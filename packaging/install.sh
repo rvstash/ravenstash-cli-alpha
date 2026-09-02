@@ -85,11 +85,32 @@ verify_signing_key() {
   fi
 }
 
+reconcile_legacy_portable_links() {
+  [[ -n "${HOME:-}" && "$HOME" == /* && "$HOME" != "/" ]] || return
+  local bin_directory="${HOME}/.local/bin"
+  local install_root="${HOME}/.local/share/rvs"
+  local command_name link_path link_target
+  for command_name in rvs ravenstash docker-credential-rvs; do
+    link_path="${bin_directory}/${command_name}"
+    if [[ -L "$link_path" ]]; then
+      link_target="$(readlink "$link_path")"
+      case "$link_target" in
+        "${install_root}/"*/"${command_name}")
+          ln -sfn "/usr/bin/${command_name}" "$link_path"
+          say "redirected legacy portable command ${link_path} to the APT installation"
+          ;;
+      esac
+    elif [[ -e "$link_path" ]]; then
+      say "notice: ${link_path} was not installed by Ravenstash and may shadow /usr/bin/${command_name}"
+    fi
+  done
+}
+
 install_apt_package() {
   local temporary_directory="$1"
   local temporary_key="${temporary_directory}/ravenstash-rvs.gpg"
 
-  for command in apt-get awk curl dpkg install mktemp tee; do
+  for command in apt-get awk curl dpkg install ln mktemp readlink tee; do
     command -v "$command" >/dev/null 2>&1 || fail "required command not found: ${command}"
   done
   if [[ "$(dpkg --print-architecture)" != "amd64" ]]; then
@@ -136,6 +157,7 @@ install_apt_package() {
 
   local installed_version
   installed_version="$(dpkg-query -W -f='${Version}' rvs)"
+  reconcile_legacy_portable_links
   say "installed rvs ${installed_version} on compatibility channel ${compatibility_channel}"
 }
 

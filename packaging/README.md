@@ -86,7 +86,10 @@ initial alpha install cannot later roll into an incompatible release.
 
 The canonical user-facing installer source is `packaging/install.sh`. On a
 Debian-family system it verifies the expected signing-key fingerprint,
-configures this APT repository, and installs `rvs`. On other glibc `amd64`
+configures this APT repository, and installs `rvs`. When replacing an older
+Ravenstash portable installation, it redirects only the installer-owned links in
+`~/.local/bin` to the APT commands so shell `PATH` order cannot keep running the
+old release; unrelated files are preserved and reported. On other glibc `amd64`
 systems it verifies an OpenPGP-signed release inventory plus the archive's exact
 SHA-256 digest and performs a user-local install by default. The same protected
 release signer authenticates the APT repository and portable inventory; neither

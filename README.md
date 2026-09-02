@@ -54,9 +54,11 @@ in the user's selected credential store. In `auto` mode it fully tests a working
 OS keyring (Secret Service, including GNOME Keyring, KWallet Secret Service, or
 compatible providers), then an initialized `pass` store, then an existing
 passphrase-encrypted Ravenstash vault. It never silently selects plaintext.
-Local profile metadata lives in `~/.rvs/config.toml`. Automation should pass credentials
-with `RVS_TOKEN`; that env var takes precedence over local profiles, requires no
-keyring, vault, or D-Bus session, and is never refreshed.
+Local profile metadata lives in `~/.rvs/config.toml`. The file carries an internal
+schema version; a newer CLI applies every skipped migration in order and atomically
+persists the result only after the migrated configuration validates. Automation
+should pass credentials with `RVS_TOKEN`; that env var takes precedence over local
+profiles, requires no keyring, vault, or D-Bus session, and is never refreshed.
 
 If the first device login finds no usable keyring or `pass` store, it asks whether
 to install the dedicated Ravenstash encrypted vault before browser authorization.
