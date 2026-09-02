@@ -770,8 +770,7 @@ def _inject_npm_override(
 ) -> None:
     registry_url = (
         route.npm_upload_registry_url
-        if _npm_is_publish(cmd[native_arg_start:])
-        or _npm_is_mutation(cmd[native_arg_start:])
+        if _npm_is_publish(cmd[native_arg_start:]) or _npm_is_mutation(cmd[native_arg_start:])
         else route.npm_registry_url
     )
     _replace_npm_registry_arg(cmd, native_arg_start, registry_url)
@@ -794,14 +793,10 @@ def _npm_is_mutation(argv: list[str]) -> bool:
     positional = [arg for arg in argv if not arg.startswith("-")]
     if any(arg in {"unpublish", "deprecate", "tag"} for arg in positional):
         return True
-    try:
-        dist_tag_index = positional.index("dist-tag")
-    except ValueError:
-        return False
-    return any(
-        arg in {"add", "set", "rm", "remove", "del", "delete"}
-        for arg in positional[dist_tag_index + 1 :]
-    )
+    # Ravenstash's native dist-tag endpoint is served by Publisher for both
+    # reads and mutations. Route ``ls`` there as well and request the combined
+    # capability expected by that authenticated endpoint.
+    return "dist-tag" in positional
 
 
 def _replace_npm_registry_arg(cmd: list[str], native_arg_start: int, registry_url: str) -> None:
