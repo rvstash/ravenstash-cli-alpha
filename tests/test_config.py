@@ -49,7 +49,7 @@ def test_load_missing_config_uses_production_default_without_profile_env(
     assert cfg.active_profile().native_registries.pypi.read_base_url == "https://pypi.rvsta.sh"
     assert cfg.active_profile().native_registries.pypi.push_base_url == "https://push.pypi.rvsta.sh"
     assert (
-        cfg.active_profile().native_registries.pypi.cache_base_url == "https://cache.pypi.rvsta.sh"
+        cfg.active_profile().native_registries.pypi.mirror_base_url == "https://mirror.pypi.rvsta.sh"
     )
 
 
@@ -133,7 +133,7 @@ def test_repository_domain_formats_every_registry_service_for_profile(
     assert profile.native_registries.pypi.read_base_url == "https://pypi.packages.example.test"
     assert profile.native_registries.pypi.push_base_url == "https://push.pypi.packages.example.test"
     assert (
-        profile.native_registries.pypi.cache_base_url == "https://cache.pypi.packages.example.test"
+        profile.native_registries.pypi.mirror_base_url == "https://mirror.pypi.packages.example.test"
     )
     assert profile.native_registries.npm.read_base_url == "https://npm.packages.example.test"
     assert (
@@ -159,17 +159,17 @@ def test_localhost_repository_domain_uses_literal_host_and_keeps_routes(
 [profiles.dev.native_registries.pypi]
 read_base_url = "https://download.example.test:43101/registry/pypi"
 push_base_url = "https://upload.example.test:43102/registry/pypi"
-cache_base_url = "https://cache.example.test:43101/registry/pypi"
+mirror_base_url = "https://mirror.example.test:43101/registry/pypi"
 
 [profiles.dev.native_registries.npm]
 read_base_url = "https://download.example.test:43101/registry/npm"
 push_base_url = "https://upload.example.test:43102/registry/npm"
-cache_base_url = "https://cache.example.test:43101/registry/npm"
+mirror_base_url = "https://mirror.example.test:43101/registry/npm"
 
 [profiles.dev.native_registries.maven]
 read_base_url = "https://download.example.test:43101/registry/maven"
 push_base_url = "https://upload.example.test:43102/registry/maven"
-cache_base_url = "https://cache.example.test:43101/registry/maven"
+mirror_base_url = "https://mirror.example.test:43101/registry/maven"
 
 [profiles.dev.native_registries.oci]
 registry_base_url = "https://images.example.test:43101"
@@ -181,7 +181,7 @@ registry_base_url = "https://images.example.test:43101"
 
     assert endpoints.pypi.read_base_url == "http://localhost:43101/registry/pypi"
     assert endpoints.pypi.push_base_url == "http://localhost:43102/registry/pypi"
-    assert endpoints.npm.cache_base_url == "http://localhost:43101/registry/npm"
+    assert endpoints.npm.mirror_base_url == "http://localhost:43101/registry/npm"
     assert endpoints.oci_registry_base_url == "http://localhost:43101"
 
 
@@ -196,17 +196,17 @@ def test_discovered_heterogeneous_host_family_is_retained_without_domain_overrid
 [profiles.work.native_registries.pypi]
 read_base_url = "https://python-download.example.test"
 push_base_url = "https://python-upload.example.test"
-cache_base_url = "https://python-cache.example.test"
+mirror_base_url = "https://python-mirror.example.test"
 
 [profiles.work.native_registries.npm]
 read_base_url = "https://javascript-download.example.test"
 push_base_url = "https://javascript-upload.example.test"
-cache_base_url = "https://javascript-cache.example.test"
+mirror_base_url = "https://javascript-mirror.example.test"
 
 [profiles.work.native_registries.maven]
 read_base_url = "https://java-download.example.test"
 push_base_url = "https://java-upload.example.test"
-cache_base_url = "https://java-cache.example.test"
+mirror_base_url = "https://java-mirror.example.test"
 
 [profiles.work.native_registries.oci]
 registry_base_url = "https://images.example.test"
@@ -218,8 +218,50 @@ registry_base_url = "https://images.example.test"
 
     assert endpoints.pypi.read_base_url == "https://python-download.example.test"
     assert endpoints.pypi.push_base_url == "https://python-upload.example.test"
-    assert endpoints.npm.cache_base_url == "https://javascript-cache.example.test"
+    assert endpoints.npm.mirror_base_url == "https://javascript-mirror.example.test"
     assert endpoints.oci_registry_base_url == "https://images.example.test"
+
+
+def test_load_migrates_legacy_cache_endpoint_keys_on_next_save(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    config_dir, config_file = _point_config(monkeypatch, tmp_path)
+    config_dir.mkdir()
+    config_file.write_text(
+        """
+[profiles.work.native_registries.pypi]
+read_base_url = "https://pypi.example.test"
+push_base_url = "https://push.pypi.example.test"
+cache_base_url = "https://cache.pypi.example.test"
+
+[profiles.work.native_registries.npm]
+read_base_url = "https://npm.example.test"
+push_base_url = "https://push.npm.example.test"
+cache_base_url = "https://cache.npm.example.test"
+
+[profiles.work.native_registries.maven]
+read_base_url = "https://maven.example.test"
+push_base_url = "https://push.maven.example.test"
+cache_base_url = "https://cache.maven.example.test"
+
+[profiles.work.native_registries.oci]
+registry_base_url = "https://oci.example.test"
+""".strip(),
+        encoding="utf-8",
+    )
+
+    cfg = cfg_mod.load()
+
+    assert cfg.active_profile("work").native_registries.pypi.mirror_base_url == (
+        "https://cache.pypi.example.test"
+    )
+
+    cfg_mod.save(cfg)
+
+    saved = config_file.read_text(encoding="utf-8")
+    assert "mirror_base_url" in saved
+    assert "cache_base_url" not in saved
 
 
 def test_repository_domain_rejects_urls_and_ports(monkeypatch, tmp_path: Path) -> None:
@@ -292,17 +334,17 @@ def test_save_and_load_round_trips_profiles_and_registry_defaults(
                     pypi=cfg_mod.PackageRegistryEndpoints(
                         "https://pypi.work.example",
                         "https://push.pypi.work.example",
-                        "https://cache.pypi.work.example",
+                        "https://mirror.pypi.work.example",
                     ),
                     npm=cfg_mod.PackageRegistryEndpoints(
                         "https://npm.work.example",
                         "https://push.npm.work.example",
-                        "https://cache.npm.work.example",
+                        "https://mirror.npm.work.example",
                     ),
                     maven=cfg_mod.PackageRegistryEndpoints(
                         "https://maven.work.example",
                         "https://push.maven.work.example",
-                        "https://cache.maven.work.example",
+                        "https://mirror.maven.work.example",
                     ),
                     oci_registry_base_url="https://oci.work.example",
                 ),

@@ -24,17 +24,17 @@ Config file shape
     [profiles.default.native_registries.pypi]
     read_base_url = "https://pypi.rvsta.sh"
     push_base_url = "https://push.pypi.rvsta.sh"
-    cache_base_url = "https://cache.pypi.rvsta.sh"
+    mirror_base_url = "https://mirror.pypi.rvsta.sh"
 
     [profiles.default.native_registries.npm]
     read_base_url = "https://npm.rvsta.sh"
     push_base_url = "https://push.npm.rvsta.sh"
-    cache_base_url = "https://cache.npm.rvsta.sh"
+    mirror_base_url = "https://mirror.npm.rvsta.sh"
 
     [profiles.default.native_registries.maven]
     read_base_url = "https://maven.rvsta.sh"
     push_base_url = "https://push.maven.rvsta.sh"
-    cache_base_url = "https://cache.maven.rvsta.sh"
+    mirror_base_url = "https://mirror.maven.rvsta.sh"
 
     [profiles.default.native_registries.oci]
     registry_base_url = "https://oci.rvsta.sh"
@@ -84,7 +84,7 @@ DEFAULT_REPOSITORY_DOMAIN = "rvsta.sh"
 class PackageRegistryEndpoints:
     read_base_url: str
     push_base_url: str
-    cache_base_url: str
+    mirror_base_url: str
 
 
 @dataclass(frozen=True)
@@ -101,26 +101,27 @@ class NativeRegistryEndpoints:
 def repository_domain_summary(endpoints: NativeRegistryEndpoints) -> str:
     """Summarize a conventional native-registry endpoint family by DNS suffix."""
     service_urls = (
-        ("pypi", endpoints.pypi.read_base_url),
-        ("push.pypi", endpoints.pypi.push_base_url),
-        ("cache.pypi", endpoints.pypi.cache_base_url),
-        ("npm", endpoints.npm.read_base_url),
-        ("push.npm", endpoints.npm.push_base_url),
-        ("cache.npm", endpoints.npm.cache_base_url),
-        ("maven", endpoints.maven.read_base_url),
-        ("push.maven", endpoints.maven.push_base_url),
-        ("cache.maven", endpoints.maven.cache_base_url),
-        ("oci", endpoints.oci_registry_base_url),
+        (("pypi",), endpoints.pypi.read_base_url),
+        (("push.pypi",), endpoints.pypi.push_base_url),
+        (("mirror.pypi", "cache.pypi"), endpoints.pypi.mirror_base_url),
+        (("npm",), endpoints.npm.read_base_url),
+        (("push.npm",), endpoints.npm.push_base_url),
+        (("mirror.npm", "cache.npm"), endpoints.npm.mirror_base_url),
+        (("maven",), endpoints.maven.read_base_url),
+        (("push.maven",), endpoints.maven.push_base_url),
+        (("mirror.maven", "cache.maven"), endpoints.maven.mirror_base_url),
+        (("oci",), endpoints.oci_registry_base_url),
     )
-    hosts = [urlsplit(url).hostname or "" for _service, url in service_urls]
+    hosts = [urlsplit(url).hostname or "" for _services, url in service_urls]
     domains = {
         host.removeprefix(f"{service}.")
-        for (service, _url), host in zip(service_urls, hosts, strict=True)
+        for (services, _url), host in zip(service_urls, hosts, strict=True)
+        for service in services
         if host.startswith(f"{service}.")
     }
     if len(domains) == 1 and all(
-        host == f"{service}.{next(iter(domains))}"
-        for (service, _url), host in zip(service_urls, hosts, strict=True)
+        any(host == f"{service}.{next(iter(domains))}" for service in services)
+        for (services, _url), host in zip(service_urls, hosts, strict=True)
     ):
         return next(iter(domains))
 
@@ -533,10 +534,10 @@ def _package_registry_endpoints(
             f"push.{kind}",
             source_url=source.push_base_url if source is not None else None,
         ),
-        cache_base_url=_repository_service_url(
+        mirror_base_url=_repository_service_url(
             domain,
-            f"cache.{kind}",
-            source_url=source.cache_base_url if source is not None else None,
+            f"mirror.{kind}",
+            source_url=source.mirror_base_url if source is not None else None,
         ),
     )
 
@@ -568,6 +569,10 @@ def _native_registries_from_mapping(
         if not isinstance(raw, dict):
             raise ValueError(f"{profile_name} {kind} registry endpoints are missing")
         try:
+            mirror_base_url = raw.get("mirror_base_url")
+            if mirror_base_url is None:
+                # Read released pre-rename profiles once; save() writes only mirror_base_url.
+                mirror_base_url = raw["cache_base_url"]
             discovered = PackageRegistryEndpoints(
                 read_base_url=validate_service_url(
                     str(raw["read_base_url"]), label=f"{profile_name} {kind} read URL"
@@ -575,8 +580,8 @@ def _native_registries_from_mapping(
                 push_base_url=validate_service_url(
                     str(raw["push_base_url"]), label=f"{profile_name} {kind} push URL"
                 ),
-                cache_base_url=validate_service_url(
-                    str(raw["cache_base_url"]), label=f"{profile_name} {kind} cache URL"
+                mirror_base_url=validate_service_url(
+                    str(mirror_base_url), label=f"{profile_name} {kind} mirror URL"
                 ),
             )
             return _package_registry_endpoints(profile_name, kind, discovered)

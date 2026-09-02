@@ -18,24 +18,24 @@ runner = CliRunner()
 STAGING_API_URL = "https://control.example.test"
 PYPI_READ_URL = "https://python-read.example.test"
 PYPI_PUSH_URL = "https://python-write.example.test"
-PYPI_CACHE_URL = "https://python-cache.example.test"
+PYPI_MIRROR_URL = "https://python-mirror.example.test"
 NPM_READ_URL = "https://javascript-read.example.test"
 NPM_PUSH_URL = "https://javascript-write.example.test"
-NPM_CACHE_URL = "https://javascript-cache.example.test"
+NPM_MIRROR_URL = "https://javascript-mirror.example.test"
 MAVEN_READ_URL = "https://java-read.example.test"
 MAVEN_PUSH_URL = "https://java-write.example.test"
-MAVEN_CACHE_URL = "https://java-cache.example.test"
+MAVEN_MIRROR_URL = "https://java-mirror.example.test"
 PYPI_READ_HOST = "python-read.example.test"
-PYPI_CACHE_HOST = "python-cache.example.test"
+PYPI_MIRROR_HOST = "python-mirror.example.test"
 NPM_READ_HOST = "javascript-read.example.test"
 NPM_PUSH_HOST = "javascript-write.example.test"
 
 
 def _native_endpoints() -> cfg_mod.NativeRegistryEndpoints:
     return cfg_mod.NativeRegistryEndpoints(
-        pypi=cfg_mod.PackageRegistryEndpoints(PYPI_READ_URL, PYPI_PUSH_URL, PYPI_CACHE_URL),
-        npm=cfg_mod.PackageRegistryEndpoints(NPM_READ_URL, NPM_PUSH_URL, NPM_CACHE_URL),
-        maven=cfg_mod.PackageRegistryEndpoints(MAVEN_READ_URL, MAVEN_PUSH_URL, MAVEN_CACHE_URL),
+        pypi=cfg_mod.PackageRegistryEndpoints(PYPI_READ_URL, PYPI_PUSH_URL, PYPI_MIRROR_URL),
+        npm=cfg_mod.PackageRegistryEndpoints(NPM_READ_URL, NPM_PUSH_URL, NPM_MIRROR_URL),
+        maven=cfg_mod.PackageRegistryEndpoints(MAVEN_READ_URL, MAVEN_PUSH_URL, MAVEN_MIRROR_URL),
         oci_registry_base_url="https://images.example.test",
     )
 
@@ -117,17 +117,17 @@ customer_unique_id = "custpid1"
 [profiles.staging.native_registries.pypi]
 read_base_url = "{PYPI_READ_URL}"
 push_base_url = "{PYPI_PUSH_URL}"
-cache_base_url = "{PYPI_CACHE_URL}"
+mirror_base_url = "{PYPI_MIRROR_URL}"
 
 [profiles.staging.native_registries.npm]
 read_base_url = "{NPM_READ_URL}"
 push_base_url = "{NPM_PUSH_URL}"
-cache_base_url = "{NPM_CACHE_URL}"
+mirror_base_url = "{NPM_MIRROR_URL}"
 
 [profiles.staging.native_registries.maven]
 read_base_url = "{MAVEN_READ_URL}"
 push_base_url = "{MAVEN_PUSH_URL}"
-cache_base_url = "{MAVEN_CACHE_URL}"
+mirror_base_url = "{MAVEN_MIRROR_URL}"
 
 [profiles.staging.native_registries.oci]
 registry_base_url = "https://images.example.test"
@@ -246,17 +246,17 @@ def test_ravenstash_url_kind_accepts_public_hosts_and_local_normalized_routes() 
     )
     assert (
         url_kind(
-            f"{PYPI_CACHE_URL}/c/piwheels/simple/",
+            f"{PYPI_MIRROR_URL}/c/piwheels/simple/",
         )
         == "pypi"
     )
-    assert url_kind(f"{PYPI_CACHE_URL}/o/pypiorg/simple/") == "pypi"
-    assert url_kind(f"{NPM_CACHE_URL}/c/_xyzabcde/") == "npm"
+    assert url_kind(f"{PYPI_MIRROR_URL}/o/pypiorg/simple/") == "pypi"
+    assert url_kind(f"{NPM_MIRROR_URL}/c/_xyzabcde/") == "npm"
     assert url_kind("https://npm.example.test/w_abcdefgh/r_xyzabcde/") is None
     assert url_kind("https://pkg-staging.example.test/w_abcdefgh/r_xyzabcde/") is None
     assert url_kind(f"{NPM_READ_URL}/o/npmjs/") is None
     assert url_kind(f"{NPM_READ_URL}/c/private-upstream/") is None
-    assert url_kind(f"{NPM_CACHE_URL}/w_abcdefgh/r_xyzabcde/") is None
+    assert url_kind(f"{NPM_MIRROR_URL}/w_abcdefgh/r_xyzabcde/") is None
     assert url_kind(f"{NPM_READ_URL}/w_abcdefgh/") is None
 
 
@@ -498,7 +498,7 @@ def test_native_pip_exchanges_profile_token_for_scoped_remote_credential(
 ) -> None:
     _isolate_config(monkeypatch, tmp_path)
     _mock_native_tools(monkeypatch)
-    index_url = f"{PYPI_CACHE_URL}/c/piwheels/simple/"
+    index_url = f"{PYPI_MIRROR_URL}/c/piwheels/simple/"
     monkeypatch.setenv("PIP_INDEX_URL", index_url)
     calls: list[dict[str, Any]] = []
     netrc_texts: list[str] = []
@@ -519,7 +519,7 @@ def test_native_pip_exchanges_profile_token_for_scoped_remote_credential(
     ]
     assert calls[0]["env"]["PIP_INDEX_URL"] == index_url
     assert netrc_texts == [
-        f"machine {PYPI_CACHE_HOST} login __token__ password remote-secret-token\n"
+        f"machine {PYPI_MIRROR_HOST} login __token__ password remote-secret-token\n"
     ]
 
 
@@ -532,7 +532,7 @@ def test_native_pip_local_remote_cache_netrc_uses_hostname_without_port(
     config_path = cfg_mod.CONFIG_FILE
     config_path.write_text(
         config_path.read_text(encoding="utf-8").replace(
-            PYPI_CACHE_URL,
+            PYPI_MIRROR_URL,
             "http://localhost:43101/registry/pypi",
         ),
         encoding="utf-8",
@@ -563,7 +563,7 @@ def test_native_pip_exchanges_official_remote_credential(
     _mock_native_tools(monkeypatch)
     monkeypatch.setenv(
         "PIP_INDEX_URL",
-        f"{PYPI_CACHE_URL}/o/pypiorg/simple/",
+        f"{PYPI_MIRROR_URL}/o/pypiorg/simple/",
     )
     captured: list[str] = []
 
@@ -575,7 +575,7 @@ def test_native_pip_exchanges_official_remote_credential(
     result = runner.invoke(app, ["pip", "download", "demo"])
 
     assert result.exit_code == 0
-    assert captured == [f"machine {PYPI_CACHE_HOST} login __token__ password remote-secret-token\n"]
+    assert captured == [f"machine {PYPI_MIRROR_HOST} login __token__ password remote-secret-token\n"]
 
 
 def test_native_pip_isolate_overrides_index_without_writing_credentials(

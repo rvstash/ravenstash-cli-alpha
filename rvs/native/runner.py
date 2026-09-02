@@ -381,7 +381,7 @@ def _configured_route_parts(
     for service_url in (
         endpoints.read_base_url,
         endpoints.push_base_url,
-        endpoints.cache_base_url,
+        endpoints.mirror_base_url,
     ):
         base = native_base_url(service_url, kind)
         if not _same_origin(url, base):
@@ -394,7 +394,7 @@ def _configured_route_parts(
 
 def _remote_route_scope(parts: list[str]) -> tuple[str, str, RepositoryRouteKind]:
     if len(parts) < 2 or parts[0] not in {"o", "c"}:
-        output.fatal("Detected Ravenstash remote-cache URL is invalid.")
+        output.fatal("Detected Ravenstash private-mirror URL is invalid.")
     route_kind = (
         RepositoryRouteKind.REMOTE_OFFICIAL
         if parts[0] == "o"
@@ -477,7 +477,7 @@ def _ravenstash_url_kind(
         for service_url, surface in (
             (endpoints.read_base_url, "private"),
             (endpoints.push_base_url, "private"),
-            (endpoints.cache_base_url, "cache"),
+            (endpoints.mirror_base_url, "mirror"),
         ):
             base = native_base_url(service_url, kind)
             if not _same_origin(url, base):
@@ -488,7 +488,7 @@ def _ravenstash_url_kind(
                 continue
             route_parts = path_parts[len(base_parts) :]
             if (surface == "private" and _valid_private_registry_route(route_parts)) or (
-                surface == "cache" and _valid_cache_registry_route(route_parts)
+                surface == "mirror" and _valid_mirror_registry_route(route_parts)
             ):
                 return kind  # type: ignore[return-value]
     return None
@@ -498,7 +498,7 @@ def _valid_private_registry_route(path_parts: list[str]) -> bool:
     return len(path_parts) >= 2 and path_parts[0] not in {"o", "c"} and bool(path_parts[1])
 
 
-def _valid_cache_registry_route(path_parts: list[str]) -> bool:
+def _valid_mirror_registry_route(path_parts: list[str]) -> bool:
     return len(path_parts) >= 2 and path_parts[0] in {"o", "c"} and bool(path_parts[1])
 
 

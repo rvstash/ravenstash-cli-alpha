@@ -22,17 +22,17 @@ NATIVE_REGISTRIES = {
     "pypi": {
         "read_base_url": "https://pypi.rvsta.sh",
         "push_base_url": "https://push.pypi.rvsta.sh",
-        "cache_base_url": "https://cache.pypi.rvsta.sh",
+        "mirror_base_url": "https://mirror.pypi.rvsta.sh",
     },
     "npm": {
         "read_base_url": "https://npm.rvsta.sh",
         "push_base_url": "https://push.npm.rvsta.sh",
-        "cache_base_url": "https://cache.npm.rvsta.sh",
+        "mirror_base_url": "https://mirror.npm.rvsta.sh",
     },
     "maven": {
         "read_base_url": "https://maven.rvsta.sh",
         "push_base_url": "https://push.maven.rvsta.sh",
-        "cache_base_url": "https://cache.maven.rvsta.sh",
+        "mirror_base_url": "https://mirror.maven.rvsta.sh",
     },
     "oci": {"registry_base_url": "https://oci.rvsta.sh"},
 }

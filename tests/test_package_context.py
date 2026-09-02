@@ -290,7 +290,7 @@ def test_native_wrapper_uses_selected_cache_and_one_shot_does_not_mutate_it(
         "/bin/pip",
         "install",
         "--index-url",
-        "https://cache.pypi.rvsta.sh/c/piwheels/simple/",
+        "https://mirror.pypi.rvsta.sh/c/piwheels/simple/",
         "numpy",
     ]
     assert cfg_mod.selected_package_target("alice", "personal-alice").display_selector == (
@@ -322,7 +322,7 @@ def test_pkg_install_uses_account_scoped_official_default_without_selection(
 
     assert result.exit_code == 0, result.output
     assert calls[0][0] == ["/bin/pip", "install", "requests"]
-    assert calls[0][1]["PIP_INDEX_URL"] == ("https://cache.pypi.rvsta.sh/o/pypiorg/simple/")
+    assert calls[0][1]["PIP_INDEX_URL"] == ("https://mirror.pypi.rvsta.sh/o/pypiorg/simple/")
     assert "PIP_KEYRING_PROVIDER" not in calls[0][1]
     assert cfg_mod.selected_package_target("alice", "personal-alice") is None
 

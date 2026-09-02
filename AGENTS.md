@@ -28,7 +28,7 @@ Operational guidance for the `rvs` CLI package.
   URL. The CLI must never call Central directly.
 - Internal environment redirection may use one profile-scoped DevAPI URL and,
   for DNS families shaped as `{service}.{domain}`, one repository-domain suffix.
-  When that suffix is configured, derive every PyPI, npm, Maven, cache, push,
+  When that suffix is configured, derive every PyPI, npm, Maven, mirror, push,
   and OCI host from it; otherwise retain the exact endpoints discovered from
   DevAPI. A suffix equal to or ending in `localhost` uses the literal
   `localhost` host and distinguishes services through the discovered ports and

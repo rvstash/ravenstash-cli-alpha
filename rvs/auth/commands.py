@@ -78,13 +78,13 @@ def _repository_status_fields(
             {
                 "PyPI read URL": endpoints.pypi.read_base_url,
                 "PyPI push URL": endpoints.pypi.push_base_url,
-                "PyPI cache URL": endpoints.pypi.cache_base_url,
+                "PyPI mirror URL": endpoints.pypi.mirror_base_url,
                 "npm read URL": endpoints.npm.read_base_url,
                 "npm push URL": endpoints.npm.push_base_url,
-                "npm cache URL": endpoints.npm.cache_base_url,
+                "npm mirror URL": endpoints.npm.mirror_base_url,
                 "Maven read URL": endpoints.maven.read_base_url,
                 "Maven push URL": endpoints.maven.push_base_url,
-                "Maven cache URL": endpoints.maven.cache_base_url,
+                "Maven mirror URL": endpoints.maven.mirror_base_url,
                 "OCI registry URL": endpoints.oci_registry_base_url,
             }
         )

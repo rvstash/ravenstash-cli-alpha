@@ -8,7 +8,7 @@ def _domain_endpoints(domain: str) -> cfg_mod.NativeRegistryEndpoints:
         return cfg_mod.PackageRegistryEndpoints(
             read_base_url=f"https://{kind}.{domain}",
             push_base_url=f"https://push.{kind}.{domain}",
-            cache_base_url=f"https://cache.{kind}.{domain}",
+            mirror_base_url=f"https://mirror.{kind}.{domain}",
         )
 
     return cfg_mod.NativeRegistryEndpoints(
@@ -25,22 +25,48 @@ def test_repository_domain_summary_recognizes_service_domain_family() -> None:
     assert cfg_mod.repository_domain_summary(endpoints) == "packages.enterprise.example"
 
 
+def test_repository_domain_summary_recognizes_legacy_cache_host_aliases() -> None:
+    endpoints = _domain_endpoints("packages.enterprise.example")
+    legacy_endpoints = cfg_mod.NativeRegistryEndpoints(
+        pypi=cfg_mod.PackageRegistryEndpoints(
+            endpoints.pypi.read_base_url,
+            endpoints.pypi.push_base_url,
+            "https://cache.pypi.packages.enterprise.example",
+        ),
+        npm=cfg_mod.PackageRegistryEndpoints(
+            endpoints.npm.read_base_url,
+            endpoints.npm.push_base_url,
+            "https://cache.npm.packages.enterprise.example",
+        ),
+        maven=cfg_mod.PackageRegistryEndpoints(
+            endpoints.maven.read_base_url,
+            endpoints.maven.push_base_url,
+            "https://cache.maven.packages.enterprise.example",
+        ),
+        oci_registry_base_url=endpoints.oci_registry_base_url,
+    )
+
+    assert cfg_mod.repository_domain_summary(legacy_endpoints) == (
+        "packages.enterprise.example"
+    )
+
+
 def test_repository_domain_summary_recognizes_localhost_routes() -> None:
     endpoints = cfg_mod.NativeRegistryEndpoints(
         pypi=cfg_mod.PackageRegistryEndpoints(
             read_base_url="http://localhost:8081/pypi",
             push_base_url="http://localhost:8082/pypi",
-            cache_base_url="http://localhost:8083/pypi",
+            mirror_base_url="http://localhost:8083/pypi",
         ),
         npm=cfg_mod.PackageRegistryEndpoints(
             read_base_url="http://localhost:8081/npm",
             push_base_url="http://localhost:8082/npm",
-            cache_base_url="http://localhost:8083/npm",
+            mirror_base_url="http://localhost:8083/npm",
         ),
         maven=cfg_mod.PackageRegistryEndpoints(
             read_base_url="http://localhost:8081/maven",
             push_base_url="http://localhost:8082/maven",
-            cache_base_url="http://localhost:8083/maven",
+            mirror_base_url="http://localhost:8083/maven",
         ),
         oci_registry_base_url="http://localhost:8084/oci",
     )

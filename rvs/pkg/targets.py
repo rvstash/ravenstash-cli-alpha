@@ -352,7 +352,7 @@ def registry_context(
             ).json()
             workspace_reference = credential["workspace_reference"]
             repository_reference = credential["repository_reference"]
-            read_base_url = endpoints.cache_base_url
+            read_base_url = endpoints.mirror_base_url
             push_base_url = None
     except (ApiError, KeyError, TypeError, ValueError) as exc:
         output.fatal(str(exc))
