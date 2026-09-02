@@ -81,6 +81,10 @@ SESSIONS_DIR_NAME = "sessions"
 DEFAULT_API_URL = "https://api.ravenstash.com"
 DEFAULT_REPOSITORY_DOMAIN = "rvsta.sh"
 CURRENT_CONFIG_VERSION = 2
+_UNIQUE_ID_FRAGMENT = r"[23456789abcdefghijkmnpqrstuvwxyz]{8}"
+_INTERNAL_NAMESPACE_REF_RE = re.compile(rf"^in_{_UNIQUE_ID_FRAGMENT}$")
+_GLOBAL_NAMESPACE_REF_RE = re.compile(rf"^gn_{_UNIQUE_ID_FRAGMENT}$")
+_REPOSITORY_REF_RE = re.compile(rf"^r_{_UNIQUE_ID_FRAGMENT}$")
 
 
 @dataclass(frozen=True)
@@ -778,6 +782,11 @@ def _migrate_config_v1_to_v2(raw: dict) -> None:
             return
         if value.get("target_type") == "private":
             value["target_type"] = "repository"
+        is_repository = value.get("target_type") == "repository" or (
+            "default_repo" in value
+            and isinstance(value.get("default_repo"), str)
+            and not str(value["default_repo"]).startswith(("mirror:", "custom-mirror:"))
+        )
         for old, new in (
             ("workspace_unique_ref", "namespace_unique_ref"),
             ("workspace_name_cache", "namespace_name_cache"),
@@ -794,10 +803,10 @@ def _migrate_config_v1_to_v2(raw: dict) -> None:
                 value[selector_key] = f"in_{selector[2:]}"
             elif (
                 isinstance(selector, str)
-                and value.get("target_type", "repository") == "repository"
+                and is_repository
                 and ":" not in selector
                 and selector.count("/") == 1
-                and not selector.startswith(("in_", "gl_"))
+                and not selector.startswith(("in_", "gn_"))
             ):
                 value[selector_key] = f"internal:{selector}"
         display_selector = value.get("display_selector")
@@ -806,10 +815,10 @@ def _migrate_config_v1_to_v2(raw: dict) -> None:
             and value.get("target_type") == "repository"
             and ":" not in display_selector
             and display_selector.count("/") == 1
-            and not display_selector.startswith(("in_", "gl_"))
+            and not display_selector.startswith(("in_", "gn_"))
         ):
             value["display_selector"] = f"internal:{display_selector}"
-        if value.get("target_type") == "repository":
+        if is_repository:
             value["namespace_realm"] = "internal"
 
     profiles = raw.get("profiles")
@@ -867,6 +876,100 @@ def _migrate_raw_config(raw: dict) -> bool:
         version = next_version
         changed = True
     return changed
+
+
+def _validate_repository_target_identity(
+    value: dict, *, path: str, allow_legacy_short_selector: bool = False
+) -> None:
+    realm = value.get("namespace_realm", "internal" if "default_repo" in value else None)
+    if realm not in {"internal", "global"}:
+        raise ValueError(f"invalid namespace realm at {path}.namespace_realm")
+    namespace_ref = value.get("namespace_unique_ref")
+    repository_ref = value.get("repository_unique_ref")
+    expected_namespace = (
+        _INTERNAL_NAMESPACE_REF_RE if realm == "internal" else _GLOBAL_NAMESPACE_REF_RE
+    )
+    if namespace_ref is not None and (
+        not isinstance(namespace_ref, str) or expected_namespace.fullmatch(namespace_ref) is None
+    ):
+        raise ValueError(f"invalid namespace reference at {path}.namespace_unique_ref")
+    if repository_ref is not None and (
+        not isinstance(repository_ref, str) or _REPOSITORY_REF_RE.fullmatch(repository_ref) is None
+    ):
+        raise ValueError(f"invalid repository reference at {path}.repository_unique_ref")
+
+    selector = value.get("stable_selector", value.get("default_repo"))
+    if not isinstance(selector, str) or not selector:
+        raise ValueError(f"missing repository selector at {path}")
+    if selector.startswith(("in_", "gn_", "w_", "r_")):
+        parts = selector.split("/")
+        if (
+            len(parts) != 2
+            or expected_namespace.fullmatch(parts[0]) is None
+            or _REPOSITORY_REF_RE.fullmatch(parts[1]) is None
+        ):
+            raise ValueError(f"invalid stable repository selector at {path}")
+        if namespace_ref is not None and namespace_ref != parts[0]:
+            raise ValueError(f"conflicting namespace identity at {path}")
+        if repository_ref is not None and repository_ref != parts[1]:
+            raise ValueError(f"conflicting repository identity at {path}")
+    elif selector.startswith("internal:"):
+        if realm != "internal" or selector.removeprefix("internal:").count("/") != 1:
+            raise ValueError(f"invalid internal repository selector at {path}")
+    elif selector.startswith("global:"):
+        if realm != "global" or selector.removeprefix("global:").count("/") != 1:
+            raise ValueError(f"invalid global repository selector at {path}")
+    elif ":" in selector or (
+        selector.count("/") != 1 and not (allow_legacy_short_selector and "/" not in selector)
+    ):
+        raise ValueError(f"invalid repository selector at {path}")
+
+
+def _validate_config_v2(raw: dict) -> None:
+    """Fail closed on malformed known v2 state before replacing the source file."""
+
+    profiles = raw.get("profiles", {})
+    if not isinstance(profiles, dict):
+        raise ValueError("profiles must be a table")
+    for profile_name, profile in profiles.items():
+        profile_path = f"profiles.{profile_name}"
+        if not isinstance(profile_name, str) or not isinstance(profile, dict):
+            raise ValueError(f"invalid profile table at {profile_path}")
+        accounts = profile.get("accounts", {})
+        if not isinstance(accounts, dict):
+            raise ValueError(f"accounts must be a table at {profile_path}.accounts")
+        for customer_id, account in accounts.items():
+            account_path = f"{profile_path}.accounts.{customer_id}"
+            if not isinstance(customer_id, str) or not isinstance(account, dict):
+                raise ValueError(f"invalid account table at {account_path}")
+            selected = account.get("selected_target")
+            if selected is None:
+                continue
+            target_path = f"{account_path}.selected_target"
+            if not isinstance(selected, dict) or _package_target_from_mapping(selected) is None:
+                raise ValueError(f"invalid selected target at {target_path}")
+            if selected.get("target_type") == "repository":
+                _validate_repository_target_identity(selected, path=target_path)
+
+        registries = profile.get("registries", {})
+        if not isinstance(registries, dict):
+            raise ValueError(f"registries must be a table at {profile_path}.registries")
+        for registry_kind, defaults in registries.items():
+            target_path = f"{profile_path}.registries.{registry_kind}"
+            if registry_kind not in {"pypi", "npm", "maven", "container", "helm"}:
+                raise ValueError(f"invalid registry kind at {target_path}")
+            if not isinstance(defaults, dict):
+                raise ValueError(f"invalid registry defaults at {target_path}")
+            selector = defaults.get("default_repo")
+            if selector is not None:
+                if not isinstance(selector, str) or not selector:
+                    raise ValueError(f"invalid default repository at {target_path}")
+                if not selector.startswith(("mirror:", "custom-mirror:")):
+                    _validate_repository_target_identity(
+                        defaults,
+                        path=target_path,
+                        allow_legacy_short_selector=True,
+                    )
 
 
 def _write_raw(raw: dict) -> None:
@@ -939,6 +1042,7 @@ def load() -> RvsConfig:
     raw = _load_raw()
     original_version = raw.get("config_version", 0)
     migrated = _migrate_raw_config(raw)
+    _validate_config_v2(raw)
     cfg = RvsConfig(
         default_profile=raw.get("default_profile", "default"),
         credential_store=raw.get("credential_store", "auto"),

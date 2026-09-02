@@ -41,6 +41,16 @@ class ApiError(Exception):
         super().__init__(self._message())
 
     def _message(self) -> str:
+        if isinstance(self.detail, dict) and self.detail.get("code") == "RepositoryTargetAmbiguous":
+            matches = self.detail.get("matches")
+            if isinstance(matches, list):
+                choices = ", ".join(
+                    str(item.get("customer_unique_ref"))
+                    for item in matches
+                    if isinstance(item, dict) and item.get("customer_unique_ref")
+                )
+                suffix = f" Choose an account with --account: {choices}." if choices else ""
+                return f"Repository target is ambiguous.{suffix}"
         if isinstance(self.detail, dict) and self.detail.get("code") == "RepositoryTargetChanged":
             expected = self.detail.get("expected")
             current = self.detail.get("current")

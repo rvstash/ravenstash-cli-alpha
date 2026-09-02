@@ -153,6 +153,23 @@ def test_repository_target_conflict_has_an_actionable_message() -> None:
     assert "rvs pkg repo set-default" in str(error)
 
 
+def test_repository_target_ambiguity_uses_public_account_references() -> None:
+    error = ApiError(
+        409,
+        {
+            "code": "RepositoryTargetAmbiguous",
+            "matches": [
+                {"customer_unique_ref": "_abcdefgh"},
+                {"customer_unique_ref": "_23456789"},
+            ],
+        },
+    )
+
+    assert str(error) == (
+        "Repository target is ambiguous. Choose an account with --account: _abcdefgh, _23456789."
+    )
+
+
 def test_api_client_from_profile_honors_rvs_profile(monkeypatch, tmp_path) -> None:
     config_dir = tmp_path / ".rvs"
     config_dir.mkdir()

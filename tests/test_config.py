@@ -420,6 +420,39 @@ namespace_unique_ref = "in_23456789"
     assert not (config_dir / "config.v1.toml.bak").exists()
 
 
+def test_v1_namespace_migration_rejects_malformed_identity_before_replacement(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    config_dir, config_file = _point_config(monkeypatch, tmp_path)
+    config_dir.mkdir()
+    original = """
+config_version = 1
+
+[profiles.default.accounts.customer-1]
+customer_unique_ref = "_abcdefgh"
+account_type = "personal"
+account_label = "Me"
+
+[profiles.default.accounts.customer-1.selected_target]
+target_type = "private"
+customer_id = "customer-1"
+stable_selector = "w_invalid/r_23456789"
+display_selector = "engineering/packages"
+workspace_unique_ref = "w_invalid"
+workspace_name_cache = "engineering"
+repository_unique_ref = "r_23456789"
+repository_name_cache = "packages"
+""".strip()
+    config_file.write_text(original, encoding="utf-8")
+
+    with pytest.raises(ValueError, match="invalid namespace reference"):
+        cfg_mod.load()
+
+    assert config_file.read_text(encoding="utf-8") == original
+    assert not (config_dir / "config.v1.toml.bak").exists()
+
+
 def test_load_rejects_config_written_by_newer_cli_without_rewriting_it(
     monkeypatch,
     tmp_path: Path,
@@ -570,7 +603,7 @@ def test_saved_target_retains_identity_when_authority_marks_it_unavailable(
                     registries={
                         "pypi": cfg_mod.RegistryDefaults(
                             default_repo="in_abcdefgh/r_23456789",
-                            repository_unique_ref="repository-1",
+                            repository_unique_ref="r_23456789",
                             authority_revision=4,
                         )
                     }
@@ -583,7 +616,7 @@ def test_saved_target_retains_identity_when_authority_marks_it_unavailable(
     saved = cfg_mod.load().registry_defaults("pypi")
 
     assert saved.default_repo == "in_abcdefgh/r_23456789"
-    assert saved.repository_unique_ref == "repository-1"
+    assert saved.repository_unique_ref == "r_23456789"
     assert saved.authority_revision == 4
     assert saved.is_available is False
 

@@ -55,8 +55,8 @@ def _native_route_parts(native_path: str) -> tuple[str, str] | None:
     if len(parts) != 2:
         return None
     namespace, repository = parts
-    stable = namespace.startswith(("in_", "gl_", "w_", "r_")) or repository.startswith(
-        ("in_", "gl_", "w_", "r_")
+    stable = namespace.startswith(("in_", "gn_", "w_", "r_")) or repository.startswith(
+        ("in_", "gn_", "w_", "r_")
     )
     if stable:
         if not (
@@ -69,8 +69,8 @@ def _native_route_parts(native_path: str) -> tuple[str, str] | None:
     elif (
         not _OCI_COMPONENT.fullmatch(namespace)
         or not _OCI_COMPONENT.fullmatch(repository)
-        or namespace.startswith(("in_", "gl_", "w_", "r_"))
-        or repository.startswith(("in_", "gl_", "w_", "r_"))
+        or namespace.startswith(("in_", "gn_", "w_", "r_"))
+        or repository.startswith(("in_", "gn_", "w_", "r_"))
     ):
         return None
     return namespace, repository

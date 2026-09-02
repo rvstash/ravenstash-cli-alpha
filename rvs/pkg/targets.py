@@ -79,10 +79,10 @@ def parse_target(value: str) -> TargetSpec:
         namespace_part, repository_part = parts
         if namespace_part.startswith("w_"):
             output.fatal("w_ namespace references are retired; use an in_ reference.")
-        typed = namespace_part.startswith(("in_", "gl_", "r_")) or repository_part.startswith(
-            ("in_", "gl_", "r_")
+        typed = namespace_part.startswith(("in_", "gn_", "r_")) or repository_part.startswith(
+            ("in_", "gn_", "r_")
         )
-        expected_namespace_prefix = "in_" if namespace_realm == "internal" else "gl_"
+        expected_namespace_prefix = "in_" if namespace_realm == "internal" else "gn_"
         if typed and not (
             namespace_part.startswith(expected_namespace_prefix)
             and repository_part.startswith("r_")
