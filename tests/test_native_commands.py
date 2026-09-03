@@ -712,9 +712,44 @@ def test_native_maven_repo_override_generates_temp_settings(
         f"-DaltDeploymentRepository=rvs-private::default::{MAVEN_PUSH_URL}/staging/repo/"
     )
     assert "<id>rvs-private</id>" in settings_texts[0]
+    assert "<mirrorOf>*</mirrorOf>" in settings_texts[0]
     assert "<username>__token__</username>" in settings_texts[0]
     assert "<password>secret-token</password>" in settings_texts[0]
     assert not Path(calls[0]["cmd"][calls[0]["cmd"].index("--settings") + 1]).exists()
+
+
+def test_native_maven_read_only_mirror_uses_only_download_route(tmp_path: Path) -> None:
+    route = native_runner.RegistryRoute(
+        kind="maven",
+        read_base_url=MAVEN_MIRROR_URL,
+        push_base_url=None,
+        namespace_unique_ref="o",
+        repository_unique_ref="maven-central",
+        package_token="remote-secret-token",
+    )
+    cmd = [
+        "/bin/mvn",
+        "org.apache.maven.plugins:maven-dependency-plugin:3.8.1:get",
+        "-Dartifact=com.example:demo:1.0.0",
+    ]
+
+    native_runner._inject_override(
+        "mvn",
+        cmd,
+        1,
+        {},
+        route,
+        route.package_token,
+        tmp_path,
+        isolate=True,
+    )
+
+    settings_path = Path(cmd[cmd.index("--settings") + 1])
+    settings_text = settings_path.read_text(encoding="utf-8")
+    expected_url = f"{MAVEN_MIRROR_URL}/o/maven-central/"
+    assert expected_url in settings_text
+    assert "<mirrorOf>*</mirrorOf>" in settings_text
+    assert MAVEN_PUSH_URL not in settings_text
 
 
 def test_native_maven_deploy_file_injects_upload_destination(

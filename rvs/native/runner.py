@@ -661,8 +661,12 @@ def _inject_override(
                 temp_dir=temp_dir,
             )
         case "mvn":
+            maven_args = cmd[native_arg_start:]
+            urls = [route.maven_repo_url]
+            if _maven_is_upload(maven_args):
+                urls.append(route.maven_upload_url)
             settings_path = _write_maven_settings(
-                urls=[route.maven_repo_url, route.maven_upload_url],
+                urls=urls,
                 token=token,
                 temp_dir=temp_dir,
                 argv=cmd[native_arg_start:],
@@ -670,7 +674,6 @@ def _inject_override(
                 route=route,
             )
             _replace_maven_settings_arg(cmd, settings_path, native_arg_start)
-            maven_args = cmd[native_arg_start:]
             if _maven_has_goal(maven_args, "deploy"):
                 cmd.append(
                     f"-DaltDeploymentRepository=rvs-private::default::{route.maven_upload_url}"
@@ -925,6 +928,14 @@ def _maven_server_ids_for_urls(urls: list[str], argv: list[str]) -> set[str]:
 
 
 def _ensure_maven_profile(root: ET.Element, route: RegistryRoute) -> None:
+    mirrors = _ensure_xml_child(root, "mirrors")
+    mirror = _find_child_with_text(mirrors, "mirror", "id", "rvs-private")
+    if mirror is None:
+        mirror = ET.SubElement(mirrors, "mirror")
+        ET.SubElement(mirror, "id").text = "rvs-private"
+    _ensure_xml_child(mirror, "url").text = route.maven_repo_url
+    _ensure_xml_child(mirror, "mirrorOf").text = "*"
+
     profiles = _ensure_xml_child(root, "profiles")
     profile = _find_child_with_text(profiles, "profile", "id", "rvs")
     if profile is None:
