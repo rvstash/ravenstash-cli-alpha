@@ -183,9 +183,7 @@ def test_explicit_internal_target_accepts_current_friendly_native_root(
     )
 
     assert route.native_root == "oci.rvsta.sh/in_abcdefgh/r_xyzabcde"
-    assert route.accepted_roots == frozenset(
-        {"main/images", "in_abcdefgh/r_xyzabcde"}
-    )
+    assert route.accepted_roots == frozenset({"main/images", "in_abcdefgh/r_xyzabcde"})
 
 
 def test_docker_preserves_other_native_credentials_but_replaces_ravenstash(
@@ -358,9 +356,7 @@ def test_oci_reference_prints_stable_root_without_v2(monkeypatch, tmp_path: Path
         ],
     )
     assert result.exit_code == 0, result.output
-    assert result.output.strip() == (
-        "oci.rvsta.sh/in_abcdefgh/r_xyzabcde/team/api:1.2.3"
-    )
+    assert result.output.strip() == ("oci.rvsta.sh/in_abcdefgh/r_xyzabcde/team/api:1.2.3")
     assert "/v2/" not in result.output
 
 
