@@ -5,14 +5,13 @@ from __future__ import annotations
 import typer
 
 from .account.commands import app as account_app
+from .artifacts.commands import app as artifacts_app
 from .auth.commands import app as auth_app
 from .auth.commands import profile_app
 from .ci.commands import app as ci_app
 from .context.commands import app as context_app
 from .native import commands as native_commands
 from .oci import commands as oci_commands
-from .pkg.commands import app as pkg_app
-from .repo.commands import app as repo_app
 from .runtime.commands import app as runtime_app
 from .shell.commands import app as shell_app
 from .update import update, upgrade
@@ -32,8 +31,10 @@ app.add_typer(account_app, name="account")
 app.add_typer(context_app, name="context")
 app.add_typer(runtime_app, name="runtime")
 app.add_typer(shell_app, name="shell")
-app.add_typer(pkg_app, name="pkg")
-app.add_typer(repo_app, name="repo")
+app.add_typer(artifacts_app, name="art")
+app.add_typer(artifacts_app, name="artifacts")
+# One transition release only; both public spellings use this same application.
+app.add_typer(artifacts_app, name="pkg", hidden=True, deprecated=True)
 app.add_typer(ci_app, name="ci")
 app.command("update")(update)
 app.command("upgrade")(upgrade)

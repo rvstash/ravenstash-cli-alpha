@@ -4,11 +4,11 @@ from typing import TYPE_CHECKING, Any
 
 import pytest
 from rvs import config as cfg_mod
+from rvs.artifacts import commands as pkg_commands
+from rvs.artifacts.targets import parse_target, resolve_target
 from rvs.cli import app
 from rvs.client import ApiClient
 from rvs.native import runner as native_runner
-from rvs.pkg import commands as pkg_commands
-from rvs.pkg.targets import parse_target, resolve_target
 from rvs.shell.commands import prompt_text
 from typer.testing import CliRunner
 
@@ -191,19 +191,19 @@ def test_account_and_official_cache_selection_are_visible_and_clearable(
     monkeypatch.setattr(ApiClient, "from_profile", staticmethod(lambda profile=None: fake))
 
     switched = runner.invoke(app, ["account", "use", "org:acme"])
-    selected = runner.invoke(app, ["pkg", "select", "mirror:pypiorg"])
+    selected = runner.invoke(app, ["art", "select", "mirror:pypiorg"])
 
     assert switched.exit_code == 0, switched.output
     assert selected.exit_code == 0, selected.output
-    saved = cfg_mod.selected_package_target("alice", "acme")
+    saved = cfg_mod.selected_artifact_target("alice", "acme")
     assert saved is not None
     assert saved.target_type == "official_cache"
     assert saved.stable_selector == "mirror:_pypi"
     assert prompt_text() == "(alice · org:acme · mirror:pypiorg) "
 
-    cleared = runner.invoke(app, ["pkg", "clear"])
+    cleared = runner.invoke(app, ["art", "clear"])
     assert cleared.exit_code == 0, cleared.output
-    assert cfg_mod.selected_package_target("alice", "acme") is None
+    assert cfg_mod.selected_artifact_target("alice", "acme") is None
 
 
 def test_handle_selection_preserves_customer_id_and_canonical_case(monkeypatch, tmp_path):
@@ -259,16 +259,16 @@ def test_custom_cache_kind_collision_requires_disambiguation(monkeypatch, tmp_pa
     fake = FakeApi([personal], remotes)
     monkeypatch.setattr(ApiClient, "from_profile", staticmethod(lambda profile=None: fake))
 
-    ambiguous = runner.invoke(app, ["pkg", "select", "custom-mirror:piwheels"])
+    ambiguous = runner.invoke(app, ["art", "select", "custom-mirror:piwheels"])
     selected = runner.invoke(
         app,
-        ["pkg", "select", "custom-mirror:piwheels", "--kind", "pypi"],
+        ["art", "select", "custom-mirror:piwheels", "--kind", "pypi"],
     )
 
     assert ambiguous.exit_code == 1
     assert "ambiguous" in ambiguous.output
     assert selected.exit_code == 0, selected.output
-    assert cfg_mod.selected_package_target("alice", "personal-alice").registry_kind == "pypi"
+    assert cfg_mod.selected_artifact_target("alice", "personal-alice").registry_kind == "pypi"
 
 
 def test_two_login_profiles_keep_separate_actor_state_for_the_same_org(
@@ -284,12 +284,12 @@ def test_two_login_profiles_keep_separate_actor_state_for_the_same_org(
 
     assert runner.invoke(app, ["account", "use", "org:acme", "--profile", "alice"]).exit_code == 0
     assert (
-        runner.invoke(app, ["pkg", "select", "mirror:pypiorg", "--profile", "alice"]).exit_code == 0
+        runner.invoke(app, ["art", "select", "mirror:pypiorg", "--profile", "alice"]).exit_code == 0
     )
     assert runner.invoke(app, ["account", "use", "org:acme", "--profile", "bob"]).exit_code == 0
 
-    assert cfg_mod.selected_package_target("alice", "acme") is not None
-    assert cfg_mod.selected_package_target("bob", "acme") is None
+    assert cfg_mod.selected_artifact_target("alice", "acme") is not None
+    assert cfg_mod.selected_artifact_target("bob", "acme") is None
 
 
 def test_one_shot_account_does_not_switch_the_active_account(monkeypatch, tmp_path: Path) -> None:
@@ -299,7 +299,7 @@ def test_one_shot_account_does_not_switch_the_active_account(monkeypatch, tmp_pa
     fake = FakeApi([personal, acme], [])
     monkeypatch.setattr(ApiClient, "from_profile", staticmethod(lambda profile=None: fake))
 
-    result = runner.invoke(app, ["pkg", "current", "--account", "org:acme"])
+    result = runner.invoke(app, ["art", "current", "--account", "org:acme"])
 
     assert result.exit_code == 0, result.output
     assert "org:acme" in result.output
@@ -334,7 +334,7 @@ def test_native_wrapper_uses_selected_cache_and_one_shot_does_not_mutate_it(
     ]
     fake = FakeApi([personal], remotes)
     monkeypatch.setattr(ApiClient, "from_profile", staticmethod(lambda profile=None: fake))
-    assert runner.invoke(app, ["pkg", "select", "mirror:pypiorg"]).exit_code == 0
+    assert runner.invoke(app, ["art", "select", "mirror:pypiorg"]).exit_code == 0
 
     calls: list[tuple[list[str], dict[str, str]]] = []
 
@@ -361,7 +361,7 @@ def test_native_wrapper_uses_selected_cache_and_one_shot_does_not_mutate_it(
         "https://mirror.pypi.rvsta.sh/c/piwheels/simple/",
         "numpy",
     ]
-    assert cfg_mod.selected_package_target("alice", "personal-alice").display_selector == (
+    assert cfg_mod.selected_artifact_target("alice", "personal-alice").display_selector == (
         "mirror:pypiorg"
     )
 
@@ -386,13 +386,13 @@ def test_pkg_install_uses_account_scoped_official_default_without_selection(
         lambda cmd, *, env, check: calls.append((cmd, env.copy())),
     )
 
-    result = runner.invoke(app, ["pkg", "--kind", "pypi", "install", "requests"])
+    result = runner.invoke(app, ["art", "--kind", "pypi", "install", "requests"])
 
     assert result.exit_code == 0, result.output
     assert calls[0][0] == ["/bin/pip", "install", "requests"]
     assert calls[0][1]["PIP_INDEX_URL"] == ("https://mirror.pypi.rvsta.sh/o/pypiorg/simple/")
     assert "PIP_KEYRING_PROVIDER" not in calls[0][1]
-    assert cfg_mod.selected_package_target("alice", "personal-alice") is None
+    assert cfg_mod.selected_artifact_target("alice", "personal-alice") is None
 
 
 def test_pkg_repo_one_liner_alias_is_rejected(monkeypatch, tmp_path: Path) -> None:
@@ -407,7 +407,7 @@ def test_pkg_repo_one_liner_alias_is_rejected(monkeypatch, tmp_path: Path) -> No
     result = runner.invoke(
         app,
         [
-            "pkg",
+            "art",
             "--repo",
             "acme/backend",
             "--kind",

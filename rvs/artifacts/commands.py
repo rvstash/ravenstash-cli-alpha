@@ -1,4 +1,4 @@
-"""`rvs pkg` command group."""
+"""`rvs art` command group."""
 
 from __future__ import annotations
 
@@ -28,12 +28,12 @@ from .targets import RegistryContext, parse_target, registry_context, resolve_ta
 
 
 app = typer.Typer(
-    name="pkg",
-    help="Manage Ravenstash package repositories and package-manager configuration.",
+    name="artifacts",
+    help="Manage repositories for packages, container images, and Helm charts.",
     no_args_is_help=True,
 )
 
-repo_app = typer.Typer(help="Manage Ravenstash package repositories.", no_args_is_help=True)
+repo_app = typer.Typer(help="Manage Ravenstash repositories.", no_args_is_help=True)
 upstream_app = typer.Typer(help="Manage ordered repository-lane upstreams.", no_args_is_help=True)
 remote_app = typer.Typer(
     help="Manage private mirrors backed by remote caches.", no_args_is_help=True
@@ -70,7 +70,7 @@ def package_context(
     target: str | None = typer.Option(
         None,
         "--target",
-        help="One-shot package target: namespace/repository, mirror:<source>, or custom-mirror:<name>.",
+        help="One-shot artifact target: namespace/repository, mirror:<source>, or custom-mirror:<name>.",
     ),
     account: str | None = typer.Option(
         None,
@@ -86,7 +86,7 @@ def package_context(
     ),
     public: bool = typer.Option(False, "--public", help="Use the public catalog scope."),
 ) -> None:
-    """Manage package targets and delegate package operations to native tools."""
+    """Manage artifact targets and delegate package operations to native tools."""
     if public or scope == "public":
         output.fatal("PublicCatalogUnavailable: the public package catalog is not available yet.")
     ctx.obj = {
@@ -142,7 +142,7 @@ def target_select(
     account: str | None = typer.Option(None, "--account", help="Acting account selector."),
     profile: str | None = typer.Option(None, "--profile", "-p"),
 ) -> None:
-    """Select the package target used when --target is omitted."""
+    """Select the artifact target used when --target is omitted."""
     customer_id = _context_customer_id(profile, account)
     profile_name, selected_account, selected = resolve_target(
         target,
@@ -151,7 +151,7 @@ def target_select(
         kind=kind,
     )
     try:
-        cfg_mod.set_selected_package_target(
+        cfg_mod.set_selected_artifact_target(
             selected,
             profile=profile_name,
             customer_id=selected_account.customer_id,
@@ -170,10 +170,10 @@ def target_current(
     account: str | None = typer.Option(None, "--account", help="Acting account selector."),
     profile: str | None = typer.Option(None, "--profile", "-p"),
 ) -> None:
-    """Show the current profile, account, and package target."""
+    """Show the current profile, account, and artifact target."""
     customer_id = _context_customer_id(profile, account)
     profile_name, selected_account = ensure_active_account(profile, customer_id)
-    selected = cfg_mod.selected_package_target(profile_name, selected_account.customer_id)
+    selected = cfg_mod.selected_artifact_target(profile_name, selected_account.customer_id)
     output.kv(
         {
             "Profile": profile_name,
@@ -193,18 +193,18 @@ def target_clear(
     account: str | None = typer.Option(None, "--account", help="Acting account selector."),
     profile: str | None = typer.Option(None, "--profile", "-p"),
 ) -> None:
-    """Clear the explicit package target without changing login or account."""
+    """Clear the explicit artifact target without changing login or account."""
     customer_id = _context_customer_id(profile, account)
     profile_name, selected_account = ensure_active_account(profile, customer_id)
     try:
-        cfg_mod.set_selected_package_target(
+        cfg_mod.set_selected_artifact_target(
             None,
             profile=profile_name,
             customer_id=selected_account.customer_id,
         )
     except ValueError as exc:
         output.fatal(str(exc))
-    output.success(f"Cleared the package target for {account_display_name(selected_account)}.")
+    output.success(f"Cleared the artifact target for {account_display_name(selected_account)}.")
 
 
 def _project_package_kind() -> str | None:
@@ -222,7 +222,7 @@ def _project_package_kind() -> str | None:
 def package_install(
     packages: list[str] = typer.Argument(..., help="Package specifications to install."),
 ) -> None:
-    """Install from the one-shot, selected, or official-default package target."""
+    """Install from the one-shot, selected, or official-default artifact target."""
     options = _root_package_options()
     kind = options.get("kind")
     if kind is not None:
@@ -238,7 +238,7 @@ def package_install(
     if kind is None:
         customer_id = _context_customer_id(options.get("profile"), options.get("account"))
         profile_name, account = ensure_active_account(options.get("profile"), customer_id)
-        selected = cfg_mod.selected_package_target(profile_name, account.customer_id)
+        selected = cfg_mod.selected_artifact_target(profile_name, account.customer_id)
         kind = selected.registry_kind if selected is not None else None
     kind = kind or _project_package_kind()
     if kind not in _PACKAGE_KINDS:
@@ -318,7 +318,7 @@ def _repo_for_kind(
     if not resolved:
         output.fatal(
             f"No {kind} package repository selected. "
-            f"Pass --repo or run `rvs pkg repo set-default {kind} <repository-name>`."
+            f"Pass --repo or run `rvs art repo set-default {kind} <repository-name>`."
         )
     return _split_repo_ref(resolved)
 
@@ -386,7 +386,7 @@ def _resolve_repository_entry(
         selector = spec.selector
     else:
         # Repository-management commands retain the convenient unique-name/ref
-        # lookup. Saved package targets still require the complete namespace pair.
+        # lookup. Saved artifact targets still require the complete namespace pair.
         selector = candidate
     params = {
         "selector": selector,
@@ -895,7 +895,7 @@ def remote_clear(
     account: str | None = typer.Option(None, "--account", help="Acting account selector."),
     profile: str | None = typer.Option(None, "--profile", "-p"),
 ) -> None:
-    """Clear the selected package target."""
+    """Clear the selected artifact target."""
     target_clear(account=account, profile=profile)
 
 

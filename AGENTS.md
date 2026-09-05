@@ -5,24 +5,24 @@ Operational guidance for the `rvs` CLI package.
 ## What this repository is
 
 - Ravenstash developer CLI for authentication, named local profiles, acting-account
-  and package-target context, local runtime management, package repositories, and
+  and artifact-target context, local runtime management, artifact repositories, and
   future developer-product areas.
 - The CLI manages Ravenstash credentials, including refresh-backed expiring
   device-login credentials, and delegates install flows to native toolchains
   where appropriate.
 - CLI code lives under `rvs/`, organized by command area: `auth/`, `account/`,
-  `context/`, `runtime/`, `pkg/`, `repo/`, `shell/`, and `ci/`.
+  `context/`, `runtime/`, `artifacts/`, `shell/`, and `ci/`.
 
 ## Working rules
 
-- Keep the authenticated user, named local profile, acting account, and package
+- Keep the authenticated user, named local profile, acting account, and artifact
   target distinct. A profile is local CLI configuration, not the Ravenstash user.
 - Keep user credentials in the established credential-store flow: access tokens
   and profile-scoped device refresh tokens live in the selected keyring, `pass`,
   vault, or explicitly acknowledged plaintext store, while non-secret profile,
   account, and target metadata lives in `~/.rvs/config.toml`.
 - Preserve native-toolchain delegation for install flows unless the task explicitly changes that contract.
-- Keep registry-specific protocol logic in `rvs/pkg/registries/{pypi,npm,maven}.py`.
+- Keep registry-specific protocol logic in `rvs/artifacts/registries/{pypi,npm,maven}.py`.
 - Keep the DevAPI control plane, package download, and package upload URLs
   distinct in profile metadata; never derive registry routes from the DevAPI
   URL. The CLI must never call Central directly.

@@ -69,7 +69,7 @@ from .paths import rvs_home
 
 
 RegistryKind = Literal["pypi", "npm", "maven", "container", "helm"]
-PackageTargetType = Literal["repository", "official_cache", "custom_cache"]
+ArtifactTargetType = Literal["repository", "official_cache", "custom_cache"]
 NamespaceRealm = Literal["internal", "global"]
 
 CONFIG_DIR = rvs_home()
@@ -192,8 +192,8 @@ class ProfileConfig:
 
 
 @dataclass
-class PackageTarget:
-    target_type: PackageTargetType
+class ArtifactTarget:
+    target_type: ArtifactTargetType
     customer_id: str
     stable_selector: str
     display_selector: str
@@ -218,7 +218,7 @@ class AccountContext:
     account_label: str
     organization_role: str | None = None
     authority_revision: int | None = None
-    selected_target: PackageTarget | None = None
+    selected_target: ArtifactTarget | None = None
     customer_handle: str | None = None
 
 
@@ -617,7 +617,7 @@ def _default_profile_config(profile_name: str) -> ProfileConfig:
     )
 
 
-def _package_target_from_mapping(value: object) -> PackageTarget | None:
+def _artifact_target_from_mapping(value: object) -> ArtifactTarget | None:
     if not isinstance(value, dict):
         return None
     target_type = value.get("target_type")
@@ -633,8 +633,8 @@ def _package_target_from_mapping(value: object) -> PackageTarget | None:
     registry_kind = value.get("registry_kind")
     if registry_kind not in {None, "pypi", "npm", "maven", "container", "helm"}:
         return None
-    return PackageTarget(
-        target_type=cast("PackageTargetType", target_type),
+    return ArtifactTarget(
+        target_type=cast("ArtifactTargetType", target_type),
         customer_id=cast("str", customer_id),
         stable_selector=cast("str", stable_selector),
         display_selector=cast("str", display_selector),
@@ -673,13 +673,13 @@ def _account_contexts_from_mapping(value: object) -> dict[str, AccountContext]:
             account_label=label,
             organization_role=raw.get("organization_role"),
             authority_revision=raw.get("authority_revision"),
-            selected_target=_package_target_from_mapping(raw.get("selected_target")),
+            selected_target=_artifact_target_from_mapping(raw.get("selected_target")),
             customer_handle=raw.get("customer_handle"),
         )
     return result
 
 
-def _package_target_mapping(target: PackageTarget) -> dict:
+def _artifact_target_mapping(target: ArtifactTarget) -> dict:
     return {
         key: value
         for key, value in vars(target).items()
@@ -698,7 +698,7 @@ def _account_context_mapping(account: AccountContext) -> dict:
             "organization_role": account.organization_role,
             "authority_revision": account.authority_revision,
             "selected_target": (
-                _package_target_mapping(account.selected_target)
+                _artifact_target_mapping(account.selected_target)
                 if account.selected_target is not None
                 else None
             ),
@@ -980,7 +980,7 @@ def _validate_raw_config(raw: dict) -> None:
             if selected is None:
                 continue
             target_path = f"{account_path}.selected_target"
-            if not isinstance(selected, dict) or _package_target_from_mapping(selected) is None:
+            if not isinstance(selected, dict) or _artifact_target_from_mapping(selected) is None:
                 raise ValueError(f"invalid selected target at {target_path}")
             if selected.get("target_type") == "repository":
                 _validate_repository_target_identity(selected, path=target_path)
@@ -1354,16 +1354,16 @@ def cached_account(
     return profile_config.accounts.get(effective_customer_id) if profile_config else None
 
 
-def selected_package_target(
+def selected_artifact_target(
     profile: str | None = None,
     customer_id: str | None = None,
-) -> PackageTarget | None:
+) -> ArtifactTarget | None:
     account = cached_account(profile, customer_id)
     return account.selected_target if account is not None else None
 
 
-def set_selected_package_target(
-    target: PackageTarget | None,
+def set_selected_artifact_target(
+    target: ArtifactTarget | None,
     *,
     profile: str | None = None,
     customer_id: str | None = None,

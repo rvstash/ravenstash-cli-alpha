@@ -10,13 +10,12 @@ Alpha command surface:
 | `rvs context` | Effective user/profile/account/target inspection |
 | `rvs shell` | Session-aware context prompt integration |
 | `rvs runtime` | Local Python, Node, and Java runtime management |
-| `rvs pkg` | Package repositories and package-manager configuration |
+| `rvs art` / `rvs artifacts` | Repositories for packages, container images, and Helm charts |
 | `rvs pip` | Native pip passthrough with ephemeral Ravenstash auth injection |
 | `rvs uv` | Native uv passthrough with ephemeral Ravenstash auth injection |
 | `rvs twine` | Native twine passthrough with ephemeral Ravenstash auth injection |
 | `rvs npm` | Native npm passthrough with ephemeral Ravenstash auth injection |
 | `rvs mvn` | Native Maven passthrough with ephemeral Ravenstash auth injection |
-| `rvs repo` | First-class package-repository management |
 | `rvs ci` | Placeholder for future CI |
 
 Removed from the alpha surface: previous experimental project lifecycle
@@ -115,10 +114,10 @@ rvs account use HANDLE|personal|org:LABEL|STABLE_REF [--profile NAME]
 rvs context current [--profile NAME]
 rvs shell setup [--shell bash|zsh|fish]
 
-rvs pkg select TARGET [--kind KIND] [--account ACCOUNT] [--profile NAME]
-rvs pkg current [--account ACCOUNT] [--profile NAME]
-rvs pkg clear [--account ACCOUNT] [--profile NAME]
-rvs pkg --target TARGET [--account ACCOUNT] [--kind KIND] install PACKAGE...
+rvs art select TARGET [--kind KIND] [--account ACCOUNT] [--profile NAME]
+rvs art current [--account ACCOUNT] [--profile NAME]
+rvs art clear [--account ACCOUNT] [--profile NAME]
+rvs art --target TARGET [--account ACCOUNT] [--kind KIND] install PACKAGE...
 ```
 
 The authenticated user is the audit actor. The acting account is the personal or
@@ -127,7 +126,7 @@ target is selected inside that account. `rvs context current` verifies and shows
 the effective tuple and selection provenance without collapsing those concepts.
 
 Repository targets are `namespace/repository` in the acting account.
-Realm prefixes and `@` notation are rejected. `rvs pkg --scope self` is the
+Realm prefixes and `@` notation are rejected. `rvs art --scope self` is the
 default; `--scope public` or `--public` currently fails with
 `PublicCatalogUnavailable` before any resource operation. Mirrors remain
 separate targets: `mirror:official-slug` or `custom-mirror:customer-name`.
@@ -147,24 +146,24 @@ manifest, shows the migration notes, asks for confirmation, changes the APT
 source atomically, and restores the prior source if authentication or candidate
 validation fails.
 
-## `rvs pkg`
+## `rvs art`
 
 Repository commands:
 
 ```bash
-rvs pkg repo list [--profile NAME] [--customer-id CUSTOMER_ID] [--registry-kind pypi|npm|maven|container|helm]
-rvs pkg repo create [NAMESPACE/]NAME --registry-kind pypi|npm|maven|container|helm [--profile NAME] [--customer-id CUSTOMER_ID] [--default]
-rvs pkg repo show REPOSITORY_NAME [--profile NAME]
-rvs pkg repo rename REPOSITORY_NAME NEW_NAME [--profile NAME]
-rvs pkg repo delete REPOSITORY_NAME [--profile NAME] [--yes]
-rvs pkg repo set-default pypi|npm|maven|container|helm REPOSITORY_NAME [--profile NAME]
-rvs pkg repo defaults [--profile NAME]
-rvs pkg repo upstream list REPOSITORY KIND [--profile NAME]
-rvs pkg repo upstream add REPOSITORY KIND --private-repository NAMESPACE/REPOSITORY [--priority N] [--min-age-hours HOURS] [--max-age-hours HOURS] [--profile NAME]
-rvs pkg repo upstream add REPOSITORY KIND --remote-cache CACHE [--priority N] [--min-age-hours HOURS] [--max-age-hours HOURS] [--profile NAME]
-rvs pkg repo upstream update REPOSITORY KIND ATTACHMENT [--priority N] [--min-age-hours HOURS] [--max-age-hours HOURS] [--profile NAME]
-rvs pkg repo upstream reorder REPOSITORY KIND ATTACHMENT... [--profile NAME]
-rvs pkg repo upstream remove REPOSITORY KIND ATTACHMENT [--profile NAME]
+rvs art repo list [--profile NAME] [--customer-id CUSTOMER_ID] [--registry-kind pypi|npm|maven|container|helm]
+rvs art repo create [NAMESPACE/]NAME --registry-kind pypi|npm|maven|container|helm [--profile NAME] [--customer-id CUSTOMER_ID] [--default]
+rvs art repo show REPOSITORY_NAME [--profile NAME]
+rvs art repo rename REPOSITORY_NAME NEW_NAME [--profile NAME]
+rvs art repo delete REPOSITORY_NAME [--profile NAME] [--yes]
+rvs art repo set-default pypi|npm|maven|container|helm REPOSITORY_NAME [--profile NAME]
+rvs art repo defaults [--profile NAME]
+rvs art repo upstream list REPOSITORY KIND [--profile NAME]
+rvs art repo upstream add REPOSITORY KIND --private-repository NAMESPACE/REPOSITORY [--priority N] [--min-age-hours HOURS] [--max-age-hours HOURS] [--profile NAME]
+rvs art repo upstream add REPOSITORY KIND --remote-cache CACHE [--priority N] [--min-age-hours HOURS] [--max-age-hours HOURS] [--profile NAME]
+rvs art repo upstream update REPOSITORY KIND ATTACHMENT [--priority N] [--min-age-hours HOURS] [--max-age-hours HOURS] [--profile NAME]
+rvs art repo upstream reorder REPOSITORY KIND ATTACHMENT... [--profile NAME]
+rvs art repo upstream remove REPOSITORY KIND ATTACHMENT [--profile NAME]
 ```
 
 `--registry-kind` (short form `-k`) is the registry-kind selector.
@@ -188,18 +187,18 @@ atomically.
 Private mirror commands:
 
 ```bash
-rvs pkg mirror list [--profile NAME] [--customer-id CUSTOMER_ID] [--registry-kind pypi|npm|maven]
-rvs pkg mirror create --registry-kind pypi|npm|maven [--profile NAME] [--customer-id CUSTOMER_ID]
-rvs pkg mirror show CACHE_ID [--profile NAME]
-rvs pkg mirror set-age CACHE_ID --min-age-hours HOURS [--profile NAME]
-rvs pkg mirror delete CACHE_ID [--profile NAME] [--yes]
-rvs pkg mirror delete CACHE_ID --customer-id CUSTOMER_ID --registry-kind pypi|npm|maven [--profile NAME] [--yes]
-rvs pkg mirror add OFFICIAL_SOURCE [--select]
-rvs pkg mirror create-custom NAME --kind pypi|npm|maven --api-url URL --publication-control user-controlled|externally-controlled [--artifact-url URL] [--select]
-rvs pkg mirror select SOURCE
-rvs pkg mirror select --custom NAME [--kind KIND]
-rvs pkg mirror current
-rvs pkg mirror clear
+rvs art mirror list [--profile NAME] [--customer-id CUSTOMER_ID] [--registry-kind pypi|npm|maven]
+rvs art mirror create --registry-kind pypi|npm|maven [--profile NAME] [--customer-id CUSTOMER_ID]
+rvs art mirror show CACHE_ID [--profile NAME]
+rvs art mirror set-age CACHE_ID --min-age-hours HOURS [--profile NAME]
+rvs art mirror delete CACHE_ID [--profile NAME] [--yes]
+rvs art mirror delete CACHE_ID --customer-id CUSTOMER_ID --registry-kind pypi|npm|maven [--profile NAME] [--yes]
+rvs art mirror add OFFICIAL_SOURCE [--select]
+rvs art mirror create-custom NAME --kind pypi|npm|maven --api-url URL --publication-control user-controlled|externally-controlled [--artifact-url URL] [--select]
+rvs art mirror select SOURCE
+rvs art mirror select --custom NAME [--kind KIND]
+rvs art mirror current
+rvs art mirror clear
 ```
 
 Repository upstream configuration continues to use `--remote-cache`
@@ -208,11 +207,11 @@ because it attaches the backing cache rather than the direct private mirror.
 Package metadata commands:
 
 ```bash
-rvs pkg package list --repo REPOSITORY_NAME --registry-kind pypi|npm|maven [--profile NAME]
-rvs pkg package show NAME --repo REPOSITORY_NAME --registry-kind pypi|npm|maven [--profile NAME]
-rvs pkg package delete NAME --repo REPOSITORY_NAME --registry-kind pypi|npm|maven [--profile NAME] [--yes]
-rvs pkg package delete-version NAME VERSION --repo REPOSITORY_NAME --registry-kind pypi|npm|maven [--profile NAME] [--yes]
-rvs pkg package yank NAME VERSION --repo REPOSITORY_NAME --registry-kind pypi|npm|maven [--reason TEXT] [--profile NAME]
+rvs art package list --repo REPOSITORY_NAME --registry-kind pypi|npm|maven [--profile NAME]
+rvs art package show NAME --repo REPOSITORY_NAME --registry-kind pypi|npm|maven [--profile NAME]
+rvs art package delete NAME --repo REPOSITORY_NAME --registry-kind pypi|npm|maven [--profile NAME] [--yes]
+rvs art package delete-version NAME VERSION --repo REPOSITORY_NAME --registry-kind pypi|npm|maven [--profile NAME] [--yes]
+rvs art package yank NAME VERSION --repo REPOSITORY_NAME --registry-kind pypi|npm|maven [--reason TEXT] [--profile NAME]
 ```
 
 Package listings include download and bandwidth totals. `package show` includes
@@ -221,11 +220,11 @@ per-version metrics plus artifact filenames, sizes, and SHA-256 digests.
 PyPI helpers:
 
 ```bash
-rvs pkg pypi index-url [--repo REPOSITORY_NAME] [--profile NAME] [--customer-id CUSTOMER_ID]
-rvs pkg pypi upload-url [--repo REPOSITORY_NAME] [--profile NAME] [--customer-id CUSTOMER_ID]
-rvs pkg pypi install PACKAGE... [--repo REPOSITORY_NAME] [--profile NAME] [--customer-id CUSTOMER_ID]
-rvs pkg pypi publish [DIST_DIR] [--repo REPOSITORY_NAME] [--profile NAME] [--customer-id CUSTOMER_ID]
-rvs pkg pypi configure [--repo REPOSITORY_NAME] [--profile NAME] [--customer-id CUSTOMER_ID]
+rvs art pypi index-url [--repo REPOSITORY_NAME] [--profile NAME] [--customer-id CUSTOMER_ID]
+rvs art pypi upload-url [--repo REPOSITORY_NAME] [--profile NAME] [--customer-id CUSTOMER_ID]
+rvs art pypi install PACKAGE... [--repo REPOSITORY_NAME] [--profile NAME] [--customer-id CUSTOMER_ID]
+rvs art pypi publish [DIST_DIR] [--repo REPOSITORY_NAME] [--profile NAME] [--customer-id CUSTOMER_ID]
+rvs art pypi configure [--repo REPOSITORY_NAME] [--profile NAME] [--customer-id CUSTOMER_ID]
 ```
 
 The install helper uses Ravenstash as pip's primary `PIP_INDEX_URL`. Direct
@@ -235,11 +234,11 @@ upload protocol, including the correct wheel Python tag or `source` marker.
 npm helpers:
 
 ```bash
-rvs pkg npm registry-url [--repo REPOSITORY_NAME] [--profile NAME] [--customer-id CUSTOMER_ID]
-rvs pkg npm npmrc [--repo REPOSITORY_NAME] [--profile NAME] [--customer-id CUSTOMER_ID]
-rvs pkg npm install PACKAGE... [--repo REPOSITORY_NAME] [--profile NAME] [--customer-id CUSTOMER_ID]
-rvs pkg npm publish [PACKAGE_DIR] [--repo REPOSITORY_NAME] [--profile NAME] [--customer-id CUSTOMER_ID]
-rvs pkg npm configure [--repo REPOSITORY_NAME] [--profile NAME] [--customer-id CUSTOMER_ID]
+rvs art npm registry-url [--repo REPOSITORY_NAME] [--profile NAME] [--customer-id CUSTOMER_ID]
+rvs art npm npmrc [--repo REPOSITORY_NAME] [--profile NAME] [--customer-id CUSTOMER_ID]
+rvs art npm install PACKAGE... [--repo REPOSITORY_NAME] [--profile NAME] [--customer-id CUSTOMER_ID]
+rvs art npm publish [PACKAGE_DIR] [--repo REPOSITORY_NAME] [--profile NAME] [--customer-id CUSTOMER_ID]
+rvs art npm configure [--repo REPOSITORY_NAME] [--profile NAME] [--customer-id CUSTOMER_ID]
 ```
 
 Direct publishing runs native `npm pack` before sending the npm wire payload,
@@ -248,11 +247,11 @@ so npm's packlist and lifecycle behavior apply. An `npm` executable is required.
 Maven helpers:
 
 ```bash
-rvs pkg maven repo-url [--repo REPOSITORY_NAME] [--profile NAME] [--customer-id CUSTOMER_ID]
-rvs pkg maven settings [--repo REPOSITORY_NAME] [--profile NAME] [--customer-id CUSTOMER_ID]
-rvs pkg maven install GROUP:ARTIFACT:VERSION [--repo REPOSITORY_NAME] [--profile NAME] [--customer-id CUSTOMER_ID]
-rvs pkg maven deploy FILE --group GROUP --artifact ARTIFACT --version VERSION [--repo REPOSITORY_NAME] [--profile NAME] [--customer-id CUSTOMER_ID]
-rvs pkg maven configure [--repo REPOSITORY_NAME] [--profile NAME] [--customer-id CUSTOMER_ID]
+rvs art maven repo-url [--repo REPOSITORY_NAME] [--profile NAME] [--customer-id CUSTOMER_ID]
+rvs art maven settings [--repo REPOSITORY_NAME] [--profile NAME] [--customer-id CUSTOMER_ID]
+rvs art maven install GROUP:ARTIFACT:VERSION [--repo REPOSITORY_NAME] [--profile NAME] [--customer-id CUSTOMER_ID]
+rvs art maven deploy FILE --group GROUP --artifact ARTIFACT --version VERSION [--repo REPOSITORY_NAME] [--profile NAME] [--customer-id CUSTOMER_ID]
+rvs art maven configure [--repo REPOSITORY_NAME] [--profile NAME] [--customer-id CUSTOMER_ID]
 ```
 
 `maven deploy` requires a canonical artifact filename matching the artifact ID
@@ -275,7 +274,7 @@ rvs oci-reference --kind container|helm [--target TARGET] [--account ACCOUNT] [-
 ```
 
 These commands run the named native package manager. They are not aliases for
-`rvs pkg`. By default, `--rvs-native-config respect` leaves native registry
+`rvs art`. By default, `--rvs-native-config respect` leaves native registry
 selection alone, reads native config files and relevant environment variables,
 and injects short-lived Ravenstash credentials only when the invocation
 references Ravenstash registry URLs.
@@ -316,21 +315,6 @@ an exact-host `docker-credential-rvs` helper only in that copy. Secrets are not
 placed in argv and the user's Docker or Helm config is never rewritten. Docker,
 Helm, and ORAS share `oci.rvsta.sh`; `/v2/` is protocol plumbing used by the
 native clients and is not part of the documented repository reference.
-
-## `rvs repo`
-
-First-class package-repository commands:
-
-```bash
-rvs repo list
-rvs repo create NAME --registry-kind KIND
-rvs repo show REPO
-rvs repo rename REPO NEW_NAME
-rvs repo delete REPO
-```
-
-These operate on the same package repositories as `rvs pkg repo`. Package,
-upstream, and private-mirror operations remain under `rvs pkg`.
 
 ## `rvs ci`
 

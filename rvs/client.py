@@ -68,7 +68,7 @@ class ApiError(Exception):
                 return (
                     "Repository target changed; no package operation was attempted. "
                     f"Expected {expected_name}, current {current_name}, identity {stable}. "
-                    "Use `rvs pkg repo set-default` to explicitly re-select the stable "
+                    "Use `rvs art repo set-default` to explicitly re-select the stable "
                     "identity, or the repository currently using the former name."
                 )
         return f"HTTP {self.status_code}: {self.detail}"

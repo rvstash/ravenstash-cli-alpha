@@ -43,8 +43,8 @@ def test_root_help_exposes_clean_alpha_command_surface() -> None:
         "account",
         "context",
         "runtime",
-        "pkg",
-        "repo",
+        "art",
+        "artifacts",
         "ci",
     ):
         assert command in result.output
@@ -95,7 +95,7 @@ default_repo = "private-pypi"
 """.strip(),
     )
 
-    result = runner.invoke(app, ["--json", "pkg", "repo", "defaults"])
+    result = runner.invoke(app, ["--json", "art", "repo", "defaults"])
     output.set_json(False)
 
     assert result.exit_code == 0
@@ -110,8 +110,8 @@ default_repo = "private-pypi"
 def test_removed_compatibility_groups_are_rejected() -> None:
     packages_result = runner.invoke(app, ["packages", "--help"])
     keyring_result = runner.invoke(app, ["auth", "keyring", "doctor"])
-    cache_result = runner.invoke(app, ["pkg", "cache", "--help"])
-    remote_cache_result = runner.invoke(app, ["pkg", "remote-cache", "--help"])
+    cache_result = runner.invoke(app, ["art", "cache", "--help"])
+    remote_cache_result = runner.invoke(app, ["art", "remote-cache", "--help"])
 
     assert packages_result.exit_code != 0
     assert keyring_result.exit_code != 0
@@ -119,16 +119,50 @@ def test_removed_compatibility_groups_are_rejected() -> None:
     assert remote_cache_result.exit_code != 0
 
 
-def test_repo_commands_are_registered() -> None:
-    repo_result = runner.invoke(app, ["repo", "--help"])
+@pytest.mark.parametrize("alias", ["art", "artifacts"])
+def test_repo_commands_are_registered(alias: str) -> None:
+    repo_result = runner.invoke(app, [alias, "repo", "--help"])
 
     assert repo_result.exit_code == 0
     for command in ("list", "create", "show", "rename", "delete"):
         assert command in repo_result.output
 
 
+def test_top_level_repo_is_removed() -> None:
+    result = runner.invoke(app, ["repo", "--help"])
+    assert result.exit_code != 0
+    assert "No such command" in result.output
+
+
+def test_artifact_spellings_share_one_command_application() -> None:
+    groups = {group.name: group.typer_instance for group in app.registered_groups}
+    assert groups["art"] is groups["artifacts"] is groups["pkg"]
+    assert "repo" not in groups
+
+
+@pytest.mark.parametrize("alias", ["art", "artifacts", "pkg"])
+def test_artifact_alias_json_and_transition_warning(
+    monkeypatch, tmp_path: Path, alias: str
+) -> None:
+    _isolate_config(monkeypatch, tmp_path)
+    result = runner.invoke(app, ["--json", alias, "repo", "defaults"])
+    output.set_json(False)
+    assert result.exit_code == 0
+    assert {item["Registry kind"] for item in json.loads(result.stdout)["items"]} == {
+        "pypi",
+        "npm",
+        "maven",
+        "container",
+        "helm",
+    }
+    if alias == "pkg":
+        assert result.stderr.count("DeprecationWarning") == 1
+    else:
+        assert "DeprecationWarning" not in result.stderr
+
+
 def test_registry_kind_has_no_ecosystem_alias() -> None:
-    result = runner.invoke(app, ["pkg", "repo", "list", "--help"])
+    result = runner.invoke(app, ["art", "repo", "list", "--help"])
 
     assert result.exit_code == 0
     help_output = unstyle(result.output)
@@ -137,7 +171,7 @@ def test_registry_kind_has_no_ecosystem_alias() -> None:
 
 
 def test_repository_group_has_no_legacy_upstream_commands() -> None:
-    result = runner.invoke(app, ["pkg", "repo", "--help"])
+    result = runner.invoke(app, ["art", "repo", "--help"])
 
     assert result.exit_code == 0
     help_output = unstyle(result.output)

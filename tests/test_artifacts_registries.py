@@ -8,9 +8,9 @@ from typing import TYPE_CHECKING, Any
 
 import httpx
 import pytest
-from rvs.pkg.registries import maven as maven_reg
-from rvs.pkg.registries import npm as npm_reg
-from rvs.pkg.registries import pypi as pypi_reg
+from rvs.artifacts.registries import maven as maven_reg
+from rvs.artifacts.registries import npm as npm_reg
+from rvs.artifacts.registries import pypi as pypi_reg
 
 
 if TYPE_CHECKING:
@@ -120,7 +120,7 @@ Demo description
 
 
 def test_npm_create_tarball_uses_native_npm_packlist(monkeypatch, tmp_path: Path) -> None:
-    package_dir = tmp_path / "pkg"
+    package_dir = tmp_path / "art"
     package_dir.mkdir()
     (package_dir / "package.json").write_text(
         '{"name": "demo", "version": "1.0.0"}',
@@ -145,7 +145,7 @@ def test_npm_create_tarball_uses_native_npm_packlist(monkeypatch, tmp_path: Path
 
 
 def test_npm_pack_does_not_forward_control_token(monkeypatch, tmp_path: Path) -> None:
-    package_dir = tmp_path / "pkg"
+    package_dir = tmp_path / "art"
     package_dir.mkdir()
     monkeypatch.setenv("RVS_TOKEN", "raw-control-token")
     monkeypatch.setattr(npm_reg.tools, "npm", lambda: "/bin/npm")
@@ -168,7 +168,7 @@ def test_npm_pack_does_not_forward_control_token(monkeypatch, tmp_path: Path) ->
 
 
 def test_npm_publish_builds_scoped_publish_body(monkeypatch, tmp_path: Path) -> None:
-    package_dir = tmp_path / "pkg"
+    package_dir = tmp_path / "art"
     package_dir.mkdir()
     (package_dir / "package.json").write_text(
         '{"name": "@scope/demo", "version": "1.2.3"}',

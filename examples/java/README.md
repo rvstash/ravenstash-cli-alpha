@@ -19,18 +19,18 @@ system-wide or through your preferred local toolchain manager.
 
 ```bash
 rvs auth login
-rvs pkg repo create my-java-packages --ecosystem maven --default
-rvs pkg maven repo-url
-rvs pkg maven settings
-rvs pkg maven deploy target/rvs-demo-java-0.1.0.jar \
+rvs art repo create my-java-packages --ecosystem maven --default
+rvs art maven repo-url
+rvs art maven settings
+rvs art maven deploy target/rvs-demo-java-0.1.0.jar \
   --group com.ravenstash.demo \
   --artifact rvs-demo-java \
   --version 0.1.0
-rvs pkg package list --repo <repo-name>
+rvs art package list --repo <repo-name>
 ```
 
 To fetch from a private Ravenstash Maven repository:
 
 ```bash
-rvs pkg maven install com.ravenstash.demo:rvs-demo-java:0.1.0 --repo <repo-name>
+rvs art maven install com.ravenstash.demo:rvs-demo-java:0.1.0 --repo <repo-name>
 ```

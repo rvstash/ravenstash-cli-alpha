@@ -402,7 +402,7 @@ def test_package_and_mirror_commands_reject_oci_kinds() -> None:
     package = runner.invoke(
         app,
         [
-            "pkg",
+            "art",
             "package",
             "list",
             "--repo",
@@ -413,7 +413,7 @@ def test_package_and_mirror_commands_reject_oci_kinds() -> None:
     )
     remote = runner.invoke(
         app,
-        ["pkg", "mirror", "create", "--registry-kind", "helm"],
+        ["art", "mirror", "create", "--registry-kind", "helm"],
     )
 
     assert package.exit_code != 0

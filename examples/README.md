@@ -2,7 +2,7 @@
 
 These projects are small package examples for trying the current alpha `rvs`
 surface. They are ordinary Python, npm, and Maven projects; use native tooling
-for local build/test work, and use `rvs pkg` when interacting with a private
+for local build/test work, and use `rvs art` when interacting with a private
 Ravenstash package repository.
 
 ```text
@@ -33,28 +33,28 @@ rvs runtime use java 21
 
 ```bash
 rvs auth login
-rvs pkg repo list
-rvs pkg repo create my-python-packages --ecosystem pypi --default
-rvs pkg repo create my-node-packages --ecosystem npm --default
-rvs pkg repo create my-java-packages --ecosystem maven --default
+rvs art repo list
+rvs art repo create my-python-packages --ecosystem pypi --default
+rvs art repo create my-node-packages --ecosystem npm --default
+rvs art repo create my-java-packages --ecosystem maven --default
 ```
 
-`rvs pkg` expects package repository names, such as `my-python-packages`.
+`rvs art` expects package repository names, such as `my-python-packages`.
 After a repository is set as the default for its ecosystem, the `--repo` flag can be
 omitted for that ecosystem.
 
 ## Package Helpers
 
 ```bash
-rvs pkg pypi index-url
-rvs pkg pypi publish dist/
-rvs pkg pypi install my-private-package
+rvs art pypi index-url
+rvs art pypi publish dist/
+rvs art pypi install my-private-package
 
-rvs pkg npm registry-url
-rvs pkg npm publish .
-rvs pkg npm install my-private-package
+rvs art npm registry-url
+rvs art npm publish .
+rvs art npm install my-private-package
 
-rvs pkg maven repo-url
-rvs pkg maven deploy target/app.jar --group com.example --artifact app --version 0.1.0
-rvs pkg maven install com.example:app:0.1.0
+rvs art maven repo-url
+rvs art maven deploy target/app.jar --group com.example --artifact app --version 0.1.0
+rvs art maven install com.example:app:0.1.0
 ```

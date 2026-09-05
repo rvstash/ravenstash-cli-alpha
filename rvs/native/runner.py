@@ -22,14 +22,14 @@ import typer
 from .. import config as cfg_mod
 from .. import output
 from ..account.commands import resolve_account
-from ..client import ApiClient, ApiError
-from ..pkg.routing import (
+from ..artifacts.routing import (
     CanonicalRouter,
     RepositoryRouteKind,
     native_base_url,
     npm_auth_token_key,
 )
-from ..pkg.targets import registry_context
+from ..artifacts.targets import registry_context
+from ..client import ApiClient, ApiError
 from ..runtime import tools
 from ..subprocesses import child_environment
 
@@ -164,7 +164,7 @@ def _build_plan(
     cmd = [*command_prefix, *argv]
     native_arg_start = len(command_prefix)
     selected_customer_id = _selected_customer_id(options)
-    saved_target = cfg_mod.selected_package_target(options.profile, selected_customer_id)
+    saved_target = cfg_mod.selected_artifact_target(options.profile, selected_customer_id)
     has_rvs_target = options.target is not None or saved_target is not None
     effective_policy = (
         "override"
@@ -288,7 +288,7 @@ def _package_token_for_url(
     route_parts = _configured_route_parts(url, kind, profile_config.native_registries)
     if route_parts and route_parts[0] in {"o", "c"}:
         if operations != ("download",):
-            output.fatal("Private mirrors are read-only package targets.")
+            output.fatal("Private mirrors are read-only artifact targets.")
         try:
             namespace_reference, repository_reference, route_kind = _remote_route_scope(route_parts)
             client = ApiClient.from_profile(profile)

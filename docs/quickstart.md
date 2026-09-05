@@ -16,13 +16,13 @@ The four context layers are intentionally distinct:
 - **user** — the authenticated human and audit actor;
 - **local profile** — a named CLI configuration and credential slot;
 - **acting account** — the personal or organization authorization and metering boundary;
-- **package target** — the repository or private mirror used inside that account.
+- **artifact target** — the repository or private mirror used inside that account.
 
 Package commands resolve a complete repository selector through DevAPI:
 
 - `<namespace>/<repository-name>` selects a namespace in the acting account;
 - no `internal:`, `global:`, or `@` prefix is used;
-- `rvs pkg --scope self` is the default; `--scope public` or `--public`
+- `rvs art --scope self` is the default; `--scope public` or `--public`
   currently returns `PublicCatalogUnavailable`;
 - saved defaults contain immutable
   `<namespace_unique_ref>/<repository_unique_ref>` pairs.
@@ -35,13 +35,13 @@ When a package command needs a target, `rvs` resolves it in this order:
 1. Use the one-shot `--target`, if provided.
 2. Use the selected target for the effective `(local profile, acting account)` pair.
 3. Read a legacy per-kind private default during migration.
-4. For `rvs pkg` read/install helpers, use the account-scoped official default
+4. For `rvs art` read/install helpers, use the account-scoped official default
    (`pypiorg`, `npmjs`, or `maven-central`) when its direct binding is enabled.
 
 The error looks like this:
 
 ```text
-No pypi package target is selected. Pass --target or run `rvs pkg select`.
+No pypi artifact target is selected. Pass --target or run `rvs art select`.
 ```
 
 The same pattern applies to `npm` and `maven`.
@@ -108,7 +108,7 @@ rvs account list
 rvs account use org:acme
 rvs context current
 rvs shell setup
-rvs pkg select acme/backend
+rvs art select acme/backend
 ```
 
 For a personal account, use `rvs account use personal` instead. Acting-account
@@ -117,9 +117,9 @@ Official private-mirror use requires its remote cache to be initialized once for
 the selected account:
 
 ```bash
-rvs pkg mirror add pypiorg
-rvs pkg mirror add npmjs
-rvs pkg mirror add maven-central
+rvs art mirror add pypiorg
+rvs art mirror add npmjs
+rvs art mirror add maven-central
 ```
 
 Without that binding, `mirror:pypiorg` (or its npm/Maven equivalent) returns 404
@@ -131,29 +131,29 @@ profiles may select the same organization while retaining distinct audit actors.
 
 `whoami` verifies and reports only the authenticated user through DevAPI.
 `context current` combines that user with the effective local profile, acting
-account, package target, and selection provenance.
+account, artifact target, and selection provenance.
 
 ## Create Or Select Repositories
 
 List repositories owned by the selected personal account or organization:
 
 ```bash
-rvs pkg repo list
-rvs pkg repo list --registry-kind pypi
-rvs pkg repo list --registry-kind npm
-rvs pkg repo list --registry-kind maven
-rvs pkg repo list --registry-kind container
-rvs pkg repo list --registry-kind helm
+rvs art repo list
+rvs art repo list --registry-kind pypi
+rvs art repo list --registry-kind npm
+rvs art repo list --registry-kind maven
+rvs art repo list --registry-kind container
+rvs art repo list --registry-kind helm
 ```
 
 Create a repository and make it the default for that registry kind:
 
 ```bash
-rvs pkg repo create my-python-packages --registry-kind pypi --default
-rvs pkg repo create my-node-packages --registry-kind npm --default
-rvs pkg repo create my-java-packages --registry-kind maven --default
-rvs pkg repo create runtime-images --registry-kind container --default
-rvs pkg repo create deployment-charts --registry-kind helm --default
+rvs art repo create my-python-packages --registry-kind pypi --default
+rvs art repo create my-node-packages --registry-kind npm --default
+rvs art repo create my-java-packages --registry-kind maven --default
+rvs art repo create runtime-images --registry-kind container --default
+rvs art repo create deployment-charts --registry-kind helm --default
 ```
 
 Repository names use lowercase letters, numbers, and hyphens.
@@ -161,31 +161,31 @@ Repository names use lowercase letters, numbers, and hyphens.
 Or set defaults for existing repositories:
 
 ```bash
-rvs pkg repo set-default pypi <pypi-repo-name>
-rvs pkg repo set-default npm <npm-repo-name>
-rvs pkg repo set-default maven <maven-repo-name>
-rvs pkg repo set-default container <container-repo-name>
-rvs pkg repo set-default helm <helm-repo-name>
+rvs art repo set-default pypi <pypi-repo-name>
+rvs art repo set-default npm <npm-repo-name>
+rvs art repo set-default maven <maven-repo-name>
+rvs art repo set-default container <container-repo-name>
+rvs art repo set-default helm <helm-repo-name>
 ```
 
 Check defaults:
 
 ```bash
-rvs pkg repo defaults
+rvs art repo defaults
 ```
 
 You can always bypass defaults with `--repo`:
 
 ```bash
-rvs pkg pypi install requests --repo <pypi-repo-name>
-rvs pkg npm install lodash --repo <npm-repo-name>
-rvs pkg maven install com.example:lib:1.0.0 --repo <maven-repo-name>
+rvs art pypi install requests --repo <pypi-repo-name>
+rvs art npm install lodash --repo <npm-repo-name>
+rvs art maven install com.example:lib:1.0.0 --repo <maven-repo-name>
 ```
 
 Use `<namespace>/<repo-name>` to disambiguate equal repository names:
 
 ```bash
-rvs pkg pypi index-url --repo <namespace>/<repo-name>
+rvs art pypi index-url --repo <namespace>/<repo-name>
 ```
 
 The CLI resolves that selector, saves immutable references for persistent
@@ -197,9 +197,9 @@ defaults, and always generates native package URLs in this stable form:
 
 Namespace and repository renames therefore do not break CLI defaults.
 
-## `rvs pkg` vs Native Package-Manager Wrappers
+## `rvs art` vs Native Package-Manager Wrappers
 
-`rvs pkg ...` is the Ravenstash-native package workflow. It selects the
+`rvs art ...` is the Ravenstash-native package workflow. It selects the
 Ravenstash repository from `--repo` or the saved default in `~/.rvs/config.toml`.
 The implementation may delegate to a native package manager or use Ravenstash
 registry adapters directly; that detail is not part of the user contract.
@@ -256,14 +256,14 @@ rvs uv --rvs-target <namespace>/<pypi-repo-name> --rvs-native-config isolate syn
 Print the private install and publish URLs:
 
 ```bash
-rvs pkg pypi index-url
-rvs pkg pypi upload-url
+rvs art pypi index-url
+rvs art pypi upload-url
 ```
 
 Install from the private repository:
 
 ```bash
-rvs pkg pypi install requests
+rvs art pypi install requests
 ```
 
 For this command, `rvs` delegates to `pip` and injects:
@@ -281,10 +281,10 @@ Publish wheels or source distributions:
 
 ```bash
 python3 -m build
-rvs pkg pypi publish dist/
+rvs art pypi publish dist/
 ```
 
-Current behavior: `rvs pkg pypi publish` does not shell out to `twine`. It
+Current behavior: `rvs art pypi publish` does not shell out to `twine`. It
 implements the legacy PyPI upload protocol directly and posts to:
 
 ```text
@@ -294,7 +294,7 @@ https://<pypi-push-host>/<namespace_unique_ref>/<repository_unique_ref>/
 To print a pip configuration snippet instead of running an install:
 
 ```bash
-rvs pkg pypi configure
+rvs art pypi configure
 ```
 
 ## npm
@@ -302,13 +302,13 @@ rvs pkg pypi configure
 Print the private npm registry URL:
 
 ```bash
-rvs pkg npm registry-url
+rvs art npm registry-url
 ```
 
 Install from the private repository:
 
 ```bash
-rvs pkg npm install lodash
+rvs art npm install lodash
 ```
 
 For this command, `rvs` delegates to `npm` and runs the equivalent of:
@@ -326,10 +326,10 @@ NPM_CONFIG_//<npm-read-host>/<namespace_unique_ref>/<repository_unique_ref>/:_au
 Publish the package in the current directory:
 
 ```bash
-rvs pkg npm publish .
+rvs art npm publish .
 ```
 
-Current behavior: `rvs pkg npm publish` does not shell out to `npm publish`. It
+Current behavior: `rvs art npm publish` does not shell out to `npm publish`. It
 runs native `npm pack`, reads `package.json`, builds the npm publish JSON body,
 and PUTs it to:
 
@@ -350,8 +350,8 @@ dependencies, and generated files. An `npm` executable must be available.
 To print an `.npmrc` snippet:
 
 ```bash
-rvs pkg npm npmrc
-rvs pkg npm configure
+rvs art npm npmrc
+rvs art npm configure
 ```
 
 The snippet uses `${RVS_TOKEN}`. Export that variable before using the snippet
@@ -362,13 +362,13 @@ with native `npm` commands.
 Print the private Maven repository URL:
 
 ```bash
-rvs pkg maven repo-url
+rvs art maven repo-url
 ```
 
 Fetch an artifact into the local Maven cache:
 
 ```bash
-rvs pkg maven install com.example:lib:1.0.0
+rvs art maven install com.example:lib:1.0.0
 ```
 
 For this command, `rvs` writes a temporary `settings.xml` containing:
@@ -390,13 +390,13 @@ The temporary settings file is removed after the command completes.
 Deploy an artifact file:
 
 ```bash
-rvs pkg maven deploy ./target/lib-1.0.0.jar \
+rvs art maven deploy ./target/lib-1.0.0.jar \
   --group com.example \
   --artifact lib \
   --version 1.0.0
 ```
 
-Current behavior: `rvs pkg maven deploy` does not shell out to `mvn deploy`. It
+Current behavior: `rvs art maven deploy` does not shell out to `mvn deploy`. It
 uploads the artifact and checksum sidecars with HTTP PUTs under:
 
 ```text
@@ -406,8 +406,8 @@ https://<maven-push-host>/<namespace_unique_ref>/<repository_unique_ref>/<group-
 To print a reusable Maven `settings.xml` snippet:
 
 ```bash
-rvs pkg maven settings
-rvs pkg maven configure
+rvs art maven settings
+rvs art maven configure
 ```
 
 The printed snippet uses `${env.RVS_TOKEN}` as the password. Export `RVS_TOKEN`
@@ -421,8 +421,8 @@ For CI or headless agents, prefer `RVS_TOKEN` and explicit repository defaults:
 export RVS_TOKEN=<automation-token>
 export RVS_PROFILE=ci
 
-rvs pkg repo set-default pypi <pypi-repo-name>
-rvs pkg pypi install private-package
+rvs art repo set-default pypi <pypi-repo-name>
+rvs art pypi install private-package
 ```
 
 Do not log tokens. Avoid echoing authenticated PyPI URLs because the token is
@@ -433,20 +433,20 @@ embedded in the URL for `pip` compatibility.
 No repository selected:
 
 ```bash
-rvs pkg repo defaults
-rvs pkg repo set-default pypi <repo-name>
+rvs art repo defaults
+rvs art repo set-default pypi <repo-name>
 ```
 
 Unknown or ambiguous repository:
 
 ```bash
-rvs pkg repo list
+rvs art repo list
 rvs auth status
 rvs auth login
 ```
 
 Pass `<namespace>/<repo-name>` or the immutable underscore pair shown by
-`rvs pkg repo list` when equal names exist in several authorized scopes.
+`rvs art repo list` when equal names exist in several authorized scopes.
 
 Not authenticated:
 
@@ -477,7 +477,7 @@ LLM agents should follow these rules when using `rvs`:
 - Do not assume login selects a repository.
 - Resolve the target registry kind first: `pypi`, `npm`, or `maven`.
 - Prefer `--repo <repo-name>` for one-off commands.
-- Use `rvs pkg repo set-default <registry-kind> <repo-name>` only when changing persistent
+- Use `rvs art repo set-default <registry-kind> <repo-name>` only when changing persistent
   local CLI state is intended.
 - Treat customer, namespace, and repository internal IDs as different from
   their immutable generated references.

@@ -18,22 +18,28 @@ rvs account    Select the acting personal or organization account
 rvs context    Inspect the effective user/profile/account/target tuple
 rvs shell      Install the visible context prompt integration
 rvs runtime    Install and select local Python, Node, and Java runtimes
-rvs pkg        Manage Ravenstash package repositories and package workflows
+rvs art        Manage repositories for packages, container images, and Helm charts
+rvs artifacts  Full-name alias of rvs art
 rvs pip        Run pip with ephemeral Ravenstash auth injection
 rvs uv         Run uv with ephemeral Ravenstash auth injection
 rvs twine      Run twine with ephemeral Ravenstash auth injection
 rvs npm        Run npm with ephemeral Ravenstash auth injection
 rvs mvn        Run Maven with ephemeral Ravenstash auth injection
-rvs repo       Manage Ravenstash package repositories
 rvs ci         Placeholder for future Ravenstash CI
 rvs update     Check or apply signed APT updates
 ```
 
-`rvs repo` is the first-class package-repository group. `rvs ci` is registered
+`rvs art repo` and `rvs artifacts repo` provide repository management. `rvs ci` is registered
 but its commands print "not implemented" until that product exists.
 
+Both Artifacts spellings support identical options and output. During the Task 076
+transition release, the old `rvs pkg` spelling is hidden and emits one deprecation
+warning on stderr. The next CLI release removes it. Existing config version 3,
+profile-scoped credentials, account IDs, and `selected_target` records continue
+to work without an identity or credential-store migration.
+
 Pass global `--json` before a command to emit rvs-owned output as newline-delimited
-JSON, for example `rvs --json pkg repo list`. Output from native passthrough tools
+JSON, for example `rvs --json art repo list`. Output from native passthrough tools
 remains in the native tool's format.
 
 ## Auth
@@ -131,12 +137,12 @@ Headless automation must make this selection explicitly; device authentication
 does not imply a package customer. For a personal account use
 `rvs account use personal`. Before selecting an official private mirror,
 initialize its remote cache for the selected account once, for example
-`rvs pkg mirror add pypiorg`, `rvs pkg mirror add npmjs`, or
-`rvs pkg mirror add maven-central`. A `mirror:<source>` request returns 404 until
+`rvs art mirror add pypiorg`, `rvs art mirror add npmjs`, or
+`rvs art mirror add maven-central`. A `mirror:<source>` request returns 404 until
 that binding exists; it is an authorization boundary, not a transient cache miss.
 
 The shell prompt shows `(profile · personal)` or `(profile · org:acme)` and appends
-the selected package target. Shell-local profile/account state is non-secret;
+the selected artifact target. Shell-local profile/account state is non-secret;
 tokens remain in the selected credential store.
 
 `rvs auth whoami` verifies the current identity against Ravenstash; it does not
@@ -167,63 +173,63 @@ the shim. Version-prefix selection chooses the newest matching semantic version.
 
 ## Package Repositories
 
-Package repository commands are under `rvs pkg`. This area connects the local
+Package repository commands are under `rvs art`. This area connects the local
 machine and native package managers to a remote Ravenstash package repository.
 
 Repository commands:
 
 ```bash
-rvs pkg repo list
-rvs pkg repo list --registry-kind pypi
-rvs pkg repo create my-python-packages --registry-kind pypi --default
-rvs pkg repo create runtime-images --registry-kind container --default
-rvs pkg repo create deployment-charts --registry-kind helm --default
-rvs pkg repo show <repo-name>
-rvs pkg repo rename <repo-name> <new-name>
-rvs pkg repo delete <repo-name>
-rvs pkg repo set-default pypi <repo-name>
-rvs pkg repo defaults
-rvs pkg repo upstream list acme/app pypi
-rvs pkg repo upstream add acme/app pypi --private-repository acme/libraries
-rvs pkg repo upstream add acme/app pypi --remote-cache pypiorg
-rvs pkg repo upstream update acme/app pypi <attachment-id> --min-age-hours 1
-rvs pkg repo upstream reorder acme/app pypi <attachment-id> <attachment-id>
-rvs pkg repo upstream remove acme/app pypi <attachment-id>
+rvs art repo list
+rvs art repo list --registry-kind pypi
+rvs art repo create my-python-packages --registry-kind pypi --default
+rvs art repo create runtime-images --registry-kind container --default
+rvs art repo create deployment-charts --registry-kind helm --default
+rvs art repo show <repo-name>
+rvs art repo rename <repo-name> <new-name>
+rvs art repo delete <repo-name>
+rvs art repo set-default pypi <repo-name>
+rvs art repo defaults
+rvs art repo upstream list acme/app pypi
+rvs art repo upstream add acme/app pypi --private-repository acme/libraries
+rvs art repo upstream add acme/app pypi --remote-cache pypiorg
+rvs art repo upstream update acme/app pypi <attachment-id> --min-age-hours 1
+rvs art repo upstream reorder acme/app pypi <attachment-id> <attachment-id>
+rvs art repo upstream remove acme/app pypi <attachment-id>
 
-rvs pkg mirror list
-rvs pkg mirror create --registry-kind pypi
-rvs pkg mirror show <cache-id>
-rvs pkg mirror set-age <cache-id> --min-age-hours 24
-rvs pkg mirror delete <cache-id>
+rvs art mirror list
+rvs art mirror create --registry-kind pypi
+rvs art mirror show <cache-id>
+rvs art mirror set-age <cache-id> --min-age-hours 24
+rvs art mirror delete <cache-id>
 ```
 
 Select one typed target without reserving namespace names:
 
 ```bash
-rvs pkg select acme/backend
-rvs pkg --scope self select acme/backend
+rvs art select acme/backend
+rvs art --scope self select acme/backend
 # Reserved public catalog scope; currently reports PublicCatalogUnavailable.
-rvs pkg --public select acme/backend
-rvs pkg select mirror:pypiorg
-rvs pkg select custom-mirror:piwheels
-rvs pkg current
-rvs pkg clear
+rvs art --public select acme/backend
+rvs art select mirror:pypiorg
+rvs art select custom-mirror:piwheels
+rvs art current
+rvs art clear
 
-rvs pkg --target acme/backend --kind pypi install internal-lib
-rvs pkg --target mirror:pypiorg install requests
-rvs pkg --target custom-mirror:piwheels --kind pypi install numpy
+rvs art --target acme/backend --kind pypi install internal-lib
+rvs art --target mirror:pypiorg install requests
+rvs art --target custom-mirror:piwheels --kind pypi install numpy
 ```
 
-`rvs pkg mirror` manages the private install surface backed by each remote cache.
+`rvs art mirror` manages the private install surface backed by each remote cache.
 Official and custom mirrors stay visibly distinct:
 
 ```bash
-rvs pkg mirror add pypiorg --select
-rvs pkg mirror create-custom piwheels --kind pypi \
+rvs art mirror add pypiorg --select
+rvs art mirror create-custom piwheels --kind pypi \
   --api-url https://www.piwheels.org/simple/ \
   --publication-control externally-controlled --select
-rvs pkg mirror select pypiorg
-rvs pkg mirror select --custom piwheels
+rvs art mirror select pypiorg
+rvs art mirror select --custom piwheels
 ```
 
 A remote cache is a customer-owned read-only binding to a curated or custom
@@ -251,7 +257,7 @@ fallback. An explicit `--target` is one-shot and never changes saved state.
 
 `rvs account use HANDLE` matches customer handles without regard to letter case
 and preserves the chosen casing for display. Handles can change; saved contexts
-remain keyed by the existing customer ID. `rvs pkg repo create namespace/repository`
+remain keyed by the existing customer ID. `rvs art repo create namespace/repository`
 resolves an accessible namespace and creates through its immutable reference; a
 bare repository name uses the account's default internal namespace.
 
@@ -271,21 +277,21 @@ never retries another customer credential after an authorization failure.
 Package metadata commands:
 
 ```bash
-rvs pkg package list --repo <repo-name> --registry-kind pypi
-rvs pkg package show requests --repo <repo-name> --registry-kind pypi
-rvs pkg package delete requests --repo <repo-name>
-rvs pkg package delete-version requests 2.32.0 --repo <repo-name>
-rvs pkg package yank requests 2.32.0 --repo <repo-name> --reason "bad build"
+rvs art package list --repo <repo-name> --registry-kind pypi
+rvs art package show requests --repo <repo-name> --registry-kind pypi
+rvs art package delete requests --repo <repo-name>
+rvs art package delete-version requests 2.32.0 --repo <repo-name>
+rvs art package yank requests 2.32.0 --repo <repo-name> --reason "bad build"
 ```
 
 PyPI helpers:
 
 ```bash
-rvs pkg pypi index-url --repo <repo-name>
-rvs pkg pypi upload-url --repo <repo-name>
-rvs pkg pypi install requests --repo <repo-name>
-rvs pkg pypi publish dist/ --repo <repo-name>
-rvs pkg pypi configure --repo <repo-name>
+rvs art pypi index-url --repo <repo-name>
+rvs art pypi upload-url --repo <repo-name>
+rvs art pypi install requests --repo <repo-name>
+rvs art pypi publish dist/ --repo <repo-name>
+rvs art pypi configure --repo <repo-name>
 ```
 
 The install helper sets Ravenstash as pip's primary `PIP_INDEX_URL`; it does not
@@ -294,11 +300,11 @@ add a second index that could silently win dependency resolution.
 npm helpers:
 
 ```bash
-rvs pkg npm registry-url --repo <repo-name>
-rvs pkg npm npmrc --repo <repo-name>
-rvs pkg npm install lodash --repo <repo-name>
-rvs pkg npm publish . --repo <repo-name>
-rvs pkg npm configure --repo <repo-name>
+rvs art npm registry-url --repo <repo-name>
+rvs art npm npmrc --repo <repo-name>
+rvs art npm install lodash --repo <repo-name>
+rvs art npm publish . --repo <repo-name>
+rvs art npm configure --repo <repo-name>
 ```
 
 Direct npm publishing uses native `npm pack` before sending the wire payload, so
@@ -308,11 +314,11 @@ honored. An `npm` executable is required.
 Maven helpers:
 
 ```bash
-rvs pkg maven repo-url --repo <repo-name>
-rvs pkg maven settings --repo <repo-name>
-rvs pkg maven install com.example:lib:1.0.0 --repo <repo-name>
-rvs pkg maven deploy ./target/lib.jar --group com.example --artifact lib --version 1.0.0 --repo <repo-name>
-rvs pkg maven configure --repo <repo-name>
+rvs art maven repo-url --repo <repo-name>
+rvs art maven settings --repo <repo-name>
+rvs art maven install com.example:lib:1.0.0 --repo <repo-name>
+rvs art maven deploy ./target/lib.jar --group com.example --artifact lib --version 1.0.0 --repo <repo-name>
+rvs art maven configure --repo <repo-name>
 ```
 
 Package-token management is intentionally not part of the alpha CLI surface.
@@ -335,7 +341,7 @@ rvs pip --rvs-target acme/my-python-packages install acme-utils
 rvs uv --rvs-target acme/my-python-packages --rvs-native-config isolate sync
 ```
 
-`rvs pkg ...` is Ravenstash-native: it selects a typed Ravenstash target through
+`rvs art ...` is Ravenstash-native: it selects a typed Ravenstash target through
 `--target` or the effective local-profile/acting-account context, and the underlying implementation may or may
 not use a native package manager. `rvs pip`, `rvs uv`, `rvs twine`, `rvs npm`,
 `rvs mvn`, `rvs docker`, `rvs helm`, and `rvs oras` are explicit native-tool passthroughs. The
@@ -482,9 +488,8 @@ rvs/
 ├── cli.py
 ├── auth/
 ├── runtime/
-├── pkg/
+├── artifacts/
 │   └── registries/
-├── repo/
 ├── ci/
 ├── client.py
 ├── config.py

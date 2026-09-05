@@ -12,7 +12,7 @@ from ..client import ApiClient, ApiError
 
 app = typer.Typer(
     name="context",
-    help="Inspect the effective user, local profile, acting account, and package target.",
+    help="Inspect the effective user, local profile, acting account, and artifact target.",
     no_args_is_help=True,
 )
 

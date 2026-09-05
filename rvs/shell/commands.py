@@ -83,7 +83,7 @@ def _append_source(rc_path: Path, source_line: str) -> bool:
         return False
     rc_path.parent.mkdir(parents=True, exist_ok=True)
     with rc_path.open("a", encoding="utf-8") as handle:
-        handle.write(f"\n# Ravenstash acting-account and package-target prompt\n{source_line}\n")
+        handle.write(f"\n# Ravenstash acting-account and artifact-target prompt\n{source_line}\n")
     return True
 
 

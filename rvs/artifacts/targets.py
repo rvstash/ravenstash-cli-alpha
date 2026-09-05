@@ -1,4 +1,4 @@
-"""Typed package-target parsing, resolution, and credential exchange."""
+"""Artifact-target parsing, resolution, and credential exchange."""
 
 from __future__ import annotations
 
@@ -23,7 +23,7 @@ DEFAULT_OFFICIAL_SOURCES: dict[PackageKind, str] = {
 
 @dataclass(frozen=True)
 class TargetSpec:
-    target_type: cfg_mod.PackageTargetType
+    target_type: cfg_mod.ArtifactTargetType
     selector: str
     namespace_realm: cfg_mod.NamespaceRealm | None = None
 
@@ -33,7 +33,7 @@ class RegistryContext:
     profile_name: str
     customer_id: str
     kind: cfg_mod.RegistryKind
-    target: cfg_mod.PackageTarget
+    target: cfg_mod.ArtifactTarget
     read_base_url: str
     push_base_url: str | None
     namespace_reference: str
@@ -47,7 +47,7 @@ def parse_target(value: str) -> TargetSpec:
         output.fatal("Package target cannot be empty.")
     if candidate.startswith("mirror:"):
         selector = candidate.removeprefix("mirror:").strip().strip("/")
-        target_type: cfg_mod.PackageTargetType = "official_cache"
+        target_type: cfg_mod.ArtifactTargetType = "official_cache"
         namespace_realm = None
     elif candidate.startswith("custom-mirror:"):
         selector = candidate.removeprefix("custom-mirror:").strip().strip("/")
@@ -57,7 +57,7 @@ def parse_target(value: str) -> TargetSpec:
         output.fatal("Use namespace/repository without a realm prefix or @ notation.")
     elif ":" in candidate:
         output.fatal(
-            "Unknown package target type. Use namespace/repository, mirror:<source>, "
+            "Unknown artifact target type. Use namespace/repository, mirror:<source>, "
             "or custom-mirror:<name>."
         )
     else:
@@ -65,7 +65,7 @@ def parse_target(value: str) -> TargetSpec:
         target_type = "repository"
         namespace_realm = None
     if not selector or (target_type != "repository" and "/" in selector):
-        output.fatal("The package target selector is invalid.")
+        output.fatal("The artifact target selector is invalid.")
     if target_type == "repository":
         parts = selector.split("/")
         if len(parts) != 2 or not all(parts):
@@ -97,14 +97,14 @@ def _package_kind(kind: str | None) -> PackageKind | None:
     return cast("PackageKind", kind)
 
 
-def _repository_target(entry: dict) -> cfg_mod.PackageTarget:
+def _repository_target(entry: dict) -> cfg_mod.ArtifactTarget:
     customer = entry["customer"]
     repository = entry["repository"]
     package_kinds = [
         kind for kind in repository.get("registry_kinds", []) if kind in {"pypi", "npm", "maven"}
     ]
     inferred_kind = package_kinds[0] if len(package_kinds) == 1 else None
-    return cfg_mod.PackageTarget(
+    return cfg_mod.ArtifactTarget(
         target_type="repository",
         customer_id=customer["customer_id"],
         stable_selector=(
@@ -121,7 +121,7 @@ def _repository_target(entry: dict) -> cfg_mod.PackageTarget:
     )
 
 
-def _remote_target(entry: dict, target_type: cfg_mod.PackageTargetType) -> cfg_mod.PackageTarget:
+def _remote_target(entry: dict, target_type: cfg_mod.ArtifactTargetType) -> cfg_mod.ArtifactTarget:
     customer = entry["customer"]
     remote = entry["remote_repository"]
     family = remote.get("source_family")
@@ -131,7 +131,7 @@ def _remote_target(entry: dict, target_type: cfg_mod.PackageTargetType) -> cfg_m
     public_name = remote.get("official_slug") or remote.get("remote_name") or remote["public_id"]
     prefix = "mirror" if target_type == "official_cache" else "custom-mirror"
     unique_ref = remote.get("unique_ref") or remote.get("public_id")
-    return cfg_mod.PackageTarget(
+    return cfg_mod.ArtifactTarget(
         target_type=target_type,
         customer_id=customer["customer_id"],
         stable_selector=f"{prefix}:{unique_ref}",
@@ -151,7 +151,7 @@ def resolve_target(
     profile: str | None = None,
     customer_id: str | None = None,
     kind: str | None = None,
-) -> tuple[str, cfg_mod.AccountContext, cfg_mod.PackageTarget]:
+) -> tuple[str, cfg_mod.AccountContext, cfg_mod.ArtifactTarget]:
     spec = parse_target(value)
     profile_name = profile or cfg_mod.current_profile_name()
     if kind is not None and kind not in {"pypi", "npm", "maven", "container", "helm"}:
@@ -237,7 +237,7 @@ def effective_target(
     profile: str | None = None,
     customer_id: str | None = None,
     allow_official_default: bool = False,
-) -> tuple[str, cfg_mod.AccountContext, cfg_mod.PackageTarget]:
+) -> tuple[str, cfg_mod.AccountContext, cfg_mod.ArtifactTarget]:
     registry_kind = _package_kind(kind)
     assert registry_kind is not None
     profile_name, account = ensure_active_account(profile, customer_id)
@@ -250,7 +250,7 @@ def effective_target(
             customer_id=account.customer_id,
             kind=kind,
         )
-    saved = cfg_mod.selected_package_target(profile_name, account.customer_id)
+    saved = cfg_mod.selected_artifact_target(profile_name, account.customer_id)
     if saved is not None:
         if saved.registry_kind is not None and saved.registry_kind != kind:
             output.fatal(
@@ -295,7 +295,7 @@ def effective_target(
             customer_id=account.customer_id,
             kind=kind,
         )
-    output.fatal(f"No {kind} package target is selected. Pass --target or run `rvs pkg select`.")
+    output.fatal(f"No {kind} artifact target is selected. Pass --target or run `rvs art select`.")
 
 
 def registry_context(

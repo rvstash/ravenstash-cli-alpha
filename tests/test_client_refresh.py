@@ -150,7 +150,7 @@ def test_repository_target_conflict_has_an_actionable_message() -> None:
     assert "old-namespace/old-repository" in str(error)
     assert "new-namespace/new-repository" in str(error)
     assert "in_abcdefgh/r_xyzabcde" in str(error)
-    assert "rvs pkg repo set-default" in str(error)
+    assert "rvs art repo set-default" in str(error)
 
 
 def test_repository_target_ambiguity_uses_public_account_references() -> None:

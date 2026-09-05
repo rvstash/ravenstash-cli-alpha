@@ -5,8 +5,8 @@ from typing import Any
 
 import pytest
 from rvs import config as cfg_mod
-from rvs.pkg import commands as pkg_cmd
-from rvs.pkg.registries.base import PublishResult
+from rvs.artifacts import commands as artifacts_cmd
+from rvs.artifacts.registries.base import PublishResult
 from typer.testing import CliRunner
 
 
@@ -133,7 +133,9 @@ default_repo = "in_abcdefgh/r_xyzabcde"
 
 
 def _use_fake_client(monkeypatch, fake: _FakeApiClient) -> None:
-    monkeypatch.setattr(pkg_cmd.ApiClient, "from_profile", staticmethod(lambda profile=None: fake))
+    monkeypatch.setattr(
+        artifacts_cmd.ApiClient, "from_profile", staticmethod(lambda profile=None: fake)
+    )
 
 
 def test_pkg_repo_list_filters_by_kind_and_uses_profile_customer(
@@ -156,7 +158,7 @@ def test_pkg_repo_list_filters_by_kind_and_uses_profile_customer(
     )
     _use_fake_client(monkeypatch, fake)
 
-    result = runner.invoke(pkg_cmd.app, ["repo", "list", "--registry-kind", "pypi"])
+    result = runner.invoke(artifacts_cmd.app, ["repo", "list", "--registry-kind", "pypi"])
 
     assert result.exit_code == 0
     assert fake.calls == [
@@ -177,7 +179,7 @@ def test_pkg_repo_list_omits_unset_query_filters(
     fake = _FakeApiClient([[]])
     _use_fake_client(monkeypatch, fake)
 
-    result = runner.invoke(pkg_cmd.app, ["repo", "list"])
+    result = runner.invoke(artifacts_cmd.app, ["repo", "list"])
 
     assert result.exit_code == 0
     assert fake.calls == [("GET", "/v0/repositories", {"customer_id": "cus_123"})]
@@ -204,7 +206,7 @@ def test_pkg_repo_create_can_set_default_repo(monkeypatch, tmp_path: Path) -> No
     _use_fake_client(monkeypatch, fake)
 
     result = runner.invoke(
-        pkg_cmd.app,
+        artifacts_cmd.app,
         ["repo", "create", "new-node", "--registry-kind", "npm", "--default"],
     )
 
@@ -248,7 +250,9 @@ def test_create_resolves_namespace_inside_selected_customer(
         ]
     )
     _use_fake_client(monkeypatch, fake)
-    result = runner.invoke(pkg_cmd.app, ["repo", "create", f"{selector}/{repo_name}", "-k", "npm"])
+    result = runner.invoke(
+        artifacts_cmd.app, ["repo", "create", f"{selector}/{repo_name}", "-k", "npm"]
+    )
     assert result.exit_code == 0, result.output
     assert fake.calls == [
         ("GET", "/v0/namespaces", {"customer_id": "cus_123"}),
@@ -269,7 +273,7 @@ def test_create_with_deferred_personal_namespace_requests_onboarding(monkeypatch
     _isolate_config(monkeypatch, tmp_path)
     fake = _FakeApiClient([[]])
     _use_fake_client(monkeypatch, fake)
-    result = runner.invoke(pkg_cmd.app, ["repo", "create", "new-node", "-k", "npm"])
+    result = runner.invoke(artifacts_cmd.app, ["repo", "create", "new-node", "-k", "npm"])
     assert result.exit_code != 0
     assert "finish onboarding" in result.output
     assert fake.calls == [("GET", "/v0/namespaces", {"customer_id": "cus_123"})]
@@ -280,8 +284,8 @@ def test_public_scope_never_runs_private_mutation(monkeypatch, flags):
     def unexpected_client(*_args, **_kwargs):
         raise AssertionError("Unavailable public scope must not reach the API")
 
-    monkeypatch.setattr(pkg_cmd.ApiClient, "from_profile", unexpected_client)
-    result = runner.invoke(pkg_cmd.app, [*flags, "repo", "create", "demo", "-k", "npm"])
+    monkeypatch.setattr(artifacts_cmd.ApiClient, "from_profile", unexpected_client)
+    result = runner.invoke(artifacts_cmd.app, [*flags, "repo", "create", "demo", "-k", "npm"])
     assert result.exit_code != 0
     assert "PublicCatalogUnavailable" in result.output
 
@@ -289,7 +293,7 @@ def test_public_scope_never_runs_private_mutation(monkeypatch, flags):
 def test_pkg_repo_create_rejects_unknown_kind(monkeypatch, tmp_path: Path) -> None:
     _isolate_config(monkeypatch, tmp_path)
 
-    result = runner.invoke(pkg_cmd.app, ["repo", "create", "bad", "--registry-kind", "gem"])
+    result = runner.invoke(artifacts_cmd.app, ["repo", "create", "bad", "--registry-kind", "gem"])
 
     assert result.exit_code == 1
     assert "Unknown registry kind 'gem'" in result.stderr
@@ -317,7 +321,7 @@ def test_pkg_repo_show_renders_repository_details(monkeypatch, tmp_path: Path) -
     )
     _use_fake_client(monkeypatch, fake)
 
-    result = runner.invoke(pkg_cmd.app, ["repo", "show", "repo-pypi"])
+    result = runner.invoke(artifacts_cmd.app, ["repo", "show", "repo-pypi"])
 
     assert result.exit_code == 0
     assert fake.calls == [
@@ -347,7 +351,7 @@ def test_pkg_repo_rename_updates_matching_profile_default(
     fake = _FakeApiClient([_repository_entry("repo-pypi"), _repository_entry(new_name)])
     _use_fake_client(monkeypatch, fake)
 
-    result = runner.invoke(pkg_cmd.app, ["repo", "rename", "repo-pypi", new_name])
+    result = runner.invoke(artifacts_cmd.app, ["repo", "rename", "repo-pypi", new_name])
 
     assert result.exit_code == 0
     assert fake.calls == [
@@ -404,9 +408,11 @@ def test_pkg_remote_management_and_upstream_configuration(monkeypatch, tmp_path:
     )
     _use_fake_client(monkeypatch, fake)
 
-    create_result = runner.invoke(pkg_cmd.app, ["mirror", "create", "--registry-kind", "pypi"])
+    create_result = runner.invoke(
+        artifacts_cmd.app, ["mirror", "create", "--registry-kind", "pypi"]
+    )
     upstream_result = runner.invoke(
-        pkg_cmd.app,
+        artifacts_cmd.app,
         [
             "repo",
             "upstream",
@@ -481,7 +487,7 @@ def test_pkg_custom_remote_requires_and_submits_publication_control(
     _use_fake_client(monkeypatch, fake)
 
     result = runner.invoke(
-        pkg_cmd.app,
+        artifacts_cmd.app,
         [
             "mirror",
             "create-custom",
@@ -536,12 +542,12 @@ def test_pkg_official_remote_list_reports_external_publication_control(
     _use_fake_client(monkeypatch, fake)
     tables: list[tuple[list[str], list[list[str]]]] = []
     monkeypatch.setattr(
-        pkg_cmd.output,
+        artifacts_cmd.output,
         "table",
         lambda headers, rows, **_kwargs: tables.append((headers, rows)),
     )
 
-    result = runner.invoke(pkg_cmd.app, ["mirror", "list"])
+    result = runner.invoke(artifacts_cmd.app, ["mirror", "list"])
 
     assert result.exit_code == 0
     assert tables[0][0][2] == "Publication"
@@ -569,7 +575,7 @@ def test_pkg_mirror_show_formats_absent_age_bounds(monkeypatch, tmp_path: Path) 
     )
     _use_fake_client(monkeypatch, fake)
 
-    result = runner.invoke(pkg_cmd.app, ["mirror", "show", "pypiorg"])
+    result = runner.invoke(artifacts_cmd.app, ["mirror", "show", "pypiorg"])
 
     assert result.exit_code == 0
     assert "No minimum" in result.output
@@ -605,7 +611,7 @@ def test_pkg_repo_upstream_add_private_uses_source_lane_and_zero_age_default(
     _use_fake_client(monkeypatch, fake)
 
     result = runner.invoke(
-        pkg_cmd.app,
+        artifacts_cmd.app,
         [
             "repo",
             "upstream",
@@ -659,7 +665,7 @@ def test_pkg_repo_upstream_add_appends_after_existing_plan(
     _use_fake_client(monkeypatch, fake)
 
     result = runner.invoke(
-        pkg_cmd.app,
+        artifacts_cmd.app,
         [
             "repo",
             "upstream",
@@ -684,7 +690,7 @@ def test_pkg_repo_upstream_reorder_and_remove_use_generic_routes(
     _use_fake_client(monkeypatch, fake)
 
     reordered = runner.invoke(
-        pkg_cmd.app,
+        artifacts_cmd.app,
         [
             "repo",
             "upstream",
@@ -696,7 +702,7 @@ def test_pkg_repo_upstream_reorder_and_remove_use_generic_routes(
         ],
     )
     removed = runner.invoke(
-        pkg_cmd.app,
+        artifacts_cmd.app,
         [
             "repo",
             "upstream",
@@ -729,11 +735,11 @@ def test_pkg_repo_upstream_add_requires_exactly_one_source(
     _use_fake_client(monkeypatch, _FakeApiClient())
 
     neither = runner.invoke(
-        pkg_cmd.app,
+        artifacts_cmd.app,
         ["repo", "upstream", "add", "application", "pypi"],
     )
     both = runner.invoke(
-        pkg_cmd.app,
+        artifacts_cmd.app,
         [
             "repo",
             "upstream",
@@ -755,7 +761,7 @@ def test_pkg_repo_upstream_add_requires_exactly_one_source(
 
 def test_pkg_repo_upstream_priority_is_limited_to_four_slots() -> None:
     result = runner.invoke(
-        pkg_cmd.app,
+        artifacts_cmd.app,
         [
             "repo",
             "upstream",
@@ -812,10 +818,10 @@ def test_pkg_package_list_and_show_use_repository_package_paths(
     _use_fake_client(monkeypatch, fake)
 
     list_result = runner.invoke(
-        pkg_cmd.app, ["package", "list", "--repo", "repo-pypi", "--registry-kind", "pypi"]
+        artifacts_cmd.app, ["package", "list", "--repo", "repo-pypi", "--registry-kind", "pypi"]
     )
     show_result = runner.invoke(
-        pkg_cmd.app,
+        artifacts_cmd.app,
         ["package", "show", "demo", "--repo", "repo-pypi", "--registry-kind", "pypi"],
     )
 
@@ -861,7 +867,7 @@ def test_pkg_package_mutations_call_expected_api_paths(monkeypatch, tmp_path: Pa
     _use_fake_client(monkeypatch, fake)
 
     delete_result = runner.invoke(
-        pkg_cmd.app,
+        artifacts_cmd.app,
         [
             "package",
             "delete",
@@ -874,7 +880,7 @@ def test_pkg_package_mutations_call_expected_api_paths(monkeypatch, tmp_path: Pa
         ],
     )
     delete_version_result = runner.invoke(
-        pkg_cmd.app,
+        artifacts_cmd.app,
         [
             "package",
             "delete-version",
@@ -888,7 +894,7 @@ def test_pkg_package_mutations_call_expected_api_paths(monkeypatch, tmp_path: Pa
         ],
     )
     yank_result = runner.invoke(
-        pkg_cmd.app,
+        artifacts_cmd.app,
         [
             "package",
             "yank",
@@ -981,7 +987,7 @@ def test_pkg_registry_url_helpers_use_profile_and_default_repo(
 ) -> None:
     _isolate_config(monkeypatch, tmp_path)
 
-    result = runner.invoke(pkg_cmd.app, args)
+    result = runner.invoke(artifacts_cmd.app, args)
 
     assert result.exit_code == 0
     assert result.output.strip() == expected
@@ -993,9 +999,9 @@ def test_pkg_configure_snippets_are_printed_for_native_toolchains(
 ) -> None:
     _isolate_config(monkeypatch, tmp_path)
 
-    pypi_result = runner.invoke(pkg_cmd.app, ["pypi", "configure", "--profile", "staging"])
-    npm_result = runner.invoke(pkg_cmd.app, ["npm", "configure", "--profile", "staging"])
-    maven_result = runner.invoke(pkg_cmd.app, ["maven", "configure", "--profile", "staging"])
+    pypi_result = runner.invoke(artifacts_cmd.app, ["pypi", "configure", "--profile", "staging"])
+    npm_result = runner.invoke(artifacts_cmd.app, ["npm", "configure", "--profile", "staging"])
+    maven_result = runner.invoke(artifacts_cmd.app, ["maven", "configure", "--profile", "staging"])
 
     assert pypi_result.exit_code == 0
     assert "index-url" in pypi_result.output
@@ -1016,7 +1022,7 @@ def test_pypi_install_uses_ephemeral_netrc_auth(
     _isolate_config(monkeypatch, tmp_path)
     monkeypatch.delenv("PIP_KEYRING_PROVIDER", raising=False)
     monkeypatch.setenv("RVS_TOKEN", "raw-control-token")
-    monkeypatch.setattr(pkg_cmd.tools, "pip_cmd", lambda: ["/bin/pip"])
+    monkeypatch.setattr(artifacts_cmd.tools, "pip_cmd", lambda: ["/bin/pip"])
     calls: list[tuple[list[str], dict[str, str]]] = []
     netrc_texts: list[str] = []
 
@@ -1025,9 +1031,9 @@ def test_pypi_install_uses_ephemeral_netrc_auth(
         netrc_texts.append(Path(env["NETRC"]).read_text(encoding="utf-8"))
         calls.append((cmd, env.copy()))
 
-    monkeypatch.setattr(pkg_cmd.subprocess, "run", capture)
+    monkeypatch.setattr(artifacts_cmd.subprocess, "run", capture)
 
-    result = runner.invoke(pkg_cmd.app, ["pypi", "install", "demo", "--profile", "staging"])
+    result = runner.invoke(artifacts_cmd.app, ["pypi", "install", "demo", "--profile", "staging"])
 
     assert result.exit_code == 0
     assert calls[0][0] == ["/bin/pip", "install", "demo"]
@@ -1063,15 +1069,15 @@ def test_pypi_install_refreshes_native_path_when_saved_target_name_changed(
 
     fake = ChangedTargetClient([_repository_entry("new-name")])
     _use_fake_client(monkeypatch, fake)
-    monkeypatch.setattr(pkg_cmd.tools, "pip_cmd", lambda: ["/bin/pip"])
+    monkeypatch.setattr(artifacts_cmd.tools, "pip_cmd", lambda: ["/bin/pip"])
     native_calls: list[list[str]] = []
     monkeypatch.setattr(
-        pkg_cmd.subprocess,
+        artifacts_cmd.subprocess,
         "run",
         lambda cmd, **kwargs: native_calls.append(cmd),
     )
 
-    result = runner.invoke(pkg_cmd.app, ["pypi", "install", "demo", "--profile", "staging"])
+    result = runner.invoke(artifacts_cmd.app, ["pypi", "install", "demo", "--profile", "staging"])
 
     assert result.exit_code == 0
     assert native_calls == [["/bin/pip", "install", "demo"]]
@@ -1081,15 +1087,17 @@ def test_pypi_install_refreshes_native_path_when_saved_target_name_changed(
 def test_npm_install_injects_token_for_registry_host(monkeypatch, tmp_path: Path) -> None:
     _isolate_config(monkeypatch, tmp_path)
     monkeypatch.setenv("RVS_TOKEN", "raw-control-token")
-    monkeypatch.setattr(pkg_cmd.tools, "npm", lambda: "/bin/npm")
+    monkeypatch.setattr(artifacts_cmd.tools, "npm", lambda: "/bin/npm")
     calls: list[tuple[list[str], dict[str, str]]] = []
     monkeypatch.setattr(
-        pkg_cmd.subprocess,
+        artifacts_cmd.subprocess,
         "run",
         lambda cmd, *, env, check: calls.append((cmd, env)),
     )
 
-    result = runner.invoke(pkg_cmd.app, ["npm", "install", "@scope/demo", "--profile", "staging"])
+    result = runner.invoke(
+        artifacts_cmd.app, ["npm", "install", "@scope/demo", "--profile", "staging"]
+    )
 
     assert result.exit_code == 0
     assert calls[0][0] == [
@@ -1108,7 +1116,9 @@ def test_npm_install_injects_token_for_registry_host(monkeypatch, tmp_path: Path
 def test_maven_install_does_not_forward_control_token(monkeypatch, tmp_path: Path) -> None:
     _isolate_config(monkeypatch, tmp_path)
     monkeypatch.setenv("RVS_TOKEN", "raw-control-token")
-    monkeypatch.setattr(pkg_cmd.tools, "require", lambda name, *, install_kind: f"/bin/{name}")
+    monkeypatch.setattr(
+        artifacts_cmd.tools, "require", lambda name, *, install_kind: f"/bin/{name}"
+    )
     calls: list[tuple[list[str], dict[str, str]]] = []
 
     def capture(cmd, *, env, check) -> None:
@@ -1118,10 +1128,10 @@ def test_maven_install_does_not_forward_control_token(monkeypatch, tmp_path: Pat
         assert "secret-token" in settings.read_text(encoding="utf-8")
         calls.append((cmd, env.copy()))
 
-    monkeypatch.setattr(pkg_cmd.subprocess, "run", capture)
+    monkeypatch.setattr(artifacts_cmd.subprocess, "run", capture)
 
     result = runner.invoke(
-        pkg_cmd.app,
+        artifacts_cmd.app,
         ["maven", "install", "com.example:demo:1.0.0", "--profile", "staging"],
     )
 
@@ -1139,7 +1149,7 @@ def test_pypi_publish_reports_failed_uploads(monkeypatch, tmp_path: Path) -> Non
     dist_dir.mkdir()
     (dist_dir / "demo-1.0.0.whl").write_bytes(b"wheel")
     monkeypatch.setattr(
-        pkg_cmd.pypi_reg,
+        artifacts_cmd.pypi_reg,
         "publish",
         lambda **kwargs: [
             PublishResult("demo-1.0.0.whl", "1.0.0", True),
@@ -1147,7 +1157,9 @@ def test_pypi_publish_reports_failed_uploads(monkeypatch, tmp_path: Path) -> Non
         ],
     )
 
-    result = runner.invoke(pkg_cmd.app, ["pypi", "publish", str(dist_dir), "--profile", "staging"])
+    result = runner.invoke(
+        artifacts_cmd.app, ["pypi", "publish", str(dist_dir), "--profile", "staging"]
+    )
 
     assert result.exit_code == 1
     assert "Published demo-1.0.0.whl" in result.output
@@ -1165,10 +1177,10 @@ def test_npm_publish_calls_registry_adapter(monkeypatch, tmp_path: Path) -> None
         calls.append(kwargs)
         return [PublishResult("demo-1.0.0.tgz", "1.0.0", True)]
 
-    monkeypatch.setattr(pkg_cmd.npm_reg, "publish", fake_publish)
+    monkeypatch.setattr(artifacts_cmd.npm_reg, "publish", fake_publish)
 
     result = runner.invoke(
-        pkg_cmd.app, ["npm", "publish", str(package_dir), "--profile", "staging"]
+        artifacts_cmd.app, ["npm", "publish", str(package_dir), "--profile", "staging"]
     )
 
     assert result.exit_code == 0
@@ -1193,10 +1205,10 @@ def test_maven_deploy_checks_file_and_calls_registry_adapter(monkeypatch, tmp_pa
         calls.append(kwargs)
         return [PublishResult("demo.jar", "1.0.0", True)]
 
-    monkeypatch.setattr(pkg_cmd.maven_reg, "publish", fake_publish)
+    monkeypatch.setattr(artifacts_cmd.maven_reg, "publish", fake_publish)
 
     result = runner.invoke(
-        pkg_cmd.app,
+        artifacts_cmd.app,
         [
             "maven",
             "deploy",

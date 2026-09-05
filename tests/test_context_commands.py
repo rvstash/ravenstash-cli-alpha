@@ -91,8 +91,8 @@ def test_context_current_shows_account_scoped_selected_target(monkeypatch, tmp_p
             "authority_revision": 2,
         },
     )
-    cfg_mod.set_selected_package_target(
-        cfg_mod.PackageTarget(
+    cfg_mod.set_selected_artifact_target(
+        cfg_mod.ArtifactTarget(
             target_type="official_cache",
             customer_id="acme",
             stable_selector="mirror:official-ref",

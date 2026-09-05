@@ -18,8 +18,8 @@ import typer
 from .. import config as cfg_mod
 from .. import output
 from ..account.commands import resolve_account
+from ..artifacts.targets import resolve_target
 from ..client import ApiClient, ApiError
-from ..pkg.targets import resolve_target
 from ..runtime import tools
 from ..subprocesses import child_environment
 
@@ -141,7 +141,7 @@ def resolve_route(
     if customer_id is None and options.account is not None:
         customer_id = str(resolve_account(options.account, profile_name)["customer_id"])
     customer_id = customer_id or cfg_mod.current_customer_id(profile_name)
-    selected = cfg_mod.selected_package_target(profile_name, customer_id)
+    selected = cfg_mod.selected_artifact_target(profile_name, customer_id)
     repo_ref = options.target
     if repo_ref is None and selected is not None:
         if selected.target_type != "repository":
@@ -150,7 +150,7 @@ def resolve_route(
     if repo_ref is None:
         repo_ref = config.registry_defaults(kind, profile_name).default_repo
     if not repo_ref:
-        output.fatal(f"No {kind} repository selected. Pass --rvs-target or run `rvs pkg select`.")
+        output.fatal(f"No {kind} repository selected. Pass --rvs-target or run `rvs art select`.")
     _, _, target = resolve_target(
         repo_ref,
         profile=profile_name,
