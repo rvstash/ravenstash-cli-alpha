@@ -227,7 +227,10 @@ def test_pkg_repo_create_can_set_default_repo(monkeypatch, tmp_path: Path) -> No
 
 
 @pytest.mark.parametrize("selector", ["Engineering", "in_abcdefgh"])
-def test_create_resolves_namespace_inside_selected_customer(monkeypatch, tmp_path, selector):
+@pytest.mark.parametrize("repo_name", ["new-node", "New-Node"])
+def test_create_resolves_namespace_inside_selected_customer(
+    monkeypatch, tmp_path, selector, repo_name
+):
     _isolate_config(monkeypatch, tmp_path)
     namespace = {
         "namespace_unique_ref": "in_abcdefgh",
@@ -241,11 +244,11 @@ def test_create_resolves_namespace_inside_selected_customer(monkeypatch, tmp_pat
                 {"customer": {"customer_id": "foreign"}, "namespace": namespace},
                 {"customer": _repository_entry()["customer"], "namespace": namespace},
             ],
-            _repository_entry("new-node"),
+            _repository_entry(repo_name),
         ]
     )
     _use_fake_client(monkeypatch, fake)
-    result = runner.invoke(pkg_cmd.app, ["repo", "create", f"{selector}/new-node", "-k", "npm"])
+    result = runner.invoke(pkg_cmd.app, ["repo", "create", f"{selector}/{repo_name}", "-k", "npm"])
     assert result.exit_code == 0, result.output
     assert fake.calls == [
         ("GET", "/v0/namespaces", {"customer_id": "cus_123"}),
@@ -255,7 +258,7 @@ def test_create_resolves_namespace_inside_selected_customer(monkeypatch, tmp_pat
             {
                 "customer_unique_ref": "_custpid1",
                 "namespace_unique_ref": "in_abcdefgh",
-                "repository_name": "new-node",
+                "repository_name": repo_name,
                 "registry_kinds": ["npm"],
             },
         ),
@@ -336,12 +339,15 @@ def test_pkg_repo_show_renders_repository_details(monkeypatch, tmp_path: Path) -
     assert "4096" in result.output
 
 
-def test_pkg_repo_rename_updates_matching_profile_default(monkeypatch, tmp_path: Path) -> None:
+@pytest.mark.parametrize("new_name", ["renamed", "Repo-PyPI"])
+def test_pkg_repo_rename_updates_matching_profile_default(
+    monkeypatch, tmp_path: Path, new_name
+) -> None:
     _isolate_config(monkeypatch, tmp_path)
-    fake = _FakeApiClient([_repository_entry("repo-pypi"), _repository_entry("renamed")])
+    fake = _FakeApiClient([_repository_entry("repo-pypi"), _repository_entry(new_name)])
     _use_fake_client(monkeypatch, fake)
 
-    result = runner.invoke(pkg_cmd.app, ["repo", "rename", "repo-pypi", "renamed"])
+    result = runner.invoke(pkg_cmd.app, ["repo", "rename", "repo-pypi", new_name])
 
     assert result.exit_code == 0
     assert fake.calls == [
@@ -353,13 +359,13 @@ def test_pkg_repo_rename_updates_matching_profile_default(monkeypatch, tmp_path:
         (
             "PATCH",
             "/v0/repositories/r_xyzabcde",
-            {"repository_name": "renamed"},
+            {"repository_name": new_name},
         ),
     ]
     saved = cfg_mod.load().registry_defaults("pypi", "default")
     assert saved.default_repo == "in_abcdefgh/r_xyzabcde"
     assert saved.namespace_name_cache == "test-account"
-    assert saved.repository_name_cache == "renamed"
+    assert saved.repository_name_cache == new_name
     assert saved.repository_unique_ref == "r_xyzabcde"
 
 

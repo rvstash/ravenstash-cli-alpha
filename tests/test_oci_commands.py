@@ -8,6 +8,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
+import pytest
 from rvs import config as cfg_mod
 from rvs.cli import app
 from rvs.oci import credential_helper
@@ -18,9 +19,11 @@ from typer.testing import CliRunner
 runner = CliRunner()
 
 
-def test_friendly_oci_root_normalizes_only_namespace_display_case() -> None:
+def test_friendly_oci_root_normalizes_display_case_without_changing_identity() -> None:
     assert oci_runner._friendly_oci_root("AcmeHQ", "images") == "acmehq/images"
     assert oci_runner._friendly_oci_root("Acme-HQ", "images") == "acme-hq/images"
+    assert oci_runner._friendly_oci_root("Engineering", "Images") == "engineering/images"
+    assert oci_runner._friendly_oci_root("Engineering", "IMAGES") == "engineering/images"
     assert oci_runner._stable_oci_root("in_abcdefgh", "r_xyzabcde") == "in_abcdefgh/r_xyzabcde"
 
 
@@ -117,8 +120,9 @@ customer_id = "customer-1"
     )
 
 
+@pytest.mark.parametrize("root", ["main/images", "Main/Images"])
 def test_docker_uses_exact_ephemeral_helper_without_secret_in_argv(
-    monkeypatch, tmp_path: Path
+    monkeypatch, tmp_path: Path, root
 ) -> None:
     _setup(monkeypatch, tmp_path)
     captured: dict[str, Any] = {}
@@ -150,9 +154,9 @@ def test_docker_uses_exact_ephemeral_helper_without_secret_in_argv(
         [
             "docker",
             "--rvs-target",
-            "main/images",
+            root,
             "push",
-            "oci.rvsta.sh/main/images/backend:latest",
+            f"oci.rvsta.sh/{root}/backend:Latest",
         ],
     )
 
@@ -160,7 +164,7 @@ def test_docker_uses_exact_ephemeral_helper_without_secret_in_argv(
     assert captured["cmd"] == [
         "/usr/bin/docker",
         "push",
-        "oci.rvsta.sh/main/images/backend:latest",
+        "oci.rvsta.sh/main/images/backend:Latest",
     ]
     assert "exact-secret-capability" not in " ".join(captured["cmd"])
     assert not Path(captured["env"]["RVS_OCI_CREDENTIAL_FILE"]).exists()
@@ -285,8 +289,9 @@ def test_native_signal_is_forwarded_with_shell_exit_code_and_secret_cleanup(
     assert not captured["broker"].exists()
 
 
+@pytest.mark.parametrize("other_root", ["in_abcdefgh/r_23456789", "Main/Other"])
 def test_oras_requires_kind_and_rejects_second_ravenstash_target(
-    monkeypatch, tmp_path: Path
+    monkeypatch, tmp_path: Path, other_root
 ) -> None:
     _setup(monkeypatch, tmp_path)
     missing = runner.invoke(app, ["oras", "--rvs-target", "main/images", "discover"])
@@ -302,7 +307,7 @@ def test_oras_requires_kind_and_rejects_second_ravenstash_target(
             "main/images",
             "cp",
             "oci.rvsta.sh/main/images/a:one",
-            "oci.rvsta.sh/in_abcdefgh/r_23456789/b:two",
+            f"oci.rvsta.sh/{other_root}/b:two",
         ],
     )
     assert rejected.exit_code != 0

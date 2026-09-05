@@ -93,8 +93,8 @@ def _stable_oci_root(namespace_unique_ref: object, repository_unique_ref: object
 def _friendly_oci_root(namespace_name: object, repository_name: object) -> str:
     if not isinstance(namespace_name, str) or not isinstance(repository_name, str):
         output.fatal("Invalid OCI capability response: current names are missing.")
-    # Namespace display spelling preserves case; OCI paths must be lowercase.
-    root = f"{namespace_name.lower()}/{repository_name}"
+    # Display spelling preserves case; OCI paths must be lowercase.
+    root = f"{namespace_name.lower()}/{repository_name.lower()}"
     if _native_route_parts(root) is None:
         output.fatal("Invalid OCI capability response: current names are invalid.")
     return root
@@ -229,6 +229,26 @@ def _assert_exact_targets(argv: list[str], route: OciRoute) -> None:
         )
 
 
+def _normalize_friendly_targets(argv: list[str], route: OciRoute) -> list[str]:
+    """Normalize only selected namespace/repository spelling, not OCI paths or tags."""
+    pattern = re.compile(
+        r"(?<![A-Za-z0-9._-])"
+        + re.escape(f"{route.registry_host}/")
+        + r"([A-Za-z][A-Za-z0-9-]*)/([A-Za-z][A-Za-z0-9-]*)(?=/|:|@|$)"
+    )
+
+    def normalize(match: re.Match[str]) -> str:
+        root = f"{match[1].lower()}/{match[2].lower()}"
+        if root not in route.accepted_roots:
+            output.fatal(
+                "This invocation references another Ravenstash logical repository. "
+                "One native invocation may use only the exact --rvs-target value."
+            )
+        return f"{route.registry_host}/{root}"
+
+    return [pattern.sub(normalize, argument) for argument in argv]
+
+
 def _write_broker(temp_dir: Path, route: OciRoute) -> Path:
     path = temp_dir / "oci-credential.json"
     descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
@@ -343,6 +363,7 @@ def _operations_for(
 
 def run(tool: OciTool, argv: list[str], options: OciOptions) -> None:
     route = resolve_route(tool, options, _operations_for(tool, argv))
+    argv = _normalize_friendly_targets(argv, route)
     _assert_exact_targets(argv, route)
     with tempfile.TemporaryDirectory(prefix="rvs-oci-") as temporary:
         temp_dir = Path(temporary)
