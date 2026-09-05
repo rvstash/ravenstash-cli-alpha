@@ -163,7 +163,7 @@ def test_pkg_repo_list_filters_by_kind_and_uses_profile_customer(
         (
             "GET",
             "/v0/repositories",
-            {"registry_kind": "pypi"},
+            {"customer_id": "cus_123", "registry_kind": "pypi"},
         )
     ]
     assert "repo-pypi" in result.output
@@ -180,12 +180,27 @@ def test_pkg_repo_list_omits_unset_query_filters(
     result = runner.invoke(pkg_cmd.app, ["repo", "list"])
 
     assert result.exit_code == 0
-    assert fake.calls == [("GET", "/v0/repositories", {})]
+    assert fake.calls == [("GET", "/v0/repositories", {"customer_id": "cus_123"})]
 
 
 def test_pkg_repo_create_can_set_default_repo(monkeypatch, tmp_path: Path) -> None:
     _isolate_config(monkeypatch, tmp_path)
-    fake = _FakeApiClient([_repository_entry("new-node")])
+    fake = _FakeApiClient(
+        [
+            [
+                {
+                    "customer": _repository_entry()["customer"],
+                    "namespace": {
+                        "namespace_unique_ref": "in_abcdefgh",
+                        "namespace_name": "test-account",
+                        "namespace_realm": "internal",
+                        "is_default": True,
+                    },
+                }
+            ],
+            _repository_entry("new-node"),
+        ]
+    )
     _use_fake_client(monkeypatch, fake)
 
     result = runner.invoke(
@@ -195,18 +210,77 @@ def test_pkg_repo_create_can_set_default_repo(monkeypatch, tmp_path: Path) -> No
 
     assert result.exit_code == 0
     assert fake.calls == [
+        ("GET", "/v0/namespaces", {"customer_id": "cus_123"}),
         (
             "POST",
             "/v0/repositories",
             {
-                "customer_id": "cus_123",
+                "customer_unique_ref": "_custpid1",
+                "namespace_unique_ref": "in_abcdefgh",
                 "repository_name": "new-node",
                 "registry_kinds": ["npm"],
             },
-        )
+        ),
     ]
     assert cfg_mod.load().registry_defaults("npm").default_repo == "in_abcdefgh/r_xyzabcde"
     assert "with registry kinds: npm" in result.output
+
+
+@pytest.mark.parametrize("selector", ["Engineering", "in_abcdefgh"])
+def test_create_resolves_namespace_inside_selected_customer(monkeypatch, tmp_path, selector):
+    _isolate_config(monkeypatch, tmp_path)
+    namespace = {
+        "namespace_unique_ref": "in_abcdefgh",
+        "namespace_name": "engineering",
+        "namespace_realm": "internal",
+        "is_default": False,
+    }
+    fake = _FakeApiClient(
+        [
+            [
+                {"customer": {"customer_id": "foreign"}, "namespace": namespace},
+                {"customer": _repository_entry()["customer"], "namespace": namespace},
+            ],
+            _repository_entry("new-node"),
+        ]
+    )
+    _use_fake_client(monkeypatch, fake)
+    result = runner.invoke(pkg_cmd.app, ["repo", "create", f"{selector}/new-node", "-k", "npm"])
+    assert result.exit_code == 0, result.output
+    assert fake.calls == [
+        ("GET", "/v0/namespaces", {"customer_id": "cus_123"}),
+        (
+            "POST",
+            "/v0/repositories",
+            {
+                "customer_unique_ref": "_custpid1",
+                "namespace_unique_ref": "in_abcdefgh",
+                "repository_name": "new-node",
+                "registry_kinds": ["npm"],
+            },
+        ),
+    ]
+
+
+def test_create_with_deferred_personal_namespace_requests_onboarding(monkeypatch, tmp_path):
+    _isolate_config(monkeypatch, tmp_path)
+    fake = _FakeApiClient([[]])
+    _use_fake_client(monkeypatch, fake)
+    result = runner.invoke(pkg_cmd.app, ["repo", "create", "new-node", "-k", "npm"])
+    assert result.exit_code != 0
+    assert "finish onboarding" in result.output
+    assert fake.calls == [("GET", "/v0/namespaces", {"customer_id": "cus_123"})]
+
+
+@pytest.mark.parametrize("flags", [["--public"], ["--scope", "public"]])
+def test_public_scope_never_runs_private_mutation(monkeypatch, flags):
+    def unexpected_client(*_args, **_kwargs):
+        raise AssertionError("Unavailable public scope must not reach the API")
+
+    monkeypatch.setattr(pkg_cmd.ApiClient, "from_profile", unexpected_client)
+    result = runner.invoke(pkg_cmd.app, [*flags, "repo", "create", "demo", "-k", "npm"])
+    assert result.exit_code != 0
+    assert "PublicCatalogUnavailable" in result.output
 
 
 def test_pkg_repo_create_rejects_unknown_kind(monkeypatch, tmp_path: Path) -> None:
@@ -247,7 +321,7 @@ def test_pkg_repo_show_renders_repository_details(monkeypatch, tmp_path: Path) -
         (
             "GET",
             "/v0/repositories/resolve",
-            {"selector": "repo-pypi", "namespace_realm": "internal"},
+            {"selector": "repo-pypi", "customer_id": "cus_123"},
         )
     ]
     assert "repo-pypi" in result.output
@@ -274,7 +348,7 @@ def test_pkg_repo_rename_updates_matching_profile_default(monkeypatch, tmp_path:
         (
             "GET",
             "/v0/repositories/resolve",
-            {"selector": "repo-pypi", "namespace_realm": "internal"},
+            {"selector": "repo-pypi", "customer_id": "cus_123"},
         ),
         (
             "PATCH",
@@ -353,7 +427,7 @@ def test_pkg_remote_management_and_upstream_configuration(monkeypatch, tmp_path:
             "/v0/repositories/resolve",
             {
                 "selector": "repo-pypi",
-                "namespace_realm": "internal",
+                "customer_id": "cus_123",
                 "registry_kind": "pypi",
             },
         ),
@@ -747,7 +821,7 @@ def test_pkg_package_list_and_show_use_repository_package_paths(
             "/v0/repositories/resolve",
             {
                 "selector": "repo-pypi",
-                "namespace_realm": "internal",
+                "customer_id": "cus_123",
                 "registry_kind": "pypi",
             },
         ),
@@ -761,7 +835,7 @@ def test_pkg_package_list_and_show_use_repository_package_paths(
             "/v0/repositories/resolve",
             {
                 "selector": "repo-pypi",
-                "namespace_realm": "internal",
+                "customer_id": "cus_123",
                 "registry_kind": "pypi",
             },
         ),
@@ -832,7 +906,7 @@ def test_pkg_package_mutations_call_expected_api_paths(monkeypatch, tmp_path: Pa
             "/v0/repositories/resolve",
             {
                 "selector": "repo-pypi",
-                "namespace_realm": "internal",
+                "customer_id": "cus_123",
                 "registry_kind": "pypi",
             },
         ),
@@ -846,7 +920,7 @@ def test_pkg_package_mutations_call_expected_api_paths(monkeypatch, tmp_path: Pa
             "/v0/repositories/resolve",
             {
                 "selector": "repo-pypi",
-                "namespace_realm": "internal",
+                "customer_id": "cus_123",
                 "registry_kind": "pypi",
             },
         ),
@@ -860,7 +934,7 @@ def test_pkg_package_mutations_call_expected_api_paths(monkeypatch, tmp_path: Pa
             "/v0/repositories/resolve",
             {
                 "selector": "repo-pypi",
-                "namespace_realm": "internal",
+                "customer_id": "cus_123",
                 "registry_kind": "pypi",
             },
         ),

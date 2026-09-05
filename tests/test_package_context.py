@@ -142,20 +142,21 @@ customer_unique_id = "personal-{profile}-uid"
 
 def test_target_parser_keeps_private_and_mirror_namespaces_disjoint() -> None:
     bare = parse_target("acme/backend")
-    explicit_internal = parse_target("internal:acme/backend")
-    reserved_global = parse_target("global:acme/backend")
+    stable_internal = parse_target("in_abcdefgh/r_abcdefgh")
+    stable_global = parse_target("gn_abcdefgh/r_abcdefgh")
 
     assert bare.target_type == "repository"
-    assert bare.namespace_realm == "internal"
-    assert explicit_internal.selector == bare.selector
-    assert explicit_internal.namespace_realm == "internal"
-    assert reserved_global.selector == bare.selector
-    assert reserved_global.namespace_realm == "global"
+    assert bare.namespace_realm is None
+    assert stable_internal.namespace_realm == "internal"
+    assert stable_global.namespace_realm == "global"
     assert parse_target("mirror:pypiorg").target_type == "official_cache"
     assert parse_target("custom-mirror:piwheels").target_type == "custom_cache"
 
 
-def test_global_target_fails_before_repository_probe(monkeypatch) -> None:
+@pytest.mark.parametrize(
+    "selector", ["global:acme/backend", "internal:acme/backend", "@acme/backend"]
+)
+def test_obsolete_target_notation_fails_before_repository_probe(monkeypatch, selector) -> None:
     class NoProbeClient:
         def get(self, *_args, **_kwargs):
             raise AssertionError("global target must not probe private repositories")
@@ -167,7 +168,7 @@ def test_global_target_fails_before_repository_probe(monkeypatch) -> None:
     )
 
     with pytest.raises(SystemExit):
-        resolve_target("global:acme/backend", profile="alice")
+        resolve_target(selector, profile="alice")
 
 
 @pytest.mark.parametrize("selector", ["cache:pypiorg", "custom-cache:piwheels"])
@@ -203,6 +204,49 @@ def test_account_and_official_cache_selection_are_visible_and_clearable(
     cleared = runner.invoke(app, ["pkg", "clear"])
     assert cleared.exit_code == 0, cleared.output
     assert cfg_mod.selected_package_target("alice", "acme") is None
+
+
+def test_handle_selection_preserves_customer_id_and_canonical_case(monkeypatch, tmp_path):
+    isolate(monkeypatch, tmp_path)
+    owner = {**customer("acme-id", "Acme"), "customer_handle": "acmeHQ"}
+    other = {**customer("other-id", "acmeHQ"), "customer_handle": "other-hq"}
+    fake = FakeApi([owner, other], [])
+    monkeypatch.setattr(ApiClient, "from_profile", staticmethod(lambda profile=None: fake))
+    selected = runner.invoke(app, ["account", "use", "ACMEHQ"])
+    assert selected.exit_code == 0, selected.output
+    assert "acmeHQ" in selected.output
+    assert cfg_mod.current_customer_id("alice") == "acme-id"
+    cached = cfg_mod.cached_account("alice", "acme-id")
+    assert cached is not None
+    assert cached.customer_handle == "acmeHQ"
+    assert cached.customer_unique_ref == owner["customer_unique_ref"]
+
+
+def test_repository_resolution_rejects_cross_customer_response(monkeypatch, tmp_path):
+    isolate(monkeypatch, tmp_path)
+    calls = []
+
+    class ForeignRepositoryApi:
+        def get(self, path, params):
+            calls.append((path, params))
+            return Response({"customer": customer("foreign", "Foreign")})
+
+    monkeypatch.setattr(
+        ApiClient, "from_profile", staticmethod(lambda profile=None: ForeignRepositoryApi())
+    )
+    with pytest.raises(SystemExit):
+        resolve_target("main/packages", profile="alice", customer_id="selected")
+    assert calls == [
+        (
+            "/v0/repositories/resolve",
+            {
+                "selector": "main/packages",
+                "registry_kind": None,
+                "customer_id": "selected",
+            },
+        )
+    ]
+    assert cfg_mod.cached_account("alice", "foreign") is None
 
 
 def test_custom_cache_kind_collision_requires_disambiguation(monkeypatch, tmp_path: Path) -> None:

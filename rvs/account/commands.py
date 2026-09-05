@@ -39,7 +39,15 @@ def resolve_account(selector: str, profile: str | None = None) -> dict:
         output.fatal("Acting-account selector cannot be empty.")
 
     lowered = value.casefold()
-    if lowered == "personal":
+    handle_matches = [
+        item
+        for item in items
+        if isinstance(item.get("customer_handle"), str)
+        and item["customer_handle"].casefold() == lowered
+    ]
+    if handle_matches:
+        matches = handle_matches
+    elif lowered == "personal":
         matches = [item for item in items if item.get("account_type") == "personal"]
     else:
         label = value[4:] if lowered.startswith("org:") else value
@@ -118,6 +126,8 @@ def ensure_active_account(
 
 
 def display_name(account: cfg_mod.AccountContext) -> str:
+    if account.customer_handle:
+        return account.customer_handle
     if account.account_type == "personal":
         return "personal"
     return f"org:{account.account_label}"
@@ -134,7 +144,9 @@ def account_list(
     for item in customers(profile_name):
         customer_id = str(item.get("customer_id", ""))
         account_type = str(item.get("account_type", ""))
-        label = "personal" if account_type == "personal" else f"org:{item.get('account_label')}"
+        label = item.get("customer_handle") or (
+            "personal" if account_type == "personal" else f"org:{item.get('account_label')}"
+        )
         rows.append(
             [
                 f"{label} (active)" if customer_id == active_id else label,
@@ -157,6 +169,7 @@ def account_current(
             "Acting account": display_name(account),
             "Selection source": cfg_mod.account_selection_source(profile_name),
             "Account label": account.account_label,
+            "Handle": account.customer_handle or "unknown",
             "Stable reference": account.customer_unique_ref,
             "Role": account.organization_role or "unknown",
         },
@@ -177,7 +190,7 @@ def _use_account(account: str, profile: str | None) -> None:
 @app.command("use")
 def account_use(
     account: str = typer.Argument(
-        ..., help="personal, org:<label>, or a stable account reference."
+        ..., help="Customer handle, stable account ID, personal, or org:<label>."
     ),
     profile: str | None = typer.Option(None, "--profile", "-p"),
 ) -> None:

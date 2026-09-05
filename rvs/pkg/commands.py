@@ -81,8 +81,14 @@ def package_context(
         None, "--kind", help="Registry kind when inference is ambiguous."
     ),
     profile: str | None = typer.Option(None, "--profile", help="One-shot local CLI profile."),
+    scope: Literal["self", "public"] = typer.Option(
+        "self", "--scope", help="Resolve in the acting account or the public catalog."
+    ),
+    public: bool = typer.Option(False, "--public", help="Use the public catalog scope."),
 ) -> None:
     """Manage package targets and delegate package operations to native tools."""
+    if public or scope == "public":
+        output.fatal("PublicCatalogUnavailable: the public package catalog is not available yet.")
     ctx.obj = {
         "target": target,
         "account": account,
@@ -103,12 +109,16 @@ def _profile(profile: str | None) -> tuple[str, cfg_mod.ProfileConfig]:
 
 
 def _client(profile: str | None) -> ApiClient:
-    return ApiClient.from_profile(profile)
+    return ApiClient.from_profile(profile or _root_package_options().get("profile"))
 
 
 def _customer_id(profile: str | None, explicit_customer_id: str | None = None) -> str:
     if explicit_customer_id:
         return explicit_customer_id
+    options = _root_package_options()
+    profile = profile or options.get("profile")
+    if options.get("account"):
+        return str(resolve_account(cast("str", options["account"]), profile)["customer_id"])
     profile_name, _ = _profile(profile)
     customer_id = cfg_mod.current_customer_id(profile_name)
     if not customer_id:
@@ -373,24 +383,17 @@ def _resolve_repository_entry(
         spec = parse_target(candidate)
         if spec.target_type != "repository":
             output.fatal("Repository commands require a repository target.")
-        if spec.namespace_realm == "global":
-            output.fatal(
-                "GlobalNamespacesUnavailable: global namespaces are reserved for a future "
-                "Ravenstash release."
-            )
         selector = spec.selector
-        namespace_realm = spec.namespace_realm
     else:
         # Repository-management commands retain the convenient unique-name/ref
         # lookup. Saved package targets still require the complete namespace pair.
         selector = candidate
-        namespace_realm = "internal"
     params = {
         "selector": selector,
-        "namespace_realm": namespace_realm,
     }
-    if customer_id is not None:
-        params["customer_id"] = customer_id
+    options = _root_package_options()
+    profile = profile or options.get("profile")
+    params["customer_id"] = _customer_id(profile, customer_id)
     if kind is not None:
         params["registry_kind"] = kind
     try:
@@ -433,14 +436,14 @@ def repo_list(
         help="Registry-kind filter: pypi | npm | maven | container | helm.",
     ),
 ) -> None:
-    """List repositories across every authorized customer and namespace."""
+    """List repositories in the acting account's namespaces."""
     if kind:
         _require_kind(kind)
     client = _client(profile)
     params = {
         key: value
         for key, value in {
-            "customer_id": customer_id,
+            "customer_id": _customer_id(profile, customer_id),
             "registry_kind": kind,
         }.items()
         if value is not None
@@ -476,7 +479,7 @@ def repo_list(
 
 @repo_app.command("create")
 def repo_create(
-    name: str = typer.Argument(..., help=_REPOSITORY_NAME_HELP),
+    name: str = typer.Argument(..., help="Repository name or namespace/repository."),
     kind: list[str] = typer.Option(
         ...,
         "--registry-kind",
@@ -490,14 +493,45 @@ def repo_create(
     ),
 ) -> None:
     """Create a package repository."""
+    if name.startswith(("internal:", "global:", "@")):
+        output.fatal("Use namespace/repository without a realm prefix or @ notation.")
+    namespace_selector, repository_name = _split_repo_ref(name)
     kinds: list[cfg_mod.RegistryKind] = list(dict.fromkeys(_require_kind(value) for value in kind))
     client = _client(profile)
-    payload = {
-        "customer_id": _customer_id(profile, customer_id),
-        "repository_name": name,
-        "registry_kinds": kinds,
-    }
     try:
+        selected_customer_id = _customer_id(profile, customer_id)
+        namespaces = client.get(
+            "/v0/namespaces", params={"customer_id": selected_customer_id}
+        ).json()
+        matches = [
+            entry
+            for entry in namespaces
+            if entry["customer"]["customer_id"] == selected_customer_id
+            and (
+                (
+                    entry["namespace"]["is_default"]
+                    and entry["namespace"]["namespace_realm"] == "internal"
+                )
+                if namespace_selector is None
+                else (
+                    entry["namespace"]["namespace_unique_ref"] == namespace_selector
+                    or entry["namespace"]["namespace_name"].casefold()
+                    == namespace_selector.casefold()
+                )
+            )
+        ]
+        if len(matches) != 1:
+            output.fatal(
+                "Select an accessible namespace with namespace/repository. "
+                "If this account has no namespace, finish onboarding in the webapp."
+            )
+        selected_namespace = matches[0]
+        payload = {
+            "customer_unique_ref": selected_namespace["customer"]["customer_unique_ref"],
+            "namespace_unique_ref": selected_namespace["namespace"]["namespace_unique_ref"],
+            "repository_name": repository_name,
+            "registry_kinds": kinds,
+        }
         entry = client.post("/v0/repositories", json=payload).json()
         repo = entry["repository"]
     except ApiError as exc:

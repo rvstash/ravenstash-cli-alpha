@@ -10,7 +10,7 @@ Config file shape
 -----------------
 ::
 
-    config_version = 2
+    config_version = 3
     default_profile = "default"
 
     [profiles.default]
@@ -80,7 +80,7 @@ SESSIONS_DIR_NAME = "sessions"
 
 DEFAULT_API_URL = "https://api.ravenstash.com"
 DEFAULT_REPOSITORY_DOMAIN = "rvsta.sh"
-CURRENT_CONFIG_VERSION = 2
+CURRENT_CONFIG_VERSION = 3
 _UNIQUE_ID_FRAGMENT = r"[23456789abcdefghijkmnpqrstuvwxyz]{8}"
 _INTERNAL_NAMESPACE_REF_RE = re.compile(rf"^in_{_UNIQUE_ID_FRAGMENT}$")
 _GLOBAL_NAMESPACE_REF_RE = re.compile(rf"^gn_{_UNIQUE_ID_FRAGMENT}$")
@@ -219,6 +219,7 @@ class AccountContext:
     organization_role: str | None = None
     authority_revision: int | None = None
     selected_target: PackageTarget | None = None
+    customer_handle: str | None = None
 
 
 @dataclass
@@ -673,6 +674,7 @@ def _account_contexts_from_mapping(value: object) -> dict[str, AccountContext]:
             organization_role=raw.get("organization_role"),
             authority_revision=raw.get("authority_revision"),
             selected_target=_package_target_from_mapping(raw.get("selected_target")),
+            customer_handle=raw.get("customer_handle"),
         )
     return result
 
@@ -692,6 +694,7 @@ def _account_context_mapping(account: AccountContext) -> dict:
             "customer_unique_ref": account.customer_unique_ref,
             "account_type": account.account_type,
             "account_label": account.account_label,
+            "customer_handle": account.customer_handle,
             "organization_role": account.organization_role,
             "authority_revision": account.authority_revision,
             "selected_target": (
@@ -862,6 +865,8 @@ def _migrate_raw_config(raw: dict) -> bool:
             _migrate_config_v0_to_v1(raw)
         elif version == 1:
             _migrate_config_v1_to_v2(raw)
+        elif version == 2:
+            _migrate_config_v2_to_v3(raw)
         else:
             raise RuntimeError(f"rvs has no config migration from version {version}")
         next_version = raw.get("config_version")
@@ -876,6 +881,39 @@ def _migrate_raw_config(raw: dict) -> bool:
         version = next_version
         changed = True
     return changed
+
+
+def _migrate_config_v2_to_v3(raw: dict) -> None:
+    """Remove obsolete selector notation while preserving account and resource IDs."""
+    profiles = raw.get("profiles", {})
+    if isinstance(profiles, dict):
+        for profile in profiles.values():
+            if not isinstance(profile, dict):
+                continue
+            targets = []
+            accounts = profile.get("accounts", {})
+            if isinstance(accounts, dict):
+                targets.extend(
+                    account.get("selected_target")
+                    for account in accounts.values()
+                    if isinstance(account, dict)
+                )
+            registries = profile.get("registries", {})
+            if isinstance(registries, dict):
+                targets.extend(registries.values())
+            for target in targets:
+                if not isinstance(target, dict):
+                    continue
+                for key in ("stable_selector", "display_selector", "default_repo"):
+                    selector = target.get(key)
+                    if isinstance(selector, str) and selector.startswith(("internal:", "global:")):
+                        realm = target.get("namespace_realm", "internal")
+                        if key != "display_selector" and selector.split(":", 1)[0] != realm:
+                            raise ValueError(
+                                "repository selector conflicts with its namespace realm"
+                            )
+                        target[key] = selector.split(":", 1)[1]
+    raw["config_version"] = 3
 
 
 def _validate_repository_target_identity(
@@ -913,20 +951,16 @@ def _validate_repository_target_identity(
             raise ValueError(f"conflicting namespace identity at {path}")
         if repository_ref is not None and repository_ref != parts[1]:
             raise ValueError(f"conflicting repository identity at {path}")
-    elif selector.startswith("internal:"):
-        if realm != "internal" or selector.removeprefix("internal:").count("/") != 1:
-            raise ValueError(f"invalid internal repository selector at {path}")
-    elif selector.startswith("global:"):
-        if realm != "global" or selector.removeprefix("global:").count("/") != 1:
-            raise ValueError(f"invalid global repository selector at {path}")
-    elif ":" in selector or (
-        selector.count("/") != 1 and not (allow_legacy_short_selector and "/" not in selector)
+    elif (
+        selector.startswith("@")
+        or ":" in selector
+        or (selector.count("/") != 1 and not (allow_legacy_short_selector and "/" not in selector))
     ):
         raise ValueError(f"invalid repository selector at {path}")
 
 
-def _validate_config_v2(raw: dict) -> None:
-    """Fail closed on malformed known v2 state before replacing the source file."""
+def _validate_raw_config(raw: dict) -> None:
+    """Fail closed on malformed current config before replacing the source file."""
 
     profiles = raw.get("profiles", {})
     if not isinstance(profiles, dict):
@@ -997,9 +1031,9 @@ def _write_raw(raw: dict) -> None:
             temporary_path.unlink(missing_ok=True)
 
 
-def _backup_pre_v2_config() -> None:
-    """Create the owner-only, one-time source backup before a v2 replacement."""
-    backup_path = CONFIG_FILE.with_name("config.v1.toml.bak")
+def _backup_pre_migration_config(version: int) -> None:
+    """Create an owner-only source backup before replacing a versioned config."""
+    backup_path = CONFIG_FILE.with_name(f"config.v{version}.toml.bak")
     try:
         descriptor = os.open(
             backup_path,
@@ -1042,7 +1076,7 @@ def load() -> RvsConfig:
     raw = _load_raw()
     original_version = raw.get("config_version", 0)
     migrated = _migrate_raw_config(raw)
-    _validate_config_v2(raw)
+    _validate_raw_config(raw)
     cfg = RvsConfig(
         default_profile=raw.get("default_profile", "default"),
         credential_store=raw.get("credential_store", "auto"),
@@ -1085,8 +1119,8 @@ def load() -> RvsConfig:
         )
 
     if migrated and config_exists:
-        if isinstance(original_version, int) and original_version < 2:
-            _backup_pre_v2_config()
+        if isinstance(original_version, int):
+            _backup_pre_migration_config(original_version)
         _write_raw(raw)
     return cfg
 
@@ -1288,6 +1322,7 @@ def cache_account(
         customer_unique_ref=str(customer["customer_unique_ref"]),
         account_type=cast("Literal['personal', 'organization']", customer["account_type"]),
         account_label=str(customer["account_label"]),
+        customer_handle=customer.get("customer_handle"),
         organization_role=customer.get("organization_role"),
         authority_revision=customer.get("authority_revision"),
         selected_target=existing.selected_target if existing is not None else None,

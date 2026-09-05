@@ -321,7 +321,6 @@ def _package_token_for_url(
             "/v0/repositories/resolve",
             params={
                 "selector": selector,
-                "namespace_realm": "internal",
                 "customer_id": customer_id,
                 "registry_kind": kind,
             },

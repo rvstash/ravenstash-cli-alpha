@@ -286,7 +286,7 @@ registry_base_url = "http://localhost:8788"
     )
     migrated = config_file.read_text(encoding="utf-8")
     assert config_file.stat().st_ino != original_inode
-    assert "config_version = 2" in migrated
+    assert "config_version = 3" in migrated
     assert 'custom_setting = "preserved"' in migrated
     assert "cache_base_url" not in migrated
     assert migrated.count("mirror_base_url") == 6
@@ -381,9 +381,9 @@ repository_name_cache = "packages"
     assert target.namespace_realm == "internal"
     assert target.namespace_unique_ref == "in_abcdefgh"
     assert target.stable_selector == "in_abcdefgh/r_23456789"
-    assert target.display_selector == "internal:engineering/packages"
+    assert target.display_selector == "engineering/packages"
     defaults = loaded.registry_defaults("pypi")
-    assert defaults.default_repo == "internal:engineering/packages"
+    assert defaults.default_repo == "engineering/packages"
     assert defaults.namespace_unique_ref == "in_abcdefgh"
 
     backup = config_dir / "config.v1.toml.bak"
@@ -396,6 +396,30 @@ repository_name_cache = "packages"
 
     cfg_mod.load()
     assert backup.read_text(encoding="utf-8") == original
+
+
+def test_v2_selector_migration_preserves_identity_and_backs_up_source(monkeypatch, tmp_path):
+    config_dir, config_file = _point_config(monkeypatch, tmp_path)
+    config_dir.mkdir()
+    original = """config_version = 2
+[profiles.default]
+customer_id = "original-customer-id"
+customer_unique_id = "abcdefgh"
+[profiles.default.registries.pypi]
+default_repo = "internal:main/packages"
+namespace_realm = "internal"
+namespace_unique_ref = "in_abcdefgh"
+repository_unique_ref = "r_23456789"
+"""
+    config_file.write_text(original, encoding="utf-8")
+    cfg = cfg_mod.load()
+    assert cfg.profiles["default"].customer_id == "original-customer-id"
+    assert cfg.profiles["default"].customer_unique_id == "abcdefgh"
+    defaults = cfg.registry_defaults("pypi")
+    assert defaults.default_repo == "main/packages"
+    assert defaults.namespace_unique_ref == "in_abcdefgh"
+    assert defaults.repository_unique_ref == "r_23456789"
+    assert (config_dir / "config.v2.toml.bak").read_text(encoding="utf-8") == original
 
 
 def test_v1_namespace_migration_rejects_conflicting_old_and_new_fields(

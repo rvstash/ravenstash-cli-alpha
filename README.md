@@ -122,6 +122,7 @@ rvs account list
 rvs account current
 rvs account use personal
 rvs account use org:acme
+rvs account use acmeHQ
 rvs context current
 rvs shell setup
 ```
@@ -200,9 +201,9 @@ Select one typed target without reserving namespace names:
 
 ```bash
 rvs pkg select acme/backend
-rvs pkg select internal:acme/backend
-# Reserved syntax; global namespaces are not available yet.
-rvs pkg select global:acme/backend
+rvs pkg --scope self select acme/backend
+# Reserved public catalog scope; currently reports PublicCatalogUnavailable.
+rvs pkg --public select acme/backend
 rvs pkg select mirror:pypiorg
 rvs pkg select custom-mirror:piwheels
 rvs pkg current
@@ -236,10 +237,10 @@ Private attachments default to zero/disabled minimum age, while official remote
 attachments retain the server recommendation. Container and Helm are private-only.
 
 Repository names use lowercase letters, numbers, and hyphens. Package targets
-use `<namespace>/<repo-name>` and default to the internal realm;
-`internal:<namespace>/<repo-name>` is the explicit equivalent. The reserved
-`global:<namespace>/<repo-name>` form is recognized and fails with
-`GlobalNamespacesUnavailable` until global namespaces launch. When equal names
+use `<namespace>/<repo-name>` within the acting account; no realm prefix or `@`
+notation is needed. `--scope self` is the default. `--public` and `--scope public`
+reserve the future public catalog and currently return `PublicCatalogUnavailable`.
+When equal names
 are authorized across accounts, select the account explicitly. After resolving
 the target, the CLI always builds native package URLs from the immutable
 `<namespace_unique_ref>/<repository_unique_ref>` pair.
@@ -247,6 +248,12 @@ the target, the CLI always builds native package URLs from the immutable
 The acting account and selected target are scoped by local profile and immutable
 customer ID. Legacy per-kind repository defaults remain readable as a migration
 fallback. An explicit `--target` is one-shot and never changes saved state.
+
+`rvs account use HANDLE` matches customer handles without regard to letter case
+and preserves the chosen casing for display. Handles can change; saved contexts
+remain keyed by the existing customer ID. `rvs pkg repo create namespace/repository`
+resolves an accessible namespace and creates through its immutable reference; a
+bare repository name uses the account's default internal namespace.
 
 Saved defaults store immutable namespace and repository references as identity
 and keep names only as display hints. A later namespace or repository rename

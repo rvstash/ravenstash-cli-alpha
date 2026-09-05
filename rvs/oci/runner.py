@@ -60,9 +60,9 @@ def _native_route_parts(native_path: str) -> tuple[str, str] | None:
     )
     if stable:
         if not (
-            namespace.startswith("in_")
+            namespace.startswith(("in_", "gn_"))
             and repository.startswith("r_")
-            and _UNIQUE_ID.fullmatch(namespace.removeprefix("in_"))
+            and _UNIQUE_ID.fullmatch(namespace.split("_", 1)[1])
             and _UNIQUE_ID.fullmatch(repository.removeprefix("r_"))
         ):
             return None
@@ -79,9 +79,11 @@ def _native_route_parts(native_path: str) -> tuple[str, str] | None:
 def _stable_oci_root(namespace_unique_ref: object, repository_unique_ref: object) -> str:
     if not isinstance(namespace_unique_ref, str) or not isinstance(repository_unique_ref, str):
         output.fatal("Invalid OCI capability response: stable identity is missing.")
-    if not namespace_unique_ref.startswith("in_") or not repository_unique_ref.startswith("r_"):
+    if not namespace_unique_ref.startswith(("in_", "gn_")) or not repository_unique_ref.startswith(
+        "r_"
+    ):
         output.fatal("Invalid OCI capability response: stable identity is invalid.")
-    namespace_id = namespace_unique_ref.removeprefix("in_")
+    namespace_id = namespace_unique_ref.split("_", 1)[1]
     repository_unique_id = repository_unique_ref.removeprefix("r_")
     if not _UNIQUE_ID.fullmatch(namespace_id) or not _UNIQUE_ID.fullmatch(repository_unique_id):
         output.fatal("Invalid OCI capability response: stable identity is invalid.")

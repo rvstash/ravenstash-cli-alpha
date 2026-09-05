@@ -53,14 +53,8 @@ def parse_target(value: str) -> TargetSpec:
         selector = candidate.removeprefix("custom-mirror:").strip().strip("/")
         target_type = "custom_cache"
         namespace_realm = None
-    elif candidate.startswith("internal:"):
-        selector = candidate.removeprefix("internal:").strip().strip("/")
-        target_type = "repository"
-        namespace_realm = "internal"
-    elif candidate.startswith("global:"):
-        selector = candidate.removeprefix("global:").strip().strip("/")
-        target_type = "repository"
-        namespace_realm = "global"
+    elif candidate.startswith(("internal:", "global:", "@")):
+        output.fatal("Use namespace/repository without a realm prefix or @ notation.")
     elif ":" in candidate:
         output.fatal(
             "Unknown package target type. Use namespace/repository, mirror:<source>, "
@@ -69,7 +63,7 @@ def parse_target(value: str) -> TargetSpec:
     else:
         selector = candidate
         target_type = "repository"
-        namespace_realm = "internal"
+        namespace_realm = None
     if not selector or (target_type != "repository" and "/" in selector):
         output.fatal("The package target selector is invalid.")
     if target_type == "repository":
@@ -82,12 +76,12 @@ def parse_target(value: str) -> TargetSpec:
         typed = namespace_part.startswith(("in_", "gn_", "r_")) or repository_part.startswith(
             ("in_", "gn_", "r_")
         )
-        expected_namespace_prefix = "in_" if namespace_realm == "internal" else "gn_"
         if typed and not (
-            namespace_part.startswith(expected_namespace_prefix)
-            and repository_part.startswith("r_")
+            namespace_part.startswith(("in_", "gn_")) and repository_part.startswith("r_")
         ):
             output.fatal("Stable repository targets require a matching typed namespace/r_ pair.")
+        if typed:
+            namespace_realm = "global" if namespace_part.startswith("gn_") else "internal"
     return TargetSpec(
         target_type=target_type,
         selector=selector,
@@ -169,15 +163,11 @@ def resolve_target(
     client = ApiClient.from_profile(profile_name)
     try:
         if spec.target_type == "repository":
-            if spec.namespace_realm == "global":
-                output.fatal(
-                    "GlobalNamespacesUnavailable: global namespaces are reserved for a future "
-                    "Ravenstash release."
-                )
             effective_customer_id = customer_id or cfg_mod.current_customer_id(profile_name)
+            if effective_customer_id is None:
+                output.fatal("No acting account is selected. Run `rvs account use`.")
             params = {
                 "selector": spec.selector,
-                "namespace_realm": spec.namespace_realm,
                 "registry_kind": registry_kind,
             }
             if effective_customer_id is not None:
@@ -187,6 +177,8 @@ def resolve_target(
                 params=params,
             ).json()
             raw_customer = entry["customer"]
+            if raw_customer["customer_id"] != effective_customer_id:
+                output.fatal("Resolved repository belongs to a different acting account.")
             raw_customer.setdefault("customer_unique_ref", raw_customer["customer_id"])
             raw_customer.setdefault("account_type", "personal")
             raw_customer.setdefault("account_label", raw_customer["customer_unique_ref"])

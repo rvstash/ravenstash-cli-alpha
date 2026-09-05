@@ -20,10 +20,10 @@ The four context layers are intentionally distinct:
 
 Package commands resolve a complete repository selector through DevAPI:
 
-- `<namespace>/<repository-name>` selects an internal namespace by default;
-- `internal:<namespace>/<repository-name>` makes the realm explicit;
-- `global:<namespace>/<repository-name>` is reserved and currently returns
-  `GlobalNamespacesUnavailable`;
+- `<namespace>/<repository-name>` selects a namespace in the acting account;
+- no `internal:`, `global:`, or `@` prefix is used;
+- `rvs pkg --scope self` is the default; `--scope public` or `--public`
+  currently returns `PublicCatalogUnavailable`;
 - saved defaults contain immutable
   `<namespace_unique_ref>/<repository_unique_ref>` pairs.
 

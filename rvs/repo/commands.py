@@ -20,7 +20,7 @@ def list_repos(
     customer_id: str | None = typer.Option(None, "--customer-id"),
     registry_kind: str | None = typer.Option(None, "--registry-kind", "-k"),
 ) -> None:
-    """List authorized repositories grouped by account and namespace."""
+    """List repositories in the acting account's namespaces."""
     pkg_commands.repo_list(
         profile=profile,
         customer_id=customer_id,
@@ -30,7 +30,7 @@ def list_repos(
 
 @app.command("create")
 def create(
-    name: str = typer.Argument(..., help="Repository name."),
+    name: str = typer.Argument(..., help="Repository name or namespace/repository."),
     registry_kind: list[str] = typer.Option(
         ...,
         "--registry-kind",
@@ -41,7 +41,7 @@ def create(
     customer_id: str | None = typer.Option(None, "--customer-id"),
     set_default: bool = typer.Option(False, "--default"),
 ) -> None:
-    """Create a repository in the customer's default namespace."""
+    """Create in the selected namespace or the account's default namespace."""
     pkg_commands.repo_create(
         name=name,
         kind=registry_kind,

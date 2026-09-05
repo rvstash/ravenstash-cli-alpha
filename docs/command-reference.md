@@ -111,7 +111,7 @@ the shim was installed.
 ```bash
 rvs account list [--profile NAME]
 rvs account current [--profile NAME]
-rvs account use personal|org:LABEL|STABLE_REF [--profile NAME]
+rvs account use HANDLE|personal|org:LABEL|STABLE_REF [--profile NAME]
 rvs context current [--profile NAME]
 rvs shell setup [--shell bash|zsh|fish]
 
@@ -126,10 +126,10 @@ organization customer used for authorization, ownership, and metering. A package
 target is selected inside that account. `rvs context current` verifies and shows
 the effective tuple and selection provenance without collapsing those concepts.
 
-Repository targets are `namespace/repository` (internal by default) or the
-explicit `internal:namespace/repository` form. The reserved
-`global:namespace/repository` form is parsed but fails with
-`GlobalNamespacesUnavailable` until global namespaces launch. Mirrors remain
+Repository targets are `namespace/repository` in the acting account.
+Realm prefixes and `@` notation are rejected. `rvs pkg --scope self` is the
+default; `--scope public` or `--public` currently fails with
+`PublicCatalogUnavailable` before any resource operation. Mirrors remain
 separate targets: `mirror:official-slug` or `custom-mirror:customer-name`.
 Resolution is always scoped to the acting account. `--kind` is needed only when
 a generic operation or duplicate cross-kind custom mirror name is ambiguous.
@@ -153,7 +153,7 @@ Repository commands:
 
 ```bash
 rvs pkg repo list [--profile NAME] [--customer-id CUSTOMER_ID] [--registry-kind pypi|npm|maven|container|helm]
-rvs pkg repo create NAME --registry-kind pypi|npm|maven|container|helm [--profile NAME] [--customer-id CUSTOMER_ID] [--default]
+rvs pkg repo create [NAMESPACE/]NAME --registry-kind pypi|npm|maven|container|helm [--profile NAME] [--customer-id CUSTOMER_ID] [--default]
 rvs pkg repo show REPOSITORY_NAME [--profile NAME]
 rvs pkg repo rename REPOSITORY_NAME NEW_NAME [--profile NAME]
 rvs pkg repo delete REPOSITORY_NAME [--profile NAME] [--yes]

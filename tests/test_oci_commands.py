@@ -30,7 +30,7 @@ class _Api:
     def get(self, path: str, params=None) -> _Response:
         assert path == "/v0/repositories/resolve"
         assert params["registry_kind"] in {"container", "helm"}
-        assert "customer_id" not in params
+        assert params["customer_id"] == "customer-1"
         return _Response(
             {
                 "customer": {"customer_id": "customer-1"},
@@ -93,6 +93,7 @@ default_profile = "default"
 
 [profiles.default]
 api_url = "https://api.example.test"
+customer_id = "customer-1"
 """.strip(),
         encoding="utf-8",
     )
@@ -159,7 +160,7 @@ def test_docker_uses_exact_ephemeral_helper_without_secret_in_argv(
     assert not Path(captured["env"]["RVS_OCI_CREDENTIAL_FILE"]).exists()
 
 
-def test_explicit_internal_target_accepts_current_friendly_native_root(
+def test_namespace_target_accepts_current_friendly_native_root(
     monkeypatch, tmp_path: Path
 ) -> None:
     _setup(monkeypatch, tmp_path)
@@ -178,7 +179,7 @@ def test_explicit_internal_target_accepts_current_friendly_native_root(
 
     route = oci_runner.resolve_route(
         "docker",
-        oci_runner.OciOptions(target="internal:main/images"),
+        oci_runner.OciOptions(target="main/images"),
         ("download", "upload"),
     )
 
