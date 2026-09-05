@@ -93,7 +93,8 @@ def _stable_oci_root(namespace_unique_ref: object, repository_unique_ref: object
 def _friendly_oci_root(namespace_name: object, repository_name: object) -> str:
     if not isinstance(namespace_name, str) or not isinstance(repository_name, str):
         output.fatal("Invalid OCI capability response: current names are missing.")
-    root = f"{namespace_name}/{repository_name}"
+    # Namespace display spelling preserves case; OCI paths must be lowercase.
+    root = f"{namespace_name.lower()}/{repository_name}"
     if _native_route_parts(root) is None:
         output.fatal("Invalid OCI capability response: current names are invalid.")
     return root

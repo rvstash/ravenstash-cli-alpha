@@ -18,6 +18,12 @@ from typer.testing import CliRunner
 runner = CliRunner()
 
 
+def test_friendly_oci_root_normalizes_only_namespace_display_case() -> None:
+    assert oci_runner._friendly_oci_root("AcmeHQ", "images") == "acmehq/images"
+    assert oci_runner._friendly_oci_root("Acme-HQ", "images") == "acme-hq/images"
+    assert oci_runner._stable_oci_root("in_abcdefgh", "r_xyzabcde") == "in_abcdefgh/r_xyzabcde"
+
+
 class _Response:
     def __init__(self, value: Any) -> None:
         self.value = value
@@ -160,9 +166,7 @@ def test_docker_uses_exact_ephemeral_helper_without_secret_in_argv(
     assert not Path(captured["env"]["RVS_OCI_CREDENTIAL_FILE"]).exists()
 
 
-def test_namespace_target_accepts_current_friendly_native_root(
-    monkeypatch, tmp_path: Path
-) -> None:
+def test_namespace_target_accepts_current_friendly_native_root(monkeypatch, tmp_path: Path) -> None:
     _setup(monkeypatch, tmp_path)
 
     class StablePathApi(_Api):
