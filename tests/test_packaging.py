@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import subprocess
+import tomllib
 from pathlib import Path
 
 import pytest
@@ -77,11 +78,15 @@ def test_frozen_bundle_dispatches_docker_credential_helper() -> None:
 
 def test_installer_is_owned_by_cli_packaging_and_pins_release_identity() -> None:
     source = INSTALLER.read_text(encoding="utf-8")
+    project = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    version = project["project"]["version"]
+    major, minor, _patch = version.split(".", 2)
+    channel = f"v0.{minor}" if major == "0" else f"v{major}"
 
     assert INSTALLER.stat().st_mode & 0o111
     assert "https://releases.ravenstash.com/rvs/apt" in source
-    assert 'readonly release_version="0.10.0"' in source
-    assert 'readonly compatibility_channel="v0.10"' in source
+    assert f'readonly release_version="{version}"' in source
+    assert f'readonly compatibility_channel="{channel}"' in source
     assert "3B7C20FC370D1A7C813DF3A2E9679F951AD8BAA0" in source
     assert "--proto '=https' --proto-redir '=https' --tlsv1.2" in source
 
