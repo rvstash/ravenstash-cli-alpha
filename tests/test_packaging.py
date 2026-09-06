@@ -80,8 +80,8 @@ def test_installer_is_owned_by_cli_packaging_and_pins_release_identity() -> None
 
     assert INSTALLER.stat().st_mode & 0o111
     assert "https://releases.ravenstash.com/rvs/apt" in source
-    assert 'readonly release_version="0.9.3"' in source
-    assert 'readonly compatibility_channel="v0.9"' in source
+    assert 'readonly release_version="0.10.0"' in source
+    assert 'readonly compatibility_channel="v0.10"' in source
     assert "3B7C20FC370D1A7C813DF3A2E9679F951AD8BAA0" in source
     assert "--proto '=https' --proto-redir '=https' --tlsv1.2" in source
 
