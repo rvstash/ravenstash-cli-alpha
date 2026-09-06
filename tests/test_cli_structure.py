@@ -131,20 +131,21 @@ def test_repo_commands_are_registered(alias: str) -> None:
         assert command in repo_result.output
 
 
-def test_top_level_repo_is_removed() -> None:
-    result = runner.invoke(app, ["repo", "--help"])
+@pytest.mark.parametrize("command", ["repo", "pkg"])
+def test_retired_top_level_commands_are_removed(command: str) -> None:
+    result = runner.invoke(app, [command, "--help"])
     assert result.exit_code != 0
     assert "No such command" in result.output
 
 
 def test_artifact_spellings_share_one_command_application() -> None:
     groups = {group.name: group.typer_instance for group in app.registered_groups}
-    assert groups["art"] is groups["artifacts"] is groups["pkg"]
-    assert "repo" not in groups
+    assert groups["art"] is groups["artifacts"]
+    assert not {"repo", "pkg"}.intersection(groups)
 
 
-@pytest.mark.parametrize("alias", ["art", "artifacts", "pkg"])
-def test_artifact_alias_json_and_transition_warning(
+@pytest.mark.parametrize("alias", ["art", "artifacts"])
+def test_artifact_alias_json_has_no_transition_warning(
     monkeypatch, tmp_path: Path, alias: str
 ) -> None:
     _isolate_config(monkeypatch, tmp_path)
@@ -158,10 +159,7 @@ def test_artifact_alias_json_and_transition_warning(
         "container",
         "helm",
     }
-    if alias == "pkg":
-        assert result.stderr.count("DeprecationWarning") == 1
-    else:
-        assert "DeprecationWarning" not in result.stderr
+    assert "DeprecationWarning" not in result.stderr
 
 
 def test_registry_kind_has_no_ecosystem_alias() -> None:

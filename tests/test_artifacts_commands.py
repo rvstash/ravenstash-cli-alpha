@@ -142,7 +142,7 @@ def _use_fake_client(monkeypatch, fake: _FakeApiClient) -> None:
     )
 
 
-def test_pkg_repo_list_filters_by_kind_and_uses_profile_customer(
+def test_artifacts_repo_list_filters_by_kind_and_uses_profile_customer(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
@@ -175,7 +175,7 @@ def test_pkg_repo_list_filters_by_kind_and_uses_profile_customer(
     assert "repo-pypi" in result.output
 
 
-def test_pkg_repo_list_omits_unset_query_filters(
+def test_artifacts_repo_list_omits_unset_query_filters(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
@@ -189,7 +189,7 @@ def test_pkg_repo_list_omits_unset_query_filters(
     assert fake.calls == [("GET", "/repositories", {"customer_id": "cus_123"})]
 
 
-def test_pkg_repo_create_can_set_default_repo(monkeypatch, tmp_path: Path) -> None:
+def test_artifacts_repo_create_can_set_default_repo(monkeypatch, tmp_path: Path) -> None:
     _isolate_config(monkeypatch, tmp_path)
     fake = _FakeApiClient(
         [
@@ -294,7 +294,7 @@ def test_public_scope_never_runs_private_mutation(monkeypatch, flags):
     assert "PublicCatalogUnavailable" in result.output
 
 
-def test_pkg_repo_create_rejects_unknown_kind(monkeypatch, tmp_path: Path) -> None:
+def test_artifacts_repo_create_rejects_unknown_kind(monkeypatch, tmp_path: Path) -> None:
     _isolate_config(monkeypatch, tmp_path)
 
     result = runner.invoke(artifacts_cmd.app, ["repo", "create", "bad", "--registry-kind", "gem"])
@@ -303,7 +303,7 @@ def test_pkg_repo_create_rejects_unknown_kind(monkeypatch, tmp_path: Path) -> No
     assert "Unknown registry kind 'gem'" in result.stderr
 
 
-def test_pkg_repo_show_renders_repository_details(monkeypatch, tmp_path: Path) -> None:
+def test_artifacts_repo_show_renders_repository_details(monkeypatch, tmp_path: Path) -> None:
     _isolate_config(monkeypatch, tmp_path)
     fake = _FakeApiClient(
         [
@@ -348,7 +348,7 @@ def test_pkg_repo_show_renders_repository_details(monkeypatch, tmp_path: Path) -
 
 
 @pytest.mark.parametrize("new_name", ["renamed", "Repo-PyPI"])
-def test_pkg_repo_rename_updates_matching_profile_default(
+def test_artifacts_repo_rename_updates_matching_profile_default(
     monkeypatch, tmp_path: Path, new_name
 ) -> None:
     _isolate_config(monkeypatch, tmp_path)
@@ -377,7 +377,7 @@ def test_pkg_repo_rename_updates_matching_profile_default(
     assert saved.repository_unique_ref == "r_xyzabcde"
 
 
-def test_pkg_remote_management_and_upstream_configuration(monkeypatch, tmp_path: Path) -> None:
+def test_artifacts_remote_management_and_upstream_configuration(monkeypatch, tmp_path: Path) -> None:
     _isolate_config(monkeypatch, tmp_path)
     fake = _FakeApiClient(
         [
@@ -472,7 +472,7 @@ def test_pkg_remote_management_and_upstream_configuration(monkeypatch, tmp_path:
     ]
 
 
-def test_pkg_official_remote_add_uses_public_source_ref(monkeypatch, tmp_path: Path) -> None:
+def test_artifacts_official_remote_add_uses_public_source_ref(monkeypatch, tmp_path: Path) -> None:
     _isolate_config(monkeypatch, tmp_path)
     fake = _FakeApiClient(
         [
@@ -516,7 +516,7 @@ def test_pkg_official_remote_add_uses_public_source_ref(monkeypatch, tmp_path: P
     ]
 
 
-def test_pkg_custom_remote_requires_and_submits_publication_control(
+def test_artifacts_custom_remote_requires_and_submits_publication_control(
     monkeypatch, tmp_path: Path
 ) -> None:
     _isolate_config(monkeypatch, tmp_path)
@@ -567,7 +567,7 @@ def test_pkg_custom_remote_requires_and_submits_publication_control(
     ]
 
 
-def test_pkg_official_remote_list_reports_external_publication_control(
+def test_artifacts_official_remote_list_reports_external_publication_control(
     monkeypatch, tmp_path: Path
 ) -> None:
     _isolate_config(monkeypatch, tmp_path)
@@ -604,7 +604,7 @@ def test_pkg_official_remote_list_reports_external_publication_control(
     assert tables[0][1][0][-1] == "No minimum"
 
 
-def test_pkg_mirror_show_formats_absent_age_bounds(monkeypatch, tmp_path: Path) -> None:
+def test_artifacts_mirror_show_formats_absent_age_bounds(monkeypatch, tmp_path: Path) -> None:
     _isolate_config(monkeypatch, tmp_path)
     fake = _FakeApiClient(
         [
@@ -632,7 +632,7 @@ def test_pkg_mirror_show_formats_absent_age_bounds(monkeypatch, tmp_path: Path) 
     assert "None hours" not in result.output
 
 
-def test_pkg_repo_upstream_add_private_uses_source_lane_and_zero_age_default(
+def test_artifacts_repo_upstream_add_private_uses_source_lane_and_zero_age_default(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
@@ -687,7 +687,7 @@ def test_pkg_repo_upstream_add_private_uses_source_lane_and_zero_age_default(
     )
 
 
-def test_pkg_repo_upstream_add_appends_after_existing_plan(
+def test_artifacts_repo_upstream_add_appends_after_existing_plan(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
@@ -731,7 +731,7 @@ def test_pkg_repo_upstream_add_appends_after_existing_plan(
     assert fake.calls[-1][2]["priority"] == 2
 
 
-def test_pkg_repo_upstream_reorder_and_remove_use_generic_routes(
+def test_artifacts_repo_upstream_reorder_and_remove_use_generic_routes(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
@@ -780,7 +780,7 @@ def test_pkg_repo_upstream_reorder_and_remove_use_generic_routes(
     ) in fake.calls
 
 
-def test_pkg_repo_upstream_add_requires_exactly_one_source(
+def test_artifacts_repo_upstream_add_requires_exactly_one_source(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
@@ -812,7 +812,7 @@ def test_pkg_repo_upstream_add_requires_exactly_one_source(
     assert "exactly one" in both.output
 
 
-def test_pkg_repo_upstream_priority_is_limited_to_four_slots() -> None:
+def test_artifacts_repo_upstream_priority_is_limited_to_four_slots() -> None:
     result = runner.invoke(
         artifacts_cmd.app,
         [
@@ -832,7 +832,7 @@ def test_pkg_repo_upstream_priority_is_limited_to_four_slots() -> None:
     assert "0<=x<=3" in result.output
 
 
-def test_pkg_package_list_and_show_use_repository_package_paths(
+def test_artifacts_package_list_and_show_use_repository_package_paths(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
@@ -914,7 +914,7 @@ def test_pkg_package_list_and_show_use_repository_package_paths(
     assert "1.2.3" in show_result.output
 
 
-def test_pkg_package_mutations_call_expected_api_paths(monkeypatch, tmp_path: Path) -> None:
+def test_artifacts_package_mutations_call_expected_api_paths(monkeypatch, tmp_path: Path) -> None:
     _isolate_config(monkeypatch, tmp_path)
     fake = _FakeApiClient()
     _use_fake_client(monkeypatch, fake)
@@ -1032,7 +1032,7 @@ def test_pkg_package_mutations_call_expected_api_paths(monkeypatch, tmp_path: Pa
         ),
     ],
 )
-def test_pkg_registry_url_helpers_use_profile_and_default_repo(
+def test_artifacts_registry_url_helpers_use_profile_and_default_repo(
     monkeypatch,
     tmp_path: Path,
     args: list[str],
@@ -1046,7 +1046,7 @@ def test_pkg_registry_url_helpers_use_profile_and_default_repo(
     assert result.output.strip() == expected
 
 
-def test_pkg_configure_snippets_are_printed_for_native_toolchains(
+def test_artifacts_configure_snippets_are_printed_for_native_toolchains(
     monkeypatch,
     tmp_path: Path,
 ) -> None:

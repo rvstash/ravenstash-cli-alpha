@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING, Any
 
 import pytest
 from rvs import config as cfg_mod
-from rvs.artifacts import commands as pkg_commands
+from rvs.artifacts import commands as artifacts_commands
 from rvs.artifacts.targets import parse_target, resolve_target
 from rvs.cli import app
 from rvs.client import ApiClient
@@ -364,7 +364,7 @@ def test_native_wrapper_uses_selected_cache_and_one_shot_does_not_mutate_it(
     )
 
 
-def test_pkg_install_uses_account_scoped_official_default_without_selection(
+def test_artifacts_install_uses_account_scoped_official_default_without_selection(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
@@ -377,9 +377,9 @@ def test_pkg_install_uses_account_scoped_official_default_without_selection(
     )
     monkeypatch.setattr(ApiClient, "from_profile", staticmethod(lambda profile=None: fake))
     calls: list[tuple[list[str], dict[str, str]]] = []
-    monkeypatch.setattr(pkg_commands.tools, "pip_cmd", lambda: ["/bin/pip"])
+    monkeypatch.setattr(artifacts_commands.tools, "pip_cmd", lambda: ["/bin/pip"])
     monkeypatch.setattr(
-        pkg_commands.subprocess,
+        artifacts_commands.subprocess,
         "run",
         lambda cmd, *, env, check: calls.append((cmd, env.copy())),
     )
@@ -393,11 +393,11 @@ def test_pkg_install_uses_account_scoped_official_default_without_selection(
     assert cfg_mod.selected_artifact_target("alice", "personal-alice") is None
 
 
-def test_pkg_repo_one_liner_alias_is_rejected(monkeypatch, tmp_path: Path) -> None:
+def test_artifacts_repo_one_liner_alias_is_rejected(monkeypatch, tmp_path: Path) -> None:
     isolate(monkeypatch, tmp_path)
     calls: list[tuple[list[str], str | None]] = []
     monkeypatch.setattr(
-        pkg_commands,
+        artifacts_commands,
         "pypi_install",
         lambda packages, repo, profile, customer_id: calls.append((packages, repo)),
     )

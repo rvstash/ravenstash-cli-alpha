@@ -31,8 +31,6 @@ app.add_typer(context_app, name="context")
 app.add_typer(runtime_app, name="runtime")
 app.add_typer(artifacts_app, name="art")
 app.add_typer(artifacts_app, name="artifacts")
-# One transition release only; both public spellings use this same application.
-app.add_typer(artifacts_app, name="pkg", hidden=True, deprecated=True)
 app.add_typer(ci_app, name="ci")
 app.command("update")(update)
 app.command("upgrade")(upgrade)
