@@ -7,6 +7,10 @@ headless environment.
 
 ## Release gates
 
+CLI 0.9.3 is the Artifacts naming transition on the existing `v0.9` installation
+channel. Both `art` and `artifacts` remain supported; the hidden `pkg` spelling
+expires in 0.9.4. This does not change Linux ABI or credential-storage requirements.
+
 The glibc `amd64` bundle is built on Ubuntu 20.04 (glibc 2.31) and declares a
 glibc 2.28 runtime floor. Every source change runs that exact frozen archive in
 immutable container images for:
