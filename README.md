@@ -31,9 +31,9 @@ rvs update     Check or apply signed APT updates
 `rvs art repo` and `rvs artifacts repo` provide repository management. `rvs ci` is registered
 but its commands print "not implemented" until that product exists.
 
-Both Artifacts spellings support identical options and output. The old `rvs pkg`
-spelling has been removed after the Task 076 transition release; use `rvs art`
-or `rvs artifacts`. There is no top-level `rvs repo`. Existing config version 3,
+Both Artifacts spellings support identical options and output. Use `rvs art` or
+`rvs artifacts`; the former temporary product spelling is unsupported. There is
+no top-level `rvs repo`. Existing config version 3,
 profile-scoped credentials, account IDs, and `selected_target` records continue
 to work without an identity or credential-store migration.
 
