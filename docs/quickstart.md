@@ -101,13 +101,12 @@ rvs profile current
 rvs auth storage doctor
 ```
 
-Select the acting account and enable the persistent terminal hint:
+Select the acting account:
 
 ```bash
 rvs account list
 rvs account use org:acme
 rvs context current
-rvs shell setup
 rvs art select acme/backend
 ```
 
@@ -252,6 +251,18 @@ rvs uv --rvs-target <namespace>/<pypi-repo-name> --rvs-native-config isolate syn
 ```
 
 ## PyPI
+
+Publishing requires confirmation of the resolved repository, acting account, and artifacts.
+Use `--yes` (`-y`) with `rvs art pypi publish`, `rvs art npm publish`, or
+`rvs art maven deploy` to skip confirmation. Native wrappers accept `--rvs-yes`
+(for example, `rvs npm --rvs-yes --rvs-target platform/backend publish`).
+Unattended publishing must pass the bypass flag. Native builds show their project
+or supplied references because the final artifacts may be produced during execution.
+
+PyPI previews group only the selected files by package/version. One wheel is a valid
+upload; other platform wheels can be added to the same version later under new
+filenames. Existing filenames are rejected, so retry only missing files after a
+partial failure. The preview does not certify a complete release.
 
 Print the private install and publish URLs:
 

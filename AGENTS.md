@@ -11,7 +11,7 @@ Operational guidance for the `rvs` CLI package.
   device-login credentials, and delegates install flows to native toolchains
   where appropriate.
 - CLI code lives under `rvs/`, organized by command area: `auth/`, `account/`,
-  `context/`, `runtime/`, `artifacts/`, `shell/`, and `ci/`.
+  `context/`, `runtime/`, `artifacts/` and `ci/`.
 
 ## Working rules
 

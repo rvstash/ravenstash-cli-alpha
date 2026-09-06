@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+import pytest
 from rvs import config as cfg_mod
 from rvs.cli import app
 from rvs.native import runner as native_runner
@@ -310,6 +311,56 @@ def test_native_npm_respects_project_npmrc_and_injects_path_scoped_auth(
     )
 
 
+@pytest.mark.parametrize(
+    "tool,args",
+    [
+        ("npm", ["publish"]),
+        ("uv", ["publish", "dist/demo.whl"]),
+        ("twine", ["upload", "dist/demo.whl"]),
+        ("mvn", ["deploy"]),
+    ],
+)
+def test_native_publish_decline_does_not_launch(monkeypatch, tmp_path: Path, tool, args) -> None:
+    _isolate_config(monkeypatch, tmp_path)
+    _mock_native_tools(monkeypatch)
+    calls = []
+    _capture_run(monkeypatch, calls)
+    result = runner.invoke(app, [tool, "--rvs-target", "staging/repo", *args], input="\n")
+    assert result.exit_code != 0
+    assert "Publish to staging/repo (personal)" in result.output
+    assert not calls
+
+
+@pytest.mark.parametrize(
+    "flags,answer,published", [([], "n\n", False), ([], "y\n", True), (["--rvs-yes"], "", True)]
+)
+def test_native_detected_registry_confirms_resolved_account(
+    monkeypatch, tmp_path: Path, flags, answer, published
+) -> None:
+    _isolate_config(monkeypatch, tmp_path)
+    _mock_native_tools(monkeypatch)
+    monkeypatch.setenv("NPM_CONFIG_REGISTRY", f"{NPM_PUSH_URL}/staging/repo/")
+
+    class OrgApi(_FakeDevApi):
+        def get(self, path, params=None):
+            payload = super().get(path, params).json()
+            payload["customer"].update(account_type="organization", account_label="YYYY")
+            return _JsonResponse(payload)
+
+    monkeypatch.setattr(
+        native_runner.ApiClient, "from_profile", staticmethod(lambda profile=None: OrgApi())
+    )
+    calls = []
+    _capture_run(monkeypatch, calls)
+    result = runner.invoke(app, ["npm", *flags, "publish"], input=answer)
+    assert (result.exit_code == 0) == published, result.output
+    assert bool(calls) == published
+    if not flags:
+        assert "Publish to staging/repo (org:YYYY)" in result.output
+    if calls:
+        assert "--rvs-yes" not in calls[0]["cmd"]
+
+
 def test_native_npm_repo_override_uses_upload_registry_for_publish(
     monkeypatch: Any,
     tmp_path: Path,
@@ -319,7 +370,7 @@ def test_native_npm_repo_override_uses_upload_registry_for_publish(
     calls: list[dict[str, Any]] = []
     _capture_run(monkeypatch, calls)
 
-    result = runner.invoke(app, ["npm", "--rvs-target", "staging/repo-npm", "publish"])
+    result = runner.invoke(app, ["npm", "--rvs-target", "staging/repo-npm", "publish"], input="y\n")
 
     assert result.exit_code == 0
     assert calls[0]["cmd"] == [
@@ -679,7 +730,7 @@ def test_native_twine_repo_override_sets_ephemeral_upload_credentials(
 
     result = runner.invoke(
         app,
-        ["twine", "--rvs-target", "staging/repo-pypi", "upload", "dist/demo.whl"],
+        ["twine", "--rvs-yes", "--rvs-target", "staging/repo-pypi", "upload", "dist/demo.whl"],
     )
 
     assert result.exit_code == 0
@@ -704,7 +755,9 @@ def test_native_maven_repo_override_generates_temp_settings(
 
     _capture_run(monkeypatch, calls, hook)
 
-    result = runner.invoke(app, ["mvn", "--rvs-target", "staging/repo-maven", "deploy"])
+    result = runner.invoke(
+        app, ["mvn", "--rvs-yes", "--rvs-target", "staging/repo-maven", "deploy"]
+    )
 
     assert result.exit_code == 0
     assert calls[0]["cmd"][0:2] == ["/bin/mvn", "--settings"]
@@ -768,6 +821,7 @@ def test_native_maven_deploy_file_injects_upload_destination(
             "--rvs-target",
             "staging/repo-maven",
             "org.apache.maven.plugins:maven-deploy-plugin:3.1.3:deploy-file",
+            "--rvs-yes",
             "-Dfile=demo.jar",
             "-DpomFile=demo.pom",
         ],

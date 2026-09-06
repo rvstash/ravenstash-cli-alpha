@@ -30,6 +30,7 @@ from ..artifacts.routing import (
 )
 from ..artifacts.targets import registry_context
 from ..client import ApiClient, ApiError
+from ..publishing import PublishItem, confirm_context, confirm_publish, native_artifacts
 from ..runtime import tools
 from ..subprocesses import child_environment
 
@@ -58,6 +59,7 @@ _RVS_URL_KINDS: dict[NativeTool, tuple[RegistryKind, ...]] = {
 
 @dataclass(frozen=True)
 class NativeOptions:
+    yes: bool = False
     profile: str | None = None
     target: str | None = None
     account: str | None = None
@@ -198,11 +200,18 @@ def _build_plan(
             options.profile,
             selected_customer_id,
             operations,
+            artifacts=native_artifacts(tool, argv) if _is_publishing(tool, argv) else None,
+            yes=options.yes,
         )
         _inject_for_detected_urls(tool, cmd, native_arg_start, env, urls, token, temp_dir)
         return ExecutionPlan(cmd=cmd, env=env)
 
-    route = _resolve_route(_kind_for_tool(tool), options, operations)
+    route = _resolve_route(
+        _kind_for_tool(tool),
+        options,
+        operations,
+        artifacts=native_artifacts(tool, argv) if _is_publishing(tool, argv) else None,
+    )
     _inject_override(
         tool,
         cmd,
@@ -249,6 +258,7 @@ def _resolve_route(
     kind: RegistryKind,
     options: NativeOptions,
     operations: tuple[PackageOperation, ...],
+    artifacts: list[PublishItem] | None = None,
 ) -> RegistryRoute:
     context = registry_context(
         kind=kind,
@@ -258,6 +268,8 @@ def _resolve_route(
         customer_id=_selected_customer_id(options),
         operations=operations,
     )
+    if artifacts is not None:
+        confirm_context(context, artifacts, yes=options.yes)
     return RegistryRoute(
         kind=kind,
         read_base_url=context.read_base_url,
@@ -283,6 +295,9 @@ def _package_token_for_url(
     profile: str | None,
     customer_id: str | None,
     operations: tuple[PackageOperation, ...],
+    *,
+    artifacts: list[PublishItem] | None = None,
+    yes: bool = False,
 ) -> str:
     profile_config = _profile(profile)
     route_parts = _configured_route_parts(url, kind, profile_config.native_registries)
@@ -325,6 +340,15 @@ def _package_token_for_url(
                 "registry_kind": kind,
             },
         ).json()
+        if artifacts is not None:
+            account = cfg_mod.cache_account(profile=profile_name, customer=entry["customer"])
+            repository = entry["repository"]
+            confirm_publish(
+                f"{repository['namespace_name']}/{repository['repository_name']}",
+                account,
+                artifacts,
+                yes=yes,
+            )
         credential_body: dict[str, object] = {
             "repository_unique_ref": entry["repository"]["repository_unique_ref"],
             "registry_kind": kind,
@@ -338,6 +362,14 @@ def _package_token_for_url(
         ).json()["access_token"]
     except (ApiError, KeyError, TypeError, ValueError) as exc:
         output.fatal(str(exc))
+
+
+def _is_publishing(tool: NativeTool, argv: list[str]) -> bool:
+    return (
+        (tool == "twine" and "upload" in argv)
+        or (tool in {"uv", "npm"} and "publish" in argv)
+        or (tool == "mvn" and _maven_is_upload(argv))
+    )
 
 
 def _operations_for(

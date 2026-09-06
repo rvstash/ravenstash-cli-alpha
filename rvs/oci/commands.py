@@ -21,8 +21,10 @@ def _options(
     account: str | None,
     customer_id: str | None,
     kind: runner.OciRegistryKind | None,
+    yes: bool = False,
 ) -> runner.OciOptions:
     return runner.OciOptions(
+        yes=yes,
         profile=profile,
         target=target,
         account=account,
@@ -39,14 +41,16 @@ def _run(
     account: str | None,
     customer_id: str | None,
     kind: runner.OciRegistryKind | None,
+    yes: bool = False,
 ) -> None:
     if any(arg == "--rvs-repo" or arg.startswith("--rvs-repo=") for arg in ctx.args):
         output.fatal("Unknown option '--rvs-repo'. Use --rvs-target.")
-    runner.run(tool, list(ctx.args), _options(profile, target, account, customer_id, kind))
+    runner.run(tool, list(ctx.args), _options(profile, target, account, customer_id, kind, yes))
 
 
 def docker(
     ctx: typer.Context,
+    rvs_yes: bool = typer.Option(False, "--rvs-yes", help="Skip publishing confirmation."),
     rvs_profile: str | None = typer.Option(None, "--rvs-profile"),
     rvs_target: str | None = typer.Option(None, "--rvs-target"),
     rvs_account: str | None = typer.Option(None, "--rvs-account"),
@@ -60,28 +64,31 @@ def docker(
         rvs_account,
         rvs_customer_id,
         "container",
+        rvs_yes,
     )
 
 
 def helm(
     ctx: typer.Context,
+    rvs_yes: bool = typer.Option(False, "--rvs-yes", help="Skip publishing confirmation."),
     rvs_profile: str | None = typer.Option(None, "--rvs-profile"),
     rvs_target: str | None = typer.Option(None, "--rvs-target"),
     rvs_account: str | None = typer.Option(None, "--rvs-account"),
     rvs_customer_id: str | None = typer.Option(None, "--rvs-customer-id"),
 ) -> None:
-    _run("helm", ctx, rvs_profile, rvs_target, rvs_account, rvs_customer_id, "helm")
+    _run("helm", ctx, rvs_profile, rvs_target, rvs_account, rvs_customer_id, "helm", rvs_yes)
 
 
 def oras(
     ctx: typer.Context,
+    rvs_yes: bool = typer.Option(False, "--rvs-yes", help="Skip publishing confirmation."),
     rvs_kind: runner.OciRegistryKind = typer.Option(..., "--rvs-kind"),
     rvs_profile: str | None = typer.Option(None, "--rvs-profile"),
     rvs_target: str | None = typer.Option(None, "--rvs-target"),
     rvs_account: str | None = typer.Option(None, "--rvs-account"),
     rvs_customer_id: str | None = typer.Option(None, "--rvs-customer-id"),
 ) -> None:
-    _run("oras", ctx, rvs_profile, rvs_target, rvs_account, rvs_customer_id, rvs_kind)
+    _run("oras", ctx, rvs_profile, rvs_target, rvs_account, rvs_customer_id, rvs_kind, rvs_yes)
 
 
 def oci_reference(

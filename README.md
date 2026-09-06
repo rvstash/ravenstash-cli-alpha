@@ -16,7 +16,6 @@ rvs auth       Authenticate a Ravenstash user and manage local credentials
 rvs profile    Manage named local CLI profiles
 rvs account    Select the acting personal or organization account
 rvs context    Inspect the effective user/profile/account/target tuple
-rvs shell      Install the visible context prompt integration
 rvs runtime    Install and select local Python, Node, and Java runtimes
 rvs art        Manage repositories for packages, container images, and Helm charts
 rvs artifacts  Full-name alias of rvs art
@@ -130,7 +129,6 @@ rvs account use personal
 rvs account use org:acme
 rvs account use acmeHQ
 rvs context current
-rvs shell setup
 ```
 
 Headless automation must make this selection explicitly; device authentication
@@ -141,14 +139,18 @@ initialize its remote cache for the selected account once, for example
 `rvs art mirror add maven-central`. A `mirror:<source>` request returns 404 until
 that binding exists; it is an authorization boundary, not a transient cache miss.
 
-The shell prompt shows `(profile · personal)` or `(profile · org:acme)` and appends
-the selected artifact target. Shell-local profile/account state is non-secret;
-tokens remain in the selected credential store.
+Account and artifact target selections are stored locally; tokens remain in the
+selected credential store.
 
 `rvs auth whoami` verifies the current identity against Ravenstash; it does not
 infer identity solely from local profile metadata. `rvs context current` combines
 that verified user with the effective local profile, acting account, package
 target, and the source of each selection.
+
+The former context-prompt shell commands have been removed. If previously installed,
+manually remove the line sourcing `~/.rvs/shell.sh` from `.bashrc` or `.zshrc`,
+or the corresponding source line in `~/.config/fish/conf.d/rvs-context.fish`,
+and restart the shell. Upgrading does not edit your startup files.
 
 ## Runtime
 
@@ -172,6 +174,30 @@ at invocation time, so changing projects changes the runtime without reinstallin
 the shim. Version-prefix selection chooses the newest matching semantic version.
 
 ## Package Repositories
+
+Publishing requires confirmation of the resolved repository, acting account, and artifacts.
+Use `--yes` (`-y`) with `rvs art pypi publish`, `rvs art npm publish`, or
+`rvs art maven deploy` to skip confirmation. Native wrappers accept `--rvs-yes`
+(for example, `rvs npm --rvs-yes --rvs-target platform/backend publish`).
+Unattended publishing must pass the bypass flag. Native builds show their project
+or supplied references because the final artifacts may be produced during execution.
+
+The preview groups PyPI files by package/version, shows npm name/version and tarball,
+Maven coordinates and filenames, and full Container/Helm OCI references when known.
+For example, publishing a single additional wheel shows only that wheel:
+
+```text
+Publish to platform/backend (org:YYYY)
+
+PyPI acme-sdk==1.4.0
+  acme_sdk-1.4.0-cp312-cp312-win_amd64.whl
+
+Publish this 1 file? [y/N]:
+```
+
+This confirms the selected files, not the completeness of a release. PyPI supports
+adding new filenames to an existing version later; existing filenames cannot be
+overwritten. Uploads are independent, so retry only missing files after partial failure.
 
 Package repository commands are under `rvs art`. This area connects the local
 machine and native package managers to a remote Ravenstash package repository.

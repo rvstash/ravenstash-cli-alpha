@@ -8,7 +8,6 @@ Alpha command surface:
 | `rvs profile` | Named local CLI profile management |
 | `rvs account` | Personal/organization acting-account selection |
 | `rvs context` | Effective user/profile/account/target inspection |
-| `rvs shell` | Session-aware context prompt integration |
 | `rvs runtime` | Local Python, Node, and Java runtime management |
 | `rvs art` / `rvs artifacts` | Repositories for packages, container images, and Helm charts |
 | `rvs pip` | Native pip passthrough with ephemeral Ravenstash auth injection |
@@ -112,7 +111,6 @@ rvs account list [--profile NAME]
 rvs account current [--profile NAME]
 rvs account use HANDLE|personal|org:LABEL|STABLE_REF [--profile NAME]
 rvs context current [--profile NAME]
-rvs shell setup [--shell bash|zsh|fish]
 
 rvs art select TARGET [--kind KIND] [--account ACCOUNT] [--profile NAME]
 rvs art current [--account ACCOUNT] [--profile NAME]
@@ -147,6 +145,30 @@ source atomically, and restores the prior source if authentication or candidate
 validation fails.
 
 ## `rvs art`
+
+Publishing requires confirmation of the resolved repository, acting account, and artifacts.
+Use `--yes` (`-y`) with `rvs art pypi publish`, `rvs art npm publish`, or
+`rvs art maven deploy` to skip confirmation. Native wrappers accept `--rvs-yes`
+(for example, `rvs npm --rvs-yes --rvs-target platform/backend publish`).
+Unattended publishing must pass the bypass flag. Native builds show their project
+or supplied references because the final artifacts may be produced during execution.
+
+Preview identity examples:
+
+| Format | Heading | Details |
+| --- | --- | --- |
+| PyPI | `PyPI acme-sdk==1.4.0` | Selected wheel/sdist filenames, grouped by name/version |
+| npm | `npm @acme/sdk@1.4.0` | Tarball or planned packing source; tag when known |
+| Maven | `Maven com.acme:sdk:1.4.0` | JAR/POM/classifier files; direct deployment also lists checksum sidecars |
+| Container | `Container oci.rvsta.sh/platform/backend/api:1.4.0` | Supplied reference and explicit platforms |
+| Helm | `Helm oci://oci.rvsta.sh/platform/backend/api-chart:1.4.0` | Chart archive; name/version read from `Chart.yaml` |
+
+The final question is `Publish these N files?` for a known file inventory, or
+`Publish these files/references?` when a native tool resolves the final output.
+Metadata that cannot be read is labeled unavailable, rather than inferred from a
+potentially renamed archive. Native build/project previews do not claim to enumerate
+future output or resolve all native configuration. Helm version build metadata uses
+`_` in OCI tags in place of `+`.
 
 Repository commands:
 
@@ -223,7 +245,7 @@ PyPI helpers:
 rvs art pypi index-url [--repo REPOSITORY_NAME] [--profile NAME] [--customer-id CUSTOMER_ID]
 rvs art pypi upload-url [--repo REPOSITORY_NAME] [--profile NAME] [--customer-id CUSTOMER_ID]
 rvs art pypi install PACKAGE... [--repo REPOSITORY_NAME] [--profile NAME] [--customer-id CUSTOMER_ID]
-rvs art pypi publish [DIST_DIR] [--repo REPOSITORY_NAME] [--profile NAME] [--customer-id CUSTOMER_ID]
+rvs art pypi publish [DIST_DIR] [--repo REPOSITORY_NAME] [--profile NAME] [--customer-id CUSTOMER_ID] [--yes|-y]
 rvs art pypi configure [--repo REPOSITORY_NAME] [--profile NAME] [--customer-id CUSTOMER_ID]
 ```
 
@@ -237,7 +259,7 @@ npm helpers:
 rvs art npm registry-url [--repo REPOSITORY_NAME] [--profile NAME] [--customer-id CUSTOMER_ID]
 rvs art npm npmrc [--repo REPOSITORY_NAME] [--profile NAME] [--customer-id CUSTOMER_ID]
 rvs art npm install PACKAGE... [--repo REPOSITORY_NAME] [--profile NAME] [--customer-id CUSTOMER_ID]
-rvs art npm publish [PACKAGE_DIR] [--repo REPOSITORY_NAME] [--profile NAME] [--customer-id CUSTOMER_ID]
+rvs art npm publish [PACKAGE_DIR] [--repo REPOSITORY_NAME] [--profile NAME] [--customer-id CUSTOMER_ID] [--yes|-y]
 rvs art npm configure [--repo REPOSITORY_NAME] [--profile NAME] [--customer-id CUSTOMER_ID]
 ```
 
@@ -250,7 +272,7 @@ Maven helpers:
 rvs art maven repo-url [--repo REPOSITORY_NAME] [--profile NAME] [--customer-id CUSTOMER_ID]
 rvs art maven settings [--repo REPOSITORY_NAME] [--profile NAME] [--customer-id CUSTOMER_ID]
 rvs art maven install GROUP:ARTIFACT:VERSION [--repo REPOSITORY_NAME] [--profile NAME] [--customer-id CUSTOMER_ID]
-rvs art maven deploy FILE --group GROUP --artifact ARTIFACT --version VERSION [--repo REPOSITORY_NAME] [--profile NAME] [--customer-id CUSTOMER_ID]
+rvs art maven deploy FILE --group GROUP --artifact ARTIFACT --version VERSION [--repo REPOSITORY_NAME] [--profile NAME] [--customer-id CUSTOMER_ID] [--yes|-y]
 rvs art maven configure [--repo REPOSITORY_NAME] [--profile NAME] [--customer-id CUSTOMER_ID]
 ```
 

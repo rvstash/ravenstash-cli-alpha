@@ -13,7 +13,6 @@ from .context.commands import app as context_app
 from .native import commands as native_commands
 from .oci import commands as oci_commands
 from .runtime.commands import app as runtime_app
-from .shell.commands import app as shell_app
 from .update import update, upgrade
 
 
@@ -30,7 +29,6 @@ app.add_typer(profile_app, name="profile")
 app.add_typer(account_app, name="account")
 app.add_typer(context_app, name="context")
 app.add_typer(runtime_app, name="runtime")
-app.add_typer(shell_app, name="shell")
 app.add_typer(artifacts_app, name="art")
 app.add_typer(artifacts_app, name="artifacts")
 # One transition release only; both public spellings use this same application.

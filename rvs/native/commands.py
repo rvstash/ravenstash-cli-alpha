@@ -21,8 +21,10 @@ def _options(
     account: str | None,
     customer_id: str | None,
     native_config: str,
+    yes: bool = False,
 ) -> runner.NativeOptions:
     return runner.NativeOptions(
+        yes=yes,
         profile=profile,
         target=target,
         account=account,
@@ -66,6 +68,7 @@ def pip(
 
 def uv(
     ctx: typer.Context,
+    rvs_yes: bool = typer.Option(False, "--rvs-yes", help="Skip publishing confirmation."),
     rvs_profile: str | None = typer.Option(None, "--rvs-profile", help="Local CLI profile."),
     rvs_target: str | None = typer.Option(None, "--rvs-target", help="Ravenstash target override."),
     rvs_account: str | None = typer.Option(None, "--rvs-account", help="Acting account override."),
@@ -83,12 +86,13 @@ def uv(
     _run(
         "uv",
         ctx,
-        _options(rvs_profile, rvs_target, rvs_account, rvs_customer_id, rvs_native_config),
+        _options(rvs_profile, rvs_target, rvs_account, rvs_customer_id, rvs_native_config, rvs_yes),
     )
 
 
 def twine(
     ctx: typer.Context,
+    rvs_yes: bool = typer.Option(False, "--rvs-yes", help="Skip publishing confirmation."),
     rvs_profile: str | None = typer.Option(None, "--rvs-profile", help="Local CLI profile."),
     rvs_target: str | None = typer.Option(None, "--rvs-target", help="Ravenstash target override."),
     rvs_account: str | None = typer.Option(None, "--rvs-account", help="Acting account override."),
@@ -106,12 +110,13 @@ def twine(
     _run(
         "twine",
         ctx,
-        _options(rvs_profile, rvs_target, rvs_account, rvs_customer_id, rvs_native_config),
+        _options(rvs_profile, rvs_target, rvs_account, rvs_customer_id, rvs_native_config, rvs_yes),
     )
 
 
 def npm(
     ctx: typer.Context,
+    rvs_yes: bool = typer.Option(False, "--rvs-yes", help="Skip publishing confirmation."),
     rvs_profile: str | None = typer.Option(None, "--rvs-profile", help="Local CLI profile."),
     rvs_target: str | None = typer.Option(None, "--rvs-target", help="Ravenstash target override."),
     rvs_account: str | None = typer.Option(None, "--rvs-account", help="Acting account override."),
@@ -129,12 +134,13 @@ def npm(
     _run(
         "npm",
         ctx,
-        _options(rvs_profile, rvs_target, rvs_account, rvs_customer_id, rvs_native_config),
+        _options(rvs_profile, rvs_target, rvs_account, rvs_customer_id, rvs_native_config, rvs_yes),
     )
 
 
 def mvn(
     ctx: typer.Context,
+    rvs_yes: bool = typer.Option(False, "--rvs-yes", help="Skip publishing confirmation."),
     rvs_profile: str | None = typer.Option(None, "--rvs-profile", help="Local CLI profile."),
     rvs_target: str | None = typer.Option(None, "--rvs-target", help="Ravenstash target override."),
     rvs_account: str | None = typer.Option(None, "--rvs-account", help="Acting account override."),
@@ -152,5 +158,5 @@ def mvn(
     _run(
         "mvn",
         ctx,
-        _options(rvs_profile, rvs_target, rvs_account, rvs_customer_id, rvs_native_config),
+        _options(rvs_profile, rvs_target, rvs_account, rvs_customer_id, rvs_native_config, rvs_yes),
     )

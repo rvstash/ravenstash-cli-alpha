@@ -1142,6 +1142,49 @@ def test_maven_install_does_not_forward_control_token(monkeypatch, tmp_path: Pat
     assert not Path(settings_arg.removeprefix("--settings=")).exists()
 
 
+@pytest.mark.parametrize(
+    "answer,flags,published",
+    [
+        ("\n", [], False),
+        ("n\n", [], False),
+        ("", [], False),
+        ("y\n", [], True),
+        ("", ["--yes"], True),
+    ],
+)
+def test_publish_confirmation_uses_resolved_org_and_blocks_upload(
+    monkeypatch, tmp_path: Path, answer, flags, published
+) -> None:
+    _isolate_config(monkeypatch, tmp_path)
+    entry = _repository_entry("backend")
+    entry["customer"].update(account_type="organization", account_label="YYYY")
+    entry["repository"]["namespace_name"] = "platform"
+    client = _FakeApiClient([entry])
+    monkeypatch.setattr(
+        artifacts_cmd.ApiClient, "from_profile", staticmethod(lambda profile=None: client)
+    )
+    dist = tmp_path / "dist"
+    dist.mkdir()
+    (dist / "demo.whl").write_bytes(b"wheel")
+    calls = []
+    monkeypatch.setattr(
+        artifacts_cmd.pypi_reg, "publish", lambda **kwargs: calls.append(kwargs) or []
+    )
+    result = runner.invoke(
+        artifacts_cmd.app,
+        ["pypi", "publish", str(dist), "--profile", "staging", *flags],
+        input=answer,
+    )
+    assert (result.exit_code == 0) == published, result.output
+    assert bool(calls) == published
+    if not flags:
+        assert "Publish to platform/backend (org:YYYY)" in result.output
+        assert "demo.whl" in result.output
+        assert "Publish this 1 file? [y/N]" in result.output
+    else:
+        assert "Publish to" not in result.output
+
+
 def test_pypi_publish_reports_failed_uploads(monkeypatch, tmp_path: Path) -> None:
     _isolate_config(monkeypatch, tmp_path)
     monkeypatch.setenv("RVS_TOKEN", "secret-token")
@@ -1158,7 +1201,7 @@ def test_pypi_publish_reports_failed_uploads(monkeypatch, tmp_path: Path) -> Non
     )
 
     result = runner.invoke(
-        artifacts_cmd.app, ["pypi", "publish", str(dist_dir), "--profile", "staging"]
+        artifacts_cmd.app, ["pypi", "publish", str(dist_dir), "--profile", "staging"], input="y\n"
     )
 
     assert result.exit_code == 1
@@ -1180,7 +1223,7 @@ def test_npm_publish_calls_registry_adapter(monkeypatch, tmp_path: Path) -> None
     monkeypatch.setattr(artifacts_cmd.npm_reg, "publish", fake_publish)
 
     result = runner.invoke(
-        artifacts_cmd.app, ["npm", "publish", str(package_dir), "--profile", "staging"]
+        artifacts_cmd.app, ["npm", "publish", str(package_dir), "--profile", "staging", "--yes"]
     )
 
     assert result.exit_code == 0
@@ -1213,6 +1256,7 @@ def test_maven_deploy_checks_file_and_calls_registry_adapter(monkeypatch, tmp_pa
             "maven",
             "deploy",
             str(artifact),
+            "--yes",
             "--group",
             "com.example",
             "--artifact",

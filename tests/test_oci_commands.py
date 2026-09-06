@@ -120,6 +120,33 @@ customer_id = "customer-1"
     )
 
 
+@pytest.mark.parametrize(
+    "tool,args",
+    [
+        ("docker", ["push", "oci.rvsta.sh/main/images/backend:latest"]),
+        ("helm", ["push", "chart.tgz", "oci://oci.rvsta.sh/main/images"]),
+        (
+            "oras",
+            [
+                "--rvs-kind",
+                "container",
+                "push",
+                "oci.rvsta.sh/main/images/backend:latest",
+                "demo.txt",
+            ],
+        ),
+    ],
+)
+def test_oci_publish_decline_does_not_launch(monkeypatch, tmp_path: Path, tool, args) -> None:
+    _setup(monkeypatch, tmp_path)
+    calls = []
+    monkeypatch.setattr(oci_runner.subprocess, "Popen", lambda *args, **kwargs: calls.append(args))
+    result = runner.invoke(app, [tool, "--rvs-target", "main/images", *args], input="\n")
+    assert result.exit_code != 0
+    assert "Publish to main/images (personal)" in result.output
+    assert not calls
+
+
 @pytest.mark.parametrize("root", ["main/images", "Main/Images"])
 def test_docker_uses_exact_ephemeral_helper_without_secret_in_argv(
     monkeypatch, tmp_path: Path, root
@@ -158,6 +185,7 @@ def test_docker_uses_exact_ephemeral_helper_without_secret_in_argv(
             "push",
             f"oci.rvsta.sh/{root}/backend:Latest",
         ],
+        input="y\n",
     )
 
     assert result.exit_code == 0, result.output
@@ -281,6 +309,7 @@ def test_native_signal_is_forwarded_with_shell_exit_code_and_secret_cleanup(
             "main/images",
             "push",
             "oci.rvsta.sh/in_abcdefgh/r_xyzabcde/backend:latest",
+            "--rvs-yes",
         ],
     )
 

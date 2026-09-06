@@ -18,6 +18,7 @@ from ..account.commands import display_name as account_display_name
 from ..account.commands import ensure_active_account, resolve_account
 from ..client import ApiClient, ApiError
 from ..native import runner as native_runner
+from ..publishing import confirm_context, maven_artifact, npm_artifact, pypi_artifacts
 from ..runtime import tools
 from ..subprocesses import child_environment
 from .registries import maven as maven_reg
@@ -1518,6 +1519,7 @@ def pypi_install(
 
 @pypi_app.command("publish")
 def pypi_publish(
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip publishing confirmation."),
     dist_dir: Path = typer.Argument(Path("dist"), help="Directory with wheels/sdists."),
     repo: str | None = typer.Option(None, "--repo", "-r", help=_REPOSITORY_NAME_HELP),
     profile: str | None = typer.Option(None, "--profile", "-p"),
@@ -1538,6 +1540,7 @@ def pypi_publish(
     files = list(dist_dir.glob("*.whl")) + list(dist_dir.glob("*.tar.gz"))
     if not files:
         output.fatal(f"No .whl or .tar.gz files found in {dist_dir}")
+    confirm_context(context, pypi_artifacts(files), yes=yes)
     results = pypi_reg.publish(
         upload_url=_ROUTER.pypi_upload_url(
             context.push_base_url,
@@ -1645,6 +1648,7 @@ def npm_install(
 
 @npm_app.command("publish")
 def npm_publish(
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip publishing confirmation."),
     package_dir: Path = typer.Argument(Path("."), help="Directory containing package.json."),
     repo: str | None = typer.Option(None, "--repo", "-r", help=_REPOSITORY_NAME_HELP),
     profile: str | None = typer.Option(None, "--profile", "-p"),
@@ -1662,6 +1666,7 @@ def npm_publish(
         operations=("upload",),
     )
     assert context.push_base_url is not None
+    confirm_context(context, [npm_artifact(package_dir)], yes=yes)
     results = npm_reg.publish(
         registry_url=_ROUTER.npm_upload_registry_url(
             context.push_base_url,
@@ -1810,6 +1815,7 @@ def maven_install(
 
 @maven_app.command("deploy")
 def maven_deploy(
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip publishing confirmation."),
     artifact_file: Path = typer.Argument(..., help="Artifact file to deploy."),
     group: str = typer.Option(..., "--group", "-g", help="Maven groupId."),
     artifact: str = typer.Option(..., "--artifact", "-a", help="Maven artifactId."),
@@ -1836,6 +1842,18 @@ def maven_deploy(
         operations=("upload",),
     )
     assert context.push_base_url is not None
+    confirm_context(
+        context,
+        [
+            maven_artifact(
+                group,
+                artifact,
+                version,
+                [str(artifact_file), str(artifact_file) + ".md5", str(artifact_file) + ".sha1"],
+            )
+        ],
+        yes=yes,
+    )
     results = maven_reg.publish(
         upload_url=_ROUTER.maven_upload_url(
             context.push_base_url,

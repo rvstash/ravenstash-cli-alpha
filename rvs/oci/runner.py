@@ -20,6 +20,7 @@ from .. import output
 from ..account.commands import resolve_account
 from ..artifacts.targets import resolve_target
 from ..client import ApiClient, ApiError
+from ..publishing import confirm_publish, oci_artifacts
 from ..runtime import tools
 from ..subprocesses import child_environment
 
@@ -33,6 +34,7 @@ _UNIQUE_ID = re.compile(r"^[23456789abcdefghijkmnpqrstuvwxyz]{8}$")
 
 @dataclass(frozen=True)
 class OciOptions:
+    yes: bool = False
     profile: str | None = None
     target: str | None = None
     account: str | None = None
@@ -48,6 +50,8 @@ class OciRoute:
     native_root: str
     accepted_roots: frozenset[str]
     package_token: str
+    account: cfg_mod.AccountContext | None = None
+    repository: str = ""
 
 
 def _native_route_parts(native_path: str) -> tuple[str, str] | None:
@@ -151,7 +155,7 @@ def resolve_route(
         repo_ref = config.registry_defaults(kind, profile_name).default_repo
     if not repo_ref:
         output.fatal(f"No {kind} repository selected. Pass --rvs-target or run `rvs art select`.")
-    _, _, target = resolve_target(
+    _, account, target = resolve_target(
         repo_ref,
         profile=profile_name,
         customer_id=customer_id,
@@ -202,6 +206,8 @@ def resolve_route(
         native_root=f"{registry_host}{native_path}",
         accepted_roots=frozenset((response_root, friendly_root, stable_root)),
         package_token=token,
+        account=account,
+        repository=target.display_selector,
     )
 
 
@@ -365,6 +371,23 @@ def run(tool: OciTool, argv: list[str], options: OciOptions) -> None:
     route = resolve_route(tool, options, _operations_for(tool, argv))
     argv = _normalize_friendly_targets(argv, route)
     _assert_exact_targets(argv, route)
+    publishing = (
+        (
+            tool == "docker"
+            and ("push" in argv or "--push" in argv or ("imagetools" in argv and "create" in argv))
+        )
+        or (tool == "helm" and "push" in argv)
+        or (tool == "oras" and bool({"push", "cp", "copy", "attach", "tag"}.intersection(argv)))
+    )
+    if publishing:
+        if route.account is None:
+            output.fatal("Cannot identify the publishing account.")
+        confirm_publish(
+            route.repository,
+            route.account,
+            oci_artifacts(tool, argv, route.registry_host),
+            yes=options.yes,
+        )
     with tempfile.TemporaryDirectory(prefix="rvs-oci-") as temporary:
         temp_dir = Path(temporary)
         broker = _write_broker(temp_dir, route)

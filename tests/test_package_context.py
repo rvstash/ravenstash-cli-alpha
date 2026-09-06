@@ -9,7 +9,6 @@ from rvs.artifacts.targets import parse_target, resolve_target
 from rvs.cli import app
 from rvs.client import ApiClient
 from rvs.native import runner as native_runner
-from rvs.shell.commands import prompt_text
 from typer.testing import CliRunner
 
 
@@ -199,7 +198,6 @@ def test_account_and_official_cache_selection_are_visible_and_clearable(
     assert saved is not None
     assert saved.target_type == "official_cache"
     assert saved.stable_selector == "mirror:_pypi"
-    assert prompt_text() == "(alice · org:acme · mirror:pypiorg) "
 
     cleared = runner.invoke(app, ["art", "clear"])
     assert cleared.exit_code == 0, cleared.output

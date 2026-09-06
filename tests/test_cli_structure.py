@@ -50,6 +50,9 @@ def test_root_help_exposes_clean_alpha_command_surface() -> None:
         assert command in result.output
     for removed_root_command in ("pypi", "maven", "system", "sync", "tokens"):
         assert removed_root_command not in result.output
+    removed = runner.invoke(app, ["shell", "--help"])
+    assert removed.exit_code != 0
+    assert "No such command" in removed.output
 
 
 def test_context_commands_are_separated_from_auth_help() -> None:
