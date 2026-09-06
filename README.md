@@ -95,6 +95,13 @@ Device login discovers and stores the package transfer endpoints returned by
 DevAPI. Every control-plane operation goes through DevAPI; `rvs` never calls
 Central directly.
 
+The alpha CLI currently targets DevAPI's explicitly unstable `/v0` generation.
+`rvs/devapi.py` is the only generation selector: commands pass unversioned
+resource paths, including device login, refresh, and revoke. Responses that
+report a different `Ravenstash-API-Version` are rejected. A future `/v1beta1`
+or `/v1` adoption therefore ships as a reviewed CLI release instead of scattered
+path edits; retained CLI releases remain pinned to their declared generation.
+
 Authentication commands operate on the user credential only:
 
 ```bash

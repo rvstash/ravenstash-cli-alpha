@@ -646,7 +646,7 @@ def whoami(
     cfg = cfg_mod.load()
     profile_name = _target_profile(profile, cfg)
     try:
-        identity = ApiClient.from_profile(profile_name).get("/v0/me").json()
+        identity = ApiClient.from_profile(profile_name).get("/me").json()
     except ApiError as exc:
         output.fatal(f"Could not verify the current identity: {exc}")
     output.kv(

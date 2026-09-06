@@ -55,7 +55,7 @@ class _JsonResponse:
 
 class _FakeDevApi:
     def get(self, path: str, params=None) -> _JsonResponse:
-        if path == "/v0/customers":
+        if path == "/customers":
             return _JsonResponse(
                 [
                     {
@@ -64,7 +64,7 @@ class _FakeDevApi:
                     }
                 ]
             )
-        assert path == "/v0/repositories/resolve"
+        assert path == "/repositories/resolve"
         return _JsonResponse(
             {
                 "customer": {
@@ -82,17 +82,19 @@ class _FakeDevApi:
         )
 
     def post(self, path: str, json: dict[str, Any] | None = None) -> _JsonResponse:
-        if path == "/v0/remote-package-credentials":
+        if path == "/remote-package-credentials":
             assert json is not None
             assert json["customer_id"] == "cus_staging"
             assert json["registry_kind"] == "pypi"
-            assert json["route_kind"] in {"remote_custom", "remote_official"}
-            assert json["namespace_unique_reference"] in {"o", "c"}
-            assert json["repository_unique_reference"]
-            assert "namespace_reference" not in json
-            assert "repository_reference" not in json
-            return _JsonResponse({"access_token": "remote-secret-token"})
-        assert path == "/v0/package-credentials"
+            assert json["remote_cache_ref"]
+            namespace = "o" if json["remote_cache_ref"] == "pypiorg" else "c"
+            return _JsonResponse(
+                {
+                    "access_token": "remote-secret-token",
+                    "native_path": f"/{namespace}/{json['remote_cache_ref']}",
+                }
+            )
+        assert path == "/package-credentials"
         assert json is not None
         assert json["operations"] in (["download"], ["upload"], ["download", "upload"])
         return _JsonResponse(

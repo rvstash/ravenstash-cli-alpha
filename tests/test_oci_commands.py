@@ -37,7 +37,7 @@ class _Response:
 
 class _Api:
     def get(self, path: str, params=None) -> _Response:
-        assert path == "/v0/repositories/resolve"
+        assert path == "/repositories/resolve"
         assert params["registry_kind"] in {"container", "helm"}
         assert params["customer_id"] == "customer-1"
         return _Response(
@@ -54,7 +54,7 @@ class _Api:
         )
 
     def post(self, path: str, json=None) -> _Response:
-        assert path == "/v0/package-credentials"
+        assert path == "/package-credentials"
         assert json["operations"] in (["download"], ["download", "upload"])
         assert json["expected_target"] == {
             "namespace_unique_ref": "in_abcdefgh",
@@ -404,7 +404,7 @@ def test_oci_capability_rejects_noncanonical_native_path(monkeypatch, tmp_path: 
 
     class InvalidPathApi(_Api):
         def post(self, path: str, json=None) -> _Response:
-            assert path == "/v0/package-credentials"
+            assert path == "/package-credentials"
             return _Response(
                 {
                     "access_token": "exact-secret-capability",

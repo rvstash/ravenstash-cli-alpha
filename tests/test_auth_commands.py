@@ -127,7 +127,7 @@ customer_id = "cus_work"
     result = runner.invoke(auth_cmd.app, ["whoami"])
 
     assert result.exit_code == 0
-    assert calls == ["/v0/me"]
+    assert calls == ["/me"]
     assert "work" in result.output
     assert "developer@example.test" in result.output
     assert "cus_verified" not in result.output

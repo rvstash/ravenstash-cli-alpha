@@ -37,13 +37,13 @@ class _FakeApiClient:
 
     def get(self, path: str, params: dict[str, Any] | None = None) -> _JsonResponse:
         self.calls.append(("GET", path, params))
-        if path == "/v0/repositories/resolve" and not self.responses:
+        if path == "/repositories/resolve" and not self.responses:
             return _JsonResponse(_repository_entry())
         return _JsonResponse(self.responses.pop(0))
 
     def post(self, path: str, json: Any = None, **kwargs: Any) -> _JsonResponse:
         self.calls.append(("POST", path, json if json is not None else kwargs))
-        if path == "/v0/package-credentials":
+        if path == "/package-credentials":
             return _JsonResponse(
                 {
                     "access_token": "secret-token",
@@ -79,6 +79,10 @@ def _repository_entry(name: str = "repo") -> dict[str, Any]:
             "namespace_unique_ref": "in_abcdefgh",
             "repository_unique_ref": "r_xyzabcde",
             "registry_kinds": ["pypi", "npm", "maven"],
+            "lanes": [
+                {"registry_kind": kind, "upstream_config_revision": 7}
+                for kind in ("pypi", "npm", "maven")
+            ],
         },
     }
 
@@ -164,7 +168,7 @@ def test_pkg_repo_list_filters_by_kind_and_uses_profile_customer(
     assert fake.calls == [
         (
             "GET",
-            "/v0/repositories",
+            "/repositories",
             {"customer_id": "cus_123", "registry_kind": "pypi"},
         )
     ]
@@ -182,7 +186,7 @@ def test_pkg_repo_list_omits_unset_query_filters(
     result = runner.invoke(artifacts_cmd.app, ["repo", "list"])
 
     assert result.exit_code == 0
-    assert fake.calls == [("GET", "/v0/repositories", {"customer_id": "cus_123"})]
+    assert fake.calls == [("GET", "/repositories", {"customer_id": "cus_123"})]
 
 
 def test_pkg_repo_create_can_set_default_repo(monkeypatch, tmp_path: Path) -> None:
@@ -212,12 +216,12 @@ def test_pkg_repo_create_can_set_default_repo(monkeypatch, tmp_path: Path) -> No
 
     assert result.exit_code == 0
     assert fake.calls == [
-        ("GET", "/v0/namespaces", {"customer_id": "cus_123"}),
+        ("GET", "/namespaces", {"customer_id": "cus_123"}),
         (
             "POST",
-            "/v0/repositories",
+            "/repositories",
             {
-                "customer_unique_ref": "_custpid1",
+                "customer_id": "cus_123",
                 "namespace_unique_ref": "in_abcdefgh",
                 "repository_name": "new-node",
                 "registry_kinds": ["npm"],
@@ -255,12 +259,12 @@ def test_create_resolves_namespace_inside_selected_customer(
     )
     assert result.exit_code == 0, result.output
     assert fake.calls == [
-        ("GET", "/v0/namespaces", {"customer_id": "cus_123"}),
+        ("GET", "/namespaces", {"customer_id": "cus_123"}),
         (
             "POST",
-            "/v0/repositories",
+            "/repositories",
             {
-                "customer_unique_ref": "_custpid1",
+                "customer_id": "cus_123",
                 "namespace_unique_ref": "in_abcdefgh",
                 "repository_name": repo_name,
                 "registry_kinds": ["npm"],
@@ -276,7 +280,7 @@ def test_create_with_deferred_personal_namespace_requests_onboarding(monkeypatch
     result = runner.invoke(artifacts_cmd.app, ["repo", "create", "new-node", "-k", "npm"])
     assert result.exit_code != 0
     assert "finish onboarding" in result.output
-    assert fake.calls == [("GET", "/v0/namespaces", {"customer_id": "cus_123"})]
+    assert fake.calls == [("GET", "/namespaces", {"customer_id": "cus_123"})]
 
 
 @pytest.mark.parametrize("flags", [["--public"], ["--scope", "public"]])
@@ -327,7 +331,7 @@ def test_pkg_repo_show_renders_repository_details(monkeypatch, tmp_path: Path) -
     assert fake.calls == [
         (
             "GET",
-            "/v0/repositories/resolve",
+            "/repositories/resolve",
             {"selector": "repo-pypi", "customer_id": "cus_123"},
         )
     ]
@@ -357,12 +361,12 @@ def test_pkg_repo_rename_updates_matching_profile_default(
     assert fake.calls == [
         (
             "GET",
-            "/v0/repositories/resolve",
+            "/repositories/resolve",
             {"selector": "repo-pypi", "customer_id": "cus_123"},
         ),
         (
             "PATCH",
-            "/v0/repositories/r_xyzabcde",
+            "/repositories/r_xyzabcde",
             {"repository_name": new_name},
         ),
     ]
@@ -431,12 +435,12 @@ def test_pkg_remote_management_and_upstream_configuration(monkeypatch, tmp_path:
     assert fake.calls == [
         (
             "POST",
-            "/v0/remote-repositories",
+            "/remote-caches",
             {"customer_id": "cus_123", "registry_kind": "pypi"},
         ),
         (
             "GET",
-            "/v0/repositories/resolve",
+            "/repositories/resolve",
             {
                 "selector": "repo-pypi",
                 "customer_id": "cus_123",
@@ -445,24 +449,69 @@ def test_pkg_remote_management_and_upstream_configuration(monkeypatch, tmp_path:
         ),
         (
             "GET",
-            "/v0/remote-repositories/pypi",
+            "/remote-caches/pypi",
             {"registry_kind": "pypi"},
         ),
         (
             "GET",
-            "/v0/repositories/r_xyzabcde/lanes/pypi/upstreams",
+            "/repositories/r_xyzabcde/lanes/pypi/upstreams",
             None,
         ),
         (
             "POST",
-            "/v0/repositories/r_xyzabcde/lanes/pypi/upstreams",
+            "/repositories/r_xyzabcde/lanes/pypi/upstreams",
             {
                 "source_type": "remote",
-                "source_repository_lane_id": "remote_1",
+                "remote_cache_ref": "pypi",
                 "priority": 0,
+                "expected_revision": 7,
                 "min_age_hours": 5.0,
                 "max_age_hours": None,
             },
+        ),
+    ]
+
+
+def test_pkg_official_remote_add_uses_public_source_ref(monkeypatch, tmp_path: Path) -> None:
+    _isolate_config(monkeypatch, tmp_path)
+    fake = _FakeApiClient(
+        [
+            {
+                "items": [
+                    {
+                        "source_ref": "pypiorg",
+                        "display_name": "Python Package Index",
+                        "registry_kind": "pypi",
+                    }
+                ],
+                "next_cursor": None,
+            },
+            {
+                "customer": _repository_entry()["customer"],
+                "remote_cache": {
+                    "remote_cache_ref": "_cache001",
+                    "source_type": "official",
+                    "official_slug": "pypiorg",
+                    "registry_kind": "pypi",
+                },
+            },
+        ]
+    )
+    _use_fake_client(monkeypatch, fake)
+
+    result = runner.invoke(artifacts_cmd.app, ["mirror", "add", "pypiorg"])
+
+    assert result.exit_code == 0
+    assert fake.calls == [
+        (
+            "GET",
+            "/remote-caches/official-sources",
+            {"customer_id": "cus_123"},
+        ),
+        (
+            "POST",
+            "/remote-caches/official",
+            {"customer_id": "cus_123", "source_ref": "pypiorg"},
         ),
     ]
 
@@ -505,7 +554,7 @@ def test_pkg_custom_remote_requires_and_submits_publication_control(
     assert fake.calls == [
         (
             "POST",
-            "/v0/remote-repositories/custom",
+            "/remote-caches/custom",
             {
                 "customer_id": "cus_123",
                 "registry_kind": "pypi",
@@ -626,11 +675,12 @@ def test_pkg_repo_upstream_add_private_uses_source_lane_and_zero_age_default(
     assert result.exit_code == 0
     assert fake.calls[-1] == (
         "POST",
-        "/v0/repositories/r_xyzabcde/lanes/pypi/upstreams",
+        "/repositories/r_xyzabcde/lanes/pypi/upstreams",
         {
             "source_type": "private",
-            "source_repository_lane_id": "lane-b-pypi",
+            "source_repository_unique_ref": "r_shared01",
             "priority": 0,
+            "expected_revision": 7,
             "min_age_hours": 0.0,
             "max_age_hours": None,
         },
@@ -717,13 +767,16 @@ def test_pkg_repo_upstream_reorder_and_remove_use_generic_routes(
     assert removed.exit_code == 0
     assert (
         "PUT",
-        "/v0/repositories/r_xyzabcde/lanes/npm/upstreams/order",
-        {"attachment_ids": ["attachment-b", "attachment-r"]},
+        "/repositories/r_xyzabcde/lanes/npm/upstreams/order",
+        {
+            "attachment_ids": ["attachment-b", "attachment-r"],
+            "expected_revision": 7,
+        },
     ) in fake.calls
     assert (
         "DELETE",
-        "/v0/repositories/r_xyzabcde/lanes/npm/upstreams/attachment-b",
-        None,
+        "/repositories/r_xyzabcde/lanes/npm/upstreams/attachment-b",
+        {"expected_revision": 7},
     ) in fake.calls
 
 
@@ -830,7 +883,7 @@ def test_pkg_package_list_and_show_use_repository_package_paths(
     assert fake.calls == [
         (
             "GET",
-            "/v0/repositories/resolve",
+            "/repositories/resolve",
             {
                 "selector": "repo-pypi",
                 "customer_id": "cus_123",
@@ -839,12 +892,12 @@ def test_pkg_package_list_and_show_use_repository_package_paths(
         ),
         (
             "GET",
-            "/v0/repositories/r_xyzabcde/lanes/pypi/packages",
+            "/repositories/r_xyzabcde/lanes/pypi/packages",
             None,
         ),
         (
             "GET",
-            "/v0/repositories/resolve",
+            "/repositories/resolve",
             {
                 "selector": "repo-pypi",
                 "customer_id": "cus_123",
@@ -853,7 +906,7 @@ def test_pkg_package_list_and_show_use_repository_package_paths(
         ),
         (
             "GET",
-            "/v0/repositories/r_xyzabcde/lanes/pypi/package",
+            "/repositories/r_xyzabcde/lanes/pypi/packages/detail",
             {"package_name": "demo"},
         ),
     ]
@@ -915,7 +968,7 @@ def test_pkg_package_mutations_call_expected_api_paths(monkeypatch, tmp_path: Pa
     assert fake.calls == [
         (
             "GET",
-            "/v0/repositories/resolve",
+            "/repositories/resolve",
             {
                 "selector": "repo-pypi",
                 "customer_id": "cus_123",
@@ -924,12 +977,12 @@ def test_pkg_package_mutations_call_expected_api_paths(monkeypatch, tmp_path: Pa
         ),
         (
             "DELETE",
-            "/v0/repositories/r_xyzabcde/lanes/pypi/package",
+            "/repositories/r_xyzabcde/lanes/pypi/packages/detail",
             {"package_name": "demo"},
         ),
         (
             "GET",
-            "/v0/repositories/resolve",
+            "/repositories/resolve",
             {
                 "selector": "repo-pypi",
                 "customer_id": "cus_123",
@@ -938,12 +991,12 @@ def test_pkg_package_mutations_call_expected_api_paths(monkeypatch, tmp_path: Pa
         ),
         (
             "DELETE",
-            "/v0/repositories/r_xyzabcde/lanes/pypi/package-version",
+            "/repositories/r_xyzabcde/lanes/pypi/packages/version",
             {"package_name": "demo", "version": "1.0.0"},
         ),
         (
             "GET",
-            "/v0/repositories/resolve",
+            "/repositories/resolve",
             {
                 "selector": "repo-pypi",
                 "customer_id": "cus_123",
@@ -952,7 +1005,7 @@ def test_pkg_package_mutations_call_expected_api_paths(monkeypatch, tmp_path: Pa
         ),
         (
             "POST",
-            "/v0/repositories/r_xyzabcde/lanes/pypi/package-version/yank",
+            "/repositories/r_xyzabcde/lanes/pypi/packages/version/yank",
             {"reason": "bad build"},
         ),
     ]

@@ -178,7 +178,7 @@ def resolve_route(
             },
         }
         credential = client.post(
-            "/v0/package-credentials",
+            "/package-credentials",
             json=credential_body,
         ).json()
         token = credential["access_token"]

@@ -68,7 +68,7 @@ def test_context_current_shows_distinct_user_profile_account_and_target(
     result = runner.invoke(app, ["context", "current"])
 
     assert result.exit_code == 0, result.output
-    assert calls == ["/v0/me"]
+    assert calls == ["/me"]
     assert "developer@example.test" in result.output
     assert "work" in result.output
     assert "persisted default" in result.output
@@ -106,7 +106,7 @@ def test_context_current_shows_account_scoped_selected_target(monkeypatch, tmp_p
     class _Client:
         @staticmethod
         def get(path: str) -> _Response:
-            assert path == "/v0/me"
+            assert path == "/me"
             return _Response({"email": "developer@example.test"})
 
     monkeypatch.setattr(
@@ -157,7 +157,7 @@ def test_account_use_warns_when_environment_still_overrides_selection(
     class _Client:
         @staticmethod
         def get(path: str) -> _Response:
-            assert path == "/v0/customers"
+            assert path == "/customers"
             return _Response(
                 [
                     {

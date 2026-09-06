@@ -7,6 +7,7 @@ import pytest
 from rvs import auth as auth_mod
 from rvs import config as cfg_mod
 from rvs.client import ApiClient, ApiError
+from rvs.devapi import api_path
 
 
 class _FakeHttpClient:
@@ -66,7 +67,7 @@ def test_api_client_refreshes_and_retries_once(monkeypatch) -> None:
 
 def test_api_client_retries_idempotent_get_transport_failures(monkeypatch) -> None:
     _FakeHttpClient.requests = []
-    request = httpx.Request("GET", "https://api.ravenstash.com/v0/repositories/resolve")
+    request = httpx.Request("GET", "https://api.ravenstash.com/repositories/resolve")
     _FakeHttpClient.responses = [
         httpx.ReadTimeout("timed out", request=request),
         httpx.Response(200, json={"ok": True}),
@@ -75,7 +76,7 @@ def test_api_client_retries_idempotent_get_transport_failures(monkeypatch) -> No
     monkeypatch.setattr("rvs.client.httpx.Client", _FakeHttpClient)
     monkeypatch.setattr("rvs.client.time.sleep", lambda _seconds: None)
 
-    response = ApiClient("https://api.ravenstash.com", "access").get("/v0/repositories/resolve")
+    response = ApiClient("https://api.ravenstash.com", "access").get("/repositories/resolve")
 
     assert response.json() == {"ok": True}
     assert len(_FakeHttpClient.requests) == 2
@@ -83,14 +84,14 @@ def test_api_client_retries_idempotent_get_transport_failures(monkeypatch) -> No
 
 def test_api_client_does_not_retry_post_transport_failures(monkeypatch) -> None:
     _FakeHttpClient.requests = []
-    request = httpx.Request("POST", "https://api.ravenstash.com/v0/package-credentials")
+    request = httpx.Request("POST", "https://api.ravenstash.com/package-credentials")
     _FakeHttpClient.responses = [httpx.ReadTimeout("timed out", request=request)]
 
     monkeypatch.setattr("rvs.client.httpx.Client", _FakeHttpClient)
 
     with pytest.raises(httpx.ReadTimeout):
         ApiClient("https://api.ravenstash.com", "access").post(
-            "/v0/package-credentials",
+            "/package-credentials",
             json={"repository_unique_ref": "repo-1"},
         )
 
@@ -257,14 +258,37 @@ def test_api_client_request_methods_pass_paths_payloads_and_params(monkeypatch) 
     client.delete("/items/repo")
 
     assert [(method, url) for method, url, _headers, _kwargs in _FakeHttpClient.requests] == [
-        ("GET", "https://api.example/items"),
-        ("POST", "https://api.example/items"),
-        ("PATCH", "https://api.example/items/repo"),
-        ("DELETE", "https://api.example/items/repo"),
+        ("GET", "https://api.example/v0/items"),
+        ("POST", "https://api.example/v0/items"),
+        ("PATCH", "https://api.example/v0/items/repo"),
+        ("DELETE", "https://api.example/v0/items/repo"),
     ]
     assert _FakeHttpClient.requests[0][3]["params"] == {"customer_id": "cus_123"}
     assert _FakeHttpClient.requests[1][3]["json"] == {"name": "repo"}
     assert _FakeHttpClient.requests[2][3]["json"] == {"name": "new"}
+
+
+def test_devapi_version_is_centralized_and_embedded_versions_are_rejected() -> None:
+    assert api_path("repositories") == "/v0/repositories"
+    with pytest.raises(ValueError, match="must not embed"):
+        api_path("/v0/repositories")
+
+
+def test_api_client_rejects_a_different_reported_contract(monkeypatch) -> None:
+    _FakeHttpClient.requests = []
+    _FakeHttpClient.responses = [
+        httpx.Response(
+            200,
+            headers={"Ravenstash-API-Version": "v1beta1"},
+            json={"items": []},
+        )
+    ]
+    monkeypatch.setattr("rvs.client.httpx.Client", _FakeHttpClient)
+
+    with pytest.raises(ApiError, match="expects 'v0'") as exc_info:
+        ApiClient("https://api.example", "token").get("/repositories")
+
+    assert exc_info.value.status_code == 502
 
 
 def test_api_client_error_uses_json_detail(monkeypatch) -> None:

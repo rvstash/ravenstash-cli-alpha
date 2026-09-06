@@ -305,7 +305,9 @@ def _package_token_for_url(
         if operations != ("download",):
             output.fatal("Private mirrors are read-only artifact targets.")
         try:
-            namespace_reference, repository_reference, route_kind = _remote_route_scope(route_parts)
+            _namespace_reference, repository_reference, _route_kind = _remote_route_scope(
+                route_parts
+            )
             client = ApiClient.from_profile(profile)
             profile_name = profile or cfg_mod.current_profile_name()
             effective_customer_id = customer_id or cfg_mod.current_customer_id(profile_name)
@@ -314,12 +316,10 @@ def _package_token_for_url(
                     "A customer is required for private-mirror access. Pass --rvs-customer-id."
                 )
             return client.post(
-                "/v0/remote-package-credentials",
+                "/remote-package-credentials",
                 json={
                     "customer_id": effective_customer_id,
-                    "route_kind": route_kind,
-                    "namespace_unique_reference": namespace_reference,
-                    "repository_unique_reference": repository_reference,
+                    "remote_cache_ref": repository_reference,
                     "registry_kind": kind,
                 },
             ).json()["access_token"]
@@ -333,7 +333,7 @@ def _package_token_for_url(
         profile_name = profile or cfg_mod.current_profile_name(cfg_mod.load())
         expected_target = cfg_mod.registry_target_expectation(kind, selector, profile_name)
         entry = client.get(
-            "/v0/repositories/resolve",
+            "/repositories/resolve",
             params={
                 "selector": selector,
                 "customer_id": customer_id,
@@ -357,7 +357,7 @@ def _package_token_for_url(
             or cfg_mod.repository_target_snapshot(entry["repository"]),
         }
         return client.post(
-            "/v0/package-credentials",
+            "/package-credentials",
             json=credential_body,
         ).json()["access_token"]
     except (ApiError, KeyError, TypeError, ValueError) as exc:

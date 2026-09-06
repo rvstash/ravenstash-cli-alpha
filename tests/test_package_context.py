@@ -77,9 +77,9 @@ class FakeApi:
 
     def get(self, path: str, params: dict[str, Any] | None = None) -> Response:
         self.calls.append(("GET", path, params))
-        if path == "/v0/customers":
+        if path == "/customers":
             return Response(self.customers)
-        if path == "/v0/remote-repositories":
+        if path == "/remote-caches":
             selected = [
                 item
                 for item in self.remotes
@@ -100,15 +100,15 @@ class FakeApi:
 
     def post(self, path: str, json: dict[str, Any] | None = None) -> Response:
         self.calls.append(("POST", path, json))
-        if path == "/v0/remote-package-credentials":
+        if path == "/remote-package-credentials":
             assert json is not None
-            prefix = "o" if json["route_kind"] == "remote_official" else "c"
-            name = "pypiorg" if prefix == "o" else "piwheels"
+            name = str(json["remote_cache_ref"])
+            prefix = "o" if name == "_py" else "c"
+            public_name = "pypiorg" if prefix == "o" else "piwheels"
             return Response(
                 {
                     "access_token": "cache-token",
-                    "namespace_unique_reference": prefix,
-                    "repository_unique_reference": name,
+                    "native_path": f"/{prefix}/{public_name}",
                 }
             )
         raise AssertionError(path)
@@ -236,7 +236,7 @@ def test_repository_resolution_rejects_cross_customer_response(monkeypatch, tmp_
         resolve_target("main/packages", profile="alice", customer_id="selected")
     assert calls == [
         (
-            "/v0/repositories/resolve",
+            "/repositories/resolve",
             {
                 "selector": "main/packages",
                 "registry_kind": None,

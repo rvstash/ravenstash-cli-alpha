@@ -9,7 +9,7 @@ from .. import config as cfg_mod
 from .. import output
 from ..account.commands import ensure_active_account
 from ..client import ApiClient, ApiError
-from .routing import RepositoryRouteKind
+from ..devapi import collection_items, remote_cache
 
 
 PackageKind = Literal["pypi", "npm", "maven"]
@@ -123,24 +123,25 @@ def _repository_target(entry: dict) -> cfg_mod.ArtifactTarget:
 
 def _remote_target(entry: dict, target_type: cfg_mod.ArtifactTargetType) -> cfg_mod.ArtifactTarget:
     customer = entry["customer"]
-    remote = entry["remote_repository"]
-    family = remote.get("source_family")
+    remote = remote_cache(entry)
+    family = remote.get("source_type")
     expected_family = "official" if target_type == "official_cache" else "custom"
     if family != expected_family:
         raise ValueError(f"Remote cache is {family or 'of an unknown type'}, not {expected_family}")
-    public_name = remote.get("official_slug") or remote.get("remote_name") or remote["public_id"]
+    public_name = (
+        remote.get("official_slug") or remote.get("remote_name") or remote["remote_cache_ref"]
+    )
     prefix = "mirror" if target_type == "official_cache" else "custom-mirror"
-    unique_ref = remote.get("unique_ref") or remote.get("public_id")
+    unique_ref = remote["remote_cache_ref"]
     return cfg_mod.ArtifactTarget(
         target_type=target_type,
         customer_id=customer["customer_id"],
         stable_selector=f"{prefix}:{unique_ref}",
         display_selector=f"{prefix}:{public_name}",
         registry_kind=cast("cfg_mod.RegistryKind", remote["registry_kind"]),
-        remote_id=remote.get("id"),
+        remote_id=unique_ref,
         remote_unique_ref=unique_ref,
         remote_name_cache=public_name,
-        source_id=remote.get("source_id"),
         is_available=True,
     )
 
@@ -173,7 +174,7 @@ def resolve_target(
             if effective_customer_id is not None:
                 params["customer_id"] = effective_customer_id
             entry = client.get(
-                "/v0/repositories/resolve",
+                "/repositories/resolve",
                 params=params,
             ).json()
             raw_customer = entry["customer"]
@@ -191,34 +192,30 @@ def resolve_target(
             target = _repository_target(entry)
         else:
             profile_name, account = ensure_active_account(profile_name, customer_id)
-            entries = client.get(
-                "/v0/remote-repositories",
-                params={
-                    "customer_id": account.customer_id,
-                    "registry_kind": registry_kind,
-                },
-            ).json()
+            entries = collection_items(
+                client.get(
+                    "/remote-caches",
+                    params={
+                        "customer_id": account.customer_id,
+                        "registry_kind": registry_kind,
+                    },
+                ).json()
+            )
             expected_family = "official" if spec.target_type == "official_cache" else "custom"
-            matches = [
-                entry
-                for entry in entries
-                if entry.get("remote_repository", {}).get("source_family") == expected_family
-                and spec.selector
-                in {
-                    entry["remote_repository"].get("id"),
-                    entry["remote_repository"].get("public_id"),
-                    entry["remote_repository"].get("unique_ref"),
-                    entry["remote_repository"].get("official_slug"),
-                    entry["remote_repository"].get("remote_name"),
-                }
-            ]
+            matches = []
+            for entry in entries:
+                remote = remote_cache(entry)
+                if remote.get("source_type") == expected_family and spec.selector in {
+                    remote.get("remote_cache_ref"),
+                    remote.get("official_slug"),
+                    remote.get("remote_name"),
+                }:
+                    matches.append(entry)
             if not matches:
                 raise ValueError(f"Package target '{value}' was not found in this account")
             if len(matches) > 1:
                 kinds = ", ".join(
-                    sorted(
-                        {str(item["remote_repository"].get("registry_kind")) for item in matches}
-                    )
+                    sorted({str(remote_cache(item).get("registry_kind")) for item in matches})
                 )
                 raise ValueError(
                     f"Package target '{value}' is ambiguous across {kinds}. Pass --kind."
@@ -328,7 +325,7 @@ def registry_context(
             if not selected.repository_unique_ref:
                 raise ValueError("Selected private repository has no stable identity")
             credential = client.post(
-                "/v0/package-credentials",
+                "/package-credentials",
                 json={
                     "repository_unique_ref": selected.repository_unique_ref,
                     "registry_kind": kind,
@@ -358,24 +355,18 @@ def registry_context(
             read_base_url = endpoints.read_base_url
             push_base_url: str | None = endpoints.push_base_url
         else:
-            route_kind = (
-                RepositoryRouteKind.REMOTE_OFFICIAL
-                if selected.target_type == "official_cache"
-                else RepositoryRouteKind.REMOTE_CUSTOM
-            )
-            namespace_reference = "o" if selected.target_type == "official_cache" else "c"
             credential = client.post(
-                "/v0/remote-package-credentials",
+                "/remote-package-credentials",
                 json={
                     "customer_id": account.customer_id,
-                    "route_kind": route_kind,
-                    "namespace_unique_reference": namespace_reference,
-                    "repository_unique_reference": selected.remote_unique_ref,
+                    "remote_cache_ref": selected.remote_unique_ref,
                     "registry_kind": kind,
                 },
             ).json()
-            namespace_reference = credential["namespace_unique_reference"]
-            repository_reference = credential["repository_unique_reference"]
+            native_parts = credential["native_path"].strip("/").split("/")
+            if len(native_parts) != 2 or not all(native_parts):
+                raise ValueError("Remote cache resolution returned an invalid native path")
+            namespace_reference, repository_reference = native_parts
             read_base_url = endpoints.mirror_base_url
             push_base_url = None
     except (ApiError, KeyError, TypeError, ValueError) as exc:

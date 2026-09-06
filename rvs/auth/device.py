@@ -15,6 +15,8 @@ from rich.live import Live
 from .. import auth as auth_mod
 from .. import config as cfg_mod
 from .. import output
+from ..devapi import api_url as devapi_url
+from ..devapi import validate_api_version
 
 
 _POLL_FRAMES = ("🔄", "🔃")
@@ -215,25 +217,26 @@ def perform_device_login(
             rvs_version = _rvs_version()
             request_payload: dict[str, Any] = {
                 "client_name": "rvs CLI",
-                "rvs_version": rvs_version,
+                "client_version": rvs_version,
                 "platform": _device_platform(),
             }
             if requested_duration_seconds is not None:
                 request_payload["requested_duration_seconds"] = requested_duration_seconds
             create_resp = client.post(
-                f"{resolved_api_url}/v0/auth/device/code",
+                devapi_url(resolved_api_url, "/auth/device/code"),
                 headers={"User-Agent": f"rvs/{rvs_version}"},
                 json=request_payload,
             )
+            validate_api_version(create_resp)
             create_resp.raise_for_status()
             session = create_resp.json()
     except Exception as exc:
         output.fatal(f"Could not start device login: {exc}")
 
     user_code = session["user_code"]
-    approval_url = session["verification_uri"]
+    approval_url = session.get("verification_uri_complete") or session["verification_uri"]
     output.info(f"Device code: {user_code}")
-    output.info(f"Open this URL and enter the code to approve the device: {approval_url}")
+    output.info(f"Open this URL to approve the device: {approval_url}")
     _print_browser_prompt(no_browser=no_browser)
 
     device_code = session["device_code"]
@@ -244,10 +247,11 @@ def perform_device_login(
         with httpx.Client(timeout=15.0) as client, _AuthorizationPollDisplay() as poll_display:
             while time.monotonic() < deadline:
                 poll_resp = client.post(
-                    f"{resolved_api_url}/v0/auth/device/token",
+                    devapi_url(resolved_api_url, "/auth/device/token"),
                     headers={"User-Agent": _rvs_user_agent()},
                     json={"device_code": device_code},
                 )
+                validate_api_version(poll_resp)
                 if poll_resp.is_success:
                     payload = poll_resp.json()
                     try:

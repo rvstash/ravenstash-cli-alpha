@@ -6,7 +6,7 @@ handling are consistent everywhere.
 Usage
 -----
     client = ApiClient.from_profile("default")
-    repos = client.get("/v0/repositories").json()
+    repos = client.get("/repositories").json()
 """
 
 from __future__ import annotations
@@ -19,6 +19,7 @@ import httpx
 
 from . import auth as auth_mod
 from . import config as cfg_mod
+from .devapi import ApiVersionMismatchError, api_url, validate_api_version
 
 
 if TYPE_CHECKING:
@@ -75,7 +76,7 @@ class ApiError(Exception):
 
 
 class ApiClient:
-    """Thin wrapper around httpx.Client for the Central REST API."""
+    """Thin wrapper around the versioned Ravenstash DevAPI."""
 
     def __init__(
         self,
@@ -120,16 +121,29 @@ class ApiClient:
         }
 
     def _url(self, path: str) -> str:
-        return f"{self._base}/{path.lstrip('/')}"
+        return api_url(self._base, path)
 
     def _raise(self, resp: httpx.Response) -> None:
         if resp.is_success:
             return
         try:
-            detail = resp.json().get("detail", resp.text)
+            payload = resp.json()
+            error = payload.get("error") if isinstance(payload, dict) else None
+            if isinstance(error, dict):
+                detail = {"code": error.get("code"), "message": error.get("message")}
+                if isinstance(error.get("details"), dict):
+                    detail.update(error["details"])
+            else:
+                detail = payload.get("detail", resp.text)
         except Exception:
             detail = resp.text or resp.reason_phrase
         raise ApiError(resp.status_code, detail)
+
+    def _validate_contract(self, resp: httpx.Response) -> None:
+        try:
+            validate_api_version(resp)
+        except ApiVersionMismatchError as exc:
+            raise ApiError(502, str(exc)) from exc
 
     def _refresh(self) -> bool:
         if not self._profile or not self._allow_refresh:
@@ -156,6 +170,7 @@ class ApiClient:
         if resp.status_code == 401 and retry and self._refresh():
             return self._request(method, path, retry=False, **kwargs)
         self._raise(resp)
+        self._validate_contract(resp)
         return resp
 
     # ── request methods ───────────────────────────────────────────────────────

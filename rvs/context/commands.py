@@ -63,7 +63,7 @@ def context_current(
     profile_name = profile or cfg_mod.current_profile_name(cfg)
     selected_profile = cfg.active_profile(profile_name)
     try:
-        identity = ApiClient.from_profile(profile_name).get("/v0/me").json()
+        identity = ApiClient.from_profile(profile_name).get("/me").json()
     except ApiError as exc:
         output.fatal(f"Could not verify the effective Ravenstash context: {exc}")
 

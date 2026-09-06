@@ -27,6 +27,13 @@ from typing import IO, TYPE_CHECKING
 
 import httpx
 
+from ..devapi import (
+    ApiVersionMismatchError,
+    validate_api_version,
+)
+from ..devapi import (
+    api_url as devapi_url,
+)
 from . import stores
 
 
@@ -370,11 +377,12 @@ def revoke_device_refresh_token(api_url: str, refresh_token: str) -> bool:
     try:
         with httpx.Client(timeout=15.0) as client:
             response = client.post(
-                f"{api_url.rstrip('/')}/v0/auth/device/revoke",
+                devapi_url(api_url, "/auth/device/revoke"),
                 headers={"User-Agent": _rvs_user_agent()},
                 json={"refresh_token": refresh_token},
             )
-    except httpx.HTTPError:
+            validate_api_version(response)
+    except httpx.HTTPError, ApiVersionMismatchError:
         logger.info("Device refresh token revocation request failed")
         return False
     return response.is_success
@@ -419,14 +427,15 @@ def refresh_expiring_credential(
         try:
             with httpx.Client(timeout=15.0) as client:
                 response = client.post(
-                    f"{p.api_url.rstrip('/')}/v0/auth/device/refresh",
+                    devapi_url(p.api_url, "/auth/device/refresh"),
                     headers={"User-Agent": _rvs_user_agent()},
                     json={
                         "refresh_token": refresh_token,
                         "platform": _device_platform(),
                     },
                 )
-        except httpx.HTTPError:
+                validate_api_version(response)
+        except httpx.HTTPError, ApiVersionMismatchError:
             logger.info("Device credential refresh failed for profile %s", profile)
             return None
 

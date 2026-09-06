@@ -591,9 +591,16 @@ def _native_registries_from_mapping(
         except KeyError as exc:
             raise ValueError(f"{profile_name} {kind} registry endpoints are incomplete") from exc
 
-    raw_oci = value.get("oci")
+    raw_oci = value.get("container") or value.get("oci")
     if not isinstance(raw_oci, dict) or "registry_base_url" not in raw_oci:
-        raise ValueError(f"{profile_name} OCI registry endpoint is missing")
+        raise ValueError(f"{profile_name} container registry endpoint is missing")
+    raw_helm = value.get("helm")
+    if isinstance(raw_helm, dict) and raw_helm.get("registry_base_url") != raw_oci.get(
+        "registry_base_url"
+    ):
+        raise ValueError(
+            f"{profile_name} container and Helm registry endpoints must share one OCI host"
+        )
     discovered_oci_url = validate_service_url(
         str(raw_oci["registry_base_url"]), label=f"{profile_name} OCI registry URL"
     )

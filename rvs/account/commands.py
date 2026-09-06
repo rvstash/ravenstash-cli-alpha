@@ -24,7 +24,9 @@ def _profile_name(profile: str | None) -> str:
 
 def customers(profile: str | None = None) -> list[dict]:
     try:
-        payload = ApiClient.from_profile(profile).get("/v0/customers").json()
+        payload = ApiClient.from_profile(profile).get("/customers").json()
+        if isinstance(payload, dict):
+            payload = payload.get("items", [])
     except ApiError as exc:
         output.fatal(str(exc))
     if not isinstance(payload, list):
