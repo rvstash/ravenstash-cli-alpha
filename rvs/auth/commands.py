@@ -362,7 +362,7 @@ def _configure_local_store(
         else _initialize_plaintext(allow_insecure_storage=allow_insecure_storage)
     )
     cfg_mod.set_credential_store(selected)
-    if first_login:
+    if first_login and selected == "vault":
         output.success(f"Installed dedicated credential store: {_DEDICATED_STORE_LABEL}.")
     return selected
 
