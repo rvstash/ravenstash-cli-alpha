@@ -62,7 +62,7 @@ app.command(
 app.command(
     "docker",
     context_settings=oci_commands.PASSTHROUGH_CONTEXT,
-    help="Run Docker with an exact ephemeral Ravenstash Container credential.",
+    help="Run Docker with temporary authentication; push, pull, and tag accept private image paths.",
 )(oci_commands.docker)
 app.command(
     "helm",

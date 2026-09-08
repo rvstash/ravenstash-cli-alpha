@@ -169,8 +169,9 @@ def resolve_target(
                 output.fatal("No acting account is selected. Run `rvs account use`.")
             params = {
                 "selector": spec.selector,
-                "registry_kind": registry_kind,
             }
+            if registry_kind is not None:
+                params["registry_kind"] = registry_kind
             if effective_customer_id is not None:
                 params["customer_id"] = effective_customer_id
             entry = client.get(
@@ -196,8 +197,12 @@ def resolve_target(
                 client.get(
                     "/remote-caches",
                     params={
-                        "customer_id": account.customer_id,
-                        "registry_kind": registry_kind,
+                        key: value
+                        for key, value in {
+                            "customer_id": account.customer_id,
+                            "registry_kind": registry_kind,
+                        }.items()
+                        if value is not None
                     },
                 ).json()
             )

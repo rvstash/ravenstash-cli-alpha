@@ -38,7 +38,10 @@ class _Response:
 class _Api:
     def get(self, path: str, params=None) -> _Response:
         assert path == "/repositories/resolve"
-        assert params["registry_kind"] in {"container", "helm"}
+        if params.get("registry_kind") is None:
+            assert "registry_kind" not in params
+        else:
+            assert params["registry_kind"] in {"container", "helm"}
         assert params["customer_id"] == "customer-1"
         return _Response(
             {
@@ -449,3 +452,182 @@ def test_package_and_mirror_commands_reject_oci_kinds() -> None:
     assert remote.exit_code != 0
     assert "Use rvs docker, rvs helm, or rvs oras" in package.output
     assert "Use rvs docker, rvs helm, or rvs oras" in remote.output
+
+
+@pytest.mark.parametrize("command", [["push"], ["image", "push"]])
+def test_short_push_tags_exact_source_before_push(monkeypatch, tmp_path, command):
+    _setup(monkeypatch, tmp_path)
+    identity = "sha256:" + "a" * 64
+    inspections = []
+    launches = []
+    destination = "oci.rvsta.sh/main/images/team/api:RC1"
+
+    def inspect(cmd, **kwargs):
+        inspections.append(cmd)
+        assert "RVS_TOKEN" not in kwargs["env"]
+        if cmd[-1] == "team/api:RC1":
+            return oci_runner.subprocess.CompletedProcess(cmd, 0, identity + "\n", "")
+        assert cmd[-1] == destination
+        return oci_runner.subprocess.CompletedProcess(
+            cmd, 1, "", "Error: No such image: " + destination
+        )
+
+    monkeypatch.setattr(oci_runner.subprocess, "run", inspect)
+    monkeypatch.setattr(oci_runner, "_run_process", lambda cmd, env: launches.append((cmd, env)))
+    result = runner.invoke(
+        app,
+        [
+            "docker",
+            "--rvs-target",
+            "main/images",
+            "--context",
+            "remote",
+            *command,
+            "--platform=linux/arm64",
+            "team/api:RC1",
+        ],
+        input="y\n",
+    )
+    assert result.exit_code == 0, result.output
+    assert len(inspections) == 2
+    assert all(cmd[1:3] == ["--context", "remote"] for cmd in inspections)
+    assert launches[0][0] == [
+        "/usr/bin/docker",
+        "--context",
+        "remote",
+        "image",
+        "tag",
+        "team/api:RC1",
+        destination,
+    ]
+    assert launches[1][0] == [
+        "/usr/bin/docker",
+        "--context",
+        "remote",
+        *command,
+        "--platform=linux/arm64",
+        destination,
+    ]
+    assert destination in result.output
+    assert not Path(launches[0][1]["RVS_OCI_CREDENTIAL_FILE"]).exists()
+
+
+@pytest.mark.parametrize(
+    "failure", ["collision", "missing-source", "daemon", "tag-failure", "push-failure", "decline"]
+)
+def test_short_push_failure_does_not_push_wrong_image(monkeypatch, tmp_path, failure):
+    _setup(monkeypatch, tmp_path)
+    launches = []
+    inspections = []
+
+    def inspect(cmd, **kwargs):
+        inspections.append(cmd)
+        if failure == "missing-source":
+            return oci_runner.subprocess.CompletedProcess(cmd, 1, "", "No such image: api:latest")
+        if len(inspections) == 2 and failure == "daemon":
+            return oci_runner.subprocess.CompletedProcess(
+                cmd, 1, "", "Cannot connect to Docker daemon"
+            )
+        letter = "b" if len(inspections) == 2 and failure == "collision" else "a"
+        return oci_runner.subprocess.CompletedProcess(cmd, 0, "sha256:" + letter * 64, "")
+
+    def launch(cmd, env):
+        launches.append(cmd)
+        if failure == "tag-failure" or (failure == "push-failure" and len(launches) == 2):
+            import typer
+
+            raise typer.Exit(17)
+
+    monkeypatch.setattr(oci_runner.subprocess, "run", inspect)
+    monkeypatch.setattr(oci_runner, "_run_process", launch)
+    result = runner.invoke(
+        app,
+        ["docker", "--rvs-target", "main/images", "push", "api"],
+        input="n\n" if failure == "decline" else "y\n",
+    )
+    assert result.exit_code != 0
+    if failure in {"collision", "missing-source", "daemon", "decline"}:
+        assert not launches
+    if failure == "decline":
+        assert not inspections
+    if failure == "tag-failure":
+        assert len(launches) == 1
+        assert result.exit_code == 17
+    if failure == "push-failure":
+        assert len(launches) == 2
+        assert "retained if push fails" in result.output
+        assert result.exit_code == 17
+
+
+def test_short_pull_uses_saved_target_without_local_alias(monkeypatch, tmp_path):
+    _setup(monkeypatch, tmp_path)
+    selected = runner.invoke(app, ["art", "select", "main/images"])
+    assert selected.exit_code == 0, selected.output
+    launches = []
+    monkeypatch.setattr(oci_runner, "_run_process", lambda cmd, env: launches.append(cmd))
+    monkeypatch.setattr(
+        oci_runner.subprocess,
+        "run",
+        lambda *args, **kwargs: pytest.fail("No local tagging on pull"),
+    )
+    result = runner.invoke(app, ["docker", "image", "pull", "--", "team/api"])
+    assert result.exit_code == 0, result.output
+    assert launches == [
+        ["/usr/bin/docker", "image", "pull", "oci.rvsta.sh/main/images/team/api:latest"]
+    ]
+
+
+def test_short_tag_keeps_source_from_another_repo_local(monkeypatch, tmp_path):
+    _setup(monkeypatch, tmp_path)
+    source = "oci.rvsta.sh/other/repo/api:dev"
+    identity = "sha256:" + "a" * 64
+    inspections = []
+    launches = []
+
+    def inspect(cmd, **kwargs):
+        inspections.append(cmd[-1])
+        return oci_runner.subprocess.CompletedProcess(cmd, 0, identity, "")
+
+    monkeypatch.setattr(oci_runner.subprocess, "run", inspect)
+    monkeypatch.setattr(oci_runner, "_run_process", lambda cmd, env: launches.append(cmd))
+    result = runner.invoke(
+        app, ["docker", "--rvs-target", "main/images", "image", "tag", source, "api:release"]
+    )
+    assert result.exit_code == 0, result.output
+    assert inspections[0] == source
+    assert launches == [
+        ["/usr/bin/docker", "image", "tag", source, "oci.rvsta.sh/main/images/api:release"]
+    ]
+
+
+def test_docker_explicit_config_preserves_context_plugins_and_buildx(monkeypatch, tmp_path):
+    _setup(monkeypatch, tmp_path)
+    native = tmp_path / "docker-config"
+    native.mkdir()
+    original = '{"currentContext":"remote","auths":{"docker.io":{"auth":"existing"}}}'
+    (native / "config.json").write_text(original)
+    for directory in ("contexts", "cli-plugins", "buildx"):
+        (native / directory).mkdir()
+        (native / directory / "sentinel").write_text(directory)
+    monkeypatch.delenv("BUILDX_CONFIG", raising=False)
+    seen = []
+
+    def launch(cmd, env):
+        seen.append(cmd)
+        overlay = Path(env["DOCKER_CONFIG"])
+        assert overlay != native
+        data = json.loads((overlay / "config.json").read_text())
+        assert data["currentContext"] == "remote"
+        assert data["auths"]["docker.io"]["auth"] == "existing"
+        assert data["credHelpers"]["oci.rvsta.sh"] == "rvs"
+        for directory in ("contexts", "cli-plugins"):
+            assert (overlay / directory / "sentinel").read_text() == directory
+        assert env["BUILDX_CONFIG"] == str(native / "buildx")
+
+    monkeypatch.setattr(oci_runner, "_run_process", launch)
+    result = runner.invoke(
+        app, ["docker", "--rvs-target", "main/images", f"--config={native}", "pull", "api"]
+    )
+    assert result.exit_code == 0, result.output
+    assert seen == [["/usr/bin/docker", "pull", "oci.rvsta.sh/main/images/api:latest"]]
+    assert (native / "config.json").read_text() == original

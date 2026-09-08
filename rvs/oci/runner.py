@@ -23,6 +23,7 @@ from ..client import ApiClient, ApiError
 from ..publishing import confirm_publish, oci_artifacts
 from ..runtime import tools
 from ..subprocesses import child_environment
+from . import docker
 
 
 OciTool = Literal["docker", "helm", "oras"]
@@ -297,8 +298,8 @@ def _registry_entry_host(value: str) -> str:
     return host
 
 
-def _native_registry_config(tool: OciTool) -> dict[str, object]:
-    source = _registry_config_source(tool)
+def _native_registry_config(tool: OciTool, source: Path | None = None) -> dict[str, object]:
+    source = source or _registry_config_source(tool)
     try:
         if not source.is_file():
             return {}
@@ -310,8 +311,10 @@ def _native_registry_config(tool: OciTool) -> dict[str, object]:
     return value
 
 
-def _write_registry_config(temp_dir: Path, route: OciRoute, tool: OciTool) -> Path:
-    config = _native_registry_config(tool)
+def _write_registry_config(
+    temp_dir: Path, route: OciRoute, tool: OciTool, source: Path | None = None
+) -> Path:
+    config = _native_registry_config(tool, source)
     auths = config.get("auths")
     if isinstance(auths, dict):
         config["auths"] = {
@@ -354,12 +357,8 @@ def _operations_for(
     argv: list[str],
 ) -> tuple[PackageOperation, ...]:
     arguments = {argument.lower() for argument in argv}
-    if tool == "docker" and (
-        "push" in arguments
-        or "--push" in arguments
-        or ("imagetools" in arguments and "create" in arguments)
-    ):
-        return ("download", "upload")
+    if tool == "docker":
+        return ("download", "upload") if docker.parse(argv).publishing else ("download",)
     if tool == "helm" and "push" in arguments:
         return ("download", "upload")
     if tool == "oras" and arguments.intersection({"push", "cp", "copy", "attach", "tag", "delete"}):
@@ -368,14 +367,22 @@ def _operations_for(
 
 
 def run(tool: OciTool, argv: list[str], options: OciOptions) -> None:
+    invocation = docker.parse(argv) if tool == "docker" else None
     route = resolve_route(tool, options, _operations_for(tool, argv))
-    argv = _normalize_friendly_targets(argv, route)
-    _assert_exact_targets(argv, route)
+    tagging = None
+    if invocation is not None:
+        tagging = docker.expand(invocation, route.native_root)
+        argv = invocation.argv
+    # A tag source is local and may legitimately be named for another repository.
+    if invocation is not None and invocation.command[-1:] == ("tag",) and invocation.operands:
+        index = invocation.operands[-1]
+        argv[index] = _normalize_friendly_targets([argv[index]], route)[0]
+        _assert_exact_targets([argv[index]], route)
+    else:
+        argv = _normalize_friendly_targets(argv, route)
+        _assert_exact_targets(argv, route)
     publishing = (
-        (
-            tool == "docker"
-            and ("push" in argv or "--push" in argv or ("imagetools" in argv and "create" in argv))
-        )
+        (invocation is not None and invocation.publishing)
         or (tool == "helm" and "push" in argv)
         or (tool == "oras" and bool({"push", "cp", "copy", "attach", "tag"}.intersection(argv)))
     )
@@ -391,7 +398,16 @@ def run(tool: OciTool, argv: list[str], options: OciOptions) -> None:
     with tempfile.TemporaryDirectory(prefix="rvs-oci-") as temporary:
         temp_dir = Path(temporary)
         broker = _write_broker(temp_dir, route)
-        registry_config = _write_registry_config(temp_dir, route, tool)
+        source = _registry_config_source(tool)
+        if invocation is not None and invocation.config_dir is not None:
+            source = invocation.config_dir / "config.json"
+        registry_config = _write_registry_config(temp_dir, route, tool, source)
+        if tool == "docker":
+            # Context TLS material and locally installed CLI plugins are directory-backed.
+            for name in ("contexts", "cli-plugins"):
+                original = source.parent / name
+                if original.is_dir():
+                    (temp_dir / name).symlink_to(original.absolute(), target_is_directory=True)
         env = child_environment(
             {
                 "DOCKER_CONFIG": str(temp_dir),
@@ -399,27 +415,45 @@ def run(tool: OciTool, argv: list[str], options: OciOptions) -> None:
                 "RVS_OCI_CREDENTIAL_FILE": str(broker),
             }
         )
-        process = subprocess.Popen([_executable(tool), *argv], env=env)
-        forwarded_signals = tuple(
-            candidate
-            for candidate in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP)
-            if candidate is not None
-        )
-        previous_handlers = {signum: signal.getsignal(signum) for signum in forwarded_signals}
+        if tool == "docker":
+            env.setdefault("BUILDX_CONFIG", str((source.parent / "buildx").absolute()))
+        executable = _executable(tool)
+        if tagging is not None and invocation is not None:
+            source_image, destination = tagging
+            docker.check_tag(executable, invocation, env, source_image, destination)
+            # Keep Docker's named-image tagging semantics, including multi-platform
+            # images in the containerd store; a platform image ID may narrow the graph.
+            _run_process(
+                [executable, *invocation.globals, "image", "tag", source_image, destination], env
+            )
+            typer.echo(f"Local tag: {destination} (retained if push fails).", err=True)
+            if invocation.command[-1] == "tag":
+                return
+        _run_process([executable, *argv], env)
 
-        def _forward(signum: int, _frame) -> None:
-            if process.poll() is None:
-                process.send_signal(signum)
 
-        try:
-            for signum in forwarded_signals:
-                signal.signal(signum, _forward)
-            returncode = process.wait()
-        finally:
-            for signum, previous in previous_handlers.items():
-                signal.signal(signum, previous)
-        if returncode:
-            raise typer.Exit(128 - returncode if returncode < 0 else returncode)
+def _run_process(argv: list[str], env: dict[str, str]) -> None:
+    process = subprocess.Popen(argv, env=env)
+    forwarded_signals = tuple(
+        candidate
+        for candidate in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP)
+        if candidate is not None
+    )
+    previous_handlers = {signum: signal.getsignal(signum) for signum in forwarded_signals}
+
+    def _forward(signum: int, _frame) -> None:
+        if process.poll() is None:
+            process.send_signal(signum)
+
+    try:
+        for signum in forwarded_signals:
+            signal.signal(signum, _forward)
+        returncode = process.wait()
+    finally:
+        for signum, previous in previous_handlers.items():
+            signal.signal(signum, previous)
+    if returncode:
+        raise typer.Exit(128 - returncode if returncode < 0 else returncode)
 
 
 def reference(

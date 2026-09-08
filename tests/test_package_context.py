@@ -239,7 +239,6 @@ def test_repository_resolution_rejects_cross_customer_response(monkeypatch, tmp_
             "/repositories/resolve",
             {
                 "selector": "main/packages",
-                "registry_kind": None,
                 "customer_id": "selected",
             },
         )

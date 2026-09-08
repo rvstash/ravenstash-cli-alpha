@@ -364,7 +364,7 @@ rvs uv sync
 rvs twine upload dist/*
 rvs npm install @acme/widgets
 rvs mvn test
-rvs docker --rvs-target acme/runtime-images pull oci.rvsta.sh/acme/runtime-images/api:latest
+rvs docker --rvs-target acme/runtime-images pull api:latest
 rvs helm --rvs-target acme/deployment-charts show chart oci://oci.rvsta.sh/acme/deployment-charts/charts/api --version 1.2.3
 rvs oras --rvs-kind container --rvs-target acme/runtime-images discover oci.rvsta.sh/acme/runtime-images/api:latest
 rvs oci-reference --kind container --target acme/runtime-images --oci-path api --reference latest
@@ -403,6 +403,55 @@ never placed in argv or written to the user's Docker or Helm config. Docker,
 Helm, and ORAS all use the same `oci.rvsta.sh` host and the stable
 `/<namespace-ref>/<repository-ref>/...` namespace. `rvs oras` requires
 `--rvs-kind container` or `--rvs-kind helm` because ORAS supports both lanes.
+
+With a private repository selected, Docker push, pull, and tag accept image names
+without the registry address. The equivalent `rvs docker image push`, `image pull`,
+and `image tag` forms work too:
+
+```bash
+rvs art select acme/runtime-images
+docker build -t team/api:1.2 .
+rvs docker push team/api:1.2
+rvs docker pull team/api:1.2
+rvs docker tag local-api:dev team/api:next
+```
+
+These commands also accept `--rvs-target acme/runtime-images` instead of a saved
+selection. Shorthand resolves against the discovered OCI endpoint and repository
+identity; it never falls back to Docker Hub. An omitted tag means `latest`.
+Nested paths such as `team/backend/api` are supported, and tag case is preserved.
+An explicit registry hostname is never prefixed or redirected. Docker's hostname
+rules apply: a first path component containing a dot or colon, `localhost`, or an
+uppercase character denotes a registry, so use the full internal reference for
+an internal image path such as `team.v2/api`. Use plain `docker pull nginx` for
+public images.
+
+Push shorthand confirms the resolved publishing destination, inspects the named
+local image, and creates a qualified local tag before pushing. The original tag
+is preserved. A destination tag pointing to a different image is rejected, even
+with `--rvs-yes`; explicitly replace it with plain
+`docker tag <source> <full-destination>` when intended. This also applies after
+rebuilding a mutable tag such as `latest`. Qualified tags remain after successful
+or failed pushes. Tag shorthand qualifies only the destination, and accepts a
+local image ID or a fully qualified image as its source.
+
+Pull shorthand retains the fully qualified image name and prints it to stderr;
+it does not create a short local alias. Use that full reference with `docker run`,
+or explicitly create an alias with plain `docker tag`. Pulls by
+`team/api@sha256:<digest>` and `pull --all-tags team/api` are supported.
+`push --all-tags` requires a fully qualified reference; push shorthand does not
+infer a destination from an image ID or digest.
+
+Build output tags, Dockerfile `FROM`/`COPY --from` references, and local commands
+such as run, inspect, and remove retain native Docker naming. For a build using
+private base images, write their full references in the Dockerfile and use
+`rvs docker build -t team/api:1.2 .` to supply temporary credentials. Public bases
+continue using their own registries and existing Docker credentials. One build
+can access only the selected Ravenstash repository through the injected credential.
+Buildx output tags and registry cache references likewise require explicit URLs.
+Docker global options such as `--context`, `--host`, and `--config` go before the
+Docker subcommand. The wrapper preserves the selected context, CLI plugins, and
+Buildx configuration while using a temporary registry credential overlay.
 
 ## Installation on Linux / WSL
 
