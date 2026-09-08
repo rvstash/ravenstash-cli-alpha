@@ -631,3 +631,51 @@ def test_docker_explicit_config_preserves_context_plugins_and_buildx(monkeypatch
     assert result.exit_code == 0, result.output
     assert seen == [["/usr/bin/docker", "pull", "oci.rvsta.sh/main/images/api:latest"]]
     assert (native / "config.json").read_text() == original
+
+
+@pytest.mark.parametrize(
+    "arguments,tail",
+    [
+        (
+            ["pull", "api", "--version", "1.2.3"],
+            ["pull", "oci://oci.rvsta.sh/main/images/api", "--version", "1.2.3"],
+        ),
+        (["--rvs-yes", "push", "api.tgz"], ["push", "api.tgz", "oci://oci.rvsta.sh/main/images"]),
+        (
+            ["--rvs-yes", "push", "--plain-http", "api.tgz"],
+            ["push", "--plain-http", "api.tgz", "oci://oci.rvsta.sh/main/images"],
+        ),
+    ],
+)
+def test_helm_saved_target_shorthand_uses_temporary_config(monkeypatch, tmp_path, arguments, tail):
+    _setup(monkeypatch, tmp_path)
+    assert runner.invoke(app, ["art", "select", "main/images"]).exit_code == 0
+    source = tmp_path / "helm.json"
+    source.write_text('{"auths":{"public.example":{"auth":"public-auth"}}}')
+    captured = []
+
+    def run_process(argv, env):
+        captured.append(argv)
+        config_path = Path(env["HELM_REGISTRY_CONFIG"])
+        assert config_path != source
+        config = json.loads(config_path.read_text())
+        assert config["auths"]["public.example"]["auth"] == "public-auth"
+        assert config["credHelpers"]["oci.rvsta.sh"] == "rvs"
+        assert "--registry-config" not in argv
+        assert "exact-secret-capability" not in " ".join(argv)
+
+    publish_arguments = []
+    native_artifacts = oci_runner.oci_artifacts
+
+    def artifacts(tool, argv, host):
+        publish_arguments.append(argv)
+        return native_artifacts(tool, argv, host)
+
+    monkeypatch.setattr(oci_runner, "oci_artifacts", artifacts)
+    monkeypatch.setattr(oci_runner, "_run_process", run_process)
+    result = runner.invoke(app, ["helm", "--registry-config", str(source), *arguments])
+    assert result.exit_code == 0, result.output
+    assert captured == [["/usr/bin/helm", *tail]]
+    if "push" in arguments:
+        assert publish_arguments == [["push", "api.tgz", "oci://oci.rvsta.sh/main/images"]]
+    assert source.read_text() == '{"auths":{"public.example":{"auth":"public-auth"}}}'

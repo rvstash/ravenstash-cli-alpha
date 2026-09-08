@@ -453,6 +453,40 @@ Docker global options such as `--context`, `--host`, and `--config` go before th
 Docker subcommand. The wrapper preserves the selected context, CLI plugins, and
 Buildx configuration while using a temporary registry credential overlay.
 
+### Helm chart shorthand
+
+```bash
+rvs art select platform/deployment-charts
+rvs helm package ./api
+rvs helm push api-1.2.3.tgz
+rvs helm push api-1.2.3.tgz team/backend
+rvs helm pull team/backend/api --version 1.2.3
+rvs helm install my-release team/backend/api --version 1.2.3
+rvs helm upgrade my-release team/backend/api --version 1.2.3
+rvs helm show values team/backend/api --version 1.2.3
+rvs helm template my-release team/backend/api --version 1.2.3
+```
+
+An omitted push destination uses the selected repository root. An explicit short
+push destination is a directory; Helm appends the chart name and version from
+its metadata. Read commands include the chart name and use native `--version`
+selection (including ranges), or a `name@sha256:...` digest reference.
+
+Only chart operands are expanded. Release names, values files, and flags retain
+native meaning. Full `oci://` and HTTP URLs stay explicit; `--repo` opts into
+Helm's supplied repository URL. Local directories require `./`, `../`, or an
+absolute path; `.tgz` paths stay local. A bare chart name remains private even
+when a local directory has that name. Repository aliases such as `bitnami/nginx`
+are private paths inside `rvs helm`; use plain Helm for configured public aliases.
+Private misses never fall back publicly.
+
+Keep full repository URLs in `Chart.yaml` dependencies. One invocation still
+authorizes one Ravenstash repository. Other commands, including dependency
+build/update and package, keep their native arguments. `--registry-config` is
+used as the source for the temporary credential overlay, never as a way to bypass
+it. Unknown value flags can use `--option=value`; unknown bare flags are rejected
+rather than guessing which following operand is a chart.
+
 ## Installation on Linux / WSL
 
 The supported end-user install path is a signed self-contained distribution,

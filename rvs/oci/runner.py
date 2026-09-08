@@ -23,7 +23,7 @@ from ..client import ApiClient, ApiError
 from ..publishing import confirm_publish, oci_artifacts
 from ..runtime import tools
 from ..subprocesses import child_environment
-from . import docker
+from . import docker, helm
 
 
 OciTool = Literal["docker", "helm", "oras"]
@@ -359,7 +359,7 @@ def _operations_for(
     arguments = {argument.lower() for argument in argv}
     if tool == "docker":
         return ("download", "upload") if docker.parse(argv).publishing else ("download",)
-    if tool == "helm" and "push" in arguments:
+    if tool == "helm" and helm.parse(argv).publishing:
         return ("download", "upload")
     if tool == "oras" and arguments.intersection({"push", "cp", "copy", "attach", "tag", "delete"}):
         return ("download", "upload")
@@ -368,11 +368,14 @@ def _operations_for(
 
 def run(tool: OciTool, argv: list[str], options: OciOptions) -> None:
     invocation = docker.parse(argv) if tool == "docker" else None
+    helm_invocation = helm.parse(argv) if tool == "helm" else None
     route = resolve_route(tool, options, _operations_for(tool, argv))
     tagging = None
     if invocation is not None:
         tagging = docker.expand(invocation, route.native_root)
         argv = invocation.argv
+    if helm_invocation is not None:
+        argv = helm.expand(helm_invocation, route.native_root)
     # A tag source is local and may legitimately be named for another repository.
     if invocation is not None and invocation.command[-1:] == ("tag",) and invocation.operands:
         index = invocation.operands[-1]
@@ -383,16 +386,21 @@ def run(tool: OciTool, argv: list[str], options: OciOptions) -> None:
         _assert_exact_targets(argv, route)
     publishing = (
         (invocation is not None and invocation.publishing)
-        or (tool == "helm" and "push" in argv)
+        or (helm_invocation is not None and helm_invocation.publishing)
         or (tool == "oras" and bool({"push", "cp", "copy", "attach", "tag"}.intersection(argv)))
     )
     if publishing:
         if route.account is None:
             output.fatal("Cannot identify the publishing account.")
+        publish_argv = argv
+        if helm_invocation is not None and helm_invocation.operands:
+            operands = helm_invocation.operands
+            destination = argv[operands[1]] if len(operands) == 2 else argv[-1]
+            publish_argv = ["push", argv[operands[0]], destination]
         confirm_publish(
             route.repository,
             route.account,
-            oci_artifacts(tool, argv, route.registry_host),
+            oci_artifacts(tool, publish_argv, route.registry_host),
             yes=options.yes,
         )
     with tempfile.TemporaryDirectory(prefix="rvs-oci-") as temporary:
@@ -401,6 +409,8 @@ def run(tool: OciTool, argv: list[str], options: OciOptions) -> None:
         source = _registry_config_source(tool)
         if invocation is not None and invocation.config_dir is not None:
             source = invocation.config_dir / "config.json"
+        if helm_invocation is not None and helm_invocation.config is not None:
+            source = helm_invocation.config
         registry_config = _write_registry_config(temp_dir, route, tool, source)
         if tool == "docker":
             # Context TLS material and locally installed CLI plugins are directory-backed.

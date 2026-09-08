@@ -67,7 +67,7 @@ app.command(
 app.command(
     "helm",
     context_settings=oci_commands.PASSTHROUGH_CONTEXT,
-    help="Run Helm with an exact ephemeral Ravenstash OCI chart credential.",
+    help="Run Helm with temporary authentication and selected-repository chart paths.",
 )(oci_commands.helm)
 app.command(
     "oras",
