@@ -40,7 +40,11 @@ def print_token(
         ..., "--target", help="namespace/repository, mirror:source, or custom-mirror:name."
     ),
     kind: Literal["pypi", "npm", "maven", "container", "helm"] = typer.Option(..., "--kind"),
-    access: Literal["read", "publish"] = typer.Option("read", "--access"),
+    access: Literal["read", "publish", "admin"] = typer.Option(
+        "read",
+        "--access",
+        help="Admin additionally permits native deletion within your source grants.",
+    ),
     duration: str = typer.Option(
         "4h", "--duration", help="15m to 12h; source expiry may shorten it."
     ),
@@ -66,7 +70,11 @@ def print_token(
                 target, profile=profile, customer_id=customer_id, kind=kind
             )
             client = ApiClient.from_profile(profile_name)
-            operations = ["download", "upload"] if access == "publish" else ["download"]
+            operations = {
+                "read": ["download"],
+                "publish": ["download", "upload"],
+                "admin": ["download", "upload", "delete"],
+            }[access]
             if selected.target_type == "repository":
                 response = client.issue_native(
                     "/package-credentials",

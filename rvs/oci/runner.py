@@ -29,7 +29,7 @@ from . import docker, helm
 
 OciTool = Literal["docker", "helm", "oras"]
 OciRegistryKind = Literal["container", "helm"]
-PackageOperation = Literal["download", "upload"]
+PackageOperation = Literal["download", "upload", "delete"]
 _OCI_COMPONENT = re.compile(r"^[a-z0-9]+(?:(?:[._]|__|-+)[a-z0-9]+)*$")
 _UNIQUE_ID = re.compile(r"^[23456789abcdefghijkmnpqrstuvwxyz]{8}$")
 
@@ -363,7 +363,9 @@ def _operations_for(
         return ("download", "upload") if docker.parse(argv).publishing else ("download",)
     if tool == "helm" and helm.parse(argv).publishing:
         return ("download", "upload")
-    if tool == "oras" and arguments.intersection({"push", "cp", "copy", "attach", "tag", "delete"}):
+    if tool == "oras" and "delete" in arguments:
+        return ("download", "delete")
+    if tool == "oras" and arguments.intersection({"push", "cp", "copy", "attach", "tag"}):
         return ("download", "upload")
     return ("download",)
 

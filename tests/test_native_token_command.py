@@ -86,6 +86,26 @@ def test_manual_json_and_publish_are_explicit(issuer):
     assert issuer.issue_native.call_args.args[1]["operations"] == ["download", "upload"]
 
 
+def test_manual_admin_requests_delete_without_changing_publish(issuer):
+    result = runner.invoke(
+        app,
+        [
+            "artifacts",
+            "auth",
+            "print-token",
+            "--target",
+            "space/packages",
+            "--kind",
+            "container",
+            "--access",
+            "admin",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert result.stdout == SECRET + "\n"
+    assert issuer.issue_native.call_args.args[1]["operations"] == ["download", "upload", "delete"]
+
+
 @pytest.mark.parametrize("duration", ["14m", "0h", "13h", "4", "forever"])
 def test_invalid_lifetime_is_rejected_before_issuance(issuer, duration):
     result = runner.invoke(
