@@ -378,15 +378,49 @@ rvs uv --rvs-target acme/my-python-packages --rvs-native-config isolate sync
 `--target` or the effective local-profile/acting-account context, and the underlying implementation may or may
 not use a native package manager. `rvs pip`, `rvs uv`, `rvs twine`, `rvs npm`,
 `rvs mvn`, `rvs docker`, `rvs helm`, and `rvs oras` are explicit native-tool passthroughs. The
-package-release wrappers respect native config
-by default, detect Ravenstash registry URLs, and inject only short-lived
-credentials for the child process. Install/read commands request download-only
+package-release wrappers require an explicit `--rvs-target` or a selected target
+(including retained legacy defaults). A registry URL in native configuration alone
+is not a target selection. Without a target, they stop before launching the native
+operation; help and version queries do not require a target.
+
+The selected target supplies the default index/registry. Explicit additional
+indexes, npm scope registries, and native dependency/lockfile source assignments
+remain available. Source inspection emits an advisory warning when local inputs
+reference URLs outside the selected target; it does not rewrite or reject them.
+Inspection covers common config files, uv/npm lockfiles, and local requirements
+includes. It is best effort, not an exhaustive effective-config resolver or a
+network sandbox: remote includes, generated configuration, build scripts, and
+plugins can introduce further destinations. Downloads outside the selected target
+bypass its policy and accounting and require native authentication.
+
+`rvs` never migrates or regenerates lockfiles itself. Use `rvs uv lock` or
+`rvs npm install --package-lock-only` to request native lock generation. Native
+semantics remain intact: `uv sync` and `npm install` may update their locks; use
+`rvs uv sync --locked` or `rvs npm ci` when changes must be rejected.
+
+pip keeps extra indexes and find-links; its index candidates have no priority.
+uv keeps named indexes and package-to-index source mappings. npm keeps explicit
+scope registry mappings. Maven's generated settings mirror `central`, preserving
+other repositories and credentials. Existing mirror patterns are excluded from
+Central and the reserved `rvs-private` repository in the temporary settings, with
+a warning, so they cannot redirect the selected target. Explicit
+`--rvs-native-config isolate` still requests native config isolation and a Maven
+wildcard mirror; it is not a network sandbox. `respect` and `override` both set
+the selected target as the default while preserving additional sources.
+
+Only short-lived credentials are injected for the child process. Install/read commands request download-only
 capabilities; publish/deploy/push commands request upload authority only when the
 native workflow needs it. They do not write tokens to `.npmrc`,
 `pip.conf`, `.pypirc`, `settings.xml`, `pyproject.toml`, or `uv.toml`.
 The controlling `RVS_TOKEN`, when present, is removed from every launched native
 process after the scoped package capability has been exchanged. Temporary netrc,
 Maven settings, OCI config, and OCI broker files are removed when the wrapper exits.
+Python's temporary netrc preserves existing credentials for other hosts. Netrc is
+host-scoped, not path-scoped; another repository on the same host needs explicit
+native authentication if it cannot use that entry. The Ravenstash capability
+remains authorized for only the selected target. npm credentials use the selected
+registry path; Maven credentials use the reserved target server ID. uv read/lock
+commands inject no publish credentials and support read-only private mirrors.
 
 The registry protocol supports a broader native-client compatibility matrix than
 the passthrough command list. Poetry; Yarn, pnpm, and Bun; Gradle and sbt; and

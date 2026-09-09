@@ -1,12 +1,14 @@
 """Credential-aware native package-manager launchers.
 
 These wrappers never persist Ravenstash credentials into package-manager config
-files. They read native config only to decide whether an invocation references a
-Ravenstash registry, then inject short-lived credentials for the child process.
+files. They require a selected target, preserve additional native sources, and inject
+short-lived credentials for the child process without editing lockfiles.
 """
 
 from __future__ import annotations
 
+import json
+import netrc
 import os
 import re
 import subprocess
@@ -24,13 +26,11 @@ from .. import output
 from ..account.commands import resolve_account
 from ..artifacts.routing import (
     CanonicalRouter,
-    RepositoryRouteKind,
     native_base_url,
     npm_auth_token_key,
 )
 from ..artifacts.targets import registry_context
-from ..client import ApiClient, ApiError
-from ..publishing import PublishItem, confirm_context, confirm_publish, native_artifacts
+from ..publishing import PublishItem, confirm_context, native_artifacts
 from ..runtime import tools
 from ..subprocesses import child_environment
 
@@ -48,13 +48,6 @@ POLICIES: tuple[ConfigPolicy, ...] = ("respect", "override", "isolate")
 
 _ROUTER = CanonicalRouter()
 _URL_RE = re.compile(r"https?://[^\s\"'<>]+")
-_RVS_URL_KINDS: dict[NativeTool, tuple[RegistryKind, ...]] = {
-    "pip": ("pypi",),
-    "uv": ("pypi",),
-    "twine": ("pypi",),
-    "npm": ("npm",),
-    "mvn": ("maven",),
-}
 
 
 @dataclass(frozen=True)
@@ -165,47 +158,21 @@ def _build_plan(
     command_prefix = _command_prefix_for(tool)
     cmd = [*command_prefix, *argv]
     native_arg_start = len(command_prefix)
-    selected_customer_id = _selected_customer_id(options)
-    saved_target = cfg_mod.selected_artifact_target(options.profile, selected_customer_id)
-    has_rvs_target = options.target is not None or saved_target is not None
-    effective_policy = (
-        "override"
-        if has_rvs_target and options.native_config == "respect"
-        else options.native_config
-    )
-    operations = _operations_for(tool, argv)
-
-    if effective_policy == "respect":
-        profile_config = _profile(options.profile)
-        urls = _detected_ravenstash_urls(
-            tool,
-            argv,
-            env,
-            profile_config=profile_config,
-        )
-        if not urls:
-            return ExecutionPlan(cmd=cmd, env=env)
-        kind = _kind_for_tool(tool)
-        route_scopes = {
-            _credential_route(url, kind, profile_config.native_registries) for url in urls
-        }
-        if len(route_scopes) != 1:
-            output.fatal(
-                "Native configuration references multiple Ravenstash repositories. "
-                "Select one with --rvs-target or use --rvs-native-config isolate."
-            )
-        token = _package_token_for_url(
-            urls[0],
-            kind,
-            options.profile,
-            selected_customer_id,
-            operations,
-            artifacts=native_artifacts(tool, argv) if _is_publishing(tool, argv) else None,
-            yes=options.yes,
-        )
-        _inject_for_detected_urls(tool, cmd, native_arg_start, env, urls, token, temp_dir)
+    # Help/version do not resolve packages and need no account or target.
+    if argv in (["--version"], ["-V"], ["--help"], ["-h"], ["help"]):
         return ExecutionPlan(cmd=cmd, env=env)
-
+    kind = _kind_for_tool(tool)
+    customer_id = _selected_customer_id(options)
+    saved = cfg_mod.selected_artifact_target(options.profile, customer_id)
+    legacy = cfg_mod.load().registry_defaults(kind, options.profile)
+    if not options.target and saved is None and not legacy.default_repo:
+        output.fatal(
+            "No Ravenstash target is selected. Run `rvs art select` or pass --rvs-target. "
+            "Use the native tool directly for its default registries."
+        )
+    operations = _operations_for(tool, argv)
+    # Never infer a target from native defaults or run an unconfigured client.
+    # registry_context also supports explicitly selected legacy defaults.
     route = _resolve_route(
         _kind_for_tool(tool),
         options,
@@ -220,8 +187,11 @@ def _build_plan(
         route,
         route.package_token,
         temp_dir,
-        isolate=effective_policy == "isolate",
+        isolate=options.native_config == "isolate",
     )
+    from .sources import warn_additional_sources
+
+    warn_additional_sources(tool, argv, cmd[native_arg_start:], env, route)
     return ExecutionPlan(cmd=cmd, env=env)
 
 
@@ -247,11 +217,6 @@ def _kind_for_tool(tool: NativeTool) -> RegistryKind:
             return "npm"
         case "mvn":
             return "maven"
-
-
-def _profile(profile: str | None) -> cfg_mod.ProfileConfig:
-    cfg = cfg_mod.load()
-    return cfg.active_profile(profile or cfg_mod.current_profile_name(cfg))
 
 
 def _resolve_route(
@@ -289,81 +254,6 @@ def _selected_customer_id(options: NativeOptions) -> str | None:
     return cfg_mod.current_customer_id(profile_name)
 
 
-def _package_token_for_url(
-    url: str,
-    kind: RegistryKind,
-    profile: str | None,
-    customer_id: str | None,
-    operations: tuple[PackageOperation, ...],
-    *,
-    artifacts: list[PublishItem] | None = None,
-    yes: bool = False,
-) -> str:
-    profile_config = _profile(profile)
-    route_parts = _configured_route_parts(url, kind, profile_config.native_registries)
-    if route_parts and route_parts[0] in {"o", "c"}:
-        if operations != ("download",):
-            output.fatal("Private mirrors are read-only artifact targets.")
-        try:
-            _namespace_reference, repository_reference, _route_kind = _remote_route_scope(
-                route_parts
-            )
-            client = ApiClient.from_profile(profile)
-            profile_name = profile or cfg_mod.current_profile_name()
-            effective_customer_id = customer_id or cfg_mod.current_customer_id(profile_name)
-            if not effective_customer_id:
-                output.fatal(
-                    "A customer is required for private-mirror access. Pass --rvs-customer-id."
-                )
-            return client.post(
-                "/remote-package-credentials",
-                json={
-                    "customer_id": effective_customer_id,
-                    "remote_cache_ref": repository_reference,
-                    "registry_kind": kind,
-                },
-            ).json()["access_token"]
-        except (ApiError, KeyError, TypeError) as exc:
-            output.fatal(str(exc))
-    if len(route_parts) < 2:
-        output.fatal("Detected Ravenstash URL is not a canonical <namespace>/<repository> URL.")
-    selector = f"{route_parts[0]}/{route_parts[1]}"
-    try:
-        client = ApiClient.from_profile(profile)
-        profile_name = profile or cfg_mod.current_profile_name(cfg_mod.load())
-        expected_target = cfg_mod.registry_target_expectation(kind, selector, profile_name)
-        entry = client.get(
-            "/repositories/resolve",
-            params={
-                "selector": selector,
-                "customer_id": customer_id,
-                "registry_kind": kind,
-            },
-        ).json()
-        if artifacts is not None:
-            account = cfg_mod.cache_account(profile=profile_name, customer=entry["customer"])
-            repository = entry["repository"]
-            confirm_publish(
-                f"{repository['namespace_name']}/{repository['repository_name']}",
-                account,
-                artifacts,
-                yes=yes,
-            )
-        credential_body: dict[str, object] = {
-            "repository_unique_ref": entry["repository"]["repository_unique_ref"],
-            "registry_kind": kind,
-            "operations": list(operations),
-            "expected_target": expected_target
-            or cfg_mod.repository_target_snapshot(entry["repository"]),
-        }
-        return client.post(
-            "/package-credentials",
-            json=credential_body,
-        ).json()["access_token"]
-    except (ApiError, KeyError, TypeError, ValueError) as exc:
-        output.fatal(str(exc))
-
-
 def _is_publishing(tool: NativeTool, argv: list[str]) -> bool:
     return (
         (tool == "twine" and "upload" in argv)
@@ -387,84 +277,6 @@ def _operations_for(
     if tool == "mvn" and _maven_is_upload(argv):
         return ("download", "upload")
     return ("download",)
-
-
-def _credential_route(
-    url: str,
-    kind: RegistryKind,
-    native_registries: cfg_mod.NativeRegistryEndpoints,
-) -> tuple[RepositoryRouteKind, str | None, str]:
-    parts = _configured_route_parts(url, kind, native_registries)
-    if not parts:
-        output.fatal("Detected Ravenstash URL has no repository route.")
-    if parts[0] in {"o", "c"}:
-        namespace_reference, repository_reference, route_kind = _remote_route_scope(parts)
-        return (route_kind, namespace_reference, repository_reference)
-    return (RepositoryRouteKind.PRIVATE, parts[0], parts[1])
-
-
-def _configured_route_parts(
-    url: str,
-    kind: RegistryKind,
-    native_registries: cfg_mod.NativeRegistryEndpoints,
-) -> list[str]:
-    parts = [part for part in urlparse(url).path.split("/") if part]
-    endpoints = native_registries.package(kind)
-    for service_url in (
-        endpoints.read_base_url,
-        endpoints.push_base_url,
-        endpoints.mirror_base_url,
-    ):
-        base = native_base_url(service_url, kind)
-        if not _same_origin(url, base):
-            continue
-        base_parts = [part for part in urlparse(base).path.split("/") if part]
-        if parts[: len(base_parts)] == base_parts:
-            return parts[len(base_parts) :]
-    return parts
-
-
-def _remote_route_scope(parts: list[str]) -> tuple[str, str, RepositoryRouteKind]:
-    if len(parts) < 2 or parts[0] not in {"o", "c"}:
-        output.fatal("Detected Ravenstash private-mirror URL is invalid.")
-    route_kind = (
-        RepositoryRouteKind.REMOTE_OFFICIAL
-        if parts[0] == "o"
-        else RepositoryRouteKind.REMOTE_CUSTOM
-    )
-    return parts[0], parts[1], route_kind
-
-
-def _detected_ravenstash_urls(
-    tool: NativeTool,
-    argv: list[str],
-    env: dict[str, str],
-    *,
-    profile_config: cfg_mod.ProfileConfig,
-) -> list[str]:
-    candidate_texts: list[str] = [" ".join(argv)]
-    candidate_texts.extend(_relevant_env_values(tool, env))
-    for path in _candidate_config_files(tool, argv, env):
-        try:
-            candidate_texts.append(path.read_text(encoding="utf-8"))
-        except OSError:
-            continue
-
-    urls: list[str] = []
-    seen: set[str] = set()
-    allowed_kinds = _RVS_URL_KINDS[tool]
-    for text in candidate_texts:
-        for url in _extract_urls(text):
-            if url in seen:
-                continue
-            kind = _ravenstash_url_kind(
-                url,
-                native_registries=profile_config.native_registries,
-            )
-            if kind in allowed_kinds:
-                seen.add(url)
-                urls.append(url)
-    return urls
 
 
 def _extract_urls(text: str) -> list[str]:
@@ -617,36 +429,6 @@ def _arg_value(argv: list[str], option: str, short: str | None = None) -> str | 
     return None
 
 
-def _inject_for_detected_urls(
-    tool: NativeTool,
-    cmd: list[str],
-    native_arg_start: int,
-    env: dict[str, str],
-    urls: list[str],
-    token: str,
-    temp_dir: Path,
-) -> None:
-    match tool:
-        case "npm":
-            _inject_npm_auth(env, urls, token)
-        case "twine":
-            env["TWINE_USERNAME"] = "__token__"
-            env["TWINE_PASSWORD"] = token
-            env.setdefault("TWINE_NON_INTERACTIVE", "1")
-        case "mvn":
-            settings_path = _write_maven_settings(
-                urls=urls,
-                token=token,
-                temp_dir=temp_dir,
-                argv=cmd[native_arg_start:],
-                isolate=False,
-                route=None,
-            )
-            _replace_maven_settings_arg(cmd, settings_path, native_arg_start)
-        case "pip" | "uv":
-            _write_netrc(env, urls, token, temp_dir)
-
-
 def _inject_override(
     tool: NativeTool,
     cmd: list[str],
@@ -740,7 +522,7 @@ def _insert_pip_index_arg(cmd: list[str], native_arg_start: int, url: str) -> No
     if len(cmd) <= native_arg_start:
         return
     subcommand = cmd[native_arg_start]
-    if subcommand not in {"install", "download", "wheel", "index"}:
+    if subcommand not in {"install", "download", "wheel", "index", "lock"}:
         return
     _remove_value_options(cmd, {"--index-url", "-i"}, native_arg_start)
     cmd[native_arg_start + 1 : native_arg_start + 1] = ["--index-url", url]
@@ -756,17 +538,20 @@ def _inject_uv_override(
     *,
     isolate: bool,
 ) -> None:
-    _write_netrc(env, [route.pypi_index_url, route.pypi_upload_url], token, temp_dir)
-    _remove_value_options(
-        cmd,
-        {"--default-index", "--index-url", "--publish-url"},
-        native_arg_start,
-    )
+    publishing = _is_publishing("uv", cmd[native_arg_start:])
+    urls = [route.pypi_index_url]
+    if publishing:
+        urls.append(route.pypi_upload_url)
+    _write_netrc(env, urls, token, temp_dir)
+    _remove_value_options(cmd, {"--default-index", "--index-url"}, native_arg_start)
     env["UV_DEFAULT_INDEX"] = route.pypi_index_url
     env["UV_INDEX_URL"] = route.pypi_index_url
-    env["UV_PUBLISH_URL"] = route.pypi_upload_url
-    env["UV_PUBLISH_USERNAME"] = "__token__"
-    env["UV_PUBLISH_PASSWORD"] = token
+    if publishing:
+        _remove_value_options(cmd, {"--publish-url", "--index"}, native_arg_start)
+        cmd.extend(["--publish-url", route.pypi_upload_url])
+        env["UV_PUBLISH_URL"] = route.pypi_upload_url
+        env["UV_PUBLISH_USERNAME"] = "__token__"
+        env["UV_PUBLISH_PASSWORD"] = token
     if isolate:
         env["UV_NO_CONFIG"] = "1"
         env["UV_NO_ENV_FILE"] = "1"
@@ -880,8 +665,24 @@ def _write_netrc(
     if not hosts:
         return
     netrc_path = temp_dir / "netrc"
+    original = Path(env.get("NETRC", str(Path.home() / ".netrc"))).expanduser()
+    preserved = ""
+    if original.is_file():
+        try:
+            existing = netrc.netrc(str(original))
+        except OSError, netrc.NetrcParseError:
+            output.fatal("Cannot read native netrc credentials; repair the file before retrying.")
+        for host in hosts:
+            existing.hosts.pop(host, None)
+        for host, (login, account, password) in existing.hosts.items():
+            entry = "default" if host == "default" else f"machine {json.dumps(host)}"
+            entry += f" login {json.dumps(login or '')}"
+            if account:
+                entry += f" account {json.dumps(account)}"
+            entry += f" password {json.dumps(password or '')}\n"
+            preserved += entry
     lines = [f"machine {host} login __token__ password {token}" for host in hosts]
-    netrc_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    netrc_path.write_text(preserved + "\n".join(lines) + "\n", encoding="utf-8")
     netrc_path.chmod(0o600)
     env["NETRC"] = str(netrc_path)
 
@@ -910,13 +711,23 @@ def _write_maven_settings(
         Path(base_settings).expanduser() if base_settings else Path.home() / ".m2/settings.xml"
     )
     root = _load_maven_settings(base_path) if not isolate else ET.Element("settings")
-    server_ids = _maven_server_ids_for_urls(urls, argv)
+    server_ids = set() if route is not None else _maven_server_ids_for_urls(urls, argv)
     if route is not None:
         server_ids.add("rvs-private")
-        _ensure_maven_profile(root, route)
+        _ensure_maven_profile(root, route, isolate=isolate)
     if not server_ids:
         server_ids.add("rvs-private")
     servers = _ensure_xml_child(root, "servers")
+    if route is not None:
+        for element in root.iter():
+            if _local_name(element.tag) in {"repository", "pluginRepository", "snapshotRepository"}:
+                if (
+                    _child_text(element, "id") == "rvs-private"
+                    and _child_text(element, "url") not in urls
+                ):
+                    output.fatal(
+                        "Native Maven settings use reserved repository ID rvs-private for another URL."
+                    )
     for server_id in sorted(server_ids):
         _upsert_maven_server(servers, server_id, token)
 
@@ -958,14 +769,36 @@ def _maven_server_ids_for_urls(urls: list[str], argv: list[str]) -> set[str]:
     return ids
 
 
-def _ensure_maven_profile(root: ET.Element, route: RegistryRoute) -> None:
+def _ensure_maven_profile(root: ET.Element, route: RegistryRoute, *, isolate: bool = False) -> None:
     mirrors = _ensure_xml_child(root, "mirrors")
+    for existing in mirrors:
+        if _child_text(existing, "id") == "rvs-private":
+            if _child_text(existing, "url") != route.maven_repo_url:
+                output.fatal(
+                    "Native Maven settings use reserved mirror ID rvs-private for another URL."
+                )
+            continue
+        pattern = _child_text(existing, "mirrorOf") or ""
+        if pattern:
+            output.warn(
+                "Existing Maven mirrors are preserved for additional repositories; "
+                "Central and the selected Ravenstash repository use the selected target."
+            )
+            # Exclude our repository and Central even from an existing exact match.
+            remaining = [
+                part.strip()
+                for part in pattern.split(",")
+                if part.strip() not in {"central", "rvs-private"}
+            ]
+            _ensure_xml_child(existing, "mirrorOf").text = ",".join(
+                [*remaining, "!central", "!rvs-private"]
+            )
     mirror = _find_child_with_text(mirrors, "mirror", "id", "rvs-private")
     if mirror is None:
         mirror = ET.SubElement(mirrors, "mirror")
         ET.SubElement(mirror, "id").text = "rvs-private"
     _ensure_xml_child(mirror, "url").text = route.maven_repo_url
-    _ensure_xml_child(mirror, "mirrorOf").text = "*"
+    _ensure_xml_child(mirror, "mirrorOf").text = "*" if isolate else "central"
 
     profiles = _ensure_xml_child(root, "profiles")
     profile = _find_child_with_text(profiles, "profile", "id", "rvs")

@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any
 import pytest
 from rvs import config as cfg_mod
 from rvs.cli import app
+from rvs.client import ApiClient
 from rvs.native import runner as native_runner
 from typer.testing import CliRunner
 
@@ -156,7 +157,7 @@ default_repo = "in_abcdefgh/r_xyzabcde"
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("RVS_TOKEN", "raw-control-token")
     monkeypatch.setattr(
-        native_runner.ApiClient,
+        ApiClient,
         "from_profile",
         staticmethod(lambda profile=None: _FakeDevApi()),
     )
@@ -305,11 +306,16 @@ def test_native_npm_respects_project_npmrc_and_injects_path_scoped_auth(
     result = runner.invoke(app, ["npm", "install", "@acme/widgets"])
 
     assert result.exit_code == 0
-    assert calls[0]["cmd"] == ["/bin/npm", "install", "@acme/widgets"]
-    assert "NPM_CONFIG_REGISTRY" not in calls[0]["env"]
+    assert calls[0]["cmd"] == [
+        "/bin/npm",
+        "install",
+        "--registry",
+        f"{NPM_READ_URL}/staging/repo/",
+        "@acme/widgets",
+    ]
+    assert calls[0]["env"]["NPM_CONFIG_REGISTRY"] == f"{NPM_READ_URL}/staging/repo/"
     assert (
-        calls[0]["env"][f"NPM_CONFIG_//{NPM_READ_HOST}/in_abcdefgh/r_xyzabcde/:_authToken"]
-        == "secret-token"
+        calls[0]["env"][f"NPM_CONFIG_//{NPM_READ_HOST}/staging/repo/:_authToken"] == "secret-token"
     )
 
 
@@ -349,9 +355,7 @@ def test_native_detected_registry_confirms_resolved_account(
             payload["customer"].update(account_type="organization", account_label="YYYY")
             return _JsonResponse(payload)
 
-    monkeypatch.setattr(
-        native_runner.ApiClient, "from_profile", staticmethod(lambda profile=None: OrgApi())
-    )
+    monkeypatch.setattr(ApiClient, "from_profile", staticmethod(lambda profile=None: OrgApi()))
     calls = []
     _capture_run(monkeypatch, calls)
     result = runner.invoke(app, ["npm", *flags, "publish"], input=answer)
@@ -542,8 +546,14 @@ def test_native_pip_respects_existing_index_and_injects_temp_netrc(
     result = runner.invoke(app, ["pip", "install", "demo"])
 
     assert result.exit_code == 0
-    assert calls[0]["cmd"] == ["/bin/pip", "install", "demo"]
-    assert calls[0]["env"]["PIP_INDEX_URL"] == (f"{PYPI_READ_URL}/in_abcdefgh/r_xyzabcde/simple/")
+    assert calls[0]["cmd"] == [
+        "/bin/pip",
+        "install",
+        "--index-url",
+        f"{PYPI_READ_URL}/staging/repo/simple/",
+        "demo",
+    ]
+    assert calls[0]["env"]["PIP_INDEX_URL"] == (f"{PYPI_READ_URL}/staging/repo/simple/")
     assert "PIP_KEYRING_PROVIDER" not in calls[0]["env"]
     assert netrc_texts == [f"machine {PYPI_READ_HOST} login __token__ password secret-token\n"]
     assert not Path(calls[0]["env"]["NETRC"]).exists()
@@ -557,6 +567,13 @@ def test_native_pip_exchanges_profile_token_for_scoped_remote_credential(
     _mock_native_tools(monkeypatch)
     index_url = f"{PYPI_MIRROR_URL}/c/piwheels/simple/"
     monkeypatch.setenv("PIP_INDEX_URL", index_url)
+    monkeypatch.setattr(
+        native_runner,
+        "_resolve_route",
+        lambda *a, **kw: native_runner.RegistryRoute(
+            "pypi", PYPI_MIRROR_URL, None, "c", "piwheels", "remote-secret-token"
+        ),
+    )
     calls: list[dict[str, Any]] = []
     netrc_texts: list[str] = []
 
@@ -571,6 +588,8 @@ def test_native_pip_exchanges_profile_token_for_scoped_remote_credential(
     assert calls[0]["cmd"] == [
         "/bin/pip",
         "download",
+        "--index-url",
+        index_url,
         "--no-deps",
         "simple-range==0.0.3",
     ]
@@ -598,6 +617,18 @@ def test_native_pip_local_remote_cache_netrc_uses_hostname_without_port(
         "PIP_INDEX_URL",
         "http://localhost:43101/registry/pypi/c/piwheels/simple/",
     )
+    monkeypatch.setattr(
+        native_runner,
+        "_resolve_route",
+        lambda *a, **kw: native_runner.RegistryRoute(
+            "pypi",
+            "http://localhost:43101/registry/pypi",
+            None,
+            "c",
+            "piwheels",
+            "remote-secret-token",
+        ),
+    )
     calls: list[dict[str, Any]] = []
     netrc_texts: list[str] = []
 
@@ -621,6 +652,13 @@ def test_native_pip_exchanges_official_remote_credential(
     monkeypatch.setenv(
         "PIP_INDEX_URL",
         f"{PYPI_MIRROR_URL}/o/pypiorg/simple/",
+    )
+    monkeypatch.setattr(
+        native_runner,
+        "_resolve_route",
+        lambda *a, **kw: native_runner.RegistryRoute(
+            "pypi", PYPI_MIRROR_URL, None, "o", "pypiorg", "remote-secret-token"
+        ),
     )
     captured: list[str] = []
 
@@ -714,9 +752,7 @@ def test_native_uv_repo_override_sets_index_publish_env_and_netrc(
     assert result.exit_code == 0
     assert calls[0]["cmd"] == ["/bin/uv", "sync", "--locked"]
     assert calls[0]["env"]["UV_DEFAULT_INDEX"] == (f"{PYPI_READ_URL}/staging/repo/simple/")
-    assert calls[0]["env"]["UV_PUBLISH_URL"] == (f"{PYPI_PUSH_URL}/staging/repo/")
-    assert calls[0]["env"]["UV_PUBLISH_USERNAME"] == "__token__"
-    assert calls[0]["env"]["UV_PUBLISH_PASSWORD"] == "secret-token"
+    assert "UV_PUBLISH_PASSWORD" not in calls[0]["env"]
     assert "NETRC" in calls[0]["env"]
     assert not Path(calls[0]["env"]["NETRC"]).exists()
 
@@ -767,7 +803,7 @@ def test_native_maven_repo_override_generates_temp_settings(
         f"-DaltDeploymentRepository=rvs-private::default::{MAVEN_PUSH_URL}/staging/repo/"
     )
     assert "<id>rvs-private</id>" in settings_texts[0]
-    assert "<mirrorOf>*</mirrorOf>" in settings_texts[0]
+    assert "<mirrorOf>central</mirrorOf>" in settings_texts[0]
     assert "<username>__token__</username>" in settings_texts[0]
     assert "<password>secret-token</password>" in settings_texts[0]
     assert not Path(calls[0]["cmd"][calls[0]["cmd"].index("--settings") + 1]).exists()
@@ -834,3 +870,199 @@ def test_native_maven_deploy_file_injects_upload_destination(
         "-DrepositoryId=rvs-private",
         f"-Durl={MAVEN_PUSH_URL}/staging/repo/",
     ]
+
+
+@pytest.mark.parametrize(
+    "tool,args",
+    [
+        ("pip", ["install", "demo"]),
+        ("uv", ["lock"]),
+        ("npm", ["ci"]),
+        ("mvn", ["verify"]),
+        ("twine", ["upload", "dist/demo.whl"]),
+    ],
+)
+def test_missing_target_never_launches_or_infers_from_native_config(
+    monkeypatch, tmp_path, tool, args
+):
+    _isolate_config(monkeypatch, tmp_path)
+    _mock_native_tools(monkeypatch)
+    path = cfg_mod.CONFIG_FILE
+    path.write_text(path.read_text().replace('default_repo = "in_abcdefgh/r_xyzabcde"', ""))
+    monkeypatch.setenv("PIP_INDEX_URL", f"{PYPI_READ_URL}/staging/repo/simple/")
+    calls = []
+    _capture_run(monkeypatch, calls)
+    result = runner.invoke(app, [tool, *args])
+    assert result.exit_code != 0
+    assert "No Ravenstash target is selected" in result.output
+    assert not calls
+
+
+@pytest.mark.parametrize(
+    "tool,args,name,content",
+    [
+        (
+            "uv",
+            ["sync", "--locked"],
+            "uv.lock",
+            """version = 1
+[[package]]
+name = "demo"
+version = "1.0"
+source = { registry = "https://vendor.test/simple" }
+wheels = [{url = "https://user:do-not-print@vendor.test/secret-path/demo.whl?token=secret-query"}]
+""",
+        ),
+        (
+            "npm",
+            ["ci"],
+            "package-lock.json",
+            '{"packages":{"node_modules/demo":{"resolved":"https://vendor.test/demo.tgz","integrity":"unchanged"}}}',
+        ),
+        ("pip", ["install", "-r", "requirements.txt"], "requirements.txt", "-r nested.txt\n"),
+    ],
+)
+def test_foreign_lock_sources_warn_without_changes(
+    monkeypatch, tmp_path, tool, args, name, content
+):
+    _isolate_config(monkeypatch, tmp_path)
+    _mock_native_tools(monkeypatch)
+    path = tmp_path / name
+    path.write_text(content)
+    (tmp_path / "nested.txt").write_text(
+        "--extra-index-url https://vendor.test/simple\ndemo==1.0\n"
+    )
+    calls = []
+    _capture_run(monkeypatch, calls)
+    result = runner.invoke(app, [tool, "--rvs-target", "staging/repo", *args])
+    assert result.exit_code == 0, result.output
+    assert "Additional native sources" in result.output
+    assert "do-not-print" not in result.output
+    assert "secret-path" not in result.output
+    assert "secret-query" not in result.output
+    assert path.read_text() == content
+    assert len(calls) == 1
+    if tool == "uv":
+        assert calls[0]["cmd"] == ["/bin/uv", "sync", "--locked"]
+
+
+def test_uv_lock_keeps_named_sources_and_third_party_auth(monkeypatch, tmp_path):
+    _isolate_config(monkeypatch, tmp_path)
+    _mock_native_tools(monkeypatch)
+    project = """[project]
+name = "demo"
+version = "1.0"
+[[tool.uv.index]]
+name = "vendor"
+url = "https://vendor.test/simple"
+explicit = true
+[tool.uv.sources]
+demo = {index = "vendor"}
+"""
+    (tmp_path / "pyproject.toml").write_text(project)
+    monkeypatch.setenv("UV_INDEX_VENDOR_PASSWORD", "vendor-secret")
+    calls = []
+    _capture_run(monkeypatch, calls)
+    result = runner.invoke(app, ["uv", "--rvs-target", "staging/repo", "lock"])
+    assert result.exit_code == 0, result.output
+    assert "Additional native sources" in result.output
+    assert calls[0]["cmd"] == ["/bin/uv", "lock"]
+    assert calls[0]["env"]["UV_INDEX_VENDOR_PASSWORD"] == "vendor-secret"
+    assert (tmp_path / "pyproject.toml").read_text() == project
+    assert not (tmp_path / "uv.lock").exists()  # mocked native tool creates nothing
+
+
+def test_uv_read_only_mirror_does_not_request_upload_url(monkeypatch, tmp_path):
+    _isolate_config(monkeypatch, tmp_path)
+    _mock_native_tools(monkeypatch)
+    monkeypatch.setattr(
+        native_runner,
+        "_resolve_route",
+        lambda *a, **kw: native_runner.RegistryRoute(
+            "pypi", PYPI_MIRROR_URL, None, "o", "pypiorg", "download-token"
+        ),
+    )
+    calls = []
+    _capture_run(monkeypatch, calls)
+    result = runner.invoke(app, ["uv", "--rvs-target", "mirror:pypiorg", "lock"])
+    assert result.exit_code == 0, result.output
+    assert calls[0]["env"]["UV_DEFAULT_INDEX"] == f"{PYPI_MIRROR_URL}/o/pypiorg/simple/"
+    assert "UV_PUBLISH_PASSWORD" not in calls[0]["env"]
+
+
+def test_pip_preserves_extra_index_and_existing_netrc(monkeypatch, tmp_path):
+    import netrc
+
+    _isolate_config(monkeypatch, tmp_path)
+    _mock_native_tools(monkeypatch)
+    original = tmp_path / "original-netrc"
+    content = 'machine vendor.test login vendor password "vendor password"\n'
+    original.write_text(content)
+    monkeypatch.setenv("NETRC", str(original))
+    monkeypatch.setenv("PIP_EXTRA_INDEX_URL", "https://vendor.test/simple/")
+    captured = []
+
+    def hook(cmd, env):
+        parsed = netrc.netrc(env["NETRC"])
+        assert parsed.authenticators("vendor.test") == ("vendor", "", "vendor password")
+        assert parsed.authenticators(PYPI_READ_HOST) == ("__token__", "", "secret-token")
+        assert parsed.authenticators("unrelated.test") is None
+        captured.append(env["NETRC"])
+
+    calls = []
+    _capture_run(monkeypatch, calls, hook)
+    result = runner.invoke(app, ["pip", "--rvs-target", "staging/repo", "install", "demo"])
+    assert result.exit_code == 0, result.output
+    assert "pip combines candidates" in result.output
+    assert calls[0]["env"]["PIP_EXTRA_INDEX_URL"] == "https://vendor.test/simple/"
+    assert original.read_text() == content
+    assert not Path(captured[0]).exists()
+
+
+def test_npm_preserves_foreign_scope_and_injects_only_selected_auth(monkeypatch, tmp_path):
+    _isolate_config(monkeypatch, tmp_path)
+    _mock_native_tools(monkeypatch)
+    content = (
+        "@vendor:registry=https://vendor.test/npm/\n//vendor.test/npm/:_authToken=vendor-secret\n"
+    )
+    (tmp_path / ".npmrc").write_text(content)
+    calls = []
+    _capture_run(monkeypatch, calls)
+    result = runner.invoke(app, ["npm", "--rvs-target", "staging/repo", "install", "@vendor/demo"])
+    assert result.exit_code == 0, result.output
+    assert "Additional native sources" in result.output
+    assert (tmp_path / ".npmrc").read_text() == content
+    injected = {k: v for k, v in calls[0]["env"].items() if v == "secret-token"}
+    assert injected == {f"NPM_CONFIG_//{NPM_READ_HOST}/staging/repo/:_authToken": "secret-token"}
+
+
+def test_maven_preserves_other_repositories_and_mirror_credentials(monkeypatch, tmp_path):
+    import xml.etree.ElementTree as ET
+
+    _isolate_config(monkeypatch, tmp_path)
+    _mock_native_tools(monkeypatch)
+    original = tmp_path / "settings.xml"
+    content = """<settings><mirrors><mirror><id>vendor</id><url>https://vendor.test/maven/</url>
+<mirrorOf>*</mirrorOf></mirror></mirrors><servers><server><id>vendor</id>
+<username>vendor</username><password>vendor-secret</password></server></servers></settings>"""
+    original.write_text(content)
+    calls = []
+
+    def hook(cmd, env):
+        root = ET.parse(cmd[cmd.index("--settings") + 1]).getroot()
+        mirrors = {el.findtext("id"): el for el in root.findall("./mirrors/mirror")}
+        assert mirrors["vendor"].findtext("url") == "https://vendor.test/maven/"
+        assert mirrors["vendor"].findtext("mirrorOf") == "*,!central,!rvs-private"
+        assert mirrors["rvs-private"].findtext("mirrorOf") == "central"
+        passwords = {
+            el.findtext("id"): el.findtext("password") for el in root.findall("./servers/server")
+        }
+        assert passwords == {"vendor": "vendor-secret", "rvs-private": "secret-token"}
+
+    _capture_run(monkeypatch, calls, hook)
+    result = runner.invoke(
+        app, ["mvn", "--rvs-target", "staging/repo", "-s", str(original), "verify"]
+    )
+    assert result.exit_code == 0, result.output
+    assert "Existing Maven mirrors" in result.output
+    assert original.read_text() == content
