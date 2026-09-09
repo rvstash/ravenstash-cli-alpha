@@ -31,7 +31,7 @@ install -d -m 0700 "$HOME"
 "${bundle_directory}/ravenstash" --version
 test -x "${bundle_directory}/docker-credential-rvs"
 
-RVS_TOKEN="ci-smoke-token" "${bundle_directory}/rvs" auth status >/dev/null
+RVS_TOKEN="rvs_ustAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" "${bundle_directory}/rvs" auth status >/dev/null
 
 set +e
 doctor_output="$("${bundle_directory}/rvs" auth storage doctor 2>&1)"
