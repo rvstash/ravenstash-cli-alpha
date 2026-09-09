@@ -1631,7 +1631,8 @@ def npmrc(
     )
     auth_key = npm_auth_token_key(registry_url)
     output.value(
-        f"registry={registry_url}\n{auth_key}=${{RVS_TOKEN}}",
+        "# Generate a short-lived token with rvs artifacts auth print-token.\n"
+        f"registry={registry_url}\n{auth_key}=${{RVS_ARTIFACTS_TOKEN}}",
         key="configuration",
     )
 
@@ -1743,7 +1744,7 @@ def maven_repo_url(
     )
 
 
-def _settings_xml(repo_url: str, password_expr: str = "${env.RVS_TOKEN}") -> str:
+def _settings_xml(repo_url: str, password_expr: str = "${env.RVS_ARTIFACTS_TOKEN}") -> str:
     return f"""<settings xmlns="http://maven.apache.org/SETTINGS/1.0.0">
   <servers>
     <server>

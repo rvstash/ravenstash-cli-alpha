@@ -8,7 +8,7 @@ import re
 import signal
 import subprocess
 import tempfile
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
 from urllib.parse import urlsplit
@@ -19,6 +19,7 @@ from .. import config as cfg_mod
 from .. import output
 from ..account.commands import resolve_account
 from ..artifacts.targets import resolve_target
+from ..auth.token_format import validate_public_token
 from ..client import ApiClient, ApiError
 from ..publishing import confirm_publish, oci_artifacts
 from ..runtime import tools
@@ -50,7 +51,7 @@ class OciRoute:
     registry_host: str
     native_root: str
     accepted_roots: frozenset[str]
-    package_token: str
+    package_token: str = field(repr=False)
     account: cfg_mod.AccountContext | None = None
     repository: str = ""
 
@@ -182,7 +183,7 @@ def resolve_route(
             "/package-credentials",
             json=credential_body,
         ).json()
-        token = credential["access_token"]
+        token = validate_public_token(credential["access_token"], native=True)
         native_path = credential["native_path"]
     except ApiError as exc:
         output.fatal(str(exc))

@@ -46,7 +46,7 @@ class _FakeApiClient:
         if path == "/package-credentials":
             return _JsonResponse(
                 {
-                    "access_token": "secret-token",
+                    "access_token": "rvs_sltAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
                     "native_path": "/test-account/repo",
                 }
             )
@@ -377,7 +377,9 @@ def test_artifacts_repo_rename_updates_matching_profile_default(
     assert saved.repository_unique_ref == "r_xyzabcde"
 
 
-def test_artifacts_remote_management_and_upstream_configuration(monkeypatch, tmp_path: Path) -> None:
+def test_artifacts_remote_management_and_upstream_configuration(
+    monkeypatch, tmp_path: Path
+) -> None:
     _isolate_config(monkeypatch, tmp_path)
     fake = _FakeApiClient(
         [
@@ -1061,7 +1063,7 @@ def test_artifacts_configure_snippets_are_printed_for_native_toolchains(
     assert "extra-index-url" not in pypi_result.output
     assert "/test-account/repo/" in pypi_result.output
     assert npm_result.exit_code == 0
-    assert "_authToken=${RVS_TOKEN}" in npm_result.output
+    assert "_authToken=${RVS_ARTIFACTS_TOKEN}" in npm_result.output
     assert "/test-account/repo/" in npm_result.output
     assert maven_result.exit_code == 0
     assert "<settings" in maven_result.output
@@ -1093,7 +1095,9 @@ def test_pypi_install_uses_ephemeral_netrc_auth(
     assert calls[0][1]["PIP_INDEX_URL"] == (f"https://{PYPI_READ_HOST}/test-account/repo/simple/")
     assert "RVS_TOKEN" not in calls[0][1]
     assert "PIP_KEYRING_PROVIDER" not in calls[0][1]
-    assert netrc_texts == [f"machine {PYPI_READ_HOST} login __token__ password secret-token\n"]
+    assert netrc_texts == [
+        f"machine {PYPI_READ_HOST} login __token__ password rvs_sltAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\n"
+    ]
     assert not Path(calls[0][1]["NETRC"]).exists()
 
 
@@ -1115,7 +1119,7 @@ def test_pypi_install_refreshes_native_path_when_saved_target_name_changed(
             assert json["expected_target"]["repository_name"] == "old-name"
             return _JsonResponse(
                 {
-                    "access_token": "secret-token",
+                    "access_token": "rvs_sltAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
                     "native_path": "/test-account/new-name",
                 }
             )
@@ -1161,7 +1165,8 @@ def test_npm_install_injects_token_for_registry_host(monkeypatch, tmp_path: Path
         "@scope/demo",
     ]
     assert (
-        calls[0][1][f"NPM_CONFIG_//{NPM_READ_HOST}/test-account/repo/:_authToken"] == "secret-token"
+        calls[0][1][f"NPM_CONFIG_//{NPM_READ_HOST}/test-account/repo/:_authToken"]
+        == "rvs_sltAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
     )
     assert "RVS_TOKEN" not in calls[0][1]
 
@@ -1178,7 +1183,9 @@ def test_maven_install_does_not_forward_control_token(monkeypatch, tmp_path: Pat
         del check
         settings_arg = next(arg for arg in cmd if arg.startswith("--settings="))
         settings = Path(settings_arg.removeprefix("--settings="))
-        assert "secret-token" in settings.read_text(encoding="utf-8")
+        assert "rvs_sltAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" in settings.read_text(
+            encoding="utf-8"
+        )
         calls.append((cmd, env.copy()))
 
     monkeypatch.setattr(artifacts_cmd.subprocess, "run", capture)
@@ -1240,7 +1247,7 @@ def test_publish_confirmation_uses_resolved_org_and_blocks_upload(
 
 def test_pypi_publish_reports_failed_uploads(monkeypatch, tmp_path: Path) -> None:
     _isolate_config(monkeypatch, tmp_path)
-    monkeypatch.setenv("RVS_TOKEN", "secret-token")
+    monkeypatch.setenv("RVS_TOKEN", "rvs_ustAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")
     dist_dir = tmp_path / "dist"
     dist_dir.mkdir()
     (dist_dir / "demo-1.0.0.whl").write_bytes(b"wheel")
@@ -1264,7 +1271,7 @@ def test_pypi_publish_reports_failed_uploads(monkeypatch, tmp_path: Path) -> Non
 
 def test_npm_publish_calls_registry_adapter(monkeypatch, tmp_path: Path) -> None:
     _isolate_config(monkeypatch, tmp_path)
-    monkeypatch.setenv("RVS_TOKEN", "secret-token")
+    monkeypatch.setenv("RVS_TOKEN", "rvs_ustAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")
     package_dir = tmp_path / "package"
     package_dir.mkdir()
     calls: list[dict[str, Any]] = []
@@ -1283,7 +1290,7 @@ def test_npm_publish_calls_registry_adapter(monkeypatch, tmp_path: Path) -> None
     assert calls == [
         {
             "registry_url": f"{NPM_PUSH_URL}/test-account/repo/",
-            "token": "secret-token",
+            "token": "rvs_sltAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
             "package_dir": package_dir,
             "download_registry_url": f"{NPM_READ_URL}/test-account/repo/",
         }
@@ -1292,7 +1299,7 @@ def test_npm_publish_calls_registry_adapter(monkeypatch, tmp_path: Path) -> None
 
 def test_maven_deploy_checks_file_and_calls_registry_adapter(monkeypatch, tmp_path: Path) -> None:
     _isolate_config(monkeypatch, tmp_path)
-    monkeypatch.setenv("RVS_TOKEN", "secret-token")
+    monkeypatch.setenv("RVS_TOKEN", "rvs_ustAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")
     artifact = tmp_path / "demo-1.0.0.jar"
     artifact.write_bytes(b"jar")
     calls: list[dict[str, Any]] = []
@@ -1325,7 +1332,7 @@ def test_maven_deploy_checks_file_and_calls_registry_adapter(monkeypatch, tmp_pa
     assert calls == [
         {
             "upload_url": f"{MAVEN_PUSH_URL}/test-account/repo/",
-            "token": "secret-token",
+            "token": "rvs_sltAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
             "group_id": "com.example",
             "artifact_id": "demo",
             "version": "1.0.0",

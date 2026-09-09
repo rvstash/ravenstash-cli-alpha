@@ -68,7 +68,7 @@ class _Api:
         }
         return _Response(
             {
-                "access_token": "exact-secret-capability",
+                "access_token": "rvs_sltDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDA",
                 "native_path": "/main/images",
                 "namespace_unique_ref": "in_abcdefgh",
                 "repository_unique_ref": "r_xyzabcde",
@@ -197,7 +197,7 @@ def test_docker_uses_exact_ephemeral_helper_without_secret_in_argv(
         "push",
         "oci.rvsta.sh/main/images/backend:Latest",
     ]
-    assert "exact-secret-capability" not in " ".join(captured["cmd"])
+    assert "rvs_sltDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDA" not in " ".join(captured["cmd"])
     assert not Path(captured["env"]["RVS_OCI_CREDENTIAL_FILE"]).exists()
 
 
@@ -410,7 +410,7 @@ def test_oci_capability_rejects_noncanonical_native_path(monkeypatch, tmp_path: 
             assert path == "/package-credentials"
             return _Response(
                 {
-                    "access_token": "exact-secret-capability",
+                    "access_token": "rvs_sltDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDA",
                     "native_path": "/_abcdefgh/_xyzabcde",
                 }
             )
@@ -662,7 +662,7 @@ def test_helm_saved_target_shorthand_uses_temporary_config(monkeypatch, tmp_path
         assert config["auths"]["public.example"]["auth"] == "public-auth"
         assert config["credHelpers"]["oci.rvsta.sh"] == "rvs"
         assert "--registry-config" not in argv
-        assert "exact-secret-capability" not in " ".join(argv)
+        assert "rvs_sltDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDA" not in " ".join(argv)
 
     publish_arguments = []
     native_artifacts = oci_runner.oci_artifacts

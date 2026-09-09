@@ -91,7 +91,7 @@ class _FakeDevApi:
             namespace = "o" if json["remote_cache_ref"] == "pypiorg" else "c"
             return _JsonResponse(
                 {
-                    "access_token": "remote-secret-token",
+                    "access_token": "rvs_sltBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBA",
                     "native_path": f"/{namespace}/{json['remote_cache_ref']}",
                 }
             )
@@ -100,7 +100,7 @@ class _FakeDevApi:
         assert json["operations"] in (["download"], ["upload"], ["download", "upload"])
         return _JsonResponse(
             {
-                "access_token": "secret-token",
+                "access_token": "rvs_sltAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
                 "native_path": "/staging/repo",
                 "namespace_name": "staging",
                 "namespace_realm": "internal",
@@ -187,6 +187,32 @@ def _capture_run(
         return _Completed()
 
     monkeypatch.setattr(native_runner.subprocess, "run", fake_run)
+
+
+@pytest.mark.parametrize(
+    "wrong_token", ["rvs_ust" + "A" * 43, "rvs_art_v1_retired", "rvs_slt" + "B" * 43]
+)
+def test_native_wrapper_rejects_wrong_type_before_starting_child(
+    monkeypatch, tmp_path, wrong_token
+):
+    _isolate_config(monkeypatch, tmp_path)
+    _mock_native_tools(monkeypatch)
+    original_post = _FakeDevApi.post
+
+    def wrong_credential(self, path, json=None):
+        response = original_post(self, path, json)
+        payload = response.json()
+        payload["access_token"] = wrong_token
+        return _JsonResponse(payload)
+
+    monkeypatch.setattr(_FakeDevApi, "post", wrong_credential)
+    calls = []
+    _capture_run(monkeypatch, calls)
+    result = runner.invoke(app, ["pip", "install", "demo"])
+    assert result.exit_code != 0
+    assert "Invalid public credential" in result.output
+    assert wrong_token not in result.output
+    assert calls == []
 
 
 def test_native_commands_request_only_the_operations_they_need() -> None:
@@ -315,7 +341,8 @@ def test_native_npm_respects_project_npmrc_and_injects_path_scoped_auth(
     ]
     assert calls[0]["env"]["NPM_CONFIG_REGISTRY"] == f"{NPM_READ_URL}/staging/repo/"
     assert (
-        calls[0]["env"][f"NPM_CONFIG_//{NPM_READ_HOST}/staging/repo/:_authToken"] == "secret-token"
+        calls[0]["env"][f"NPM_CONFIG_//{NPM_READ_HOST}/staging/repo/:_authToken"]
+        == "rvs_sltAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
     )
 
 
@@ -387,7 +414,8 @@ def test_native_npm_repo_override_uses_upload_registry_for_publish(
     ]
     assert calls[0]["env"]["NPM_CONFIG_REGISTRY"] == (f"{NPM_PUSH_URL}/staging/repo/")
     assert (
-        calls[0]["env"][f"NPM_CONFIG_//{NPM_PUSH_HOST}/staging/repo/:_authToken"] == "secret-token"
+        calls[0]["env"][f"NPM_CONFIG_//{NPM_PUSH_HOST}/staging/repo/:_authToken"]
+        == "rvs_sltAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
     )
 
 
@@ -415,7 +443,8 @@ def test_native_npm_repo_override_uses_upload_registry_for_unpublish(
     ]
     assert calls[0]["env"]["NPM_CONFIG_REGISTRY"] == f"{NPM_PUSH_URL}/staging/repo/"
     assert (
-        calls[0]["env"][f"NPM_CONFIG_//{NPM_PUSH_HOST}/staging/repo/:_authToken"] == "secret-token"
+        calls[0]["env"][f"NPM_CONFIG_//{NPM_PUSH_HOST}/staging/repo/:_authToken"]
+        == "rvs_sltAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
     )
 
 
@@ -444,7 +473,8 @@ def test_native_npm_repo_override_uses_upload_registry_for_dist_tag_list(
     ]
     assert calls[0]["env"]["NPM_CONFIG_REGISTRY"] == f"{NPM_PUSH_URL}/staging/repo/"
     assert (
-        calls[0]["env"][f"NPM_CONFIG_//{NPM_PUSH_HOST}/staging/repo/:_authToken"] == "secret-token"
+        calls[0]["env"][f"NPM_CONFIG_//{NPM_PUSH_HOST}/staging/repo/:_authToken"]
+        == "rvs_sltAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
     )
 
 
@@ -555,7 +585,9 @@ def test_native_pip_respects_existing_index_and_injects_temp_netrc(
     ]
     assert calls[0]["env"]["PIP_INDEX_URL"] == (f"{PYPI_READ_URL}/staging/repo/simple/")
     assert "PIP_KEYRING_PROVIDER" not in calls[0]["env"]
-    assert netrc_texts == [f"machine {PYPI_READ_HOST} login __token__ password secret-token\n"]
+    assert netrc_texts == [
+        f"machine {PYPI_READ_HOST} login __token__ password rvs_sltAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\n"
+    ]
     assert not Path(calls[0]["env"]["NETRC"]).exists()
 
 
@@ -571,7 +603,12 @@ def test_native_pip_exchanges_profile_token_for_scoped_remote_credential(
         native_runner,
         "_resolve_route",
         lambda *a, **kw: native_runner.RegistryRoute(
-            "pypi", PYPI_MIRROR_URL, None, "c", "piwheels", "remote-secret-token"
+            "pypi",
+            PYPI_MIRROR_URL,
+            None,
+            "c",
+            "piwheels",
+            "rvs_sltBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBA",
         ),
     )
     calls: list[dict[str, Any]] = []
@@ -595,7 +632,7 @@ def test_native_pip_exchanges_profile_token_for_scoped_remote_credential(
     ]
     assert calls[0]["env"]["PIP_INDEX_URL"] == index_url
     assert netrc_texts == [
-        f"machine {PYPI_MIRROR_HOST} login __token__ password remote-secret-token\n"
+        f"machine {PYPI_MIRROR_HOST} login __token__ password rvs_sltBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBA\n"
     ]
 
 
@@ -626,7 +663,7 @@ def test_native_pip_local_remote_cache_netrc_uses_hostname_without_port(
             None,
             "c",
             "piwheels",
-            "remote-secret-token",
+            "rvs_sltBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBA",
         ),
     )
     calls: list[dict[str, Any]] = []
@@ -640,7 +677,9 @@ def test_native_pip_local_remote_cache_netrc_uses_hostname_without_port(
     result = runner.invoke(app, ["pip", "download", "--no-deps", "simple-range==0.0.3"])
 
     assert result.exit_code == 0
-    assert netrc_texts == ["machine localhost login __token__ password remote-secret-token\n"]
+    assert netrc_texts == [
+        "machine localhost login __token__ password rvs_sltBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBA\n"
+    ]
 
 
 def test_native_pip_exchanges_official_remote_credential(
@@ -657,7 +696,12 @@ def test_native_pip_exchanges_official_remote_credential(
         native_runner,
         "_resolve_route",
         lambda *a, **kw: native_runner.RegistryRoute(
-            "pypi", PYPI_MIRROR_URL, None, "o", "pypiorg", "remote-secret-token"
+            "pypi",
+            PYPI_MIRROR_URL,
+            None,
+            "o",
+            "pypiorg",
+            "rvs_sltBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBA",
         ),
     )
     captured: list[str] = []
@@ -671,7 +715,7 @@ def test_native_pip_exchanges_official_remote_credential(
 
     assert result.exit_code == 0
     assert captured == [
-        f"machine {PYPI_MIRROR_HOST} login __token__ password remote-secret-token\n"
+        f"machine {PYPI_MIRROR_HOST} login __token__ password rvs_sltBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBA\n"
     ]
 
 
@@ -711,7 +755,9 @@ def test_native_pip_isolate_overrides_index_without_writing_credentials(
         "demo",
     ]
     assert calls[0]["env"]["PIP_CONFIG_FILE"] == os.devnull
-    assert netrc_texts == [f"machine {PYPI_READ_HOST} login __token__ password secret-token\n"]
+    assert netrc_texts == [
+        f"machine {PYPI_READ_HOST} login __token__ password rvs_sltAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\n"
+    ]
 
 
 def test_native_pip_preserves_multi_part_pip_command_prefix(
@@ -775,7 +821,7 @@ def test_native_twine_repo_override_sets_ephemeral_upload_credentials(
     assert calls[0]["cmd"] == ["/bin/twine", "upload", "dist/demo.whl"]
     assert calls[0]["env"]["TWINE_REPOSITORY_URL"] == (f"{PYPI_PUSH_URL}/staging/repo/")
     assert calls[0]["env"]["TWINE_USERNAME"] == "__token__"
-    assert calls[0]["env"]["TWINE_PASSWORD"] == "secret-token"
+    assert calls[0]["env"]["TWINE_PASSWORD"] == "rvs_sltAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
 
 
 def test_native_maven_repo_override_generates_temp_settings(
@@ -805,7 +851,10 @@ def test_native_maven_repo_override_generates_temp_settings(
     assert "<id>rvs-private</id>" in settings_texts[0]
     assert "<mirrorOf>central</mirrorOf>" in settings_texts[0]
     assert "<username>__token__</username>" in settings_texts[0]
-    assert "<password>secret-token</password>" in settings_texts[0]
+    assert (
+        "<password>rvs_sltAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA</password>"
+        in settings_texts[0]
+    )
     assert not Path(calls[0]["cmd"][calls[0]["cmd"].index("--settings") + 1]).exists()
 
 
@@ -816,7 +865,7 @@ def test_native_maven_read_only_mirror_uses_only_download_route(tmp_path: Path) 
         push_base_url=None,
         namespace_unique_ref="o",
         repository_unique_ref="maven-central",
-        package_token="remote-secret-token",
+        package_token="rvs_sltBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBA",
     )
     cmd = [
         "/bin/mvn",
@@ -1005,7 +1054,11 @@ def test_pip_preserves_extra_index_and_existing_netrc(monkeypatch, tmp_path):
     def hook(cmd, env):
         parsed = netrc.netrc(env["NETRC"])
         assert parsed.authenticators("vendor.test") == ("vendor", "", "vendor password")
-        assert parsed.authenticators(PYPI_READ_HOST) == ("__token__", "", "secret-token")
+        assert parsed.authenticators(PYPI_READ_HOST) == (
+            "__token__",
+            "",
+            "rvs_sltAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        )
         assert parsed.authenticators("unrelated.test") is None
         captured.append(env["NETRC"])
 
@@ -1032,8 +1085,14 @@ def test_npm_preserves_foreign_scope_and_injects_only_selected_auth(monkeypatch,
     assert result.exit_code == 0, result.output
     assert "Additional native sources" in result.output
     assert (tmp_path / ".npmrc").read_text() == content
-    injected = {k: v for k, v in calls[0]["env"].items() if v == "secret-token"}
-    assert injected == {f"NPM_CONFIG_//{NPM_READ_HOST}/staging/repo/:_authToken": "secret-token"}
+    injected = {
+        k: v
+        for k, v in calls[0]["env"].items()
+        if v == "rvs_sltAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+    }
+    assert injected == {
+        f"NPM_CONFIG_//{NPM_READ_HOST}/staging/repo/:_authToken": "rvs_sltAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+    }
 
 
 def test_maven_preserves_other_repositories_and_mirror_credentials(monkeypatch, tmp_path):
@@ -1057,7 +1116,10 @@ def test_maven_preserves_other_repositories_and_mirror_credentials(monkeypatch, 
         passwords = {
             el.findtext("id"): el.findtext("password") for el in root.findall("./servers/server")
         }
-        assert passwords == {"vendor": "vendor-secret", "rvs-private": "secret-token"}
+        assert passwords == {
+            "vendor": "vendor-secret",
+            "rvs-private": "rvs_sltAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        }
 
     _capture_run(monkeypatch, calls, hook)
     result = runner.invoke(

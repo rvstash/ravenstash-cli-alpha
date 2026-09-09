@@ -107,7 +107,7 @@ class FakeApi:
             public_name = "pypiorg" if prefix == "o" else "piwheels"
             return Response(
                 {
-                    "access_token": "cache-token",
+                    "access_token": "rvs_sltEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEA",
                     "native_path": f"/{prefix}/{public_name}",
                 }
             )

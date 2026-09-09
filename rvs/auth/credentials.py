@@ -425,12 +425,22 @@ def refresh_expiring_credential(
         if current_access_token is not None and (refresh_was_rotated or access_was_replaced):
             return current_access_token
 
+        from .refresh_operation import pending_refresh_operation
+
+        try:
+            operation_id, pending_operation = pending_refresh_operation(
+                cfg_mod.CONFIG_DIR, profile, refresh_token
+            )
+        except OSError:
+            logger.info("Cannot persist refresh operation for profile %s", profile)
+            return None
         try:
             with httpx.Client(timeout=15.0) as client:
                 response = client.post(
                     devapi_url(p.api_url, "/auth/device/refresh"),
                     headers={"User-Agent": _rvs_user_agent()},
                     json={
+                        "operation_id": operation_id,
                         "refresh_token": refresh_token,
                         "platform": _device_platform(),
                     },
@@ -446,8 +456,9 @@ def refresh_expiring_credential(
                 profile,
                 response.status_code,
             )
-            if response.status_code in {400, 401, 403}:
+            if response.status_code in {400, 401, 403, 409}:
                 delete_token(profile)
+                pending_operation.unlink(missing_ok=True)
             return None
 
         payload = response.json()
@@ -477,6 +488,7 @@ def refresh_expiring_credential(
                 expires_at=expires_at.isoformat(),
                 refresh_expires_at=refresh_expires_at.isoformat(),
             )
+            pending_operation.unlink(missing_ok=True)
         except OSError, RuntimeError, ValueError:
             # A rotated pair is useful only when both secrets and its metadata are
             # durable. Revoke and remove a partial pair rather than leaving an

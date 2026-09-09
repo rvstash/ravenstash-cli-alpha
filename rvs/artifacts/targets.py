@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from typing import Literal, cast
 
 from .. import config as cfg_mod
 from .. import output
 from ..account.commands import ensure_active_account
+from ..auth.token_format import validate_public_token
 from ..client import ApiClient, ApiError
 from ..devapi import collection_items, remote_cache
 
@@ -38,7 +39,7 @@ class RegistryContext:
     push_base_url: str | None
     namespace_reference: str
     repository_reference: str
-    token: str
+    token: str = field(repr=False)
 
 
 def parse_target(value: str) -> TargetSpec:
@@ -374,6 +375,7 @@ def registry_context(
             namespace_reference, repository_reference = native_parts
             read_base_url = endpoints.mirror_base_url
             push_base_url = None
+        native_token = validate_public_token(credential["access_token"], native=True)
     except (ApiError, KeyError, TypeError, ValueError) as exc:
         output.fatal(str(exc))
     return RegistryContext(
@@ -385,5 +387,5 @@ def registry_context(
         push_base_url=push_base_url,
         namespace_reference=namespace_reference,
         repository_reference=repository_reference,
-        token=credential["access_token"],
+        token=native_token,
     )

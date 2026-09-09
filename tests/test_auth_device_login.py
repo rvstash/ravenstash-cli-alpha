@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import json
 import threading
 from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, ClassVar
+from unittest.mock import ANY
+from uuid import UUID
 
 import pytest
 from typer.testing import CliRunner
@@ -710,7 +713,7 @@ def test_refresh_expiring_credential_rotates_tokens(
     assert _FakeClient.requests == [
         (
             "https://api.ravenstash.com/v0/auth/device/refresh",
-            {"refresh_token": "old-refresh", "platform": "linux"},
+            {"refresh_token": "old-refresh", "platform": "linux", "operation_id": ANY},
             {"User-Agent": "rvs/0.1.0"},
         )
     ]
@@ -834,9 +837,48 @@ def test_refresh_expiring_credential_failure_clears_profile(monkeypatch, tmp_pat
     assert _FakeClient.requests == [
         (
             "https://api.ravenstash.com/v0/auth/device/refresh",
-            {"refresh_token": "old-refresh", "platform": "linux"},
+            {"refresh_token": "old-refresh", "platform": "linux", "operation_id": ANY},
             {"User-Agent": "rvs/0.1.0"},
         )
+    ]
+
+
+def test_ambiguous_refresh_keeps_operation_across_invocations(monkeypatch, tmp_path: Path) -> None:
+    config_dir = tmp_path / ".rvs"
+    _write_profiles_config(config_dir)
+    monkeypatch.setattr(cfg_mod, "CONFIG_DIR", config_dir)
+    monkeypatch.setattr(cfg_mod, "CONFIG_FILE", config_dir / "config.toml")
+    monkeypatch.setattr(auth_mod, "_keyring_available", lambda: True)
+    monkeypatch.setattr(
+        auth_mod, "_kr_get", lambda profile: "old-refresh" if profile.endswith(":refresh") else None
+    )
+    deleted: list[str] = []
+    monkeypatch.setattr(auth_mod, "delete_token", deleted.append)
+    _FakeClient.requests = []
+    _FakeClient.responses = [
+        _FakeResponse(502, {}),
+        _FakeResponse(
+            409, {"detail": {"code": "refresh_response_unavailable", "recovery": "sign_in"}}
+        ),
+    ]
+    monkeypatch.setattr(auth_mod.httpx, "Client", _FakeClient)
+
+    assert auth_mod.refresh_expiring_credential("default") is None
+    pending = list(config_dir.glob("*.pending.json"))
+    assert len(pending) == 1
+    assert pending[0].stat().st_mode & 0o777 == 0o600
+    metadata = pending[0].read_text()
+    assert "old-refresh" not in metadata
+    operation_id = json.loads(metadata)["operation_id"]
+    assert str(UUID(operation_id)) == operation_id
+    assert deleted == []
+
+    assert auth_mod.refresh_expiring_credential("default") is None
+    assert deleted == ["default"]
+    assert not list(config_dir.glob("*.pending.json"))
+    assert [body["operation_id"] for _, body, _ in _FakeClient.requests if body] == [
+        operation_id,
+        operation_id,
     ]
 
 

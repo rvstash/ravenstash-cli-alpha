@@ -14,7 +14,7 @@ import re
 import subprocess
 import tempfile
 import xml.etree.ElementTree as ET
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 from urllib.parse import urlparse, urlsplit
@@ -67,7 +67,7 @@ class RegistryRoute:
     push_base_url: str | None
     namespace_unique_ref: str
     repository_unique_ref: str
-    package_token: str
+    package_token: str = field(repr=False)
 
     @property
     def pypi_index_url(self) -> str:
