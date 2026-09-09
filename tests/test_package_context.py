@@ -98,6 +98,10 @@ class FakeApi:
             return Response(selected)
         raise AssertionError(path)
 
+    def issue_native(self, path: str, payload: dict):
+        assert payload["duration_seconds"] == 14400
+        return self.post(path, json=payload)
+
     def post(self, path: str, json: dict[str, Any] | None = None) -> Response:
         self.calls.append(("POST", path, json))
         if path == "/remote-package-credentials":

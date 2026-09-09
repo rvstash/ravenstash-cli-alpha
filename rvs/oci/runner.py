@@ -19,7 +19,7 @@ from .. import config as cfg_mod
 from .. import output
 from ..account.commands import resolve_account
 from ..artifacts.targets import resolve_target
-from ..auth.token_format import validate_public_token
+from ..auth.token_format import STATIC_NATIVE_DURATION_SECONDS, validate_public_token
 from ..client import ApiClient, ApiError
 from ..publishing import confirm_publish, oci_artifacts
 from ..runtime import tools
@@ -171,6 +171,7 @@ def resolve_route(
             "repository_unique_ref": target.repository_unique_ref,
             "registry_kind": kind,
             "operations": list(operations),
+            "duration_seconds": STATIC_NATIVE_DURATION_SECONDS,
             "expected_target": {
                 "namespace_unique_ref": target.namespace_unique_ref,
                 "namespace_name": target.namespace_name_cache,
@@ -179,9 +180,9 @@ def resolve_route(
                 "repository_name": target.repository_name_cache,
             },
         }
-        credential = client.post(
+        credential = client.issue_native(
             "/package-credentials",
-            json=credential_body,
+            credential_body,
         ).json()
         token = validate_public_token(credential["access_token"], native=True)
         native_path = credential["native_path"]

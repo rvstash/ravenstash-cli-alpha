@@ -408,6 +408,25 @@ a warning, so they cannot redirect the selected target. Explicit
 wildcard mirror; it is not a network sandbox. `respect` and `override` both set
 the selected target as the default while preserving additional sources.
 
+Native wrappers request a fresh four-hour `rvs_slt` token per invocation. Current
+clients use static environment/config credentials, so a running command cannot
+renew them automatically. Start a new command to obtain a new token; operations
+lasting beyond its expiry may require a retry. Source revocation can end access
+sooner. The CLI retries transient issuance failures at most twice within a bounded
+request budget; authorization failures are terminal.
+
+To generate a token for manual configuration:
+
+```sh
+rvs artifacts auth print-token --target mynamespace/myrepo --kind pypi --access read --duration 4h
+```
+
+Manual duration accepts 15 minutes to 12 hours. Stdout contains only the secret
+unless `--json` is requested. Prefer regular `rvs` commands on a developer laptop.
+For CI, provide a scoped `rvs_ust`, `rvs_uot` or `rvs_oat` through `RVS_TOKEN` and
+let the CLI exchange it. Direct use of a durable token in a native registry is
+controlled by the applicable account policy, discouraged and may be removed.
+
 Only short-lived credentials are injected for the child process. Install/read commands request download-only
 capabilities; publish/deploy/push commands request upload authority only when the
 native workflow needs it. They do not write tokens to `.npmrc`,
@@ -425,7 +444,7 @@ commands inject no publish credentials and support read-only private mirrors.
 The registry protocol supports a broader native-client compatibility matrix than
 the passthrough command list. Poetry; Yarn, pnpm, and Bun; Gradle and sbt; and
 Podman, nerdctl, Skopeo, and Crane use their own native configuration with an
-`RVS_TOKEN`; there are no corresponding `rvs <tool>` passthroughs yet. A catalog
+explicitly generated `rvs_slt` token; there are no corresponding `rvs <tool>` passthroughs yet. A catalog
 client association means protocol compatibility, not the existence of an RVS
 wrapper.
 

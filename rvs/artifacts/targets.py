@@ -8,7 +8,7 @@ from typing import Literal, cast
 from .. import config as cfg_mod
 from .. import output
 from ..account.commands import ensure_active_account
-from ..auth.token_format import validate_public_token
+from ..auth.token_format import STATIC_NATIVE_DURATION_SECONDS, validate_public_token
 from ..client import ApiClient, ApiError
 from ..devapi import collection_items, remote_cache
 
@@ -330,12 +330,13 @@ def registry_context(
         if selected.target_type == "repository":
             if not selected.repository_unique_ref:
                 raise ValueError("Selected private repository has no stable identity")
-            credential = client.post(
+            credential = client.issue_native(
                 "/package-credentials",
-                json={
+                {
                     "repository_unique_ref": selected.repository_unique_ref,
                     "registry_kind": kind,
                     "operations": list(operations),
+                    "duration_seconds": STATIC_NATIVE_DURATION_SECONDS,
                     "expected_target": {
                         "namespace_unique_ref": selected.namespace_unique_ref,
                         "namespace_name": selected.namespace_name_cache,
@@ -361,11 +362,12 @@ def registry_context(
             read_base_url = endpoints.read_base_url
             push_base_url: str | None = endpoints.push_base_url
         else:
-            credential = client.post(
+            credential = client.issue_native(
                 "/remote-package-credentials",
-                json={
+                {
                     "customer_id": account.customer_id,
                     "remote_cache_ref": selected.remote_unique_ref,
+                    "duration_seconds": STATIC_NATIVE_DURATION_SECONDS,
                     "registry_kind": kind,
                 },
             ).json()

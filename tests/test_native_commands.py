@@ -82,6 +82,10 @@ class _FakeDevApi:
             }
         )
 
+    def issue_native(self, path: str, payload: dict):
+        assert payload["duration_seconds"] == 14400
+        return self.post(path, json=payload)
+
     def post(self, path: str, json: dict[str, Any] | None = None) -> _JsonResponse:
         if path == "/remote-package-credentials":
             assert json is not None

@@ -4,6 +4,11 @@ import base64
 import re
 
 
+# Static native clients cannot reread rotated process environments. Until their
+# renewal callbacks are proven, issue a bounded four-hour token per invocation.
+STATIC_NATIVE_DURATION_SECONDS = 4 * 60 * 60
+
+
 def validate_public_token(value: str, *, native: bool = False) -> str:
     markers = "rvs_slt" if native else "rvs_ust|rvs_uot|rvs_oat"
     match = re.fullmatch(rf"({markers})([A-Za-z0-9_-]{{43}})", value)

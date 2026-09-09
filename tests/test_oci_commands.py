@@ -56,6 +56,10 @@ class _Api:
             }
         )
 
+    def issue_native(self, path: str, payload: dict):
+        assert payload["duration_seconds"] == 14400
+        return self.post(path, json=payload)
+
     def post(self, path: str, json=None) -> _Response:
         assert path == "/package-credentials"
         assert json["operations"] in (["download"], ["download", "upload"])

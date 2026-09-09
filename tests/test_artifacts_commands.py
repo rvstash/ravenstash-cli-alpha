@@ -41,6 +41,10 @@ class _FakeApiClient:
             return _JsonResponse(_repository_entry())
         return _JsonResponse(self.responses.pop(0))
 
+    def issue_native(self, path: str, payload: dict):
+        assert payload["duration_seconds"] == 14400
+        return self.post(path, json=payload)
+
     def post(self, path: str, json: Any = None, **kwargs: Any) -> _JsonResponse:
         self.calls.append(("POST", path, json if json is not None else kwargs))
         if path == "/package-credentials":
