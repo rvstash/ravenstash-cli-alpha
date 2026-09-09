@@ -222,7 +222,7 @@ pkg_api_url = "https://app.example/api"
     )
     monkeypatch.setattr(cfg_mod, "CONFIG_DIR", config_dir)
     monkeypatch.setattr(cfg_mod, "CONFIG_FILE", config_file)
-    monkeypatch.setenv("RVS_TOKEN", "env-token")
+    monkeypatch.setenv("RVS_TOKEN", "rvs_ust" + "A" * 43)
     _FakeHttpClient.requests = []
     _FakeHttpClient.responses = [httpx.Response(401, json={"detail": "rejected"})]
     refresh_calls: list[str] = []
@@ -238,7 +238,7 @@ pkg_api_url = "https://app.example/api"
 
     assert refresh_calls == []
     assert len(_FakeHttpClient.requests) == 1
-    assert _FakeHttpClient.requests[0][2]["Authorization"] == "Bearer env-token"
+    assert _FakeHttpClient.requests[0][2]["Authorization"] == "Bearer rvs_ust" + "A" * 43
 
 
 def test_api_client_request_methods_pass_paths_payloads_and_params(monkeypatch) -> None:

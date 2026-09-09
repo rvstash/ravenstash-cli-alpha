@@ -23,6 +23,7 @@ from ..native import runner as native_runner
 from ..publishing import confirm_context, maven_artifact, npm_artifact, pypi_artifacts
 from ..runtime import tools
 from ..subprocesses import child_environment
+from .auth_commands import app as native_auth_app
 from .registries import maven as maven_reg
 from .registries import npm as npm_reg
 from .registries import pypi as pypi_reg
@@ -53,6 +54,7 @@ app.add_typer(package_app, name="package")
 app.add_typer(pypi_app, name="pypi")
 app.add_typer(npm_app, name="npm")
 app.add_typer(maven_app, name="maven")
+app.add_typer(native_auth_app, name="auth")
 
 _KINDS = ("pypi", "npm", "maven", "container", "helm")
 _PACKAGE_KINDS = ("pypi", "npm", "maven")

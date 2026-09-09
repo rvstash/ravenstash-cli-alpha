@@ -96,18 +96,18 @@ refresh_expires_at = "{refresh_expires_at}"
 
 
 def test_rvs_token_takes_precedence_over_keyring(monkeypatch) -> None:
-    monkeypatch.setenv("RVS_TOKEN", "env-token")
+    monkeypatch.setenv("RVS_TOKEN", "rvs_ust" + "A" * 43)
     monkeypatch.setattr(auth_mod, "_keyring_available", lambda: True)
     monkeypatch.setattr(auth_mod, "_kr_get", lambda profile: "keyring-token")
 
-    assert auth_mod.get_token("default") == "env-token"
+    assert auth_mod.get_token("default") == "rvs_ust" + "A" * 43
     assert auth_mod.token_source("default") == "RVS_TOKEN"
 
 
 def test_rvs_token_prevents_expiring_refresh_attempt(monkeypatch) -> None:
     refreshed: list[str] = []
 
-    monkeypatch.setenv("RVS_TOKEN", "env-token")
+    monkeypatch.setenv("RVS_TOKEN", "rvs_ust" + "A" * 43)
     monkeypatch.setattr(auth_mod, "_stored_profile_expired", lambda profile: True)
     monkeypatch.setattr(
         auth_mod,
@@ -115,7 +115,7 @@ def test_rvs_token_prevents_expiring_refresh_attempt(monkeypatch) -> None:
         lambda profile: refreshed.append(profile) or "refreshed-token",
     )
 
-    assert auth_mod.get_token("default") == "env-token"
+    assert auth_mod.get_token("default") == "rvs_ust" + "A" * 43
     assert refreshed == []
 
 

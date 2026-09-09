@@ -38,7 +38,7 @@ def test_auth_status_reports_env_token_for_builtin_staging_profile(
     tmp_path: Path,
 ) -> None:
     _isolate_config(monkeypatch, tmp_path, 'default_profile = "default"')
-    monkeypatch.setenv("RVS_TOKEN", "env-token")
+    monkeypatch.setenv("RVS_TOKEN", "rvs_ust" + "A" * 43)
     monkeypatch.setenv("RVS_PROFILE_STAGING_API_URL", STAGING_API_URL)
     monkeypatch.setattr(
         auth_cmd.auth_mod,
@@ -64,7 +64,7 @@ def test_auth_status_rejects_profile_configuration_options(
     tmp_path: Path,
 ) -> None:
     _isolate_config(monkeypatch, tmp_path, 'default_profile = "default"')
-    monkeypatch.setenv("RVS_TOKEN", "env-token")
+    monkeypatch.setenv("RVS_TOKEN", "rvs_ust" + "A" * 43)
 
     result = runner.invoke(auth_cmd.app, ["status", "--verbose"])
 

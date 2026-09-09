@@ -35,6 +35,7 @@ from ..devapi import (
     api_url as devapi_url,
 )
 from . import stores
+from .token_format import validate_public_token
 
 
 if TYPE_CHECKING:
@@ -496,9 +497,15 @@ def get_token(profile: str) -> str | None:
     RVS_TOKEN always wins and is intended for PAT/M2M automation. Local stored
     credentials are short-lived CLI JWTs from the device login flow.
     """
-    env_token = os.environ.get("RVS_TOKEN")
-    if env_token:
-        return env_token
+    if "RVS_TOKEN" in os.environ:
+        try:
+            return validate_public_token(os.environ["RVS_TOKEN"])
+        except ValueError:
+            from .. import output
+
+            output.fatal(
+                "RVS_TOKEN must contain a current rvs_ust, rvs_uot, or rvs_oat automation credential. Clear it to use your stored login session."
+            )
     if _stored_profile_expired(profile):
         return refresh_expiring_credential(profile)
     store = selected_credential_store(profile)
@@ -512,7 +519,7 @@ def get_token(profile: str) -> str | None:
 
 def token_source(profile: str) -> str | None:
     """Return where the effective credential for *profile* comes from."""
-    if os.environ.get("RVS_TOKEN"):
+    if "RVS_TOKEN" in os.environ:
         return "RVS_TOKEN"
     if _stored_profile_expired(profile):
         return None

@@ -12,7 +12,10 @@ Usage
 from __future__ import annotations
 
 import importlib.metadata
+import random
 import time
+from datetime import UTC, datetime
+from email.utils import parsedate_to_datetime
 from typing import TYPE_CHECKING, Any
 
 import httpx
@@ -36,9 +39,10 @@ def _rvs_ua() -> str:
 class ApiError(Exception):
     """Raised when the API returns a non-2xx response."""
 
-    def __init__(self, status_code: int, detail: Any) -> None:
+    def __init__(self, status_code: int, detail: Any, *, retry_after: float | None = None) -> None:
         self.status_code = status_code
         self.detail = detail
+        self.retry_after = retry_after
         super().__init__(self._message())
 
     def _message(self) -> str:
@@ -137,7 +141,22 @@ class ApiClient:
                 detail = payload.get("detail", resp.text)
         except Exception:
             detail = resp.text or resp.reason_phrase
-        raise ApiError(resp.status_code, detail)
+        retry_after = None
+        raw_retry_after = resp.headers.get("Retry-After")
+        if raw_retry_after:
+            try:
+                retry_after = max(0.0, float(raw_retry_after))
+            except ValueError:
+                try:
+                    retry_after = max(
+                        0.0,
+                        (
+                            parsedate_to_datetime(raw_retry_after) - datetime.now(UTC)
+                        ).total_seconds(),
+                    )
+                except TypeError, ValueError, OverflowError:
+                    pass
+        raise ApiError(resp.status_code, detail, retry_after=retry_after)
 
     def _validate_contract(self, resp: httpx.Response) -> None:
         try:
@@ -180,6 +199,37 @@ class ApiClient:
 
     def post(self, path: str, json: Any = None, **kwargs: Any) -> httpx.Response:
         return self._request("POST", path, json=json, **kwargs)
+
+    def issue_native(self, path: str, payload: dict) -> httpx.Response:
+        """Bounded retries only for temporary issuance, never arbitrary mutations."""
+        if path not in {"/package-credentials", "/remote-package-credentials"}:
+            raise ValueError("Native issuance requires a known credential endpoint")
+        deadline = time.monotonic() + 30
+        for attempt in range(3):
+            retry_after = None
+            try:
+                return self.post(
+                    path,
+                    json=payload,
+                    retry=False,
+                    timeout=min(5.0, max(0.01, (deadline - time.monotonic()) / 4)),
+                )
+            except ApiError as exc:
+                if exc.status_code not in {429, 502, 503, 504} or attempt == 2:
+                    raise
+                failure: Exception = exc
+                retry_after = exc.retry_after
+            except httpx.TransportError as exc:
+                if attempt == 2:
+                    raise
+                failure = exc
+            delay = (0.25, 1.0)[attempt] + random.uniform(0, 0.1)
+            if retry_after is not None:
+                delay = max(delay, retry_after)
+            if time.monotonic() + delay >= deadline:
+                raise failure
+            time.sleep(delay)
+        raise RuntimeError("Native issuance retry limit exceeded")
 
     def patch(
         self,
