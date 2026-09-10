@@ -113,3 +113,31 @@ def kv(pairs: dict[str, str | None], title: str | None = None) -> None:
     if title:
         console.print(f"[bold]{title}[/]")
     console.print(t)
+
+
+def resource_account_hint(selector: str, selected_customer_id: str, owner: dict) -> None:
+    """Report explicit cross-account access without changing CLI context."""
+    from rich.markup import escape
+
+    owner_id = str(owner["customer_id"])
+    label = str(owner.get("customer_handle") or owner.get("account_label") or owner_id)
+    account_type = str(owner.get("account_type") or "account")
+    message = (
+        f"Resource {selector} belongs to another account: {label} ({account_type}, {owner_id}). "
+        "The selected account is unchanged; resource operations use the owning account."
+    )
+    if _json_enabled:
+        _emit_json(
+            {
+                "level": "info",
+                "event": "cross_account_resource",
+                "message": message,
+                "selector": selector,
+                "selected_customer_id": selected_customer_id,
+                "owner_customer_id": owner_id,
+                "owner_account": label,
+            },
+            err=True,
+        )
+    else:
+        info(escape(message))

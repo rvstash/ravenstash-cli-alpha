@@ -146,6 +146,24 @@ initialize its remote cache for the selected account once, for example
 `rvs art mirror add maven-central`. A `mirror:<source>` request returns 404 until
 that binding exists; it is an authorization boundary, not a transient cache miss.
 
+Readable repository names resolve only within the effective acting account.
+Explicit stable repository references (`in_…/r_…`, or bare `r_…` where repository
+management commands accept it) may resolve across accounts the authenticated user
+is authorized to access. Cross-account resolution prints the owning account;
+`--json` emits a `cross_account_resource` info event on stderr with the selected
+and owning customer IDs. It does not switch the acting account or grant access.
+Credentials, resource authorization, and usage attribution follow the owner.
+PAT/workload credentials remain bound to their configured account and grants;
+stable references do not broaden their authority or fall back to a human login.
+Manual `rvs art auth print-token` keeps ownership diagnostics on stderr so stdout
+contains only the requested secret or JSON response.
+
+Selecting a cross-account target saves it in the current account's local context,
+without replacing the owning account's separately saved target. Subsequent use
+re-resolves the stable reference and repeats the ownership hint. `rvs art current`
+shows the target owner ID. Readable names remain account-scoped even after such a
+selection. The reserved public catalog scope remains unavailable.
+
 Account and artifact target selections are stored locally; tokens remain in the
 selected credential store.
 

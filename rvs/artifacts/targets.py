@@ -147,6 +147,36 @@ def _remote_target(entry: dict, target_type: cfg_mod.ArtifactTargetType) -> cfg_
     )
 
 
+def is_stable_repository_selector(selector: str) -> bool:
+    """Typed references identify resources; readable names stay account-scoped.
+
+    The API validates reference syntax and authorization. Bare repository refs
+    are accepted only by repository-management commands, as before.
+    """
+    parts = selector.split("/")
+    return (len(parts) == 1 and parts[0].startswith("r_")) or (
+        len(parts) == 2 and parts[0].startswith(("in_", "gn_")) and parts[1].startswith("r_")
+    )
+
+
+def resolve_repository_entry(
+    client: ApiClient, selector: str, customer_id: str, kind: str | None = None
+) -> dict:
+    stable = is_stable_repository_selector(selector)
+    params = {"selector": selector}
+    if not stable:
+        params["customer_id"] = customer_id
+    if kind is not None:
+        params["registry_kind"] = kind
+    entry = client.get("/repositories/resolve", params=params).json()
+    owner = entry["customer"]
+    if owner["customer_id"] != customer_id:
+        if not stable:
+            output.fatal("Resolved repository belongs to a different acting account.")
+        output.resource_account_hint(selector, customer_id, owner)
+    return entry
+
+
 def resolve_target(
     value: str,
     *,
@@ -168,20 +198,10 @@ def resolve_target(
             effective_customer_id = customer_id or cfg_mod.current_customer_id(profile_name)
             if effective_customer_id is None:
                 output.fatal("No acting account is selected. Run `rvs account use`.")
-            params = {
-                "selector": spec.selector,
-            }
-            if registry_kind is not None:
-                params["registry_kind"] = registry_kind
-            if effective_customer_id is not None:
-                params["customer_id"] = effective_customer_id
-            entry = client.get(
-                "/repositories/resolve",
-                params=params,
-            ).json()
+            entry = resolve_repository_entry(
+                client, spec.selector, effective_customer_id, registry_kind
+            )
             raw_customer = entry["customer"]
-            if raw_customer["customer_id"] != effective_customer_id:
-                output.fatal("Resolved repository belongs to a different acting account.")
             raw_customer.setdefault("customer_unique_ref", raw_customer["customer_id"])
             raw_customer.setdefault("account_type", "personal")
             raw_customer.setdefault("account_label", raw_customer["customer_unique_ref"])
@@ -189,7 +209,7 @@ def resolve_target(
             account = cfg_mod.cache_account(
                 profile=profile_name,
                 customer=raw_customer,
-                activate=customer_id is None,
+                activate=False,
             )
             target = _repository_target(entry)
         else:

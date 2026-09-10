@@ -420,3 +420,177 @@ def test_artifacts_repo_one_liner_alias_is_rejected(monkeypatch, tmp_path: Path)
 
     assert result.exit_code != 0
     assert calls == []
+
+
+class CrossAccountApi:
+    def __init__(self):
+        self.calls = []
+        self.owner = customer("org-foreign", "OtherOrg")
+
+    def get(self, path, params=None):
+        self.calls.append((path, params))
+        assert path == "/repositories/resolve"
+        return Response(
+            {
+                "customer": self.owner,
+                "repository": {
+                    "namespace_unique_ref": "in_23456789",
+                    "namespace_name": "engineering",
+                    "namespace_realm": "internal",
+                    "repository_unique_ref": "r_abcdefgh",
+                    "repository_name": "packages",
+                    "registry_kinds": ["pypi"],
+                },
+            }
+        )
+
+    def issue_native(self, path, payload):
+        assert payload["duration_seconds"] == 14400
+        return self.post(path, json=payload)
+
+    def post(self, path, json=None):
+        self.calls.append((path, json))
+        assert path == "/package-credentials"
+        assert json["repository_unique_ref"] == "r_abcdefgh"
+        return Response(
+            {
+                "access_token": "rvs_sltCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCA",
+                "native_path": "/engineering/packages",
+            }
+        )
+
+
+def test_stable_cross_account_target_reports_owner_without_switching(monkeypatch, tmp_path, capsys):
+    isolate(monkeypatch, tmp_path)
+    fake = CrossAccountApi()
+    monkeypatch.setattr(ApiClient, "from_profile", staticmethod(lambda profile=None: fake))
+    _, owner, target = resolve_target("in_23456789/r_abcdefgh", profile="alice", kind="pypi")
+    assert fake.calls == [
+        (
+            "/repositories/resolve",
+            {
+                "selector": "in_23456789/r_abcdefgh",
+                "registry_kind": "pypi",
+            },
+        )
+    ]
+    assert owner.customer_id == target.customer_id == "org-foreign"
+    assert cfg_mod.current_customer_id("alice") == "personal-alice"
+    assert "OtherOrg" in capsys.readouterr().out
+
+
+def test_cross_account_selection_stays_in_current_context_and_uses_owner_credentials(
+    monkeypatch, tmp_path
+):
+    from rvs.artifacts.targets import registry_context
+
+    isolate(monkeypatch, tmp_path)
+    fake = CrossAccountApi()
+    monkeypatch.setattr(ApiClient, "from_profile", staticmethod(lambda profile=None: fake))
+    result = runner.invoke(app, ["art", "select", "in_23456789/r_abcdefgh"])
+    assert result.exit_code == 0, result.output
+    assert "another account" in result.output
+    assert cfg_mod.current_customer_id("alice") == "personal-alice"
+    saved = cfg_mod.selected_artifact_target("alice", "personal-alice")
+    assert saved is not None and saved.customer_id == "org-foreign"
+    assert cfg_mod.selected_artifact_target("alice", "org-foreign") is None
+    context = registry_context(kind="pypi", profile="alice")
+    assert context.customer_id == "org-foreign"
+    assert context.token == "rvs_sltCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCA"
+    assert cfg_mod.current_customer_id("alice") == "personal-alice"
+
+
+@pytest.mark.parametrize("selector", ["r_abcdefgh", "in_23456789/r_abcdefgh"])
+def test_management_stable_reference_crosses_account_with_json_hint(
+    monkeypatch, tmp_path, selector
+):
+    import json
+
+    from rvs import output
+    from rvs.artifacts.commands import _resolve_repository_entry
+
+    isolate(monkeypatch, tmp_path)
+    fake = CrossAccountApi()
+    monkeypatch.setattr(ApiClient, "from_profile", staticmethod(lambda profile=None: fake))
+    messages = []
+    monkeypatch.setattr(
+        output.err_console, "print", lambda text, **kwargs: messages.append(json.loads(text))
+    )
+    output.set_json(True)
+    try:
+        entry = _resolve_repository_entry(selector, "alice")
+    finally:
+        output.set_json(False)
+    assert entry["customer"]["customer_id"] == "org-foreign"
+    assert fake.calls == [("/repositories/resolve", {"selector": selector})]
+    assert messages[0]["event"] == "cross_account_resource"
+    assert messages[0]["selected_customer_id"] == "personal-alice"
+    assert messages[0]["owner_customer_id"] == "org-foreign"
+    assert cfg_mod.current_customer_id("alice") == "personal-alice"
+
+
+def test_management_readable_name_cannot_cross_account(monkeypatch, tmp_path):
+    from rvs.artifacts.commands import _resolve_repository_entry
+
+    isolate(monkeypatch, tmp_path)
+    fake = CrossAccountApi()
+    monkeypatch.setattr(ApiClient, "from_profile", staticmethod(lambda profile=None: fake))
+    with pytest.raises(SystemExit):
+        _resolve_repository_entry("engineering/packages", "alice")
+    assert fake.calls[0][1]["customer_id"] == "personal-alice"
+
+
+def test_unauthorized_stable_reference_keeps_api_denial(monkeypatch, tmp_path):
+    from rvs.client import ApiError
+
+    isolate(monkeypatch, tmp_path)
+
+    class DeniedApi:
+        def get(self, path, params):
+            raise ApiError(404, "Repository not found")
+
+    monkeypatch.setattr(ApiClient, "from_profile", staticmethod(lambda profile=None: DeniedApi()))
+    with pytest.raises(SystemExit):
+        resolve_target("in_23456789/r_abcdefgh", profile="alice")
+    assert cfg_mod.current_customer_id("alice") == "personal-alice"
+
+
+@pytest.mark.parametrize("json_output", [False, True])
+def test_cross_account_print_token_keeps_stdout_secret_only(monkeypatch, tmp_path, json_output):
+    import json
+
+    isolate(monkeypatch, tmp_path)
+    fake = CrossAccountApi()
+    monkeypatch.setattr(ApiClient, "from_profile", staticmethod(lambda profile=None: fake))
+    args = ["art", "auth", "print-token", "--target", "in_23456789/r_abcdefgh", "--kind", "pypi"]
+    if json_output:
+        args.append("--json")
+    result = runner.invoke(app, args)
+    assert result.exit_code == 0, result.output
+    secret = "rvs_sltCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCA"
+    if json_output:
+        assert json.loads(result.stdout)["access_token"] == secret
+    else:
+        assert result.stdout == secret + "\n"
+    assert "another account" in result.stderr
+    assert secret not in result.stderr
+    assert cfg_mod.current_customer_id("alice") == "personal-alice"
+
+
+def test_cross_account_issuance_denial_does_not_fallback_or_switch(monkeypatch, tmp_path):
+    from rvs.artifacts.targets import registry_context
+    from rvs.client import ApiError
+
+    isolate(monkeypatch, tmp_path)
+
+    class DeniedIssuance(CrossAccountApi):
+        def issue_native(self, path, payload):
+            self.calls.append((path, payload))
+            raise ApiError(403, "Source grants do not allow the target")
+
+    fake = DeniedIssuance()
+    monkeypatch.setattr(ApiClient, "from_profile", staticmethod(lambda profile=None: fake))
+    with pytest.raises(SystemExit):
+        registry_context(kind="pypi", target="in_23456789/r_abcdefgh", profile="alice")
+    assert [path for path, _ in fake.calls] == ["/repositories/resolve", "/package-credentials"]
+    assert cfg_mod.current_customer_id("alice") == "personal-alice"

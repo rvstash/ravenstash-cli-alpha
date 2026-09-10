@@ -28,7 +28,13 @@ from .registries import maven as maven_reg
 from .registries import npm as npm_reg
 from .registries import pypi as pypi_reg
 from .routing import CanonicalRouter, npm_auth_token_key
-from .targets import RegistryContext, parse_target, registry_context, resolve_target
+from .targets import (
+    RegistryContext,
+    parse_target,
+    registry_context,
+    resolve_repository_entry,
+    resolve_target,
+)
 
 
 app = typer.Typer(
@@ -149,10 +155,11 @@ def target_select(
 ) -> None:
     """Select the artifact target used when --target is omitted."""
     customer_id = _context_customer_id(profile, account)
-    profile_name, selected_account, selected = resolve_target(
+    profile_name, selected_account = ensure_active_account(profile, customer_id)
+    _, _, selected = resolve_target(
         target,
-        profile=profile,
-        customer_id=customer_id,
+        profile=profile_name,
+        customer_id=selected_account.customer_id,
         kind=kind,
     )
     try:
@@ -185,6 +192,7 @@ def target_current(
             "Account": account_display_name(selected_account),
             "Target": selected.display_selector if selected else "none",
             "Target type": selected.target_type if selected else "none",
+            "Target owner ID": selected.customer_id if selected else "none",
             "Registry kind": selected.registry_kind or "inferred by operation"
             if selected
             else "none",
@@ -393,22 +401,11 @@ def _resolve_repository_entry(
         # Repository-management commands retain the convenient unique-name/ref
         # lookup. Saved artifact targets still require the complete namespace pair.
         selector = candidate
-    params = {
-        "selector": selector,
-    }
     options = _root_package_options()
     profile = profile or options.get("profile")
-    params["customer_id"] = _customer_id(profile, customer_id)
-    if kind is not None:
-        params["registry_kind"] = kind
     try:
-        return (
-            _client(profile)
-            .get(
-                "/repositories/resolve",
-                params=params,
-            )
-            .json()
+        return resolve_repository_entry(
+            _client(profile), selector, _customer_id(profile, customer_id), kind
         )
     except ApiError as exc:
         output.fatal(str(exc))

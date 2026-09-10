@@ -42,7 +42,10 @@ class _Api:
             assert "registry_kind" not in params
         else:
             assert params["registry_kind"] in {"container", "helm"}
-        assert params["customer_id"] == "customer-1"
+        if params["selector"].startswith("in_"):
+            assert "customer_id" not in params
+        else:
+            assert params["customer_id"] == "customer-1"
         return _Response(
             {
                 "customer": {"customer_id": "customer-1"},
