@@ -141,7 +141,9 @@ def _validate_passphrase(passphrase: str) -> None:
 
 
 def _derive_key(passphrase: str, salt: bytes, payload: dict[str, Any] | None = None) -> bytes:
-    from cryptography.hazmat.primitives.kdf.argon2 import Argon2id
+    from cryptography.hazmat.primitives.kdf.argon2 import (  # pyright: ignore[reportMissingImports]
+        Argon2id,
+    )
 
     kdf_payload = payload.get("kdf", {}) if payload is not None else {}
     if payload is not None and kdf_payload.get("name") != "argon2id":
@@ -205,8 +207,10 @@ def _read_envelope() -> dict[str, Any]:
 
 
 def _decrypt(payload: dict[str, Any], key: bytes) -> dict[str, str]:
-    from cryptography.exceptions import InvalidTag
-    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+    from cryptography.exceptions import InvalidTag  # pyright: ignore[reportMissingImports]
+    from cryptography.hazmat.primitives.ciphers.aead import (  # pyright: ignore[reportMissingImports]
+        AESGCM,
+    )
 
     if payload.get("cipher") != "aes-256-gcm":
         raise VaultError("Unsupported vault encryption algorithm.")
@@ -227,7 +231,9 @@ def _decrypt(payload: dict[str, Any], key: bytes) -> dict[str, str]:
 
 
 def _write_encrypted(credentials: dict[str, str], key: bytes, salt: bytes) -> None:
-    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+    from cryptography.hazmat.primitives.ciphers.aead import (  # pyright: ignore[reportMissingImports]
+        AESGCM,
+    )
 
     file_path = path()
     parent = file_path.parent
