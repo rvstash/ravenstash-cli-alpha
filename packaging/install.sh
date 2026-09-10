@@ -11,7 +11,8 @@ readonly signing_key_url="${repository_url}/ravenstash-rvs.gpg"
 readonly signing_key_fingerprint="3B7C20FC370D1A7C813DF3A2E9679F951AD8BAA0"
 readonly keyring_path="/etc/apt/keyrings/ravenstash-rvs.gpg"
 readonly source_path="/etc/apt/sources.list.d/ravenstash-rvs.list"
-readonly machine_architecture="$(uname -m)"
+machine_architecture="$(uname -m)"
+readonly machine_architecture
 case "$machine_architecture" in
   x86_64 | amd64) readonly package_architecture="amd64" ;;
   aarch64 | arm64) readonly package_architecture="arm64" ;;

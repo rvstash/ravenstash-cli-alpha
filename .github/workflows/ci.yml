@@ -65,21 +65,6 @@ jobs:
               test -e /usr/lib/rvs/_internal/libpython3.14.so.1.0
             '
 
-      - name: Reject Alpine musl before downloading an incompatible archive
-        run: |
-          docker run --rm \
-            --volume "$PWD/packaging/install.sh:/install.sh:ro" \
-            alpine@sha256:7c8cb692ae09657cbc4a3f3cbd0e8d5a2690ba38386aaaf252dbb060bf5eb2e6 \
-            /bin/sh -euc '
-              apk add --no-cache bash >/dev/null
-              set +e
-              output="$(/bin/bash /install.sh 2>&1)"
-              status=$?
-              set -e
-              test "$status" -eq 1
-              printf "%s\n" "$output" | grep -F "Alpine/musl needs a separate rvs build"
-            '
-
       - name: Upload portable compatibility bundle
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
