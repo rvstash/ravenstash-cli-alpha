@@ -58,7 +58,7 @@ def _validate_file(file_path: Path) -> None:
         raise PlaintextStoreError(f"Credential file {file_path} must be a regular file.")
     if hasattr(os, "getuid") and metadata.st_uid != os.getuid():
         raise PlaintextStoreError(f"Credential file {file_path} is not owned by the current user.")
-    if stat.S_IMODE(metadata.st_mode) & 0o077:
+    if os.name != "nt" and stat.S_IMODE(metadata.st_mode) & 0o077:
         raise PlaintextStoreError(
             f"Credential file {file_path} has unsafe permissions; expected mode 0600."
         )
@@ -104,7 +104,8 @@ def _write(credentials: dict[str, str]) -> None:
             delete=False,
         ) as temporary:
             temporary_path = Path(temporary.name)
-            os.fchmod(temporary.fileno(), 0o600)
+            if hasattr(os, "fchmod"):
+                os.fchmod(temporary.fileno(), 0o600)
             json.dump(
                 {"version": _FORMAT_VERSION, "credentials": credentials},
                 temporary,

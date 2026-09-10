@@ -297,7 +297,7 @@ def _initialize_vault_interactively() -> str:
 def _initialize_plaintext(*, allow_insecure_storage: bool) -> str:
     output.warn(
         "PLAINTEXT STORAGE IS NOT ENCRYPTED. Any process or person able to read your "
-        "Linux home directory can copy the Ravenstash access and refresh tokens."
+        "user account can copy the Ravenstash access and refresh tokens."
     )
     if stores.plaintext_store.exists():
         output.warn(

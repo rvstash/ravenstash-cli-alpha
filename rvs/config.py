@@ -380,7 +380,8 @@ def save_session(session: SessionContext) -> bool:
             delete=False,
         ) as temporary:
             temporary_path = Path(temporary.name)
-            os.fchmod(temporary.fileno(), 0o600)
+            if hasattr(os, "fchmod"):
+                os.fchmod(temporary.fileno(), 0o600)
             tomli_w.dump(raw, temporary)
             temporary.flush()
             os.fsync(temporary.fileno())
@@ -1027,7 +1028,8 @@ def _write_raw(raw: dict) -> None:
             delete=False,
         ) as temporary:
             temporary_path = Path(temporary.name)
-            os.fchmod(temporary.fileno(), 0o600)
+            if hasattr(os, "fchmod"):
+                os.fchmod(temporary.fileno(), 0o600)
             tomli_w.dump(raw, temporary)
             temporary.flush()
             os.fsync(temporary.fileno())

@@ -1,4 +1,4 @@
-"""Secure credential-store adapters for Linux desktop and TTY environments."""
+"""Secure credential-store adapters for desktop and headless environments."""
 
 from __future__ import annotations
 
@@ -94,6 +94,14 @@ def _password_store_dir() -> Path:
 
 
 def pass_status() -> StoreStatus:
+    if os.name == "nt":
+        return StoreStatus(
+            name="pass",
+            available=False,
+            backend="pass",
+            detail="pass is a POSIX credential-store integration.",
+            guidance="Use Windows Credential Manager through the OS keyring.",
+        )
     executable = shutil.which("pass")
     if executable is None:
         return StoreStatus(
@@ -164,6 +172,14 @@ def pass_delete(account: str) -> None:
 
 
 def vault_status() -> StoreStatus:
+    if os.name == "nt":
+        return StoreStatus(
+            name="vault",
+            available=False,
+            backend="rvs encrypted vault",
+            detail="The session-agent vault is unavailable on Windows.",
+            guidance="Use Windows Credential Manager through the OS keyring.",
+        )
     if not vault.exists():
         return StoreStatus(
             name="vault",

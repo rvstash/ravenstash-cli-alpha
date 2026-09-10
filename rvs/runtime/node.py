@@ -7,6 +7,7 @@ Installs to: ~/.rvs/runtimes/node/<full_version>/
 
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 import tempfile
@@ -18,9 +19,9 @@ import httpx
 from .. import output
 from ._install import (
     RUNTIMES_DIR,
-    check_linux_x64,
     download,
     extract,
+    runtime_platform,
     write_env_file,
     write_shim,
 )
@@ -121,8 +122,17 @@ def install(version: str) -> Path:
     *version* may be a major (``"20"``), major.minor (``"20.11"``), or full
     version string (``"20.11.0"``).  Returns the installation directory.
     """
-    _, arch_raw = check_linux_x64()
-    arch = _ARCH_MAP.get(arch_raw, arch_raw)
+    platform_target = runtime_platform()
+    if (
+        platform_target.system == "linux"
+        and platform_target.libc == "musl"
+        and platform_target.arch == "aarch64"
+    ):
+        output.fatal(
+            "Node.js does not publish official arm64 musl binaries. Install Node.js "
+            "with the system package manager; rvs will use it from PATH."
+        )
+    arch = _ARCH_MAP[platform_target.arch]
 
     if version.lower() == "latest":
         version = "current"  # nodejs.org uses 'current' for the latest release
@@ -134,23 +144,42 @@ def install(version: str) -> Path:
         output.info(f"Node.js {full_ver} already installed at {dest}")
         return dest
 
-    url = f"https://nodejs.org/dist/v{full_ver}/node-v{full_ver}-linux-{arch}.tar.xz"
+    os_name = {"linux": "linux", "macos": "darwin", "windows": "win"}[platform_target.system]
+    extension = (
+        "zip" if platform_target.windows else ("tar.gz" if os_name == "darwin" else "tar.xz")
+    )
+    target = (
+        "linux-x64-musl"
+        if platform_target.system == "linux" and platform_target.libc == "musl"
+        else f"{os_name}-{arch}"
+    )
+    url = f"https://nodejs.org/dist/v{full_ver}/node-v{full_ver}-{target}.{extension}"
     with tempfile.TemporaryDirectory() as tmp:
         temp_dir = Path(tmp)
         archive_name = url.split("/")[-1]
         archive = temp_dir / archive_name
         expected_sha256 = _verified_archive_digest(full_ver, archive_name, temp_dir)
         download(url, archive, expected_sha256=expected_sha256)
-        extract(archive, dest, required_paths=("bin/node",))
+        required_node = "node.exe" if platform_target.windows else "bin/node"
+        extract(archive, dest, required_paths=(required_node,))
 
-    bin_dir = dest / "bin"
+    bin_dir = dest if platform_target.windows else dest / "bin"
     for exe in ("node", "npm", "npx", "corepack"):
-        if (bin_dir / exe).exists():
-            write_shim(exe, bin_dir / exe, runtime_kind="node")
+        executable = (
+            f"{exe}.exe"
+            if platform_target.windows and exe in {"node", "corepack"}
+            else (f"{exe}.cmd" if platform_target.windows else exe)
+        )
+        if (bin_dir / executable).exists():
+            write_shim(exe, bin_dir / executable, runtime_kind="node")
 
     write_env_file()
     output.success(f"Node.js {full_ver} installed at {dest}")
-    output.info("Add to PATH: source ~/.rvs/env")
+    output.info(
+        "Add to PATH: . $HOME/.rvs/env.ps1"
+        if platform_target.windows
+        else "Add to PATH: source ~/.rvs/env"
+    )
     return dest
 
 
@@ -178,4 +207,6 @@ def find(version_prefix: str) -> Path | None:
 def node_bin(version_prefix: str) -> Path | None:
     """Return the ``node`` binary path for *version_prefix*, or None."""
     base = find(version_prefix)
-    return (base / "bin" / "node") if base else None
+    if base is None:
+        return None
+    return base / "node.exe" if os.name == "nt" else base / "bin" / "node"

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import stat
 from typing import TYPE_CHECKING
 
@@ -388,7 +389,8 @@ repository_name_cache = "packages"
 
     backup = config_dir / "config.v1.toml.bak"
     assert backup.read_text(encoding="utf-8") == original
-    assert stat.S_IMODE(backup.stat().st_mode) == 0o600
+    if os.name != "nt":
+        assert stat.S_IMODE(backup.stat().st_mode) == 0o600
     migrated = config_file.read_text(encoding="utf-8")
     assert "workspace" not in migrated
     assert "namespace-pkid" not in migrated
@@ -530,8 +532,9 @@ def test_save_uses_private_modes_and_atomic_replacement(monkeypatch, tmp_path: P
     cfg.default_profile = "work"
     cfg_mod.save(cfg)
 
-    assert stat.S_IMODE(config_dir.stat().st_mode) == 0o700
-    assert stat.S_IMODE(config_file.stat().st_mode) == 0o600
+    if os.name != "nt":
+        assert stat.S_IMODE(config_dir.stat().st_mode) == 0o700
+        assert stat.S_IMODE(config_file.stat().st_mode) == 0o600
     assert config_file.stat().st_ino != first_inode
     assert not list(config_dir.glob(".config.*.tmp"))
 

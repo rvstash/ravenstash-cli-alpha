@@ -1,5 +1,6 @@
 # -*- mode: python ; coding: utf-8 -*-
 
+import os
 from pathlib import Path
 
 from PyInstaller.utils.hooks import collect_submodules, copy_metadata
@@ -27,6 +28,7 @@ for distribution in ("ravenstash-cli", "typer", "click", "rich", "httpx", "keyri
     datas += _metadata(distribution)
 
 hiddenimports = []
+hiddenimports.append("msvcrt" if os.name == "nt" else "fcntl")
 hiddenimports += _submodules("keyring.backends")
 hiddenimports += [
     "secretstorage",
@@ -68,7 +70,7 @@ exe = EXE(
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,
-    codesign_identity=None,
+    codesign_identity=os.environ.get("RVS_CODESIGN_IDENTITY"),
     entitlements_file=None,
 )
 coll = COLLECT(

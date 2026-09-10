@@ -8,6 +8,7 @@ Installs to: ~/.rvs/runtimes/python/<full_version>/
 
 from __future__ import annotations
 
+import os
 import re
 import tempfile
 from pathlib import Path
@@ -18,9 +19,9 @@ import httpx
 from .. import output
 from ._install import (
     RUNTIMES_DIR,
-    check_linux_x64,
     download,
     extract,
+    runtime_platform,
     write_env_file,
     write_shim,
 )
@@ -30,7 +31,7 @@ from .versions import version_key
 _REPO = "astral-sh/python-build-standalone"
 _GH_RELEASES = f"https://api.github.com/repos/{_REPO}/releases"
 
-# Map (system_arch → pbs_arch)
+# Map normalized architecture to python-build-standalone architecture.
 _ARCH_MAP = {"x64": "x86_64", "aarch64": "aarch64"}
 
 
@@ -41,9 +42,9 @@ def _gh_headers() -> dict[str, str]:
     }
 
 
-def _find_asset(version_prefix: str, arch: str) -> tuple[str, str, str]:
+def _find_asset(version_prefix: str, target: str) -> tuple[str, str, str]:
     """Return (full_version, download_url, sha256) for an immutable PBS asset."""
-    suffix = f"{arch}-unknown-linux-gnu-install_only.tar.gz"
+    suffix = f"{target}-install_only.tar.gz"
     pattern = re.compile(r"cpython-(\d+\.\d+\.\d+)\+\d+-" + re.escape(suffix))
     # Search up to 5 pages of releases
     for page in range(1, 6):
@@ -74,7 +75,7 @@ def _find_asset(version_prefix: str, arch: str) -> tuple[str, str, str]:
                         continue
                     return full_ver, asset["browser_download_url"], digest
     output.fatal(
-        f"No Python {version_prefix} build found for linux/{arch}.\n"
+        f"No Python {version_prefix} build found for {target}.\n"
         f"Check: https://github.com/{_REPO}/releases"
     )
 
@@ -85,11 +86,16 @@ def install(version: str) -> Path:
     *version* may be ``"3.12"``, ``"3.12.1"``, etc.
     Returns the installation directory.
     """
-    _, arch_raw = check_linux_x64()
-    arch = _ARCH_MAP.get(arch_raw, arch_raw)
+    platform_target = runtime_platform()
+    arch = _ARCH_MAP[platform_target.arch]
+    triple = {
+        "linux": f"{arch}-unknown-linux-{'musl' if platform_target.libc == 'musl' else 'gnu'}",
+        "macos": f"{arch}-apple-darwin",
+        "windows": f"{arch}-pc-windows-msvc",
+    }[platform_target.system]
 
     output.info(f"Resolving Python {version} (python-build-standalone) ...")
-    full_ver, url, expected_sha256 = _find_asset(version, arch)
+    full_ver, url, expected_sha256 = _find_asset(version, triple)
 
     dest = RUNTIMES_DIR / "python" / full_ver
     if dest.exists():
@@ -99,11 +105,12 @@ def install(version: str) -> Path:
     with tempfile.TemporaryDirectory() as tmp:
         archive = Path(tmp) / url.split("/")[-1].split("?")[0]
         download(url, archive, expected_sha256=expected_sha256)
-        extract(archive, dest, required_paths=("bin/python3",))
+        required_python = "python.exe" if platform_target.windows else "bin/python3"
+        extract(archive, dest, required_paths=(required_python,))
 
     # Write shims for python3 / python3.x
-    bin_dir = dest / "bin"
-    python3 = bin_dir / "python3"
+    bin_dir = dest if platform_target.windows else dest / "bin"
+    python3 = bin_dir / ("python.exe" if platform_target.windows else "python3")
     if not python3.exists():
         candidates = sorted(bin_dir.glob("python3.*"))
         if candidates:
@@ -120,7 +127,11 @@ def install(version: str) -> Path:
 
     write_env_file()
     output.success(f"Python {full_ver} installed at {dest}")
-    output.info("Add to PATH: source ~/.rvs/env")
+    output.info(
+        "Add to PATH: . $HOME/.rvs/env.ps1"
+        if platform_target.windows
+        else "Add to PATH: source ~/.rvs/env"
+    )
     return dest
 
 
@@ -150,8 +161,14 @@ def python_bin(version_prefix: str) -> Path | None:
     base = find(version_prefix)
     if base is None:
         return None
-    for name in (f"python{'.'.join(version_prefix.split('.')[:2])}", "python3", "python"):
-        p = base / "bin" / name
+    windows = os.name == "nt"
+    names = (
+        ("python.exe",)
+        if windows
+        else (f"python{'.'.join(version_prefix.split('.')[:2])}", "python3", "python")
+    )
+    for name in names:
+        p = base / ("" if windows else "bin") / name
         if p.exists():
             return p
     return None

@@ -14,8 +14,8 @@ token_source(profile) -> str | None
 
 from __future__ import annotations
 
-import fcntl
 import hashlib
+import importlib
 import importlib.metadata
 import logging
 import os
@@ -23,7 +23,7 @@ import platform as platform_mod
 import secrets
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
-from typing import IO, TYPE_CHECKING
+from typing import IO, TYPE_CHECKING, Any
 
 import httpx
 
@@ -36,6 +36,17 @@ from ..devapi import (
 )
 from . import stores
 from .token_format import validate_public_token
+
+
+def _optional_module(name: str) -> Any:
+    try:
+        return importlib.import_module(name)
+    except ImportError:
+        return None
+
+
+fcntl = _optional_module("fcntl")
+msvcrt = _optional_module("msvcrt")
 
 
 if TYPE_CHECKING:
@@ -315,11 +326,23 @@ def _profile_refresh_lock(profile: str) -> Iterator[None]:
         os.chmod(lock_path, 0o600)
         lock_file = os.fdopen(descriptor, "rb", closefd=True)
         descriptor = -1
-        fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+        if fcntl is not None:
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+        elif msvcrt is not None:
+            if lock_path.stat().st_size == 0:
+                lock_file.close()
+                with lock_path.open("wb") as seed:
+                    seed.write(b"\0")
+                lock_file = lock_path.open("rb")
+            msvcrt.locking(lock_file.fileno(), msvcrt.LK_LOCK, 1)
         yield
     finally:
         if lock_file is not None:
-            fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+            if fcntl is not None:
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+            elif msvcrt is not None:
+                lock_file.seek(0)
+                msvcrt.locking(lock_file.fileno(), msvcrt.LK_UNLCK, 1)
             lock_file.close()
         elif descriptor >= 0:
             os.close(descriptor)

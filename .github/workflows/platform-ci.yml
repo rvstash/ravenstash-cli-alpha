@@ -1,0 +1,116 @@
+name: platform-ci
+
+on:
+  push:
+    branches: [dev]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: platform-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  source:
+    name: source (${{ matrix.name }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Linux x64
+            runner: ubuntu-24.04
+          - name: Linux ARM64
+            runner: ubuntu-24.04-arm
+          - name: macOS Apple Silicon
+            runner: macos-14
+          - name: macOS Intel
+            runner: macos-15-intel
+          - name: Windows x64
+            runner: windows-2022
+          - name: Windows ARM64
+            runner: windows-11-arm
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78
+        with:
+          version: "0.11.24"
+          enable-cache: false
+      - name: Test source on the native platform
+        shell: bash
+        run: |
+          uv sync --frozen --python 3.14 --group release
+          uv run pytest
+          uv run ruff format --check rvs tests packaging/repository packaging/scripts
+          uv run ruff check rvs tests packaging/repository packaging/scripts
+          uv run pyright
+      - name: Build and smoke-test native bundle
+        shell: bash
+        run: |
+          uv run python packaging/scripts/build_portable.py
+          bundle="$(find build/release -mindepth 1 -maxdepth 1 -type d -name 'rvs-v*' -print -quit)"
+          uv run python packaging/scripts/smoke_portable.py "$bundle"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: native-${{ matrix.name }}-${{ github.sha }}
+          path: dist/release/rvs-v*
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
+
+  alpine:
+    name: Alpine musl (${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+      - name: Build and smoke-test musl bundle
+        run: |
+          docker run --rm \
+            --volume "$PWD:/workspace" \
+            --workdir /workspace \
+            python@sha256:c6ead215bfd31f1e433d968853b7a769989117115b728874824e6c0a27cb96fc \
+            /bin/sh -euc '
+              apk add --no-cache binutils build-base libffi-dev
+              pip install --no-cache-dir uv==0.11.24
+              export UV_PROJECT_ENVIRONMENT=/tmp/rvs-musl-venv
+              uv sync --frozen --python 3.14 --group release
+              uv run pytest
+              uv run python packaging/scripts/build_portable.py
+              bundle="$(find build/release -mindepth 1 -maxdepth 1 -type d -name "rvs-v*" -print -quit)"
+              uv run python packaging/scripts/smoke_portable.py "$bundle"
+            '
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: native-Linux-musl-${{ matrix.arch }}-${{ github.sha }}
+          path: dist/release/rvs-v*
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
+
+  nixos:
+    name: NixOS source and package
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+      - uses: cachix/install-nix-action@526118121621777ccd86f79b04685a9319637641
+      - name: Evaluate all targets and build the native Nix package
+        run: |
+          nix flake show --all-systems --no-write-lock-file
+          nix flake check --no-write-lock-file

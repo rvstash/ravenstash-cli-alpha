@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import shutil
 from typing import TYPE_CHECKING
 
@@ -15,7 +16,7 @@ def _managed_node_dir() -> Path | None:
     from .selection import selected_version
 
     base = find(selected_version("node") or "")
-    return (base / "bin") if base else None
+    return (base if os.name == "nt" else base / "bin") if base else None
 
 
 def _managed_python_dir() -> Path | None:
@@ -23,7 +24,7 @@ def _managed_python_dir() -> Path | None:
     from .selection import selected_version
 
     base = find(selected_version("python") or "")
-    return (base / "bin") if base else None
+    return (base if os.name == "nt" else base / "bin") if base else None
 
 
 def resolve(name: str) -> str | None:
@@ -31,15 +32,27 @@ def resolve(name: str) -> str | None:
     if name in ("npm", "npx", "node"):
         node_dir = _managed_node_dir()
         if node_dir:
-            candidate = node_dir / name
-            if candidate.exists():
-                return str(candidate)
+            candidates = (f"{name}.cmd", f"{name}.exe") if os.name == "nt" else (name,)
+            for candidate_name in candidates:
+                candidate = node_dir / candidate_name
+                if candidate.exists():
+                    return str(candidate)
 
     if name in ("pip", "pip3", "python", "python3"):
         py_dir = _managed_python_dir()
         if py_dir:
-            for candidate_name in (name, "pip3", "pip", "python3", "python"):
-                candidate = py_dir / candidate_name
+            if os.name == "nt":
+                candidates = (
+                    (py_dir / "python.exe",)
+                    if name in {"python", "python3"}
+                    else (py_dir / "Scripts" / "pip.exe", py_dir / "pip.exe")
+                )
+            else:
+                candidates = tuple(
+                    py_dir / candidate_name
+                    for candidate_name in (name, "pip3", "pip", "python3", "python")
+                )
+            for candidate in candidates:
                 if candidate.exists():
                     return str(candidate)
 

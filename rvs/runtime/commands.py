@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import platform
+import os
 import shutil
 from pathlib import Path
 
@@ -12,7 +12,7 @@ from .. import output
 from . import java as java_rt
 from . import node as node_rt
 from . import python as python_rt
-from ._install import ENV_FILE, is_debian, write_env_file, write_shim
+from ._install import ENV_FILE, is_debian, runtime_platform, write_env_file, write_shim
 from .selection import selected_version
 
 
@@ -23,11 +23,6 @@ app = typer.Typer(
 )
 
 _KINDS = ("python", "node", "java")
-
-
-def _require_supported_platform() -> None:
-    if platform.system().lower() != "linux":
-        output.fatal("rvs runtime install currently supports Linux only.")
 
 
 def _finder(kind: str):
@@ -56,9 +51,10 @@ def _installer(kind: str):
 
 def _refresh_shims(kind: str, base: Path) -> None:
     """Replace legacy static shims with project-aware dynamic shims."""
-    bin_dir = base / "bin"
+    windows = os.name == "nt"
+    bin_dir = base if windows and kind in {"python", "node"} else base / "bin"
     if kind == "python":
-        python3 = bin_dir / "python3"
+        python3 = bin_dir / ("python.exe" if windows else "python3")
         if not python3.exists():
             candidates = sorted(bin_dir.glob("python3.*"))
             if candidates:
@@ -79,7 +75,10 @@ def _refresh_shims(kind: str, base: Path) -> None:
         "java": ("java", "javac", "jar", "javadoc"),
     }[kind]
     for executable in executables:
-        target = bin_dir / executable
+        target_name = executable
+        if windows:
+            target_name += ".cmd" if kind == "node" and executable in {"npm", "npx"} else ".exe"
+        target = bin_dir / target_name
         if target.exists():
             write_shim(executable, target, runtime_kind=kind)
 
@@ -102,8 +101,8 @@ def install(
     if runtime not in _KINDS:
         output.fatal(f"Unknown runtime '{runtime}'. Choose from: {', '.join(_KINDS)}")
 
-    _require_supported_platform()
-    if not is_debian():
+    target = runtime_platform()
+    if target.system == "linux" and target.libc != "musl" and not is_debian():
         output.warn(
             "This system does not appear to be Debian/Ubuntu based. "
             "Proceeding with portable Linux binaries."
@@ -166,10 +165,11 @@ def which(
     if runtime not in _KINDS:
         output.fatal(f"Unknown runtime '{runtime}'. Choose from: {', '.join(_KINDS)}")
 
+    windows = os.name == "nt"
     default_executable = {
-        "python": "bin/python3",
-        "node": "bin/node",
-        "java": "bin/java",
+        "python": "python.exe" if windows else "bin/python3",
+        "node": "node.exe" if windows else "bin/node",
+        "java": "bin/java.exe" if windows else "bin/java",
     }[runtime]
     requested_version = version or selected_version(runtime) or ""
     base = _finder(runtime)(requested_version)
@@ -179,7 +179,17 @@ def which(
             f"  Install with: rvs runtime install {runtime} {requested_version or '<version>'}"
         )
 
-    binary = base / "bin" / executable if executable else base / default_executable
+    if executable:
+        executable_name = executable
+        if windows:
+            if runtime == "node" and executable in {"npm", "npx"}:
+                executable_name += ".cmd"
+            elif not executable.lower().endswith((".exe", ".cmd")):
+                executable_name += ".exe"
+        executable_root = base if windows and runtime in {"python", "node"} else base / "bin"
+        binary = executable_root / executable_name
+    else:
+        binary = base / default_executable
     output.value(str(binary) if binary.exists() else str(base), key="path")
 
 
@@ -214,7 +224,8 @@ def use(
 def env() -> None:
     """Print the shell snippet that adds rvs runtime shims to PATH."""
     write_env_file()
-    output.value(ENV_FILE.read_text(encoding="utf-8").rstrip("\n"), key="configuration")
+    environment_file = ENV_FILE.with_name("env.ps1") if os.name == "nt" else ENV_FILE
+    output.value(environment_file.read_text(encoding="utf-8").rstrip("\n"), key="configuration")
 
 
 @app.command("setup-shell")
@@ -222,19 +233,39 @@ def setup_shell(
     shell: str | None = typer.Option(
         None,
         "--shell",
-        help="Shell: bash | zsh | fish. Auto-detected from $SHELL if omitted.",
+        help="Shell: bash | zsh | fish | powershell | pwsh. Auto-detected when omitted.",
     ),
 ) -> None:
     """Add rvs's runtime shims to the user's shell startup file."""
-    import os
-
     for kind in _KINDS:
         base = _finder(kind)("")
         if base is not None:
             _refresh_shims(kind, base)
     write_env_file()
     source_line = '. "$HOME/.rvs/env"'
-    detected_shell = shell or Path(os.environ.get("SHELL", "")).name
+    detected_shell = shell or (
+        "pwsh" if os.name == "nt" else Path(os.environ.get("SHELL", "")).name
+    )
+
+    if detected_shell in {"powershell", "pwsh"}:
+        if os.name == "nt":
+            profile_directory = "PowerShell" if detected_shell == "pwsh" else "WindowsPowerShell"
+            profile = (
+                Path.home() / "Documents" / profile_directory / "Microsoft.PowerShell_profile.ps1"
+            )
+        else:
+            profile = Path.home() / ".config" / "powershell" / "Microsoft.PowerShell_profile.ps1"
+        source_line = '. "$HOME/.rvs/env.ps1"'
+        profile.parent.mkdir(parents=True, exist_ok=True)
+        content = profile.read_text(encoding="utf-8") if profile.exists() else ""
+        if source_line not in content:
+            with profile.open("a", encoding="utf-8") as stream:
+                stream.write(f"\n# rvs managed runtimes\n{source_line}\n")
+            output.success(f"Added rvs environment to {profile}")
+        else:
+            output.info(f"Already configured in {profile}")
+        output.info("Restart PowerShell or run: . $HOME/.rvs/env.ps1")
+        return
 
     if detected_shell == "fish":
         fish_rc = Path.home() / ".config" / "fish" / "conf.d" / "rvs.fish"

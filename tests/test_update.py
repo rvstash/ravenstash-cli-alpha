@@ -1,11 +1,8 @@
 from __future__ import annotations
 
+from pathlib import Path
 from types import SimpleNamespace
-from typing import TYPE_CHECKING, Any
-
-
-if TYPE_CHECKING:
-    from pathlib import Path
+from typing import Any
 
 from rvs import update as update_mod
 from rvs.cli import app
@@ -42,11 +39,24 @@ def test_update_does_not_self_replace_non_apt_install(monkeypatch: Any) -> None:
     assert "install.sh" in result.output
 
 
-def test_update_apply_uses_fixed_apt_paths(monkeypatch: Any) -> None:
+def test_apt_source_uses_native_arm64_architecture(monkeypatch: Any) -> None:
+    monkeypatch.setattr(update_mod.platform, "machine", lambda: "aarch64")
+
+    source = update_mod._source_for_channel("v0.12")
+
+    assert "arch=arm64" in source
+    assert update_mod._SOURCE_PATTERN.fullmatch(source.strip())
+
+
+def test_update_apply_uses_fixed_apt_paths(monkeypatch: Any, tmp_path: Path) -> None:
+    assert update_mod._APT_GET == Path("/usr/bin/apt-get")
+    apt_get = tmp_path / "apt-get"
+    apt_get.touch()
+    monkeypatch.setattr(update_mod, "_APT_GET", apt_get)
     monkeypatch.setattr(update_mod, "_apt_versions", lambda: ("0.2.2", "0.3.0"))
     monkeypatch.setattr(update_mod, "_upgrade_available", lambda installed, candidate: True)
     monkeypatch.setattr(update_mod, "_current_channel", lambda: "v0.3")
-    monkeypatch.setattr(update_mod.os, "geteuid", lambda: 0)
+    monkeypatch.setattr(update_mod.os, "geteuid", lambda: 0, raising=False)
     calls: list[list[str]] = []
 
     def fake_run(command: list[str]) -> Any:
@@ -59,8 +69,8 @@ def test_update_apply_uses_fixed_apt_paths(monkeypatch: Any) -> None:
 
     assert result.exit_code == 0
     assert calls == [
-        ["/usr/bin/apt-get", "update"],
-        ["/usr/bin/apt-get", "install", "--only-upgrade", "--yes", "rvs"],
+        [str(apt_get), "update"],
+        [str(apt_get), "install", "--only-upgrade", "--yes", "rvs"],
     ]
 
 

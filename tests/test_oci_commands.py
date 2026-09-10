@@ -171,8 +171,9 @@ def test_docker_uses_exact_ephemeral_helper_without_secret_in_argv(
             assert "RVS_TOKEN" not in env
             broker = Path(env["RVS_OCI_CREDENTIAL_FILE"])
             config = Path(env["DOCKER_CONFIG"]) / "config.json"
-            assert broker.stat().st_mode & 0o077 == 0
-            assert config.stat().st_mode & 0o077 == 0
+            if os.name != "nt":
+                assert broker.stat().st_mode & 0o077 == 0
+                assert config.stat().st_mode & 0o077 == 0
             assert json.loads(config.read_text())["credHelpers"] == {"oci.rvsta.sh": "rvs"}
             assert json.loads(broker.read_text())["username"] == "__token__"
 
@@ -289,6 +290,7 @@ def test_docker_preserves_other_native_credentials_but_replaces_ravenstash(
     }
 
 
+@pytest.mark.skipif(os.name == "nt", reason="Windows os.kill(SIGTERM) terminates the test process")
 def test_native_signal_is_forwarded_with_shell_exit_code_and_secret_cleanup(
     monkeypatch, tmp_path: Path
 ) -> None:

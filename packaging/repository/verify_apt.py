@@ -137,9 +137,15 @@ def verify_distribution(
         fail(f"compatibility channel mismatch for {distribution}")
 
     entries = release_entries(release)
+    architectures = (field(release, "Architectures") or "").split()
+    if not architectures or any(
+        architecture not in {"amd64", "arm64"} for architecture in architectures
+    ):
+        fail(f"unsupported or empty architecture list for {distribution}")
     required = {
-        PurePosixPath("main/binary-amd64/Packages"),
-        PurePosixPath("main/binary-amd64/Packages.gz"),
+        PurePosixPath(f"main/binary-{architecture}/{index}")
+        for architecture in architectures
+        for index in ("Packages", "Packages.gz")
     }
     if not required.issubset(entries):
         fail(f"Release does not cover both package indexes for {distribution}")
@@ -152,34 +158,37 @@ def verify_distribution(
         ):
             fail(f"Release inventory mismatch for {distribution}: {path}")
 
-    packages_file = dist / "main/binary-amd64/Packages"
-    with gzip.open(dist / "main/binary-amd64/Packages.gz", "rt", encoding="utf-8") as stream:
-        if stream.read() != packages_file.read_text(encoding="utf-8"):
-            fail(f"Packages.gz does not reproduce Packages for {distribution}")
-
     listed: set[PurePosixPath] = set()
     required_fields = {"Package", "Version", "Architecture", "Filename", "Size", "SHA256"}
-    for package_data in stanzas(packages_file.read_text(encoding="utf-8")):
-        if missing := required_fields - package_data.keys():
-            fail(f"Packages stanza is missing {sorted(missing)}")
-        path = relative(package_data["Filename"])
-        package = repo.joinpath(*path.parts)
-        expected_digest = package_data["SHA256"].lower()
-        if (
-            package_data["Package"] != "rvs"
-            or not version_matches_channel(package_data["Version"], channel)
-            or path in listed
-            or path.suffix != ".deb"
-            or not package.is_file()
-            or package.stat().st_size != int(package_data["Size"])
-            or digest(package) != expected_digest
-            or f"_{expected_digest[:16]}.deb" not in package.name
-        ):
-            fail(f"package inventory mismatch for {distribution}: {path}")
-        for control_field in ("Package", "Version", "Architecture"):
-            if deb_field(package, control_field) != package_data[control_field]:
-                fail(f"Debian control mismatch for {path}: {control_field}")
-        listed.add(path)
+    for architecture in architectures:
+        packages_file = dist / f"main/binary-{architecture}/Packages"
+        with gzip.open(
+            dist / f"main/binary-{architecture}/Packages.gz", "rt", encoding="utf-8"
+        ) as stream:
+            if stream.read() != packages_file.read_text(encoding="utf-8"):
+                fail(f"Packages.gz does not reproduce Packages for {distribution}/{architecture}")
+        for package_data in stanzas(packages_file.read_text(encoding="utf-8")):
+            if missing := required_fields - package_data.keys():
+                fail(f"Packages stanza is missing {sorted(missing)}")
+            path = relative(package_data["Filename"])
+            package = repo.joinpath(*path.parts)
+            expected_digest = package_data["SHA256"].lower()
+            if (
+                package_data["Package"] != "rvs"
+                or package_data["Architecture"] != architecture
+                or not version_matches_channel(package_data["Version"], channel)
+                or path in listed
+                or path.suffix != ".deb"
+                or not package.is_file()
+                or package.stat().st_size != int(package_data["Size"])
+                or digest(package) != expected_digest
+                or f"_{expected_digest[:16]}.deb" not in package.name
+            ):
+                fail(f"package inventory mismatch for {distribution}: {path}")
+            for control_field in ("Package", "Version", "Architecture"):
+                if deb_field(package, control_field) != package_data[control_field]:
+                    fail(f"Debian control mismatch for {path}: {control_field}")
+            listed.add(path)
     if not listed:
         fail(f"distribution {distribution} contains no packages")
     return listed

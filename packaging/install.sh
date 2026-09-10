@@ -11,8 +11,14 @@ readonly signing_key_url="${repository_url}/ravenstash-rvs.gpg"
 readonly signing_key_fingerprint="3B7C20FC370D1A7C813DF3A2E9679F951AD8BAA0"
 readonly keyring_path="/etc/apt/keyrings/ravenstash-rvs.gpg"
 readonly source_path="/etc/apt/sources.list.d/ravenstash-rvs.list"
-readonly expected_source="deb [arch=amd64 signed-by=${keyring_path}] ${repository_url} ${compatibility_channel} main"
-readonly legacy_source="deb [arch=amd64 signed-by=${keyring_path}] ${repository_url} stable main"
+readonly machine_architecture="$(uname -m)"
+case "$machine_architecture" in
+  x86_64 | amd64) readonly package_architecture="amd64" ;;
+  aarch64 | arm64) readonly package_architecture="arm64" ;;
+  *) readonly package_architecture="unsupported" ;;
+esac
+readonly expected_source="deb [arch=${package_architecture} signed-by=${keyring_path}] ${repository_url} ${compatibility_channel} main"
+readonly legacy_source="deb [arch=${package_architecture} signed-by=${keyring_path}] ${repository_url} stable main"
 readonly repair="${RVS_INSTALL_REPAIR:-0}"
 
 say() {
@@ -85,6 +91,40 @@ verify_signing_key() {
   fi
 }
 
+download_release_asset() {
+  local release_url="$1"
+  local asset_name="$2"
+  local destination="$3"
+  if [[ -z "${RVS_GITHUB_TOKEN:-}" ]]; then
+    curl --proto '=https' --proto-redir '=https' --tlsv1.2 -fsSL \
+      "${release_url}/${asset_name}" -o "$destination"
+    return
+  fi
+  local release_api asset_api auth_header
+  auth_header="${destination}.github-auth"
+  (umask 077; printf 'Authorization: Bearer %s\n' "$RVS_GITHUB_TOKEN" > "$auth_header")
+  release_api="https://api.github.com/repos/rvstash/ravenstash-cli-alpha/releases/tags/v${release_version}"
+  asset_api="$(
+    curl --proto '=https' --proto-redir '=https' --tlsv1.2 -fsSL \
+      -H "@${auth_header}" \
+      -H 'Accept: application/vnd.github+json' \
+      "$release_api" \
+      | awk -v expected="\"name\": \"${asset_name}\"" '
+          /"url": "https:\/\/api.github.com\/repos\/.*\/releases\/assets\// {
+            url=$2; gsub(/[",]/, "", url)
+          }
+          index($0, expected) { print url; exit }
+        '
+  )"
+  [[ "$asset_api" == https://api.github.com/repos/rvstash/ravenstash-cli-alpha/releases/assets/* ]] \
+    || fail "private release does not contain ${asset_name}"
+  curl --proto '=https' --proto-redir '=https' --tlsv1.2 -fsSL \
+    -H "@${auth_header}" \
+    -H 'Accept: application/octet-stream' \
+    "$asset_api" -o "$destination"
+  rm -f -- "$auth_header"
+}
+
 reconcile_legacy_portable_links() {
   [[ -n "${HOME:-}" && "$HOME" == /* && "$HOME" != "/" ]] || return
   local bin_directory="${HOME}/.local/bin"
@@ -113,8 +153,9 @@ install_apt_package() {
   for command in apt-get awk curl dpkg install ln mktemp readlink tee; do
     command -v "$command" >/dev/null 2>&1 || fail "required command not found: ${command}"
   done
-  if [[ "$(dpkg --print-architecture)" != "amd64" ]]; then
-    fail "the Ravenstash APT repository currently supports amd64 Linux only"
+  if [[ "$(dpkg --print-architecture)" != "$package_architecture" ]] \
+    || [[ "$package_architecture" == "unsupported" ]]; then
+    fail "the Ravenstash APT repository does not support architecture ${machine_architecture}"
   fi
   if ! command -v gpg >/dev/null 2>&1; then
     say "installing signing-key verification tools"
@@ -163,12 +204,16 @@ install_apt_package() {
 
 require_portable_tools() {
   if command -v gpg >/dev/null 2>&1 \
-    && command -v sha256sum >/dev/null 2>&1 \
+    && { command -v sha256sum >/dev/null 2>&1 || command -v shasum >/dev/null 2>&1; } \
     && command -v tar >/dev/null 2>&1; then
     return
   fi
   say "installing portable archive verification tools"
-  if command -v dnf >/dev/null 2>&1; then
+  if [[ "$(uname -s)" == "Darwin" ]]; then
+    fail "GnuPG is required to authenticate rvs releases; install it with: brew install gnupg"
+  elif command -v apk >/dev/null 2>&1; then
+    as_root apk add --no-cache ca-certificates coreutils gnupg tar
+  elif command -v dnf >/dev/null 2>&1; then
     local rpm_packages=(ca-certificates gzip tar)
     command -v sha256sum >/dev/null 2>&1 || rpm_packages+=(coreutils)
     if ! command -v gpg >/dev/null 2>&1; then
@@ -197,13 +242,25 @@ require_portable_tools() {
   command -v gpg >/dev/null 2>&1 || fail "GnuPG installation completed but gpg is unavailable"
 }
 
+verify_archive_checksum() {
+  local expected_line="$1"
+  local directory="$2"
+  if command -v sha256sum >/dev/null 2>&1; then
+    printf '%s\n' "$expected_line" | (cd "$directory" && sha256sum --check --strict - >/dev/null)
+  else
+    local expected filename actual
+    expected="${expected_line%% *}"
+    filename="${expected_line##* }"
+    actual="$(shasum -a 256 "${directory}/${filename}" | awk '{print $1}')"
+    [[ "$actual" == "$expected" ]]
+  fi
+}
+
 portable_architecture() {
-  case "$(uname -m)" in
+  case "$machine_architecture" in
     x86_64 | amd64) printf 'amd64\n' ;;
-    aarch64 | arm64)
-      fail "Linux arm64 artifacts are not published yet; use RVS_TOKEN with a supported runner or build from source"
-      ;;
-    *) fail "unsupported CPU architecture: $(uname -m)" ;;
+    aarch64 | arm64) printf 'arm64\n' ;;
+    *) fail "unsupported CPU architecture: ${machine_architecture}" ;;
   esac
 }
 
@@ -230,25 +287,36 @@ install_portable_archive() {
   local temporary_directory="$1"
   local architecture
   architecture="$(portable_architecture)"
-  require_glibc_228
+  local system_name
+  case "$(uname -s)" in
+    Linux)
+      if getconf GNU_LIBC_VERSION >/dev/null 2>&1; then
+        require_glibc_228
+        system_name="linux"
+      else
+        ldd --version 2>&1 | grep -qi musl \
+          || fail "could not identify a supported Linux libc"
+        system_name="linux-musl"
+      fi
+      ;;
+    Darwin) system_name="macos" ;;
+    *) fail "this installer supports Linux and macOS; use install.ps1 on Windows" ;;
+  esac
   require_portable_tools
-  for command in awk curl gpg install mktemp sha256sum tar; do
+  for command in awk curl gpg install mktemp tar; do
     command -v "$command" >/dev/null 2>&1 || fail "required command not found: ${command}"
   done
 
-  local archive_name="rvs-v${release_version}-linux-${architecture}.tar.gz"
+  local archive_name="rvs-v${release_version}-${system_name}-${architecture}.tar.gz"
   local checksums_name="rvs-v${release_version}-checksums.txt"
   local signature_name="${checksums_name}.asc"
   local release_url="${github_release_url}/v${release_version}"
   local temporary_key="${temporary_directory}/ravenstash-rvs.gpg"
 
   say "downloading the signed portable rvs ${release_version} archive"
-  curl --proto '=https' --proto-redir '=https' --tlsv1.2 -fsSL \
-    "${release_url}/${archive_name}" -o "${temporary_directory}/${archive_name}"
-  curl --proto '=https' --proto-redir '=https' --tlsv1.2 -fsSL \
-    "${release_url}/${checksums_name}" -o "${temporary_directory}/${checksums_name}"
-  curl --proto '=https' --proto-redir '=https' --tlsv1.2 -fsSL \
-    "${release_url}/${signature_name}" -o "${temporary_directory}/${signature_name}"
+  download_release_asset "$release_url" "$archive_name" "${temporary_directory}/${archive_name}"
+  download_release_asset "$release_url" "$checksums_name" "${temporary_directory}/${checksums_name}"
+  download_release_asset "$release_url" "$signature_name" "${temporary_directory}/${signature_name}"
   curl --proto '=https' --proto-redir '=https' --tlsv1.2 -fsSL \
     "$signing_key_url" -o "$temporary_key"
   verify_signing_key "$temporary_key"
@@ -266,8 +334,7 @@ install_portable_archive() {
     awk -v filename="$archive_name" '$2 == filename { print; found = 1 } END { if (!found) exit 1 }' \
       "${temporary_directory}/${checksums_name}"
   )" || fail "the signed checksum inventory does not contain ${archive_name}"
-  printf '%s\n' "$expected_checksum" \
-    | (cd "$temporary_directory" && sha256sum --check --strict - >/dev/null) \
+  verify_archive_checksum "$expected_checksum" "$temporary_directory" \
     || fail "the portable archive checksum is invalid"
 
   local install_root bin_directory install_directory
@@ -294,7 +361,7 @@ install_portable_archive() {
 
   local extracted="${temporary_directory}/extracted"
   mkdir -p "$extracted"
-  local archive_prefix="rvs-v${release_version}-linux-${architecture}"
+  local archive_prefix="rvs-v${release_version}-${system_name}-${architecture}"
   while IFS= read -r member; do
     case "$member" in
       "$archive_prefix" | "$archive_prefix"/*) ;;
@@ -334,19 +401,23 @@ install_portable_archive() {
   fi
 }
 
-[[ "$(uname -s)" == "Linux" ]] || fail "this installer currently supports Linux only"
-if [[ -r /etc/os-release ]]; then
+case "$(uname -s)" in
+  Linux | Darwin) ;;
+  *) fail "this installer supports Linux and macOS; use install.ps1 on Windows" ;;
+esac
+if [[ "$(uname -s)" == "Linux" && -r /etc/os-release ]]; then
   # shellcheck disable=SC1091
   source /etc/os-release
 fi
 if [[ "${ID:-}" == "nixos" ]]; then
-  fail "NixOS needs a native Nix package because standard glibc loader paths are unavailable"
+  fail "install rvs on NixOS with: nix profile install github:rvstash/ravenstash-cli-alpha/v${release_version}"
 fi
 
 temporary_directory="$(mktemp -d)"
 trap 'rm -rf -- "$temporary_directory"' EXIT
 
-if command -v apt-get >/dev/null 2>&1 \
+if [[ "$(uname -s)" == "Linux" ]] \
+  && command -v apt-get >/dev/null 2>&1 \
   && command -v dpkg >/dev/null 2>&1 \
   && { [[ -e /etc/debian_version ]] || has_os_family debian || has_os_family ubuntu; }; then
   install_apt_package "$temporary_directory"

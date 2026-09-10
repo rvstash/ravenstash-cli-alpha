@@ -558,38 +558,46 @@ used as the source for the temporary credential overlay, never as a way to bypas
 it. Unknown value flags can use `--option=value`; unknown bare flags are rejected
 rather than guessing which following operand is a chart.
 
-## Installation on Linux / WSL
+## Installation
 
 The supported end-user install path is a signed self-contained distribution,
 not `pip install`. The CLI embeds Python 3.14; it does not use the system Python.
 User config, credentials, and managed runtimes stay in `~/.rvs`.
 
-Install the current recommended Linux compatibility channel:
+Install the current recommended compatibility channel on Linux, WSL, or macOS:
 
 ```bash
 curl -fsSL https://ravenstash.com/install.sh | bash
 ```
 
-On Debian, Ubuntu, WSL, and derivatives such as Linux Mint and Pop!_OS, the
-installer verifies the published APT signing-key fingerprint, configures the
-signed Ravenstash APT channel, and installs the system package. On other
-`amd64` distributions with glibc 2.28 or newer—including current Fedora,
-RHEL-compatible, Amazon Linux, and openSUSE systems—it verifies a detached
-OpenPGP signature and exact SHA-256 digest before installing the portable bundle
-under `~/.local/share/rvs` and linking commands into `~/.local/bin`.
+On Windows PowerShell:
 
-The current portable artifact is `amd64`/glibc only. Linux `arm64` and
-Alpine/musl are detected and rejected with an explicit diagnostic rather than
-attempting to execute an incompatible binary. They remain release-matrix gaps,
-not claimed support. Review the installer source at
+```powershell
+irm https://ravenstash.com/install.ps1 | iex
+```
+
+During the private alpha, set `RVS_GITHUB_TOKEN` to a read-only token for this
+repository before running either command. Public releases do not require it.
+
+Debian, Ubuntu, WSL, and derivatives use the signed APT channel. Other Linux
+systems and macOS use a portable archive authenticated by its OpenPGP-signed
+checksum inventory. Native artifacts cover Linux glibc and musl, macOS, and
+Windows on both x86-64 and ARM64. macOS release executables are signed and
+notarized; Windows release executables carry Authenticode signatures. Review the installer source at
 <https://ravenstash.com/install.sh> before running it if required by your
 environment. Set `RVS_INSTALL_SCOPE=system` for `/opt/rvs` plus
 `/usr/local/bin`; the default portable install is rootless and per-user.
 
+Nix users install the versioned flake:
+
+```bash
+nix profile install github:rvstash/ravenstash-cli-alpha/v0.12.0
+```
+
 Direct `.deb` artifacts are also published for early testing:
 
 ```bash
-sudo apt install ./rvs_<version>_amd64.deb
+sudo apt install ./rvs_<version>_<architecture>.deb
 ```
 
 APT remains the update authority for Debian-family package installs:
@@ -607,9 +615,9 @@ Starting with `1.0`, the major version is the boundary (`v1`, `v2`, and so on).
 The CLI authenticates the signed channel manifest before offering or applying a
 channel change. It never downloads over and replaces its own executable.
 
-Portable installations are updated by rerunning the signed installer. The
-current `rvs update` and `rvs upgrade` commands deliberately modify only a
-recognized Ravenstash APT installation.
+Portable installations are updated by rerunning the signed installer. APT remains
+the in-CLI update authority; package-manager manifests for Homebrew, WinGet, and
+Nix must preserve the same compatibility-channel boundary before publication.
 
 WSL/headless/server note: `RVS_TOKEN` works without extra setup and is the
 recommended CI path. Interactive WSL users without Secret Service or `pass` can
@@ -621,7 +629,7 @@ passphrase is recommended, and shorter accepted passphrases display a warning.
 
 ## Release packaging
 
-Linux package scaffolding lives under `packaging/`. From this folder:
+Cross-platform package scaffolding lives under `packaging/`. From this folder:
 
 ```bash
 packaging/scripts/build-release-artifacts.sh
@@ -633,8 +641,9 @@ The canonical compatibility build runs inside the pinned Ubuntu 20.04 builder:
 packaging/scripts/build-in-ubuntu20.sh
 ```
 
-That builds the Python 3.14 PyInstaller bundle, Debian package, tarball,
-CycloneDX SBOM, and checksum file.
+That builds the Python 3.14 Linux PyInstaller bundle, Debian package, tarball,
+CycloneDX SBOM, and checksum file. Native macOS, Windows, and musl builders run
+in the platform and release workflows and feed one attested artifact inventory.
 See [`docs/linux-compatibility.md`](docs/linux-compatibility.md) for the distro,
 installer, headless, desktop-keyring, and known-gap release matrix.
 APT repository metadata is generated and signed separately:

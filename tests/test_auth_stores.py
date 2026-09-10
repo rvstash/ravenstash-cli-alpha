@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import subprocess
 from typing import TYPE_CHECKING, Any
 
@@ -58,14 +59,17 @@ def test_plaintext_store_requires_private_file_and_round_trips(monkeypatch, tmp_
     plaintext_store.set("default", "plain-secret")
 
     assert plaintext_store.get("default") == "plain-secret"
-    assert plaintext_store.path().stat().st_mode & 0o777 == 0o600
+    if os.name != "nt":
+        assert plaintext_store.path().stat().st_mode & 0o777 == 0o600
     assert "plain-secret" in plaintext_store.path().read_text(encoding="utf-8")
 
-    plaintext_store.path().chmod(0o644)
-    with pytest.raises(plaintext_store.PlaintextStoreError, match="unsafe permissions"):
-        plaintext_store.get("default")
+    if os.name != "nt":
+        plaintext_store.path().chmod(0o644)
+        with pytest.raises(plaintext_store.PlaintextStoreError, match="unsafe permissions"):
+            plaintext_store.get("default")
 
 
+@pytest.mark.skipif(os.name == "nt", reason="session-agent vault is POSIX-only")
 def test_encrypted_vault_round_trip_and_lock(monkeypatch, tmp_path: Path) -> None:
     from rvs import config as cfg_mod
 

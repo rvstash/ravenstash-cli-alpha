@@ -11,12 +11,13 @@ const SECURITY_HEADERS = {
   "X-Robots-Tag": "noindex, nofollow",
 };
 
-export function handleRequest(request, installer) {
+export function handleRequest(request, installers) {
   const url = new URL(request.url);
+  const installer = installers[url.pathname];
   if (
     url.protocol !== "https:" ||
     url.hostname !== "ravenstash.com" ||
-    url.pathname !== "/install.sh"
+    installer === undefined
   ) {
     return new Response("Not found\n", { status: 404 });
   }

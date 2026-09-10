@@ -57,6 +57,8 @@ jobs:
           test "$project_version" = "$VERSION"
           grep -Fx "readonly release_version=\"${VERSION}\"" packaging/install.sh
           grep -Fx "readonly compatibility_channel=\"${CHANNEL}\"" packaging/install.sh
+          grep -Fx "\$ReleaseVersion = \"${VERSION}\"" packaging/install.ps1
+          grep -Fx "\$CompatibilityChannel = \"${CHANNEL}\"" packaging/install.ps1
           test -z "$(git status --porcelain)"
 
       - name: Build and test in the pinned Ubuntu 20.04 environment
@@ -92,25 +94,223 @@ jobs:
             sha256sum source-identity.txt >> "rvs-v${VERSION}-checksums.txt"
           )
 
-      - name: Install pinned Sigstore verifier
-        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6
-        with:
-          cosign-release: v3.0.6
-
-      - name: Sign the complete artifact inventory with GitHub OIDC
-        env:
-          VERSION: ${{ inputs.version }}
-        working-directory: dist/release
-        run: |
-          cosign sign-blob --yes \
-            --bundle "rvs-v${VERSION}-checksums.sigstore.json" \
-            "rvs-v${VERSION}-checksums.txt"
-
-      - name: Upload immutable build handoff
+      - name: Upload Linux amd64 build handoff
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
-          name: rvs-build-${{ inputs.source_sha }}
+          name: rvs-platform-linux-amd64-${{ inputs.source_sha }}
           path: dist/release/*
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 1
+
+  build-native:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux-arm64
+            runner: ubuntu-24.04-arm
+            build: packaging/scripts/build-in-ubuntu20.sh
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          ref: ${{ inputs.source_sha }}
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78
+        if: ${{ !startsWith(matrix.name, 'linux-') }}
+        with:
+          version: "0.11.24"
+          enable-cache: false
+      - name: Resolve native build dependencies
+        if: ${{ !startsWith(matrix.name, 'linux-') }}
+        shell: bash
+        run: uv sync --frozen --python 3.14 --group release
+      - name: Build exact native target
+        shell: bash
+        run: ${{ matrix.build }}
+      - name: Install and exercise the ARM64 Debian package
+        run: |
+          docker run --rm \
+            --volume "$PWD/dist/release:/release:ro" \
+            ubuntu@sha256:8feb4d8ca5354def3d8fce243717141ce31e2c428701f6682bd2fafe15388214 \
+            /bin/bash -euc '
+              apt-get update
+              apt-get install --yes /release/rvs_*_arm64.deb
+              test "$(dpkg --print-architecture)" = arm64
+              rvs --version
+              rvs --help >/dev/null
+              ravenstash --version
+              test -e /usr/lib/rvs/_internal/libpython3.14.so.1.0
+            '
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: rvs-platform-${{ matrix.name }}-${{ inputs.source_sha }}
+          path: dist/release/*
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 1
+
+  build-macos:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macos-arm64
+            runner: macos-14
+          - name: macos-amd64
+            runner: macos-15-intel
+    runs-on: ${{ matrix.runner }}
+    environment: macos-signing
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          ref: ${{ inputs.source_sha }}
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78
+        with:
+          version: "0.11.24"
+          enable-cache: false
+      - name: Build, sign, and notarize native macOS bundle
+        env:
+          RVS_APPLE_CERTIFICATE_BASE64: ${{ secrets.RVS_APPLE_CERTIFICATE_BASE64 }}
+          RVS_APPLE_CERTIFICATE_PASSWORD: ${{ secrets.RVS_APPLE_CERTIFICATE_PASSWORD }}
+          RVS_APPLE_SIGNING_IDENTITY: ${{ secrets.RVS_APPLE_SIGNING_IDENTITY }}
+          RVS_APPLE_ID: ${{ secrets.RVS_APPLE_ID }}
+          RVS_APPLE_APP_PASSWORD: ${{ secrets.RVS_APPLE_APP_PASSWORD }}
+          RVS_APPLE_TEAM_ID: ${{ secrets.RVS_APPLE_TEAM_ID }}
+        run: packaging/scripts/build_macos_bundle.sh
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: rvs-platform-${{ matrix.name }}-${{ inputs.source_sha }}
+          path: dist/release/*
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 1
+
+  build-windows:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: windows-amd64
+            runner: windows-2022
+          - name: windows-arm64
+            runner: windows-11-arm
+    runs-on: ${{ matrix.runner }}
+    environment: windows-signing
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          ref: ${{ inputs.source_sha }}
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78
+        with:
+          version: "0.11.24"
+          enable-cache: false
+      - name: Build native Windows bundle
+        shell: pwsh
+        run: |
+          uv sync --frozen --python 3.14 --group release
+          uv run python packaging/scripts/build_portable.py
+      - name: Authenticode-sign and verify Windows launchers
+        shell: pwsh
+        env:
+          RVS_CODESIGN_PFX_BASE64: ${{ secrets.RVS_CODESIGN_PFX_BASE64 }}
+          RVS_CODESIGN_PASSWORD: ${{ secrets.RVS_CODESIGN_PASSWORD }}
+        run: packaging/scripts/sign_windows_bundle.ps1
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: rvs-platform-${{ matrix.name }}-${{ inputs.source_sha }}
+          path: dist/release/*
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 1
+
+  build-musl:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          ref: ${{ inputs.source_sha }}
+          persist-credentials: false
+      - name: Build exact musl target
+        run: |
+          docker run --rm \
+            --volume "$PWD:/workspace" \
+            --workdir /workspace \
+            python@sha256:c6ead215bfd31f1e433d968853b7a769989117115b728874824e6c0a27cb96fc \
+            /bin/sh -euc '
+              apk add --no-cache binutils build-base libffi-dev
+              pip install --no-cache-dir uv==0.11.24
+              export UV_PROJECT_ENVIRONMENT=/tmp/rvs-musl-venv
+              uv sync --frozen --python 3.14 --group release
+              uv run pytest
+              uv run python packaging/scripts/build_portable.py
+            '
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: rvs-platform-linux-musl-${{ matrix.arch }}-${{ inputs.source_sha }}
+          path: dist/release/*
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 1
+
+  assemble:
+    needs: [build, build-native, build-macos, build-windows, build-musl]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          ref: ${{ inputs.source_sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          pattern: rvs-platform-*-${{ inputs.source_sha }}
+          path: build
+          merge-multiple: true
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6
+        with:
+          cosign-release: v3.0.6
+      - name: Assemble and attest the complete native inventory
+        env:
+          SOURCE_SHA: ${{ inputs.source_sha }}
+          VERSION: ${{ inputs.version }}
+          CHANNEL: ${{ inputs.channel }}
+          PROMOTE_CHANNEL: ${{ inputs.promote_channel }}
+        run: |
+          rm -f build/rvs-v*-checksums.txt build/rvs-v*-checksums.sigstore.json build/source-identity.txt
+          install -m 0755 packaging/install.sh build/install.sh
+          install -m 0644 packaging/install.ps1 build/install.ps1
+          python3 packaging/scripts/generate_package_manifests.py \
+            build "$VERSION" "$GITHUB_REPOSITORY"
+          printf 'source_repository=%s\nsource_sha=%s\nversion=%s\nchannel=%s\npromote_channel=%s\n' \
+            "$GITHUB_REPOSITORY" "$SOURCE_SHA" "$VERSION" "$CHANNEL" "$PROMOTE_CHANNEL" \
+            > build/source-identity.txt
+          (
+            cd build
+            find . -maxdepth 1 -type f ! -name '*-checksums.txt' ! -name '*.sigstore.json' \
+              -printf '%f\n' | LC_ALL=C sort | xargs sha256sum > "rvs-v${VERSION}-checksums.txt"
+          )
+          cosign sign-blob --yes \
+            --bundle "build/rvs-v${VERSION}-checksums.sigstore.json" \
+            "build/rvs-v${VERSION}-checksums.txt"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: rvs-build-${{ inputs.source_sha }}
+          path: build/*
           if-no-files-found: error
           compression-level: 0
           retention-days: 1
@@ -159,7 +359,7 @@ jobs:
 
   sign:
     needs:
-      - build
+      - assemble
       - restore
     runs-on: ubuntu-24.04
     environment: apt-signing
@@ -214,6 +414,7 @@ jobs:
           grep -Fx "source_repository=${GITHUB_REPOSITORY}" build/source-identity.txt
           grep -Fx "source_sha=${SOURCE_SHA}" build/source-identity.txt
           test "$(find build -maxdepth 1 -type f -name "rvs_${VERSION}_amd64.deb" | wc -l)" = 1
+          test "$(find build -maxdepth 1 -type f -name "rvs_${VERSION}_arm64.deb" | wc -l)" = 1
           python3 packaging/repository/verify_apt.py \
             prior packaging/repository/keys/ravenstash-rvs.gpg
 
@@ -240,10 +441,20 @@ jobs:
           RVS_APT_GPG_FINGERPRINT="$(tr -d '[:space:]' < packaging/repository/keys/fingerprint.txt)" \
           RVS_APT_GPG_PASSPHRASE_FILE="$passphrase_file" \
           RVS_APT_CHANNEL="$CHANNEL" \
-          RVS_APT_PROMOTE_CHANNEL="$([[ "$PROMOTE_CHANNEL" == "true" ]] && printf 1 || printf 0)" \
+          RVS_APT_PROMOTE_CHANNEL=0 \
             packaging/repository/append_and_sign_apt.sh \
               prior \
               "build/rvs_${VERSION}_amd64.deb" \
+              signed-amd64 \
+              packaging/repository/keys/ravenstash-rvs.gpg
+          RVS_APT_GPG_KEY_ID="$key_id" \
+          RVS_APT_GPG_FINGERPRINT="$(tr -d '[:space:]' < packaging/repository/keys/fingerprint.txt)" \
+          RVS_APT_GPG_PASSPHRASE_FILE="$passphrase_file" \
+          RVS_APT_CHANNEL="$CHANNEL" \
+          RVS_APT_PROMOTE_CHANNEL="$([[ "$PROMOTE_CHANNEL" == "true" ]] && printf 1 || printf 0)" \
+            packaging/repository/append_and_sign_apt.sh \
+              signed-amd64 \
+              "build/rvs_${VERSION}_arm64.deb" \
               signed \
               packaging/repository/keys/ravenstash-rvs.gpg
           install -d -m 0755 portable
@@ -356,10 +567,44 @@ jobs:
               rvs --version
             '
 
+  verify-apt-arm64:
+    needs: publish-apt
+    runs-on: ubuntu-24.04-arm
+    permissions:
+      contents: read
+    steps:
+      - name: Check out repository trust policy
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+      - name: Verify public ARM64 package installation
+        env:
+          EXPECTED_VERSION: ${{ inputs.version }}
+          CHANNEL: ${{ inputs.channel }}
+        run: |
+          docker run --rm \
+            --env EXPECTED_VERSION \
+            --env CHANNEL \
+            --volume "$PWD/packaging/repository/keys/ravenstash-rvs.gpg:/usr/share/keyrings/ravenstash-rvs.gpg:ro" \
+            ubuntu@sha256:8feb4d8ca5354def3d8fce243717141ce31e2c428701f6682bd2fafe15388214 \
+            /bin/bash -euc '
+              apt-get update
+              apt-get install --yes ca-certificates
+              printf "%s\n" \
+                "deb [arch=arm64 signed-by=/usr/share/keyrings/ravenstash-rvs.gpg] https://releases.ravenstash.com/rvs/apt ${CHANNEL} main" \
+                > /etc/apt/sources.list.d/ravenstash-rvs.list
+              apt-get update
+              apt-get install --yes rvs
+              test "$(dpkg --print-architecture)" = arm64
+              test "$(dpkg-query -W -f="\${Version}" rvs)" = "$EXPECTED_VERSION"
+              rvs --version
+            '
+
   deploy-installer:
     needs:
-      - build
+      - assemble
       - publish-apt
+      - verify-apt-arm64
       - publish-github-release
     runs-on: ubuntu-24.04
     environment: installer-delivery
@@ -403,6 +648,7 @@ jobs:
           )
           bash -n release-build/install.sh
           install -m 0644 release-build/install.sh packaging/installer-worker/src/install.sh
+          install -m 0644 release-build/install.ps1 packaging/installer-worker/src/install.ps1
 
       - name: Install and validate the dedicated installer Worker
         working-directory: packaging/installer-worker
@@ -424,6 +670,7 @@ jobs:
         if: inputs.promote_channel
         env:
           EXPECTED_INSTALLER: release-build/install.sh
+          EXPECTED_WINDOWS_INSTALLER: release-build/install.ps1
         run: |
           for attempt in {1..60}; do
             if curl --proto '=https' --proto-redir '=https' --tlsv1.2 \
@@ -437,7 +684,16 @@ jobs:
               && grep -Eiq '^cache-control: no-store' installer-headers.txt \
               && grep -Eiq '^strict-transport-security: max-age=31536000; includeSubDomains' installer-headers.txt \
               && grep -Eiq '^x-content-type-options: nosniff' installer-headers.txt; then
-              exit 0
+              if curl --proto '=https' --proto-redir '=https' --tlsv1.2 \
+                  --max-redirs 0 -fsS \
+                  --dump-header windows-installer-headers.txt \
+                  https://ravenstash.com/install.ps1 \
+                  --output live-install.ps1 \
+                && cmp "$EXPECTED_WINDOWS_INSTALLER" live-install.ps1 \
+                && grep -Eiq '^content-type: text/plain([;[:space:]]|$)' windows-installer-headers.txt \
+                && grep -Eiq '^cache-control: no-store' windows-installer-headers.txt; then
+                exit 0
+              fi
             fi
             if [[ "$attempt" -lt 60 ]]; then
               sleep 5
@@ -452,7 +708,7 @@ jobs:
 
   publish-github-release:
     needs:
-      - build
+      - assemble
       - publish-apt
     runs-on: ubuntu-24.04
     permissions:
@@ -498,9 +754,15 @@ jobs:
     if: ${{ always() }}
     needs:
       - build
+      - build-native
+      - build-macos
+      - build-windows
+      - build-musl
+      - assemble
       - restore
       - sign
       - publish-apt
+      - verify-apt-arm64
       - deploy-installer
       - publish-github-release
     runs-on: ubuntu-24.04

@@ -4,11 +4,12 @@ import test from "node:test";
 import { handleRequest } from "../src/handler.js";
 
 const installer = "#!/usr/bin/env bash\nset -euo pipefail\n";
+const installers = { "/install.sh": installer, "/install.ps1": "# PowerShell\n" };
 
 test("serves the exact installer with security headers", async () => {
   const response = handleRequest(
     new Request("https://ravenstash.com/install.sh?release=current"),
-    installer,
+    installers,
   );
 
   assert.equal(response.status, 200);
@@ -24,7 +25,7 @@ test("serves the exact installer with security headers", async () => {
 test("HEAD returns the same headers without a body", async () => {
   const response = handleRequest(
     new Request("https://ravenstash.com/install.sh", { method: "HEAD" }),
-    installer,
+    installers,
   );
 
   assert.equal(response.status, 200);
@@ -35,19 +36,29 @@ test("HEAD returns the same headers without a body", async () => {
 test("rejects methods and routes outside the exact binding", () => {
   const post = handleRequest(
     new Request("https://ravenstash.com/install.sh", { method: "POST" }),
-    installer,
+    installers,
   );
   const other = handleRequest(
     new Request("https://ravenstash.com/other"),
-    installer,
+    installers,
   );
   const insecure = handleRequest(
     new Request("http://ravenstash.com/install.sh"),
-    installer,
+    installers,
   );
 
   assert.equal(post.status, 405);
   assert.equal(post.headers.get("allow"), "GET, HEAD");
   assert.equal(other.status, 404);
   assert.equal(insecure.status, 404);
+});
+
+test("serves the Windows installer", async () => {
+  const response = handleRequest(
+    new Request("https://ravenstash.com/install.ps1"),
+    installers,
+  );
+
+  assert.equal(response.status, 200);
+  assert.equal(await response.text(), "# PowerShell\n");
 });

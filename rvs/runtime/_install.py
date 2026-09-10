@@ -6,8 +6,11 @@ import hashlib
 import os
 import platform
 import shutil
+import subprocess
 import tarfile
 import tempfile
+import zipfile
+from dataclasses import dataclass
 from pathlib import Path
 
 import httpx
@@ -27,23 +30,49 @@ ENV_FILE = RVS_DIR / "env"  # ~/.rvs/env  (source in shell rc)
 # ── Platform helpers ───────────────────────────────────────────────────────────
 
 
-def check_linux_x64() -> tuple[str, str]:
-    """Abort if not on Linux; return (system, arch) normalised strings.
+@dataclass(frozen=True)
+class RuntimePlatform:
+    system: str
+    arch: str
+    libc: str | None = None
 
-    Returns ``(system, arch)`` where ``arch`` is one of ``"x64"`` or
-    ``"aarch64"``.  Calls :func:`sys.exit` on unsupported platforms.
-    """
+    @property
+    def windows(self) -> bool:
+        return self.system == "windows"
+
+
+def runtime_platform() -> RuntimePlatform:
+    """Return the normalized native runtime target."""
     system = platform.system().lower()
     machine = platform.machine().lower()
-    if system != "linux":
-        output.fatal(f"rvs runtime management is only supported on Linux (got {system}).")
+    system = {"darwin": "macos"}.get(system, system)
+    if system not in {"linux", "macos", "windows"}:
+        output.fatal(f"rvs runtime management is unsupported on {system}.")
     if machine in ("x86_64", "amd64"):
         arch = "x64"
     elif machine in ("aarch64", "arm64"):
         arch = "aarch64"
     else:
         output.fatal(f"Unsupported CPU architecture: {machine}.")
-    return system, arch
+    libc = _linux_libc() if system == "linux" else None
+    return RuntimePlatform(system, arch, "musl" if libc == "musl" else libc)
+
+
+def _linux_libc() -> str:
+    libc = platform.libc_ver()[0].lower()
+    if libc:
+        return libc
+    try:
+        detected = subprocess.run(
+            ["ldd", "--version"],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+    except OSError:
+        return "glibc"
+    details = f"{detected.stdout}\n{detected.stderr}".lower()
+    return "musl" if "musl" in details else "glibc"
 
 
 def is_debian() -> bool:
@@ -127,15 +156,28 @@ def extract(
         extracted_path = tmp_path / "archive"
         extracted_path.mkdir()
         try:
-            with tarfile.open(archive) as tf:
-                members = tf.getmembers()
-                if len(members) > _MAX_ARCHIVE_MEMBERS:
-                    output.fatal("Runtime archive contains too many entries.")
-                extracted_bytes = sum(member.size for member in members if member.isfile())
-                if extracted_bytes > _MAX_EXTRACTED_BYTES:
-                    output.fatal("Runtime archive expands beyond the safety limit.")
-                tf.extractall(extracted_path, members=members, filter="data")
-        except (tarfile.TarError, OSError) as exc:
+            if zipfile.is_zipfile(archive):
+                with zipfile.ZipFile(archive) as zf:
+                    members = zf.infolist()
+                    if len(members) > _MAX_ARCHIVE_MEMBERS:
+                        output.fatal("Runtime archive contains too many entries.")
+                    if sum(member.file_size for member in members) > _MAX_EXTRACTED_BYTES:
+                        output.fatal("Runtime archive expands beyond the safety limit.")
+                    root = extracted_path.resolve()
+                    for member in members:
+                        if not (root / member.filename).resolve().is_relative_to(root):
+                            output.fatal("Runtime archive contains an unsafe path.")
+                    zf.extractall(extracted_path)
+            else:
+                with tarfile.open(archive) as tf:
+                    members = tf.getmembers()
+                    if len(members) > _MAX_ARCHIVE_MEMBERS:
+                        output.fatal("Runtime archive contains too many entries.")
+                    extracted_bytes = sum(member.size for member in members if member.isfile())
+                    if extracted_bytes > _MAX_EXTRACTED_BYTES:
+                        output.fatal("Runtime archive expands beyond the safety limit.")
+                    tf.extractall(extracted_path, members=members, filter="data")
+        except (tarfile.TarError, zipfile.BadZipFile, OSError) as exc:
             output.fatal(f"Runtime archive extraction was rejected: {exc}")
         roots = list(extracted_path.iterdir())
         src = roots[0] if strip_root and len(roots) == 1 and roots[0].is_dir() else extracted_path
@@ -169,17 +211,26 @@ def write_shim(
 ) -> None:
     """Write a shim, resolving project pins dynamically when a kind is supplied."""
     SHIMS_DIR.mkdir(parents=True, exist_ok=True)
-    shim = SHIMS_DIR / name
+    windows = os.name == "nt"
+    shim = SHIMS_DIR / (f"{name}.cmd" if windows else name)
     if runtime_kind:
         version_arg = f' "{version}"' if version else ""
-        script = (
-            "#!/bin/sh\n"
-            f'target="$(rvs runtime which "{runtime_kind}"{version_arg} '
-            f'--executable "{name}")" || exit $?\n'
-            'exec "$target" "$@"\n'
-        )
+        if windows:
+            script = (
+                "@echo off\r\n"
+                f'for /f "delims=" %%i in (\'rvs runtime which "{runtime_kind}"{version_arg} '
+                f'--executable "{name}"\') do set "RVS_RUNTIME_TARGET=%%i"\r\n'
+                '"%RVS_RUNTIME_TARGET%" %*\r\n'
+            )
+        else:
+            script = (
+                "#!/bin/sh\n"
+                f'target="$(rvs runtime which "{runtime_kind}"{version_arg} '
+                f'--executable "{name}")" || exit $?\n'
+                'exec "$target" "$@"\n'
+            )
     else:
-        script = f'#!/bin/sh\nexec "{target}" "$@"\n'
+        script = f'@"{target}" %*\r\n' if windows else f'#!/bin/sh\nexec "{target}" "$@"\n'
     shim.write_text(script, encoding="utf-8")
     shim.chmod(0o755)
 
@@ -196,3 +247,9 @@ def write_env_file() -> None:
         'export PATH="$RVS_HOME/shims:$PATH"\n',
         encoding="utf-8",
     )
+    if os.name == "nt":
+        (RVS_DIR / "env.ps1").write_text(
+            '$env:RVS_HOME = Join-Path $HOME ".rvs"\n'
+            '$env:PATH = "$env:RVS_HOME\\shims;$env:PATH"\n',
+            encoding="utf-8",
+        )

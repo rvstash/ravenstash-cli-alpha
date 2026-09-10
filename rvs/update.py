@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import platform
 import re
 import subprocess
 import tempfile
@@ -31,7 +32,7 @@ _CHANNELS_URL = f"{_REPOSITORY_URL}/channels.json"
 _CHANNELS_SIGNATURE_URL = f"{_CHANNELS_URL}.gpg"
 _LEGACY_CHANNEL = "v0.3"
 _SOURCE_PATTERN = re.compile(
-    r"^deb \[arch=amd64 signed-by=/etc/apt/keyrings/ravenstash-rvs\.gpg\] "
+    r"^deb \[arch=(?:amd64|arm64) signed-by=/etc/apt/keyrings/ravenstash-rvs\.gpg\] "
     r"https://releases\.ravenstash\.com/rvs/apt (?P<channel>stable|v[0-9.]+) main$"
 )
 
@@ -125,8 +126,17 @@ def _current_channel() -> str | None:
 
 def _source_for_channel(channel: str) -> str:
     normalized = normalize_channel(channel)
+    machine = platform.machine().lower()
+    architecture = {
+        "x86_64": "amd64",
+        "amd64": "amd64",
+        "aarch64": "arm64",
+        "arm64": "arm64",
+    }.get(machine)
+    if architecture is None:
+        output.fatal(f"APT updates are unsupported on CPU architecture {machine}.")
     return (
-        "deb [arch=amd64 signed-by=/etc/apt/keyrings/ravenstash-rvs.gpg] "
+        f"deb [arch={architecture} signed-by=/etc/apt/keyrings/ravenstash-rvs.gpg] "
         f"{_REPOSITORY_URL} {normalized} main\n"
     )
 

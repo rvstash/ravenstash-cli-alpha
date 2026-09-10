@@ -1,8 +1,8 @@
-# rvs Linux packaging
+# rvs release packaging
 
-This directory contains the Linux packaging path for the Ravenstash `rvs` CLI.
-The user-facing install paths are a self-contained Debian package and a signed
-portable glibc bundle, not a global Python install.
+This directory contains the cross-platform packaging path for the Ravenstash
+`rvs` CLI. User-facing installs use self-contained native bundles, signed APT
+packages, or the Nix flake rather than a global Python install.
 
 ## Build tools
 
@@ -39,8 +39,12 @@ The generated artifacts are written under `dist/`:
 dist/pyinstaller/rvs/              # frozen onedir bundle
 dist/packages/rvs_<version>_<arch>.deb
 dist/release/rvs-v<version>-linux-<arch>.tar.gz
+dist/release/rvs-v<version>-linux-musl-<arch>.tar.gz
+dist/release/rvs-v<version>-macos-<arch>.tar.gz
+dist/release/rvs-v<version>-windows-<arch>.zip
 dist/release/rvs-v<version>-sbom.cdx.json
 dist/release/rvs-v<version>-checksums.txt
+dist/release/rvs-v<version>-package-manifests.tar.gz
 ```
 
 The frozen bundle and Debian package expose both `rvs` and the long-form
@@ -84,24 +88,31 @@ every major series has one (`v1`, `v2`). Routine APT upgrades never cross that
 boundary. The legacy `stable` suite remains a permanent alias for `v0.3` so the
 initial alpha install cannot later roll into an incompatible release.
 
-The canonical user-facing installer source is `packaging/install.sh`. On a
-Debian-family system it verifies the expected signing-key fingerprint,
+The POSIX user-facing installer source is `packaging/install.sh`; the Windows
+source is `packaging/install.ps1`. On a Debian-family system the shell installer
+verifies the expected signing-key fingerprint,
 configures this APT repository, and installs `rvs`. When replacing an older
 Ravenstash portable installation, it redirects only the installer-owned links in
 `~/.local/bin` to the APT commands so shell `PATH` order cannot keep running the
-old release; unrelated files are preserved and reported. On other glibc `amd64`
-systems it verifies an OpenPGP-signed release inventory plus the archive's exact
-SHA-256 digest and performs a user-local install by default. The same protected
+old release; unrelated files are preserved and reported. On Linux glibc, Linux
+musl, and macOS for amd64 or arm64 it verifies an OpenPGP-signed release inventory
+plus the archive's exact SHA-256 digest and performs a user-local install by default.
+The PowerShell installer selects Windows x64 or ARM64, verifies the release digest
+and Authenticode signature, installs per-user by default, and updates user `PATH`.
+The same protected
 release signer authenticates the APT repository and portable inventory; neither
 path accepts unsigned executable bytes. The build includes the installer in the
 checksummed and attested release artifacts. After the APT repository and GitHub
 release pass their publication gates, the release workflow embeds the exact
 attested bytes in a dedicated
-Cloudflare Worker at `https://ravenstash.com/install.sh`. The Worker does not
+Cloudflare Worker at `https://ravenstash.com/install.sh` and
+`https://ravenstash.com/install.ps1`. The Worker does not
 fetch executable shell code from R2, and the frontend website repository
 contains no installer implementation.
 
-Source CI builds once on the glibc 2.28 compatibility floor and exercises the
+Source CI builds on native Linux amd64/arm64, macOS Intel/Apple Silicon, and
+Windows x64/ARM64 runners. Alpine musl builds run on both native architectures.
+The glibc 2.28 compatibility build also exercises the
 same frozen archive in pinned Ubuntu 22.04/24.04, Debian 12/13, Fedora, Rocky
 Linux 8/9, Amazon Linux 2023, and openSUSE Leap containers. Each headless smoke
 test verifies normal startup, both aliases, `RVS_TOKEN` authentication, and the
@@ -116,6 +127,14 @@ values:
 | --- | --- | --- |
 | secret | `RVS_APT_GPG_PRIVATE_KEY` | ASCII-armored private signing key |
 | secret | `RVS_APT_GPG_PASSPHRASE` | Signing-key passphrase; may be empty |
+| secret | `RVS_APPLE_CERTIFICATE_BASE64` | Base64 Developer ID Application certificate archive |
+| secret | `RVS_APPLE_CERTIFICATE_PASSWORD` | Certificate archive password |
+| secret | `RVS_APPLE_SIGNING_IDENTITY` | Developer ID Application identity |
+| secret | `RVS_APPLE_ID` | Apple notarization account |
+| secret | `RVS_APPLE_APP_PASSWORD` | App-specific notarization password |
+| secret | `RVS_APPLE_TEAM_ID` | Apple developer team ID |
+| secret | `RVS_CODESIGN_PFX_BASE64` | Base64 Windows code-signing certificate archive |
+| secret | `RVS_CODESIGN_PASSWORD` | Windows certificate archive password |
 | secret | `R2_APT_ACCESS_KEY_ID` | Bucket-scoped R2 write credential |
 | secret | `R2_APT_SECRET_ACCESS_KEY` | Bucket-scoped R2 write credential |
 | variable | `R2_APT_ACCOUNT_ID` | Cloudflare account ID |
@@ -129,7 +148,8 @@ remains private. Connecting that custom domain and provisioning the
 bucket-scoped token are infrastructure prerequisites, not responsibilities of
 this source repository.
 
-The `apt-signing`, `apt-storage`, and `installer-delivery` environments keep
+The `macos-signing`, `windows-signing`, `apt-signing`, `apt-storage`, and
+`installer-delivery` environments keep
 their credentials separated. Releases are manual exact-SHA dispatches. The
 built-in token creates a draft against that source commit, populates it once,
 and publishes it. The private integration repository has no publishing

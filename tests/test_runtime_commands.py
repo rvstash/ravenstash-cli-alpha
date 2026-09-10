@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import io
+import os
 import tarfile
 from typing import TYPE_CHECKING
 
@@ -50,9 +51,11 @@ def test_runtime_which_uses_project_pinned_node_version(
     tmp_path: Path,
 ) -> None:
     runtimes_dir = tmp_path / "runtimes"
-    node_bin = runtimes_dir / "node" / "24.14.1" / "bin"
+    node_root = runtimes_dir / "node" / "24.14.1"
+    node_bin = node_root if os.name == "nt" else node_root / "bin"
     node_bin.mkdir(parents=True)
-    (node_bin / "node").write_text("", encoding="utf-8")
+    node_name = "node.exe" if os.name == "nt" else "node"
+    (node_bin / node_name).write_text("", encoding="utf-8")
     (tmp_path / ".node-version").write_text("24\n", encoding="utf-8")
     _point_runtime_dirs(monkeypatch, runtimes_dir)
     monkeypatch.chdir(tmp_path)
@@ -60,7 +63,7 @@ def test_runtime_which_uses_project_pinned_node_version(
     result = runner.invoke(runtime_cmd.app, ["which", "node"])
 
     assert result.exit_code == 0
-    assert result.output.strip() == str(node_bin / "node")
+    assert result.output.strip() == str(node_bin / node_name)
 
 
 def test_runtime_use_writes_marker_for_resolved_full_version(
@@ -81,12 +84,15 @@ def test_runtime_use_writes_marker_for_resolved_full_version(
 
 def test_runtime_use_replaces_legacy_static_shim(monkeypatch, tmp_path: Path) -> None:
     runtimes_dir = tmp_path / "runtimes"
-    node_bin = runtimes_dir / "node" / "24.14.1" / "bin"
+    node_root = runtimes_dir / "node" / "24.14.1"
+    node_bin = node_root if os.name == "nt" else node_root / "bin"
     node_bin.mkdir(parents=True)
-    (node_bin / "node").write_text("", encoding="utf-8")
+    (node_bin / ("node.exe" if os.name == "nt" else "node")).write_text("", encoding="utf-8")
     shims_dir = tmp_path / "shims"
     shims_dir.mkdir()
-    (shims_dir / "node").write_text('#!/bin/sh\nexec /old/node "$@"\n', encoding="utf-8")
+    (shims_dir / ("node.cmd" if os.name == "nt" else "node")).write_text(
+        '#!/bin/sh\nexec /old/node "$@"\n', encoding="utf-8"
+    )
     _point_runtime_dirs(monkeypatch, runtimes_dir)
     monkeypatch.setattr(_install, "SHIMS_DIR", shims_dir)
     monkeypatch.chdir(tmp_path)
@@ -94,7 +100,7 @@ def test_runtime_use_replaces_legacy_static_shim(monkeypatch, tmp_path: Path) ->
     result = runner.invoke(runtime_cmd.app, ["use", "node", "24"])
 
     assert result.exit_code == 0
-    shim = (shims_dir / "node").read_text(encoding="utf-8")
+    shim = (shims_dir / ("node.cmd" if os.name == "nt" else "node")).read_text(encoding="utf-8")
     assert 'rvs runtime which "node" --executable "node"' in shim
 
 
@@ -123,9 +129,15 @@ def test_runtime_install_rejects_unknown_kind() -> None:
 
 def test_runtime_env_uses_patched_env_file(monkeypatch, tmp_path: Path) -> None:
     env_file = tmp_path / "env"
+    rendered_file = env_file.with_name("env.ps1") if os.name == "nt" else env_file
+    rendered = (
+        '$env:RVS_HOME = Join-Path $HOME ".rvs"\n'
+        if os.name == "nt"
+        else "export RVS_HOME=/tmp/rvs\n"
+    )
 
     def write_fake_env() -> None:
-        env_file.write_text("export RVS_HOME=/tmp/rvs\n", encoding="utf-8")
+        rendered_file.write_text(rendered, encoding="utf-8")
 
     monkeypatch.setattr(runtime_cmd, "ENV_FILE", env_file)
     monkeypatch.setattr(runtime_cmd, "write_env_file", write_fake_env)
@@ -133,7 +145,7 @@ def test_runtime_env_uses_patched_env_file(monkeypatch, tmp_path: Path) -> None:
     result = runner.invoke(runtime_cmd.app, ["env"])
 
     assert result.exit_code == 0
-    assert result.output == "export RVS_HOME=/tmp/rvs\n"
+    assert result.output == rendered
 
 
 def test_runtime_doctor_reports_managed_and_system_paths(monkeypatch, tmp_path: Path) -> None:
@@ -168,9 +180,15 @@ def test_write_shim_and_env_file_use_configured_rvs_dirs(monkeypatch, tmp_path: 
     _install.write_shim("python3", tmp_path / "python3")
     _install.write_env_file()
 
-    shim = shims_dir / "python3"
-    assert shim.read_text(encoding="utf-8") == f'#!/bin/sh\nexec "{tmp_path / "python3"}" "$@"\n'
-    assert shim.stat().st_mode & 0o755 == 0o755
+    shim = shims_dir / ("python3.cmd" if os.name == "nt" else "python3")
+    expected = (
+        f'@"{tmp_path / "python3"}" %*\n'
+        if os.name == "nt"
+        else f'#!/bin/sh\nexec "{tmp_path / "python3"}" "$@"\n'
+    )
+    assert shim.read_text(encoding="utf-8") == expected
+    if os.name != "nt":
+        assert shim.stat().st_mode & 0o755 == 0o755
     assert 'export RVS_HOME="$HOME/.rvs"' in env_file.read_text(encoding="utf-8")
 
 
@@ -184,9 +202,9 @@ def test_runtime_shim_resolves_project_pin_dynamically(monkeypatch, tmp_path: Pa
         runtime_kind="node",
     )
 
-    shim = (shims_dir / "npm").read_text(encoding="utf-8")
+    shim = (shims_dir / ("npm.cmd" if os.name == "nt" else "npm")).read_text(encoding="utf-8")
     assert 'rvs runtime which "node" --executable "npm"' in shim
-    assert 'exec "$target" "$@"' in shim
+    assert ("%RVS_RUNTIME_TARGET%" if os.name == "nt" else 'exec "$target" "$@"') in shim
 
 
 def test_extract_rejects_parent_path_and_leaves_no_destination(tmp_path: Path) -> None:
@@ -251,3 +269,17 @@ def test_download_accepts_matching_checksum(httpx_mock, tmp_path: Path) -> None:
     )
 
     assert destination.read_bytes() == content
+
+
+def test_temurin_metadata_uses_supported_latest_assets_endpoint(httpx_mock) -> None:
+    url = "https://api.adoptium.net/v3/assets/latest/21/hotspot"
+    httpx_mock.add_response(
+        url=(
+            f"{url}?architecture=aarch64&image_type=jdk&jvm_impl=hotspot&os=windows&vendor=eclipse"
+        ),
+        json=[{"version": {"semver": "21.0.9+10"}}],
+    )
+
+    release = java_rt._latest_release(21, "aarch64", "windows")
+
+    assert release["version"]["semver"] == "21.0.9+10"

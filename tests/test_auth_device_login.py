@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import threading
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -866,7 +867,8 @@ def test_ambiguous_refresh_keeps_operation_across_invocations(monkeypatch, tmp_p
     assert auth_mod.refresh_expiring_credential("default") is None
     pending = list(config_dir.glob("*.pending.json"))
     assert len(pending) == 1
-    assert pending[0].stat().st_mode & 0o777 == 0o600
+    if os.name != "nt":
+        assert pending[0].stat().st_mode & 0o777 == 0o600
     metadata = pending[0].read_text()
     assert "old-refresh" not in metadata
     operation_id = json.loads(metadata)["operation_id"]

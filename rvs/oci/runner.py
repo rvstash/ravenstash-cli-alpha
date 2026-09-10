@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import shutil
 import signal
 import subprocess
 import tempfile
@@ -421,7 +422,14 @@ def run(tool: OciTool, argv: list[str], options: OciOptions) -> None:
             for name in ("contexts", "cli-plugins"):
                 original = source.parent / name
                 if original.is_dir():
-                    (temp_dir / name).symlink_to(original.absolute(), target_is_directory=True)
+                    destination = temp_dir / name
+                    try:
+                        destination.symlink_to(original.absolute(), target_is_directory=True)
+                    except OSError:
+                        # Windows commonly denies unprivileged directory symlinks.
+                        # These trees contain public context metadata/plugins; secrets
+                        # remain in the generated credential overlay.
+                        shutil.copytree(original, destination)
         env = child_environment(
             {
                 "DOCKER_CONFIG": str(temp_dir),
@@ -450,7 +458,11 @@ def _run_process(argv: list[str], env: dict[str, str]) -> None:
     process = subprocess.Popen(argv, env=env)
     forwarded_signals = tuple(
         candidate
-        for candidate in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP)
+        for candidate in (
+            getattr(signal, "SIGINT", None),
+            getattr(signal, "SIGTERM", None),
+            getattr(signal, "SIGHUP", None),
+        )
         if candidate is not None
     )
     previous_handlers = {signum: signal.getsignal(signum) for signum in forwarded_signals}

@@ -8,10 +8,12 @@ initial commit rather than this repository's Git history.
 
 ## Trust boundaries
 
-The release jobs use three GitHub environments:
+The release jobs use five GitHub environments:
 
 | Environment | Credential scope |
 | --- | --- |
+| `macos-signing` | Apple signing and notarization credentials only |
+| `windows-signing` | Windows Authenticode credentials only |
 | `apt-signing` | APT private key and passphrase only |
 | `apt-storage` | Bucket-scoped R2 write key and account ID only |
 | `installer-delivery` | Cloudflare Worker deploy token and account ID only |
@@ -37,18 +39,20 @@ not gate a release by holding a publisher token.
 
 ## Alpha release procedure
 
-1. Update `pyproject.toml`, `uv.lock`, `packaging/install.sh`, release notes, and
-   any compatibility documentation in one reviewed commit on `dev`.
+1. Update `pyproject.toml`, `uv.lock`, `packaging/install.sh`,
+   `packaging/install.ps1`, release notes, and any compatibility documentation
+   in one reviewed commit on `dev`.
 2. Run the local checks documented in `AGENTS.md` plus the pinned Ubuntu 20.04
    package build.
 3. Dispatch `.github/workflows/release.yml` from `dev` with the exact 40-character
    commit SHA, exact version, and policy-derived channel. Set `promote_channel`
    only when new installations should select that channel.
-4. The workflow proves the commit is on `dev`, rebuilds and attests it, restores
-   and verifies the entire signed APT tree, signs in an isolated job, publishes
-   `InRelease` last, installs the package on Ubuntu 20.04, optionally deploys the
-   exact attested installer bytes, and publishes the GitHub release against the
-   source commit.
+4. The workflow proves the commit is on `dev`; builds Linux glibc, Linux musl,
+   macOS, and Windows artifacts for amd64/arm64; signs and notarizes the desktop
+   bundles; and attests the complete inventory. It restores and verifies the
+   entire signed APT tree, publishes `InRelease` last, installs both Debian
+   architectures, optionally deploys the exact attested installer bytes, and
+   publishes the GitHub release against the source commit.
 5. Run the private real-environment smoke workflow for QA and staging. Run the
    production target only by explicit human dispatch.
 
@@ -63,7 +67,7 @@ private integration configuration, and every secret. Search the complete tree
 for credentials and internal-only endpoints, run dependency and secret scans,
 then create one MIT-licensed initial commit in the empty public repository.
 
-Recreate the three GitHub environments from Infisical, configure branch and
+Recreate the five GitHub environments from Infisical, configure branch and
 environment protections, enable release immutability, and test a non-promoted
 release before switching the installer and APT provenance identity to the new
 repository. Historical alpha releases remain in the private alpha repository;

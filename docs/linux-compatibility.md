@@ -1,122 +1,85 @@
-# Linux compatibility policy
+# Platform compatibility policy
 
-Ravenstash supports Linux as an explicit set of installation, runtime, and
-credential-storage contracts. “Linux support” does not mean that one glibc
-binary is assumed to work on every kernel, libc, architecture, desktop, and
-headless environment.
+Ravenstash treats platform support as an installation, runtime, credential-storage,
+update, and native-client contract. The first public release is gated on native
+artifacts for the following targets:
 
-## Release gates
-
-CLI 0.10.0 introduces the `v0.10` installation channel and the reviewed DevAPI
-v0 contract. Both `art` and `artifacts` remain supported; the hidden `pkg`
-transition alias is deprecated. Existing installations cross channels explicitly
-with `rvs upgrade --to 0.10`. Linux ABI and credential-storage requirements are
-unchanged.
-
-The glibc `amd64` bundle is built on Ubuntu 20.04 (glibc 2.31) and declares a
-glibc 2.28 runtime floor. Every source change runs that exact frozen archive in
-immutable container images for:
-
-- Ubuntu 22.04, 24.04, and 26.04;
-- Debian 12 and 13;
-- Fedora 43 and 44;
-- Rocky Linux 8 and 9, plus AlmaLinux 10 as the RHEL-compatible major-10 gate;
-- Amazon Linux 2023;
-- openSUSE Leap 15.6 and 16.0; and
-- current Arch Linux.
-
-Ubuntu 20.04 additionally installs and exercises the generated Debian package.
-The matrix intentionally includes the long-lived oldest ABI floor as well as
-supported releases from the preceding four years. Fast-moving distributions
-that have reached end of life are not retained as security-support claims.
-
-The runtime smoke checks the `rvs` and `ravenstash` entry points, the Docker
-credential helper, CLI startup/help, `RVS_TOKEN` in a headless environment, and
-the absence of an accidental plaintext credential fallback.
-
-## Installer selection
-
-| Environment | Selected path | Privilege model |
+| Operating system | Architectures | Artifact and install path |
 | --- | --- | --- |
-| Debian/Ubuntu/WSL and `ID_LIKE` derivatives | Signed APT channel | root or `sudo` |
-| Other `amd64` distributions with glibc 2.28+ | Signed portable archive | user-local by default |
-| Minimal RPM/openSUSE/Arch system | Portable archive after package-manager provisioning of verification tools | user-local CLI; root only for missing prerequisites |
-| CI or ephemeral server | Either install path plus `RVS_TOKEN` | no credential store required |
-| Alpine or another musl system | Explicit unsupported diagnostic | separate musl artifact required |
-| Linux `arm64` | Explicit unsupported diagnostic | native arm64 build required |
-| NixOS | Explicit unsupported diagnostic | native Nix packaging required |
+| Linux with glibc 2.28+ | amd64, arm64 | signed APT package and portable archive |
+| Linux with musl, including Alpine | amd64, arm64 | signed portable archive |
+| macOS 14+ on Apple Silicon; macOS 15+ on Intel | Intel, Apple Silicon | signed and notarized portable archive; `install.sh` |
+| Windows 10/11 on x64; Windows 11 on ARM | x64, ARM64 | Authenticode-signed ZIP; `install.ps1` |
+| NixOS and Nix on Linux/macOS | x86_64, aarch64 | flake package |
+| WSL2 | x86_64, aarch64 | matching Linux path |
 
-The portable path verifies the pinned Ravenstash OpenPGP key fingerprint, the
-detached signature over the release checksum inventory, the selected archive's
-exact SHA-256 digest, and the archive's top-level path boundary before moving
-the bundle into its final directory.
+The compatibility workflow tests source and frozen executables on native Linux,
+macOS, and Windows runners. Alpine artifacts are built and executed in native-architecture
+musl containers. CI builds the Nix package on x86-64 Linux; the flake exposes and
+evaluates packages for all four Linux/macOS architecture pairs. The release workflow
+repeats native builds from one exact source commit, signs macOS and Windows launchers,
+notarizes macOS bundles, assembles one checksum inventory, and creates keyless Sigstore
+provenance for that complete inventory.
 
-## Credential-provider selection
+The glibc artifacts are built on Ubuntu 20.04. Portable amd64 smoke coverage includes
+Ubuntu 22.04, 24.04, and 26.04; Debian 12 and 13; Fedora 43 and 44; Rocky Linux 8 and
+9; AlmaLinux 10; Amazon Linux 2023; openSUSE Leap 15.6 and 16.0; and Arch Linux.
+Debian packages are published for both amd64 and arm64 in the same signed channel.
 
-Interactive device login resolves credential storage in this order:
+During private alpha, set `RVS_GITHUB_TOKEN` to a read-only token for the private
+source repository before running either installer. The token is passed to GitHub's
+release API without being placed in a child process argument. The public repository
+uses the same artifact names and installers without that variable.
 
-1. `--credential-store`, when provided for this login;
-2. `RVS_CREDENTIAL_STORE`, when provided by the process;
-3. the provider pinned to this profile by its last successful login;
-4. the global `rvs auth storage set` preference; and
-5. `auto`, which fully tests a working OS keyring, then an initialized `pass`
-   store, then an existing encrypted Ravenstash vault.
+## Credential storage
 
-The OS-keyring adapter uses Python Keyring provider discovery. On Linux this
-includes Secret Service implementations such as GNOME Keyring, KWallet Secret
-Service, and compatible providers. `pass` is used only when its executable and
-initialized password store are both present. A provider is not accepted for
-login merely because its library exists: `rvs` performs a disposable
-write/read/delete round trip before opening the browser. `rvs auth storage
-doctor` performs the same check.
+Interactive login selects an explicit store, a profile preference, the global
+preference, or automatic discovery in that order. Automatic discovery tests a
+disposable write/read/delete operation before browser authorization.
 
-When no provider is usable, the first interactive login stops before browser
-authorization and asks yes/no whether to install the dedicated Ravenstash
-encrypted vault. After installation, the CLI names the selected store. Advanced
-users can still configure another provider with `rvs auth storage setup`. The
-Ravenstash vault encrypts all credential entries with AES-256-GCM under a key
-derived from the user's passphrase with Argon2id. Its session agent keeps that key only in memory
-and exposes a mode-0600, same-UID Unix socket below `XDG_RUNTIME_DIR` (or a
-private Ravenstash runtime directory). The agent forgets the key when explicitly
-locked or idle for eight hours.
-Vault passphrases have an 8-character minimum. The CLI recommends 12+ characters
-or a short multi-word passphrase and warns without rejecting lengths from 8 to 11.
+- macOS uses Keychain and Windows uses Credential Manager through Python Keyring.
+- Linux desktops use Secret Service providers such as GNOME Keyring or KWallet.
+- POSIX environments may use an initialized `pass` store or the encrypted Ravenstash
+  vault. The vault's in-memory session agent uses a protected Unix socket and is not
+  offered on Windows.
+- `RVS_TOKEN` works without a credential store for CI and other headless use.
+- Plaintext storage remains an explicitly acknowledged fallback and is never selected
+  automatically.
 
-Plaintext storage is a supported last resort only after the user types the exact
-interactive acknowledgement `STORE PLAINTEXT`, or combines an explicit
-`--credential-store plaintext` request with `--allow-insecure-storage` for a
-non-interactive setup. It uses a mode-0600 file and prominent warnings, but is
-not encrypted and is never considered by `auto` selection.
+Release certification covers locked, unlocked, and absent desktop keyrings separately
+from headless sessions. Unit tests own provider selection, credential-pair rollback,
+refresh locking, vault behavior, and plaintext acknowledgement.
 
-After authorization, access and refresh credentials are handled as one pair. A
-partial write removes both local entries and revokes the newly issued refresh
-token. Refresh rotation applies the same rollback rule.
+## Managed runtimes and native clients
 
-Desktop certification should cover these session states independently:
+Python runtime installation selects python-build-standalone assets for Linux glibc,
+Linux musl, macOS, and Windows on both architectures. Java selects the corresponding
+Temurin build. Node.js supports the official Linux glibc, macOS, and Windows archives,
+plus the official x64 musl archive. Node.js does not publish an official ARM64 musl
+archive, so Alpine ARM64 users install Node through their system package manager and
+`rvs` resolves it from `PATH`.
 
-- GNOME with an unlocked, locked, and absent Secret Service collection;
-- KDE Plasma with KWallet Secret Service enabled, locked, and disabled;
-- an initialized and uninitialized `pass` store, with and without a usable TTY;
-- WSL/server with no session bus;
-- both keyring and `pass` present with each explicit preference; and
-- encrypted-vault initialization, unlock, lock, idle expiry, passphrase change,
-  damaged-file rejection, and atomic credential-pair rollback;
-- plaintext setup acknowledgement, unsafe-permission rejection, and proof that
-  `auto` never selects it; and
-- CI with only `RVS_TOKEN` and no writable home directory assumption beyond CLI
-  configuration commands that actually need one.
+Native pip, uv, twine, npm, Maven, Docker, Helm, and ORAS wrappers inherit terminal
+I/O and use temporary credentials. Windows uses native executable suffixes and command
+shims. If Windows policy prevents directory symlinks, the Docker context and plugin
+metadata are copied into the temporary overlay instead.
 
-Unit tests own provider selection, local vault and plaintext-file behavior,
-`pass` subprocess safety, disposable round-trip behavior, device-flow preflight,
-partial-write rollback, and refresh rollback. A real desktop-session matrix should run in VM-based release
-certification; a minimal container is not a faithful substitute for a login
-manager, PAM unlock, and the user's D-Bus session.
+## Update boundaries
 
-## Maintenance
+APT channels retain the existing compatibility policy: pre-1.0 minor lines and
+post-1.0 major lines update independently. Portable, Homebrew, WinGet, and Nix releases
+must use the same channel identity and never move a user across it without an explicit
+upgrade. Until their package-manager manifests are published, portable users update by
+rerunning the same signed installer for their selected channel.
 
-Review the matrix at least quarterly and before changing the Python, PyInstaller,
-cryptography, or keyring baselines. Add a new distribution major before calling
-it supported. Remove a gate only after its upstream security support ends, and
-record the change in release notes. Alpine/musl, arm64, and NixOS must remain
-visible gaps until their native build and update paths are implemented and
-release-tested.
+## Additional platforms
+
+FreeBSD, OpenBSD, NetBSD, Linux armv7, and Linux RISC-V remain source-compatible
+evaluation targets rather than first-release binary promises. Promoting one requires a
+native, repeatable builder, secure credential-store behavior, signed installation and
+updates, and the same packaged native-client certification. PyInstaller does not test
+those BSD targets upstream, so a successful one-off build is insufficient.
+
+Review this matrix at least quarterly and before changing the Python, PyInstaller,
+cryptography, or keyring baselines. A target becomes supported only after its release
+artifact and clean-system certification pass.

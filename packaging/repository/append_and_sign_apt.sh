@@ -35,7 +35,7 @@ package_name="$(dpkg-deb --field "$deb" Package)"
 version="$(dpkg-deb --field "$deb" Version)"
 architecture="$(dpkg-deb --field "$deb" Architecture)"
 test "$package_name" = "rvs"
-test "$architecture" = "amd64"
+[[ "$architecture" == "amd64" || "$architecture" == "arm64" ]]
 python3 "$script_dir/channel_policy.py" validate "$version" "$RVS_APT_CHANNEL"
 
 deb_digest="$(sha256sum "$deb" | awk '{print $1}')"
@@ -57,8 +57,14 @@ else
   install -m 0644 "$deb" "$target"
 fi
 
-all_packages="$output_repository/Packages.all"
-(cd "$output_repository" && apt-ftparchive packages pool) > "$all_packages"
+mapfile -t architectures < <(
+  find "$output_repository/pool" -type f -name '*.deb' -print0 \
+    | xargs -0 -n1 dpkg-deb --field 2>/dev/null \
+    | awk '$1 == "Architecture:" { print $2 }' \
+    | sort -u
+)
+test "${#architectures[@]}" -gt 0
+architecture_list="${architectures[*]}"
 
 declare -A distribution_set=()
 if [[ -d "$output_repository/dists" ]]; then
@@ -92,17 +98,20 @@ for distribution in "${distributions[@]}"; do
   compatibility_channel="$(
     python3 "$script_dir/channel_policy.py" compatibility-channel "$distribution"
   )"
-  binary="$output_repository/dists/$distribution/main/binary-amd64"
-  mkdir -p "$binary"
-  python3 "$script_dir/channel_policy.py" filter "$compatibility_channel" \
-    < "$all_packages" > "$binary/Packages"
-  test -s "$binary/Packages"
-  gzip -9n < "$binary/Packages" > "$binary/Packages.gz"
-  for index in Packages Packages.gz; do
-    index_digest="$(sha256sum "$binary/$index" | awk '{print $1}')"
-    by_hash="$binary/by-hash/SHA256/$index_digest"
-    mkdir -p "$(dirname "$by_hash")"
-    test -e "$by_hash" || install -m 0644 "$binary/$index" "$by_hash"
+  for indexed_architecture in "${architectures[@]}"; do
+    binary="$output_repository/dists/$distribution/main/binary-${indexed_architecture}"
+    mkdir -p "$binary"
+    (cd "$output_repository" && apt-ftparchive -a "$indexed_architecture" packages pool) \
+      | python3 "$script_dir/channel_policy.py" filter "$compatibility_channel" \
+      > "$binary/Packages"
+    test -s "$binary/Packages"
+    gzip -9n < "$binary/Packages" > "$binary/Packages.gz"
+    for index in Packages Packages.gz; do
+      index_digest="$(sha256sum "$binary/$index" | awk '{print $1}')"
+      by_hash="$binary/by-hash/SHA256/$index_digest"
+      mkdir -p "$(dirname "$by_hash")"
+      test -e "$by_hash" || install -m 0644 "$binary/$index" "$by_hash"
+    done
   done
 
   config="$output_repository/apt-ftparchive-release-$distribution.conf"
@@ -112,7 +121,7 @@ for distribution in "${distributions[@]}"; do
     '  Label "Ravenstash";' \
     "  Suite \"$distribution\";" \
     "  Codename \"$distribution\";" \
-    '  Architectures "amd64";' \
+    "  Architectures \"$architecture_list\";" \
     '  Components "main";' \
     '  Description "Ravenstash rvs CLI packages";' \
     '  Acquire-By-Hash "yes";' \
@@ -136,8 +145,6 @@ for distribution in "${distributions[@]}"; do
     --output "$output_repository/dists/$distribution/Release.gpg" \
     --detach-sign "$output_repository/dists/$distribution/Release"
 done
-rm -f "$all_packages"
-
 recommended="$(
   python3 "$script_dir/channel_policy.py" existing-recommended \
     "$output_repository" "$RVS_APT_CHANNEL"

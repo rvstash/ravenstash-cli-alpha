@@ -3,13 +3,14 @@
 Uses the Adoptium REST API to discover and download the latest GA release
 for a given major version.
 
-API: https://api.adoptium.net/v3/assets/latest/{major}/ga?os=linux&...
+API: https://api.adoptium.net/v3/assets/latest/{major}/hotspot?os=linux&...
 
 Installs to: ~/.rvs/runtimes/java/<semver>/
 """
 
 from __future__ import annotations
 
+import os
 import tempfile
 from pathlib import Path
 from typing import Any
@@ -20,9 +21,9 @@ import httpx
 from .. import output
 from ._install import (
     RUNTIMES_DIR,
-    check_linux_x64,
     download,
     extract,
+    runtime_platform,
     write_env_file,
     write_shim,
 )
@@ -40,14 +41,14 @@ _ALLOWED_DOWNLOAD_HOSTS = {
 _ARCH_MAP = {"x64": "x64", "aarch64": "aarch64"}
 
 
-def _latest_release(major: int, arch: str) -> dict[str, Any]:
+def _latest_release(major: int, arch: str, os_name: str) -> dict[str, Any]:
     """Return the Adoptium release metadata for the latest GA JDK of *major*."""
-    url = f"{_ADOPTIUM}/assets/latest/{major}/ga"
+    url = f"{_ADOPTIUM}/assets/latest/{major}/hotspot"
     params = {
         "architecture": arch,
         "image_type": "jdk",
         "jvm_impl": "hotspot",
-        "os": "linux",
+        "os": os_name,
         "vendor": "eclipse",
     }
     output.info(f"Fetching Temurin JDK {major} metadata ...")
@@ -66,15 +67,20 @@ def install(version: str) -> Path:
     *version* is a major version number (``"21"``) or full semver.
     Returns the installation directory.
     """
-    _, arch_raw = check_linux_x64()
-    arch = _ARCH_MAP.get(arch_raw, arch_raw)
+    platform_target = runtime_platform()
+    arch = _ARCH_MAP[platform_target.arch]
+    os_name = {
+        "linux": "alpine-linux" if platform_target.libc == "musl" else "linux",
+        "macos": "mac",
+        "windows": "windows",
+    }[platform_target.system]
 
     try:
         major = int(version.split(".")[0].split("+")[0])
     except ValueError:
         output.fatal(f"Cannot parse Java version '{version}'.")
 
-    release = _latest_release(major, arch)
+    release = _latest_release(major, arch, os_name)
     binary_meta = release.get("binary", {})
     pkg = binary_meta.get("package", {})
     dl_url: str = pkg.get("link", "")
@@ -100,17 +106,23 @@ def install(version: str) -> Path:
         fname = dl_url.split("/")[-1].split("?")[0] or f"jdk-{semver}.tar.gz"
         archive = Path(tmp) / fname
         download(dl_url, archive, expected_sha256=checksum)
-        extract(archive, dest, required_paths=("bin/java",))
+        required_java = "bin/java.exe" if platform_target.windows else "bin/java"
+        extract(archive, dest, required_paths=(required_java,))
 
     bin_dir = dest / "bin"
     for exe in ("java", "javac", "jar", "javadoc"):
-        if (bin_dir / exe).exists():
-            write_shim(exe, bin_dir / exe, runtime_kind="java")
+        executable = f"{exe}.exe" if platform_target.windows else exe
+        if (bin_dir / executable).exists():
+            write_shim(exe, bin_dir / executable, runtime_kind="java")
 
     write_env_file()
     output.success(f"Java {semver} (Temurin) installed at {dest}")
-    output.info(f"Set JAVA_HOME: export JAVA_HOME={dest}")
-    output.info("Add to PATH: source ~/.rvs/env")
+    if platform_target.windows:
+        output.info(f"Set JAVA_HOME: $env:JAVA_HOME = '{dest}'")
+        output.info("Add to PATH: . $HOME/.rvs/env.ps1")
+    else:
+        output.info(f"Set JAVA_HOME: export JAVA_HOME={dest}")
+        output.info("Add to PATH: source ~/.rvs/env")
     return dest
 
 
@@ -142,4 +154,4 @@ def find(version_prefix: str) -> Path | None:
 def java_bin(version_prefix: str) -> Path | None:
     """Return the ``java`` binary path for *version_prefix*, or None."""
     base = find(version_prefix)
-    return (base / "bin" / "java") if base else None
+    return (base / "bin" / ("java.exe" if os.name == "nt" else "java")) if base else None
