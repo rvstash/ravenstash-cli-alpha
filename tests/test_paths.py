@@ -5,7 +5,7 @@ from rvs import paths
 
 def test_rvs_home_defaults_to_home_rvs(monkeypatch, tmp_path) -> None:
     monkeypatch.delenv("RVS_HOME", raising=False)
-    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setattr(paths.Path, "home", lambda: tmp_path)
 
     assert paths.rvs_home() == tmp_path / ".rvs"
 

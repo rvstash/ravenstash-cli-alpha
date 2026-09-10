@@ -16,7 +16,7 @@ def _broker() -> dict[str, str]:
         raise RuntimeError("Ravenstash OCI credential broker is unavailable")
     path = Path(path_value)
     stat = path.stat()
-    if stat.st_mode & 0o077:
+    if os.name != "nt" and stat.st_mode & 0o077:
         raise RuntimeError("Ravenstash OCI credential broker permissions are unsafe")
     payload = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(payload, dict):

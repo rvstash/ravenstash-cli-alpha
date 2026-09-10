@@ -12,6 +12,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 
+@pytest.mark.skipif(os.name == "nt", reason="pass is POSIX-only")
 def test_pass_status_requires_initialized_store(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setattr(stores.shutil, "which", lambda command: "/usr/bin/pass")
     monkeypatch.setattr(stores, "_password_store_dir", lambda: tmp_path)
@@ -22,6 +23,7 @@ def test_pass_status_requires_initialized_store(monkeypatch, tmp_path: Path) -> 
     assert "not initialized" in status.detail
 
 
+@pytest.mark.skipif(os.name == "nt", reason="pass is POSIX-only")
 def test_pass_status_accepts_initialized_store(monkeypatch, tmp_path: Path) -> None:
     (tmp_path / ".gpg-id").write_text("developer@example.test\n", encoding="utf-8")
     monkeypatch.setattr(stores.shutil, "which", lambda command: "/usr/bin/pass")
@@ -103,3 +105,9 @@ def test_vault_accepts_eight_characters_and_rejects_shorter_passphrases() -> Non
 
     with pytest.raises(vault.VaultError, match="at least 8 characters"):
         vault._validate_passphrase("1234567")
+
+
+def test_vault_rejects_runtime_directory_with_oversized_socket_path(tmp_path: Path) -> None:
+    runtime_dir = tmp_path / ("nested-" * 20)
+
+    assert vault._socket_path_within_limit(runtime_dir) is False

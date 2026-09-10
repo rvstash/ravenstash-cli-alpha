@@ -16,10 +16,6 @@ import time
 from pathlib import Path
 from typing import Any
 
-from cryptography.exceptions import InvalidTag
-from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-from cryptography.hazmat.primitives.kdf.argon2 import Argon2id
-
 
 _FORMAT_VERSION = 1
 _AAD = b"ravenstash-rvs-credential-vault-v1"
@@ -32,6 +28,7 @@ _ARGON2_MEMORY_KIB = 64 * 1024
 _AGENT_IDLE_SECONDS = 8 * 60 * 60
 _AGENT_START_TIMEOUT_SECONDS = 5.0
 _MAX_REQUEST_BYTES = 1024 * 1024
+_UNIX_SOCKET_PATH_MAX_BYTES = 103
 MIN_PASSPHRASE_LENGTH = 8
 RECOMMENDED_PASSPHRASE_LENGTH = 12
 
@@ -144,6 +141,8 @@ def _validate_passphrase(passphrase: str) -> None:
 
 
 def _derive_key(passphrase: str, salt: bytes, payload: dict[str, Any] | None = None) -> bytes:
+    from cryptography.hazmat.primitives.kdf.argon2 import Argon2id
+
     kdf_payload = payload.get("kdf", {}) if payload is not None else {}
     if payload is not None and kdf_payload.get("name") != "argon2id":
         raise VaultError("Unsupported vault key-derivation algorithm.")
@@ -205,6 +204,9 @@ def _read_envelope() -> dict[str, Any]:
 
 
 def _decrypt(payload: dict[str, Any], key: bytes) -> dict[str, str]:
+    from cryptography.exceptions import InvalidTag
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+
     if payload.get("cipher") != "aes-256-gcm":
         raise VaultError("Unsupported vault encryption algorithm.")
     nonce = _decode(payload, "nonce", _NONCE_BYTES)
@@ -224,6 +226,8 @@ def _decrypt(payload: dict[str, Any], key: bytes) -> dict[str, str]:
 
 
 def _write_encrypted(credentials: dict[str, str], key: bytes, salt: bytes) -> None:
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+
     file_path = path()
     parent = file_path.parent
     parent.mkdir(mode=0o700, parents=True, exist_ok=True)
@@ -276,8 +280,11 @@ def _runtime_directory() -> Path:
     candidates = [Path(configured)] if configured and Path(configured).is_absolute() else []
     if hasattr(os, "getuid"):
         candidates.append(Path("/run/user") / str(os.getuid()))
+        candidates.append(Path("/tmp") / f"rvs-{os.getuid()}")
     candidates.append(path().parent / "run")
     for candidate in candidates:
+        if not _socket_path_within_limit(candidate):
+            continue
         try:
             candidate.mkdir(mode=0o700, parents=True, exist_ok=True)
             metadata = candidate.lstat()
@@ -291,6 +298,11 @@ def _runtime_directory() -> Path:
             continue
         return candidate
     raise VaultError("No private runtime directory is available for the vault agent.")
+
+
+def _socket_path_within_limit(runtime_directory: Path) -> bool:
+    placeholder = runtime_directory / "rvs" / f"vault-{'0' * 16}.sock"
+    return len(os.fsencode(placeholder)) <= _UNIX_SOCKET_PATH_MAX_BYTES
 
 
 def _socket_path() -> Path:

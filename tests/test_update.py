@@ -129,8 +129,8 @@ def test_upgrade_changes_channel_only_after_authenticated_manifest(
     assert result.exit_code == 0
     assert installed_sources == [update_mod._source_for_channel("v0.4")]
     assert calls == [
-        ["/usr/bin/apt-get", "update"],
-        ["/usr/bin/apt-get", "install", "--only-upgrade", "--yes", "rvs"],
+        [str(update_mod._APT_GET), "update"],
+        [str(update_mod._APT_GET), "install", "--only-upgrade", "--yes", "rvs"],
     ]
     assert "compatibility channel v0.4" in result.output
 

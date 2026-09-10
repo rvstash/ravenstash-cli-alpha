@@ -231,7 +231,7 @@ def write_shim(
             )
     else:
         script = f'@"{target}" %*\r\n' if windows else f'#!/bin/sh\nexec "{target}" "$@"\n'
-    shim.write_text(script, encoding="utf-8")
+    shim.write_text(script, encoding="utf-8", newline="")
     shim.chmod(0o755)
 
 
