@@ -6,18 +6,8 @@ import json
 import os
 import sys
 from pathlib import Path
-from urllib.parse import urlsplit
 
-
-def _normalized_server(value: str) -> str:
-    candidate = value.strip().rstrip("/")
-    parsed = urlsplit(candidate if "://" in candidate else f"https://{candidate}")
-    if not parsed.hostname:
-        return ""
-    host = parsed.hostname.rstrip(".").lower()
-    if parsed.port is not None:
-        host = f"{host}:{parsed.port}"
-    return host
+from .registry import normalized_registry_host
 
 
 def _broker() -> dict[str, str]:
@@ -45,7 +35,8 @@ def main() -> None:
         payload = _broker()
         if operation == "get":
             requested = sys.stdin.read().strip()
-            if _normalized_server(requested) != _normalized_server(payload["server"]):
+            server = normalized_registry_host(payload["server"])
+            if not server or normalized_registry_host(requested) != server:
                 raise RuntimeError("credentials are not available for this registry")
             print(
                 json.dumps(

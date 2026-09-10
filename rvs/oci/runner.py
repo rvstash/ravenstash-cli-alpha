@@ -26,6 +26,7 @@ from ..publishing import confirm_publish, oci_artifacts
 from ..runtime import tools
 from ..subprocesses import child_environment
 from . import docker, helm
+from .registry import normalized_registry_host
 
 
 OciTool = Literal["docker", "helm", "oras"]
@@ -116,10 +117,7 @@ def _registry_url(profile: cfg_mod.ProfileConfig) -> tuple[str, str]:
         output.fatal(str(exc))
     if parsed.path not in {"", "/"}:
         output.fatal("OCI registry URL must not contain a path.")
-    host = parsed.hostname or ""
-    if parsed.port is not None:
-        host = f"{host}:{parsed.port}"
-    return value, host
+    return value, normalized_registry_host(value)
 
 
 def _selected_kind(tool: OciTool, selected: OciRegistryKind | None) -> OciRegistryKind:
@@ -290,17 +288,6 @@ def _registry_config_source(tool: OciTool) -> Path:
     return root / "config.json"
 
 
-def _registry_entry_host(value: str) -> str:
-    candidate = value.strip().rstrip("/")
-    parsed = urlsplit(candidate if "://" in candidate else f"https://{candidate}")
-    if not parsed.hostname:
-        return ""
-    host = parsed.hostname.rstrip(".").lower()
-    if parsed.port is not None:
-        host = f"{host}:{parsed.port}"
-    return host
-
-
 def _native_registry_config(tool: OciTool, source: Path | None = None) -> dict[str, object]:
     source = source or _registry_config_source(tool)
     try:
@@ -323,7 +310,7 @@ def _write_registry_config(
         config["auths"] = {
             key: value
             for key, value in auths.items()
-            if not isinstance(key, str) or _registry_entry_host(key) != route.registry_host
+            if not isinstance(key, str) or normalized_registry_host(key) != route.registry_host
         }
     helpers = config.get("credHelpers")
     if not isinstance(helpers, dict):
@@ -332,7 +319,7 @@ def _write_registry_config(
         helpers = {
             key: value
             for key, value in helpers.items()
-            if not isinstance(key, str) or _registry_entry_host(key) != route.registry_host
+            if not isinstance(key, str) or normalized_registry_host(key) != route.registry_host
         }
     helpers[route.registry_host] = "rvs"
     config["credHelpers"] = helpers
