@@ -64,7 +64,8 @@ def _run(command: list[str]) -> subprocess.CompletedProcess[str]:
 
 
 def _root_command(command: list[str]) -> list[str]:
-    if os.geteuid() == 0:
+    geteuid = getattr(os, "geteuid", None)
+    if geteuid is not None and geteuid() == 0:
         return command
     if not _SUDO.is_file():
         output.fatal("Updating requires root privileges and /usr/bin/sudo is unavailable.")

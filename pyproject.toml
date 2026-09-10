@@ -38,6 +38,9 @@ docker-credential-rvs = "rvs.oci.credential_helper:main"
 
 [dependency-groups]
 dev = [
+    # Windows does not use the encrypted POSIX vault at runtime, but Pyright
+    # still resolves its lazy imports while checking the shared source tree.
+    "cryptography>=44.0; sys_platform == 'win32'",
     "ruff>=0.4",
     "pyright>=1.1.400",
     "pytest>=8.0",

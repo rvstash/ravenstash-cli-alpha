@@ -56,7 +56,8 @@ def _validate_file(file_path: Path) -> None:
         return
     if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISREG(metadata.st_mode):
         raise PlaintextStoreError(f"Credential file {file_path} must be a regular file.")
-    if hasattr(os, "getuid") and metadata.st_uid != os.getuid():
+    getuid = getattr(os, "getuid", None)
+    if getuid is not None and metadata.st_uid != getuid():
         raise PlaintextStoreError(f"Credential file {file_path} is not owned by the current user.")
     if os.name != "nt" and stat.S_IMODE(metadata.st_mode) & 0o077:
         raise PlaintextStoreError(

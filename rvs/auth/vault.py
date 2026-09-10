@@ -183,7 +183,8 @@ def _validate_file(file_path: Path) -> None:
         return
     if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISREG(metadata.st_mode):
         raise VaultError(f"Vault {file_path} must be a regular file.")
-    if hasattr(os, "getuid") and metadata.st_uid != os.getuid():
+    getuid = getattr(os, "getuid", None)
+    if getuid is not None and metadata.st_uid != getuid():
         raise VaultError(f"Vault {file_path} is not owned by the current user.")
     if os.name != "nt" and stat.S_IMODE(metadata.st_mode) & 0o077:
         raise VaultError(f"Vault {file_path} has unsafe permissions; expected mode 0600.")
@@ -278,9 +279,11 @@ def _write_encrypted(credentials: dict[str, str], key: bytes, salt: bytes) -> No
 def _runtime_directory() -> Path:
     configured = os.environ.get("XDG_RUNTIME_DIR")
     candidates = [Path(configured)] if configured and Path(configured).is_absolute() else []
-    if hasattr(os, "getuid"):
-        candidates.append(Path("/run/user") / str(os.getuid()))
-        candidates.append(Path("/tmp") / f"rvs-{os.getuid()}")
+    getuid = getattr(os, "getuid", None)
+    if getuid is not None:
+        uid = getuid()
+        candidates.append(Path("/run/user") / str(uid))
+        candidates.append(Path("/tmp") / f"rvs-{uid}")
     candidates.append(path().parent / "run")
     for candidate in candidates:
         if not _socket_path_within_limit(candidate):
@@ -292,7 +295,7 @@ def _runtime_directory() -> Path:
             continue
         if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISDIR(metadata.st_mode):
             continue
-        if hasattr(os, "getuid") and metadata.st_uid != os.getuid():
+        if getuid is not None and metadata.st_uid != getuid():
             continue
         if stat.S_IMODE(metadata.st_mode) & 0o077:
             continue
@@ -323,7 +326,10 @@ def _request_with_unlock(request: dict[str, Any]) -> dict[str, Any]:
 
 def _request(request: dict[str, Any]) -> dict[str, Any]:
     socket_path = _socket_path()
-    client = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    unix_family = getattr(socket, "AF_UNIX", None)
+    if unix_family is None:
+        raise VaultLockedError("The encrypted vault requires Unix-domain sockets.")
+    client = socket.socket(unix_family, socket.SOCK_STREAM)
     client.settimeout(5.0)
     try:
         client.connect(str(socket_path))
@@ -366,14 +372,18 @@ def _start_agent(key: bytes) -> None:
         socket_path.unlink(missing_ok=True)
     except OSError as exc:
         raise VaultError(f"Could not clear stale vault-agent socket: {exc}") from exc
+    fork = getattr(os, "fork", None)
+    setsid = getattr(os, "setsid", None)
+    if fork is None or setsid is None:
+        raise VaultError("The encrypted vault agent requires a POSIX process environment.")
     try:
-        first_pid = os.fork()
+        first_pid = fork()
     except (AttributeError, OSError) as exc:
         raise VaultError("The encrypted vault agent requires a POSIX process environment.") from exc
     if first_pid == 0:
         try:
-            os.setsid()
-            second_pid = os.fork()
+            setsid()
+            second_pid = fork()
             if second_pid > 0:
                 os._exit(0)
             with (
@@ -396,7 +406,10 @@ def _start_agent(key: bytes) -> None:
 
 
 def _serve(key: bytes, socket_path: Path) -> None:
-    server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    unix_family = getattr(socket, "AF_UNIX", None)
+    if unix_family is None:
+        raise VaultError("The encrypted vault agent requires Unix-domain sockets.")
+    server = socket.socket(unix_family, socket.SOCK_STREAM)
     try:
         server.bind(str(socket_path))
         os.chmod(socket_path, 0o600)
@@ -428,11 +441,12 @@ def _serve(key: bytes, socket_path: Path) -> None:
 
 def _peer_is_current_user(connection: socket.socket) -> bool:
     peer_credentials_option = getattr(socket, "SO_PEERCRED", None)
-    if peer_credentials_option is None or not hasattr(os, "getuid"):
+    getuid = getattr(os, "getuid", None)
+    if peer_credentials_option is None or getuid is None:
         return True
     credentials = connection.getsockopt(socket.SOL_SOCKET, peer_credentials_option, 12)
     _pid, uid, _gid = struct.unpack("3i", credentials)
-    return uid == os.getuid()
+    return uid == getuid()
 
 
 def _handle_request(request: Any, key: bytes) -> tuple[dict[str, Any], bool]:
