@@ -427,9 +427,10 @@ def _serve(key: bytes, socket_path: Path) -> None:
 
 
 def _peer_is_current_user(connection: socket.socket) -> bool:
-    if not hasattr(socket, "SO_PEERCRED") or not hasattr(os, "getuid"):
+    peer_credentials_option = getattr(socket, "SO_PEERCRED", None)
+    if peer_credentials_option is None or not hasattr(os, "getuid"):
         return True
-    credentials = connection.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, 12)
+    credentials = connection.getsockopt(socket.SOL_SOCKET, peer_credentials_option, 12)
     _pid, uid, _gid = struct.unpack("3i", credentials)
     return uid == os.getuid()
 
