@@ -313,29 +313,6 @@ def _repo_ref_from_response(repo: dict, fallback_repository_name: str) -> str:
     return _repository_name_from_response(repo, fallback_repository_name)
 
 
-def _repo_for_kind(
-    kind: str,
-    repo: str | None,
-    profile: str | None = None,
-) -> tuple[str | None, str]:
-    registry_kind = _require_kind(kind)
-    cfg = cfg_mod.load()
-    profile_name = profile or cfg_mod.current_profile_name(cfg)
-    resolved = (
-        repo
-        or cfg.registry_defaults(
-            registry_kind,
-            profile_name,
-        ).default_repo
-    )
-    if not resolved:
-        output.fatal(
-            f"No {kind} package repository selected. "
-            f"Pass --repo or run `rvs art repo set-default {kind} <repository-name>`."
-        )
-    return _split_repo_ref(resolved)
-
-
 def _token(profile: str | None) -> str | None:
     return auth_mod.get_token(_profile_name(profile))
 

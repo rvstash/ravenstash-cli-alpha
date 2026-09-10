@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -247,77 +248,6 @@ def test_native_commands_request_only_the_operations_they_need() -> None:
         "mvn",
         ["org.apache.maven.plugins:maven-deploy-plugin:3.1.3:deploy-file"],
     ) == ("download", "upload")
-
-
-def test_ravenstash_url_kind_accepts_public_hosts_and_local_normalized_routes() -> None:
-    def url_kind(url: str, *, endpoints=None) -> str | None:
-        return native_runner._ravenstash_url_kind(
-            url,
-            native_registries=endpoints or _native_endpoints(),
-        )
-
-    assert url_kind(f"{NPM_READ_URL}/in_abcdefgh/r_xyzabcde/") == "npm"
-    assert url_kind(f"{PYPI_READ_URL}/in_abcdefgh/r_xyzabcde/simple/") == "pypi"
-    assert (
-        url_kind(
-            "http://localhost:43101/registry/maven/in_abcdefgh/r_xyzabcde/com/example/demo/",
-            endpoints=cfg_mod.NativeRegistryEndpoints(
-                pypi=cfg_mod.PackageRegistryEndpoints(
-                    "http://localhost:43101/registry/pypi",
-                    "http://localhost:43102/registry/pypi",
-                    "http://localhost:43101/registry/pypi",
-                ),
-                npm=cfg_mod.PackageRegistryEndpoints(
-                    "http://localhost:43101/registry/npm",
-                    "http://localhost:43102/registry/npm",
-                    "http://localhost:43101/registry/npm",
-                ),
-                maven=cfg_mod.PackageRegistryEndpoints(
-                    "http://localhost:43101/registry/maven",
-                    "http://localhost:43102/registry/maven",
-                    "http://localhost:43101/registry/maven",
-                ),
-                oci_registry_base_url="http://localhost:43101",
-            ),
-        )
-        == "maven"
-    )
-    assert (
-        url_kind(
-            f"{PYPI_MIRROR_URL}/c/piwheels/simple/",
-        )
-        == "pypi"
-    )
-    assert url_kind(f"{PYPI_MIRROR_URL}/o/pypiorg/simple/") == "pypi"
-    assert url_kind(f"{NPM_MIRROR_URL}/c/_xyzabcde/") == "npm"
-    assert url_kind("https://npm.example.test/in_abcdefgh/r_xyzabcde/") is None
-    assert url_kind("https://pkg-staging.example.test/in_abcdefgh/r_xyzabcde/") is None
-    assert url_kind(f"{NPM_READ_URL}/o/npmjs/") is None
-    assert url_kind(f"{NPM_READ_URL}/c/private-upstream/") is None
-    assert url_kind(f"{NPM_MIRROR_URL}/in_abcdefgh/r_xyzabcde/") is None
-    assert url_kind(f"{NPM_READ_URL}/in_abcdefgh/") is None
-
-
-def test_ravenstash_url_kind_rejects_attacker_lookalike_origins() -> None:
-    def url_kind(url: str) -> str | None:
-        return native_runner._ravenstash_url_kind(
-            url,
-            native_registries=_native_endpoints(),
-        )
-
-    assert url_kind("https://npm.pkg.attacker.example/in_abcdefgh/r_xyzabcde/") is None
-    assert url_kind("https://attacker.example/native/pypi/other/customer/simple/") is None
-    assert (
-        url_kind("https://npm.pkg-staging.example.test.attacker.example/in_abcdefgh/r_xyzabcde/")
-        is None
-    )
-    assert (
-        url_kind("https://npm.pkg-staging.example.test@attacker.example/in_abcdefgh/r_xyzabcde/")
-        is None
-    )
-    assert url_kind("http://npm.pkg-staging.example.test/in_abcdefgh/r_xyzabcde/") is None
-    assert url_kind("https://npm.pkg-staging.example.test:444/in_abcdefgh/r_xyzabcde/") is None
-    assert url_kind("https://npm.pkg-staging.example.test:bad/in_abcdefgh/r_xyzabcde/") is None
 
 
 def test_native_npm_respects_project_npmrc_and_injects_path_scoped_auth(
@@ -997,6 +927,35 @@ def test_foreign_lock_sources_warn_without_changes(
     assert len(calls) == 1
     if tool == "uv":
         assert calls[0]["cmd"] == ["/bin/uv", "sync", "--locked"]
+
+
+@pytest.mark.parametrize(
+    ("source", "warns"),
+    [
+        (f"{NPM_READ_URL}/staging/repo/demo.tgz", False),
+        (f"{NPM_READ_URL}.attacker.example/secret-path", True),
+        (f"{NPM_READ_URL}@attacker.example/secret-path", True),
+        (f"{NPM_READ_URL.replace('https://', 'http://')}/staging/repo/demo.tgz", True),
+        (f"{NPM_READ_URL}:444/staging/repo/demo.tgz", True),
+        (f"{NPM_READ_URL}/in_another/r_another/demo.tgz", True),
+    ],
+)
+def test_native_source_warning_uses_exact_target_origin(monkeypatch, tmp_path, source, warns):
+    _isolate_config(monkeypatch, tmp_path)
+    _mock_native_tools(monkeypatch)
+    lock = tmp_path / "package-lock.json"
+    content = json.dumps({"packages": {"node_modules/demo": {"resolved": source}}})
+    lock.write_text(content)
+    calls = []
+    _capture_run(monkeypatch, calls)
+
+    result = runner.invoke(app, ["npm", "--rvs-target", "staging/repo", "ci"])
+
+    assert result.exit_code == 0, result.output
+    assert ("Additional native sources" in result.output) is warns
+    assert "secret-path" not in result.output
+    assert lock.read_text() == content
+    assert len(calls) == 1
 
 
 def test_uv_lock_keeps_named_sources_and_third_party_auth(monkeypatch, tmp_path):

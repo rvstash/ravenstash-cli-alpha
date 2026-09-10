@@ -26,7 +26,6 @@ from .. import output
 from ..account.commands import resolve_account
 from ..artifacts.routing import (
     CanonicalRouter,
-    native_base_url,
     npm_auth_token_key,
 )
 from ..artifacts.targets import registry_context
@@ -301,49 +300,6 @@ def _same_origin(left: str, right: str) -> bool:
         )
     except ValueError:
         return False
-
-
-def _ravenstash_url_kind(
-    url: str,
-    *,
-    native_registries: cfg_mod.NativeRegistryEndpoints,
-) -> RegistryKind | None:
-    parsed = urlparse(url)
-    if (
-        parsed.scheme not in {"http", "https"}
-        or parsed.hostname is None
-        or parsed.username is not None
-        or parsed.password is not None
-    ):
-        return None
-    for kind in ("pypi", "npm", "maven"):
-        endpoints = native_registries.package(kind)
-        for service_url, surface in (
-            (endpoints.read_base_url, "private"),
-            (endpoints.push_base_url, "private"),
-            (endpoints.mirror_base_url, "mirror"),
-        ):
-            base = native_base_url(service_url)
-            if not _same_origin(url, base):
-                continue
-            base_parts = [part for part in urlparse(base).path.split("/") if part]
-            path_parts = [part for part in parsed.path.split("/") if part]
-            if path_parts[: len(base_parts)] != base_parts:
-                continue
-            route_parts = path_parts[len(base_parts) :]
-            if (surface == "private" and _valid_private_registry_route(route_parts)) or (
-                surface == "mirror" and _valid_mirror_registry_route(route_parts)
-            ):
-                return kind  # type: ignore[return-value]
-    return None
-
-
-def _valid_private_registry_route(path_parts: list[str]) -> bool:
-    return len(path_parts) >= 2 and path_parts[0] not in {"o", "c"} and bool(path_parts[1])
-
-
-def _valid_mirror_registry_route(path_parts: list[str]) -> bool:
-    return len(path_parts) >= 2 and path_parts[0] in {"o", "c"} and bool(path_parts[1])
 
 
 def _relevant_env_values(tool: NativeTool, env: dict[str, str]) -> list[str]:
