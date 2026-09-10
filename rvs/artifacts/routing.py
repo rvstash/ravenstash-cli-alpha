@@ -23,8 +23,7 @@ class RepositoryRouteKind(StrEnum):
     REMOTE_CUSTOM = "remote_custom"
 
 
-def native_base_url(service_url: str, kind: str) -> str:
-    del kind
+def native_base_url(service_url: str) -> str:
     return service_url.rstrip("/")
 
 
@@ -42,24 +41,24 @@ class CanonicalRouter:
 
     @staticmethod
     def pypi_index_url(download_url: str, namespace_ref: str, repository_ref: str) -> str:
-        return f"{native_base_url(download_url, 'pypi')}/{namespace_ref}/{repository_ref}/simple/"
+        return f"{native_base_url(download_url)}/{namespace_ref}/{repository_ref}/simple/"
 
     @staticmethod
     def pypi_upload_url(upload_url: str, namespace_ref: str, repository_ref: str) -> str:
-        return f"{native_base_url(upload_url, 'pypi')}/{namespace_ref}/{repository_ref}/"
+        return f"{native_base_url(upload_url)}/{namespace_ref}/{repository_ref}/"
 
     @staticmethod
     def npm_registry_url(download_url: str, namespace_ref: str, repository_ref: str) -> str:
-        return f"{native_base_url(download_url, 'npm')}/{namespace_ref}/{repository_ref}/"
+        return f"{native_base_url(download_url)}/{namespace_ref}/{repository_ref}/"
 
     @staticmethod
     def npm_upload_registry_url(upload_url: str, namespace_ref: str, repository_ref: str) -> str:
-        return f"{native_base_url(upload_url, 'npm')}/{namespace_ref}/{repository_ref}/"
+        return f"{native_base_url(upload_url)}/{namespace_ref}/{repository_ref}/"
 
     @staticmethod
     def maven_repo_url(download_url: str, namespace_ref: str, repository_ref: str) -> str:
-        return f"{native_base_url(download_url, 'maven')}/{namespace_ref}/{repository_ref}/"
+        return f"{native_base_url(download_url)}/{namespace_ref}/{repository_ref}/"
 
     @staticmethod
     def maven_upload_url(upload_url: str, namespace_ref: str, repository_ref: str) -> str:
-        return f"{native_base_url(upload_url, 'maven')}/{namespace_ref}/{repository_ref}/"
+        return f"{native_base_url(upload_url)}/{namespace_ref}/{repository_ref}/"

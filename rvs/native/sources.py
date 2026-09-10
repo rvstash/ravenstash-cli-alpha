@@ -176,8 +176,7 @@ def warn_additional_sources(
     from ..artifacts.routing import native_base_url
 
     roots = [
-        native_base_url(url, route.kind).rstrip("/")
-        + f"/{route.namespace_unique_ref}/{route.repository_unique_ref}/"
+        native_base_url(url) + f"/{route.namespace_unique_ref}/{route.repository_unique_ref}/"
         for url in (route.read_base_url, route.push_base_url)
         if url is not None
     ]

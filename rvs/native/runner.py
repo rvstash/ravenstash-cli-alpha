@@ -323,7 +323,7 @@ def _ravenstash_url_kind(
             (endpoints.push_base_url, "private"),
             (endpoints.mirror_base_url, "mirror"),
         ):
-            base = native_base_url(service_url, kind)
+            base = native_base_url(service_url)
             if not _same_origin(url, base):
                 continue
             base_parts = [part for part in urlparse(base).path.split("/") if part]
