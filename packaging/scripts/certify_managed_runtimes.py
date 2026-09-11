@@ -59,7 +59,7 @@ def main() -> None:
     node_install = [str(executable), "runtime", "install", "node", "22"]
     if arguments.expect_node_unavailable:
         node_output = _run(node_install, environment, success=False)
-        if "does not publish official arm64 musl binaries" not in node_output:
+        if "does not publish official musl binaries" not in node_output:
             raise SystemExit(f"unexpected Node.js failure: {node_output}")
     else:
         _run(node_install, environment)

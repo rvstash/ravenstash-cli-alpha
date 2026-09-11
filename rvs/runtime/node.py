@@ -77,31 +77,35 @@ def _verified_archive_digest(version: str, archive_name: str, temp_dir: Path) ->
     if not gpgv:
         output.fatal("Node.js installation requires gpgv to verify the signed release manifest.")
     keyring = temp_dir / "nodejs-release-keyring.kbx"
-    checksums_signed = temp_dir / "SHASUMS256.txt.asc"
     checksums = temp_dir / "SHASUMS256.txt"
+    signature = temp_dir / "SHASUMS256.txt.sig"
     download(
         _RELEASE_KEYRING_URL,
         keyring,
         expected_sha256=_RELEASE_KEYRING_SHA256,
     )
-    download_url = f"https://nodejs.org/dist/v{version}/SHASUMS256.txt.asc"
-    with httpx.stream("GET", download_url, follow_redirects=True, timeout=30.0) as response:
-        response.raise_for_status()
-        if response.url.scheme != "https":
-            output.fatal("Node.js checksum manifest redirected to a non-HTTPS URL.")
-        downloaded = 0
-        with checksums_signed.open("wb") as target:
-            for chunk in response.iter_bytes(65536):
-                downloaded += len(chunk)
-                if downloaded > _MAX_SIGNED_MANIFEST_BYTES:
-                    output.fatal("Node.js checksum manifest exceeds the safety limit.")
-                target.write(chunk)
+    for filename, destination in (
+        ("SHASUMS256.txt", checksums),
+        ("SHASUMS256.txt.sig", signature),
+    ):
+        download_url = f"https://nodejs.org/dist/v{version}/{filename}"
+        with httpx.stream("GET", download_url, follow_redirects=True, timeout=30.0) as response:
+            response.raise_for_status()
+            if response.url.scheme != "https":
+                output.fatal("Node.js checksum material redirected to a non-HTTPS URL.")
+            downloaded = 0
+            with destination.open("wb") as target:
+                for chunk in response.iter_bytes(65536):
+                    downloaded += len(chunk)
+                    if downloaded > _MAX_SIGNED_MANIFEST_BYTES:
+                        output.fatal("Node.js checksum material exceeds the safety limit.")
+                    target.write(chunk)
     verification = subprocess.run(
         [
             gpgv,
             f"--keyring={keyring}",
-            f"--output={checksums}",
-            str(checksums_signed),
+            str(signature),
+            str(checksums),
         ],
         check=False,
         capture_output=True,
@@ -123,13 +127,9 @@ def install(version: str) -> Path:
     version string (``"20.11.0"``).  Returns the installation directory.
     """
     platform_target = runtime_platform()
-    if (
-        platform_target.system == "linux"
-        and platform_target.libc == "musl"
-        and platform_target.arch == "aarch64"
-    ):
+    if platform_target.system == "linux" and platform_target.libc == "musl":
         output.fatal(
-            "Node.js does not publish official arm64 musl binaries. Install Node.js "
+            "Node.js does not publish official musl binaries. Install Node.js "
             "with the system package manager; rvs will use it from PATH."
         )
     arch = _ARCH_MAP[platform_target.arch]
@@ -148,11 +148,7 @@ def install(version: str) -> Path:
     extension = (
         "zip" if platform_target.windows else ("tar.gz" if os_name == "darwin" else "tar.xz")
     )
-    target = (
-        "linux-x64-musl"
-        if platform_target.system == "linux" and platform_target.libc == "musl"
-        else f"{os_name}-{arch}"
-    )
+    target = f"{os_name}-{arch}"
     url = f"https://nodejs.org/dist/v{full_ver}/node-v{full_ver}-{target}.{extension}"
     with tempfile.TemporaryDirectory() as tmp:
         temp_dir = Path(tmp)

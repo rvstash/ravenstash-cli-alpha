@@ -36,10 +36,13 @@ _ARCH_MAP = {"x64": "x86_64", "aarch64": "aarch64"}
 
 
 def _gh_headers() -> dict[str, str]:
-    return {
+    headers = {
         "Accept": "application/vnd.github+json",
         "X-GitHub-Api-Version": "2022-11-28",
     }
+    if token := os.environ.get("GITHUB_TOKEN"):
+        headers["Authorization"] = f"Bearer {token}"
+    return headers
 
 
 def _find_asset(version_prefix: str, target: str) -> tuple[str, str, str]:

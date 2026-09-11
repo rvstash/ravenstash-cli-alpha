@@ -60,6 +60,8 @@ jobs:
           uv run python packaging/scripts/build_portable.py
       - name: Exercise real runtime downloads
         shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           bundle="$(find build/release -mindepth 1 -maxdepth 1 -type d -name 'rvs-v*' -print -quit)"
           export RVS_HOME="$RUNNER_TEMP/rvs-runtime-certification"
@@ -82,7 +84,7 @@ jobs:
         include:
           - arch: amd64
             runner: ubuntu-24.04
-            node-argument: ""
+            node-argument: --expect-node-unavailable
           - arch: arm64
             runner: ubuntu-24.04-arm
             node-argument: --expect-node-unavailable
@@ -93,9 +95,11 @@ jobs:
           persist-credentials: false
       - name: Build bundle and exercise real runtime downloads
         env:
+          GITHUB_TOKEN: ${{ github.token }}
           NODE_ARGUMENT: ${{ matrix.node-argument }}
         run: |
           docker run --rm \
+            --env GITHUB_TOKEN \
             --env NODE_ARGUMENT \
             --volume "$PWD:/workspace" \
             --workdir /workspace \
@@ -105,6 +109,7 @@ jobs:
               pip install --no-cache-dir uv==0.11.24
               export UV_PROJECT_ENVIRONMENT=/tmp/rvs-musl-venv
               export RVS_HOME=/tmp/rvs-runtime-certification
+              export GITHUB_TOKEN
               uv sync --frozen --python 3.14 --group release
               uv run python packaging/scripts/build_portable.py
               bundle="$(find build/release -mindepth 1 -maxdepth 1 -type d -name "rvs-v*" -print -quit)"

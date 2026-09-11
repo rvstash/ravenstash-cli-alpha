@@ -12,6 +12,7 @@ from rvs.runtime import commands as runtime_cmd
 from rvs.runtime import java as java_rt
 from rvs.runtime import node as node_rt
 from rvs.runtime import python as python_rt
+from rvs.runtime._install import RuntimePlatform
 from typer.testing import CliRunner
 
 
@@ -283,3 +284,20 @@ def test_temurin_metadata_uses_supported_latest_assets_endpoint(httpx_mock) -> N
     release = java_rt._latest_release(21, "aarch64", "windows")
 
     assert release["version"]["semver"] == "21.0.9+10"
+
+
+def test_python_github_api_uses_available_workflow_token(monkeypatch) -> None:
+    monkeypatch.setenv("GITHUB_TOKEN", "github-actions-token")
+
+    assert python_rt._gh_headers()["Authorization"] == "Bearer github-actions-token"
+
+
+def test_node_install_rejects_unpublished_musl_archive(monkeypatch) -> None:
+    monkeypatch.setattr(
+        node_rt,
+        "runtime_platform",
+        lambda: RuntimePlatform(system="linux", arch="x64", libc="musl"),
+    )
+
+    with pytest.raises(SystemExit):
+        node_rt.install("22")
