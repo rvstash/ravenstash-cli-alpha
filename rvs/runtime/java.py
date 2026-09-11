@@ -107,7 +107,12 @@ def install(version: str) -> Path:
         archive = Path(tmp) / fname
         download(dl_url, archive, expected_sha256=checksum)
         required_java = "bin/java.exe" if platform_target.windows else "bin/java"
-        extract(archive, dest, required_paths=(required_java,))
+        extract(
+            archive,
+            dest,
+            nested_root="Contents/Home" if platform_target.system == "macos" else None,
+            required_paths=(required_java,),
+        )
 
     bin_dir = dest / "bin"
     for exe in ("java", "javac", "jar", "javadoc"):

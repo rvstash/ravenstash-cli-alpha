@@ -238,6 +238,26 @@ def test_extract_validates_layout_before_atomic_install(tmp_path: Path) -> None:
     assert (destination / "bin/node").read_bytes() == b"binary"
 
 
+def test_extract_can_normalize_macos_jdk_home(tmp_path: Path) -> None:
+    archive = tmp_path / "jdk.tar.gz"
+    with tarfile.open(archive, "w:gz") as tf:
+        payload = b"java"
+        member = tarfile.TarInfo("jdk/Contents/Home/bin/java")
+        member.mode = 0o755
+        member.size = len(payload)
+        tf.addfile(member, io.BytesIO(payload))
+
+    destination = tmp_path / "installed" / "21.0.1"
+    _install.extract(
+        archive,
+        destination,
+        nested_root="Contents/Home",
+        required_paths=("bin/java",),
+    )
+
+    assert (destination / "bin/java").read_bytes() == b"java"
+
+
 def test_download_rejects_checksum_mismatch(httpx_mock, tmp_path: Path) -> None:
     httpx_mock.add_response(
         url="https://releases.example.test/runtime.tar.gz",

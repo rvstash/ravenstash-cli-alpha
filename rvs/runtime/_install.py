@@ -142,6 +142,7 @@ def extract(
     dest: Path,
     *,
     strip_root: bool = True,
+    nested_root: str | None = None,
     required_paths: tuple[str, ...] = (),
 ) -> None:
     """Extract a .tar.gz / .tar.xz archive to *dest*.
@@ -181,6 +182,11 @@ def extract(
             output.fatal(f"Runtime archive extraction was rejected: {exc}")
         roots = list(extracted_path.iterdir())
         src = roots[0] if strip_root and len(roots) == 1 and roots[0].is_dir() else extracted_path
+        if nested_root is not None:
+            nested = (src / nested_root).resolve()
+            if not nested.is_relative_to(src.resolve()) or not nested.is_dir():
+                output.fatal(f"Runtime archive is missing required directory: {nested_root}")
+            src = nested
         prepared = tmp_path / "prepared"
         prepared.mkdir()
         for child in src.iterdir():
