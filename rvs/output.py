@@ -45,14 +45,14 @@ def success(msg: str) -> None:
     if _json_enabled:
         _emit_json({"level": "success", "message": msg})
         return
-    console.print(f"[bold green]✓[/] {msg}")
+    console.print(f"[bold green]OK[/] {msg}")
 
 
 def info(msg: str) -> None:
     if _json_enabled:
         _emit_json({"level": "info", "message": msg})
         return
-    console.print(f"[cyan]→[/] {msg}")
+    console.print(f"[cyan]->[/] {msg}")
 
 
 def warn(msg: str) -> None:
@@ -66,7 +66,7 @@ def error(msg: str) -> None:
     if _json_enabled:
         _emit_json({"level": "error", "message": msg}, err=True)
         return
-    err_console.print(f"[bold red]✗[/] {msg}")
+    err_console.print(f"[bold red]Error:[/] {msg}")
 
 
 def fatal(msg: str) -> NoReturn:
@@ -109,7 +109,7 @@ def kv(pairs: dict[str, str | None], title: str | None = None) -> None:
     t.add_column("key", style="bold dim", no_wrap=True)
     t.add_column("value")
     for k, v in pairs.items():
-        t.add_row(k, v or Text("—", style="dim"))
+        t.add_row(k, v or Text("-", style="dim"))
     if title:
         console.print(f"[bold]{title}[/]")
     console.print(t)
