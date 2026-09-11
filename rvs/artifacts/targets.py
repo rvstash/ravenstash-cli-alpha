@@ -58,7 +58,7 @@ def parse_target(value: str) -> TargetSpec:
         output.fatal("Use namespace/repository without a realm prefix or @ notation.")
     elif ":" in candidate:
         output.fatal(
-            "Unknown artifact target type. Use namespace/repository, mirror:<source>, "
+            "Unknown repository or mirror. Use namespace/repository, mirror:<source>, "
             "or custom-mirror:<name>."
         )
     else:
@@ -66,7 +66,7 @@ def parse_target(value: str) -> TargetSpec:
         target_type = "repository"
         namespace_realm = None
     if not selector or (target_type != "repository" and "/" in selector):
-        output.fatal("The artifact target selector is invalid.")
+        output.fatal("The repository or mirror name is invalid.")
     if target_type == "repository":
         parts = selector.split("/")
         if len(parts) != 2 or not all(parts):
@@ -172,7 +172,7 @@ def resolve_repository_entry(
     owner = entry["customer"]
     if owner["customer_id"] != customer_id:
         if not stable:
-            output.fatal("Resolved repository belongs to a different acting account.")
+            output.fatal("The repository belongs to a different account.")
         output.resource_account_hint(selector, customer_id, owner)
     return entry
 
@@ -187,7 +187,7 @@ def resolve_target(
     spec = parse_target(value)
     profile_name = profile or cfg_mod.current_profile_name()
     if kind is not None and kind not in {"pypi", "npm", "maven", "container", "helm"}:
-        output.fatal(f"Unknown registry kind '{kind}'.")
+        output.fatal(f"Unknown package format '{kind}'.")
     if spec.target_type != "repository":
         registry_kind: str | None = _package_kind(kind)
     else:
@@ -197,7 +197,7 @@ def resolve_target(
         if spec.target_type == "repository":
             effective_customer_id = customer_id or cfg_mod.current_customer_id(profile_name)
             if effective_customer_id is None:
-                output.fatal("No acting account is selected. Run `rvs account use`.")
+                output.fatal("No account is selected. Run `rvs account use USERNAME_OR_HANDLE`.")
             entry = resolve_repository_entry(
                 client, spec.selector, effective_customer_id, registry_kind
             )
@@ -318,7 +318,7 @@ def effective_target(
             customer_id=account.customer_id,
             kind=kind,
         )
-    output.fatal(f"No {kind} artifact target is selected. Pass --target or run `rvs art select`.")
+    output.fatal(f"No {kind} repository or mirror is selected. Pass --target or run `rvs art select`.")
 
 
 def registry_context(

@@ -304,7 +304,7 @@ def test_artifacts_repo_create_rejects_unknown_kind(monkeypatch, tmp_path: Path)
     result = runner.invoke(artifacts_cmd.app, ["repo", "create", "bad", "--registry-kind", "gem"])
 
     assert result.exit_code == 1
-    assert "Unknown registry kind 'gem'" in result.stderr
+    assert "Unknown package format 'gem'" in result.stderr
 
 
 def test_artifacts_repo_show_renders_repository_details(monkeypatch, tmp_path: Path) -> None:
@@ -429,7 +429,7 @@ def test_artifacts_remote_management_and_upstream_configuration(
             "add",
             "repo-pypi",
             "pypi",
-            "--remote-cache",
+            "--mirror",
             "pypi",
             "--min-age-hours",
             "5",

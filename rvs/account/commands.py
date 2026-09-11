@@ -1,4 +1,4 @@
-"""Commands for selecting the customer charged and authorized for package work."""
+"""Commands for choosing a personal account or organization."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ from ..client import ApiClient, ApiError
 
 app = typer.Typer(
     name="account",
-    help="Select the acting personal or organization account.",
+    help="Choose the personal account or organization to use.",
     no_args_is_help=True,
 )
 
@@ -30,7 +30,7 @@ def customers(profile: str | None = None) -> list[dict]:
     except ApiError as exc:
         output.fatal(str(exc))
     if not isinstance(payload, list):
-        output.fatal("The Ravenstash acting-account response is invalid.")
+        output.fatal("Ravenstash returned an invalid account list.")
     return [item for item in payload if isinstance(item, dict)]
 
 
@@ -38,7 +38,7 @@ def resolve_account(selector: str, profile: str | None = None) -> dict:
     items = customers(profile)
     value = selector.strip()
     if not value:
-        output.fatal("Acting-account selector cannot be empty.")
+        output.fatal("Account name cannot be empty.")
 
     lowered = value.casefold()
     handle_matches = [
@@ -70,10 +70,10 @@ def resolve_account(selector: str, profile: str | None = None) -> dict:
             )
         ]
     if not matches:
-        output.fatal(f"Acting account '{selector}' was not found for this local profile.")
+        output.fatal(f"Account '{selector}' was not found for this profile.")
     if len(matches) > 1:
         refs = ", ".join(str(item.get("customer_unique_ref")) for item in matches)
-        output.fatal(f"Acting-account selector '{selector}' is ambiguous. Use one of: {refs}")
+        output.fatal(f"More than one account matches '{selector}'. Use one of these IDs: {refs}")
     selected = matches[0]
     cfg_mod.cache_account(
         profile=_profile_name(profile),
@@ -118,7 +118,7 @@ def ensure_active_account(
         items = customers(profile_name)
         personal = [item for item in items if item.get("account_type") == "personal"]
         if len(personal) != 1:
-            output.fatal("No acting account is selected. Run `rvs account use`.")
+            output.fatal("No account is selected. Run `rvs account use USERNAME_OR_HANDLE`.")
         customer = personal[0]
     return profile_name, cfg_mod.cache_account(
         profile=profile_name,
@@ -139,7 +139,7 @@ def display_name(account: cfg_mod.AccountContext) -> str:
 def account_list(
     profile: str | None = typer.Option(None, "--profile", "-p"),
 ) -> None:
-    """List acting accounts available to one local profile."""
+    """List personal accounts and organizations available to one profile."""
     profile_name = _profile_name(profile)
     active_id = cfg_mod.current_customer_id(profile_name)
     rows = []
@@ -156,26 +156,26 @@ def account_list(
                 str(item.get("organization_role", "")),
             ]
         )
-    output.table(["Acting account", "Stable reference", "Role"], rows)
+    output.table(["Account", "Account ID", "Role"], rows)
 
 
 @app.command("current")
 def account_current(
     profile: str | None = typer.Option(None, "--profile", "-p"),
 ) -> None:
-    """Show the acting account used for authorization and metering."""
+    """Show the selected personal account or organization."""
     profile_name, account = ensure_active_account(profile)
     output.kv(
         {
             "Local profile": profile_name,
-            "Acting account": display_name(account),
-            "Selection source": cfg_mod.account_selection_source(profile_name),
-            "Account label": account.account_label,
-            "Handle": account.customer_handle or "unknown",
-            "Stable reference": account.customer_unique_ref,
+            "Account": display_name(account),
+            "Selected by": cfg_mod.account_selection_source(profile_name),
+            "Display name": account.account_label,
+            "Username or handle": account.customer_handle or "unknown",
+            "Account ID": account.customer_unique_ref,
             "Role": account.organization_role or "unknown",
         },
-        title="Current acting Ravenstash account",
+        title="Current Ravenstash account",
     )
 
 
@@ -184,17 +184,17 @@ def _use_account(account: str, profile: str | None) -> None:
     selected = resolve_account(account, profile_name)
     scope = cfg_mod.account_selection_write_scope()
     saved = cfg_mod.set_active_account(profile=profile_name, customer=selected)
-    output.success(f"Acting account '{display_name(saved)}' selected for {scope}.")
+    output.success(f"Account '{display_name(saved)}' selected for {scope}.")
     if os.environ.get("RVS_CUSTOMER_ID"):
-        output.warn("RVS_CUSTOMER_ID is set and still overrides the acting account in this shell.")
+        output.warn("RVS_CUSTOMER_ID is set and still overrides the selected account in this shell.")
 
 
 @app.command("use")
 def account_use(
     account: str = typer.Argument(
-        ..., help="Customer handle, stable account ID, personal, or org:<label>."
+        ..., help="Ravenstash username, organization handle, or account ID."
     ),
     profile: str | None = typer.Option(None, "--profile", "-p"),
 ) -> None:
-    """Use an acting account in this shell or in the selected local profile."""
+    """Choose an account in this shell or in the selected local profile."""
     _use_account(account, profile)

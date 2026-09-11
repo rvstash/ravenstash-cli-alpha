@@ -642,7 +642,7 @@ def whoami(
         None, "--profile", "-p", help="Local profile to inspect (default: selected profile)."
     ),
 ) -> None:
-    """Verify and print the authenticated Ravenstash user through DevAPI."""
+    """Verify and print the signed-in Ravenstash user."""
     cfg = cfg_mod.load()
     profile_name = _target_profile(profile, cfg)
     try:
@@ -677,7 +677,7 @@ def profile_list() -> None:
                 cfg_mod.repository_domain_summary(p.native_registries),
             ]
         )
-    output.table(["Local profile", "Selection", "DevAPI URL", "Repository domain"], rows)
+    output.table(["Local profile", "Selection", "Ravenstash API", "Repository domain"], rows)
 
 
 @profile_app.command("current")
@@ -706,7 +706,7 @@ def profile_current(
             "Selection source": (
                 "command option (--profile)" if profile else cfg_mod.profile_selection_source()
             ),
-            "DevAPI URL": selected.api_url,
+            "Ravenstash API": selected.api_url,
             **_repository_status_fields(selected.native_registries, verbose=verbose),
             "Configured credential store": selected.credential_store or cfg.credential_store,
         },

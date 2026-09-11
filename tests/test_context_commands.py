@@ -180,7 +180,7 @@ def test_account_use_warns_when_environment_still_overrides_selection(
     result = runner.invoke(app, ["account", "use", "org:acme"])
 
     assert result.exit_code == 0, result.output
-    assert "Acting account 'org:acme' selected for persisted profile" in result.output
+    assert "Account 'org:acme' selected for persisted profile" in result.output
     assert "RVS_CUSTOMER_ID is set and still overrides" in result.stderr
     assert cfg_mod.load().profiles["work"].active_customer_id == "acme"
     assert cfg_mod.current_customer_id("work") == "forced-customer"

@@ -20,7 +20,7 @@ from .targets import resolve_target
 
 
 app = typer.Typer(
-    help="Generate temporary credentials for native package clients.", no_args_is_help=True
+    help="Generate temporary credentials for package tools.", no_args_is_help=True
 )
 
 
@@ -43,7 +43,7 @@ def print_token(
     access: Literal["read", "publish", "admin"] = typer.Option(
         "read",
         "--access",
-        help="Admin additionally permits native deletion within your source grants.",
+        help="Admin also permits deletion when your source token allows it.",
     ),
     duration: str = typer.Option(
         "4h", "--duration", help="15m to 12h; source expiry may shorten it."

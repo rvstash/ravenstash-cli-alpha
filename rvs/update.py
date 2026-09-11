@@ -201,7 +201,7 @@ def _announce_new_channel(current_channel: str | None) -> None:
         return
     latest = manifest["channels"][recommended]["latest"]
     output.info(
-        f"rvs {latest} is available on compatibility channel {recommended}. "
+        f"rvs {latest} is available in release series {recommended}. "
         f"Review the migration notes, then run: rvs upgrade --to {recommended.removeprefix('v')}"
     )
 
@@ -229,7 +229,7 @@ def update(
     apply: bool = typer.Option(
         False,
         "--apply",
-        help="Refresh APT metadata and install the newest update in this channel.",
+        help="Download and install the newest update in this release series.",
     ),
     yes: bool = typer.Option(
         False,
@@ -238,7 +238,7 @@ def update(
         help="Do not ask for confirmation when used with --apply.",
     ),
 ) -> None:
-    """Check for a compatible signed APT update, or install it with --apply."""
+    """Check for a Ravenstash CLI update, or install it with --apply."""
     installed, candidate = _apt_versions()
     if installed is None:
         output.info(f"Ravenstash CLI {_cli_version()} is not managed by the rvs APT package.")
@@ -279,10 +279,10 @@ def update(
 
 
 def upgrade(
-    to: str = typer.Option(..., "--to", help="Target compatibility channel, such as 0.4 or 1."),
+    to: str = typer.Option(..., "--to", help="Release series to use, such as 0.4 or 1."),
     yes: bool = typer.Option(False, "--yes", "-y", help="Do not ask for confirmation."),
 ) -> None:
-    """Explicitly move to a newer compatibility channel."""
+    """Move the Ravenstash CLI to a newer release series."""
     try:
         target = normalize_channel(to)
     except ValueError as exc:

@@ -1381,11 +1381,11 @@ def set_selected_artifact_target(
     profile_name = profile or current_profile_name(cfg)
     effective_customer_id = customer_id or current_customer_id(profile_name, cfg)
     if not effective_customer_id:
-        raise ValueError("No acting account is selected")
+        raise ValueError("No account is selected")
     profile_config = cfg.profiles.get(profile_name, _default_profile_config(profile_name))
     account = profile_config.accounts.get(effective_customer_id)
     if account is None:
-        raise ValueError("The selected acting account has not been resolved")
+        raise ValueError("The selected account could not be found")
     account.selected_target = target
     profile_config.accounts[effective_customer_id] = account
     cfg.profiles[profile_name] = profile_config

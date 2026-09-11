@@ -1,352 +1,148 @@
-# rvs Command Reference
+# `rvs` command reference
 
-Alpha command surface:
+Run `rvs COMMAND --help` for every option accepted by an installed version.
 
-| Command | Purpose |
+## Sign-in and profiles
+
+| Command | What it does |
 | --- | --- |
-| `rvs auth` | Browser/device login and credential state |
-| `rvs profile` | Named local CLI profile management |
-| `rvs account` | Personal/organization acting-account selection |
-| `rvs context` | Effective user/profile/account/target inspection |
-| `rvs runtime` | Local Python, Node, and Java runtime management |
-| `rvs art` / `rvs artifacts` | Repositories for packages, container images, and Helm charts |
-| `rvs pip` | Native pip passthrough with ephemeral Ravenstash auth injection |
-| `rvs uv` | Native uv passthrough with ephemeral Ravenstash auth injection |
-| `rvs twine` | Native twine passthrough with ephemeral Ravenstash auth injection |
-| `rvs npm` | Native npm passthrough with ephemeral Ravenstash auth injection |
-| `rvs mvn` | Native Maven passthrough with ephemeral Ravenstash auth injection |
-| `rvs ci` | Placeholder for future CI |
+| `rvs auth login` | Signs in through a browser. |
+| `rvs auth logout` | Signs out of the selected profile. |
+| `rvs auth logout --all` | Signs out of every local profile. |
+| `rvs auth status` | Shows whether local sign-in information is available. |
+| `rvs auth whoami` | Shows the signed-in Ravenstash user. |
+| `rvs auth storage doctor` | Checks whether sign-in information can be saved securely. |
+| `rvs auth storage setup` | Sets up secure local storage. |
+| `rvs profile list` | Lists local profiles. |
+| `rvs profile current` | Shows the selected profile. |
+| `rvs profile use NAME` | Selects a profile. |
+| `rvs profile rename OLD NEW` | Renames a profile. |
+| `rvs profile delete NAME` | Deletes a local profile. |
 
-Removed from the alpha surface: previous experimental project lifecycle
-commands, package token commands, and direct repository/token top-level
-management groups.
+## Accounts and the current repository
 
-Global options:
+| Command | What it does |
+| --- | --- |
+| `rvs account list` | Lists personal accounts and organizations you can use. |
+| `rvs account use NAME` | Chooses an account by username or organization handle. |
+| `rvs account current` | Shows the selected account. |
+| `rvs art select NAMESPACE/REPOSITORY` | Chooses a private repository. |
+| `rvs art current` | Shows the selected repository or mirror. |
+| `rvs art clear` | Clears that choice without signing out. |
+| `rvs context current` | Shows the signed-in user and current choices together. |
 
-```bash
-rvs --version
-rvs --json COMMAND ...
-```
+For a personal account, `NAME` is the Ravenstash username. For an organization,
+it is the organization's public handle.
 
-`--json` emits each rvs-owned result as one JSON object. A command that emits
-multiple results uses newline-delimited JSON. Native `pip`, `uv`, `twine`, `npm`,
-and Maven subprocess output is not transformed.
+Use `--account NAME` or `--target NAMESPACE/REPOSITORY` on an `rvs art` command
+when you want a different choice for only that command.
 
-## `rvs auth`
+## Repositories
 
-```bash
-rvs auth login [--profile NAME] [--duration 8h] [--no-browser]
-  [--credential-store auto|keyring|pass|vault|plaintext] [--allow-insecure-storage]
-rvs auth logout [--profile NAME]
-rvs auth logout --all
-rvs auth status [--profile NAME]
-rvs auth whoami [--profile NAME]
-rvs auth storage doctor [--profile NAME]
-rvs auth storage setup [--store vault|plaintext] [--allow-insecure-storage]
-rvs auth storage set auto|keyring|pass|vault|plaintext
-rvs auth storage unlock
-rvs auth storage lock
-rvs auth storage change-passphrase
-```
+| Command | What it does |
+| --- | --- |
+| `rvs art repo list` | Lists repositories. |
+| `rvs art repo create NAME --registry-kind FORMAT` | Creates a repository for one or more package formats. |
+| `rvs art repo show NAME` | Shows repository details. |
+| `rvs art repo rename OLD NEW` | Renames a repository. |
+| `rvs art repo delete NAME` | Deletes a repository after confirmation. |
+| `rvs art repo set-default FORMAT NAME` | Chooses the default repository for a package format. |
+| `rvs art repo defaults` | Lists the current defaults. |
 
-`rvs auth status` reports only local credential state. `rvs auth whoami` verifies
-and reports only the authenticated Ravenstash user.
+Supported formats are `pypi`, `npm`, `maven`, `container`, and `helm`. Repeat
+`--registry-kind` to create a repository that supports more than one format.
 
-Local profiles store metadata in `~/.rvs/config.toml`. Device login access and
-refresh tokens use an OS keyring, initialized `pass`, or the passphrase-encrypted
-Ravenstash vault. If none exists, first login asks whether to install the dedicated
-Ravenstash encrypted vault before opening device authorization. This onboarding
-prompt is yes/no and names the installed store. Plaintext storage is available
-only through the advanced storage options after an exact risk acknowledgement and
-is never selected automatically. `RVS_TOKEN` is the
-automation path and overrides local credentials; a rejected `RVS_TOKEN` is never
-replaced by a stored profile credential. `rvs auth whoami` verifies identity
-against the server rather than reporting local metadata as identity.
+## Package sources
 
-Vault passphrases require at least 8 characters. The CLI recommends 12+ characters
-or a short multi-word passphrase and warns when an accepted passphrase is shorter.
+| Command | What it does |
+| --- | --- |
+| `rvs art repo upstream list REPOSITORY FORMAT` | Lists the package sources used by a repository. |
+| `rvs art repo upstream add REPOSITORY FORMAT --private-repository NAMESPACE/REPOSITORY` | Adds another private repository as a source. |
+| `rvs art repo upstream add REPOSITORY FORMAT --mirror MIRROR_ID` | Adds a private mirror as a source. |
+| `rvs art repo upstream update REPOSITORY FORMAT SOURCE_ID` | Changes a source's order or package-age settings. |
+| `rvs art repo upstream reorder REPOSITORY FORMAT SOURCE_ID...` | Sets the complete source order. |
+| `rvs art repo upstream remove REPOSITORY FORMAT SOURCE_ID` | Removes a source. |
 
-Device login discovers package endpoints from DevAPI. The CLI never receives or
-calls a Central package-control URL.
+## Private mirrors
 
-## `rvs profile`
+| Command | What it does |
+| --- | --- |
+| `rvs art mirror list` | Lists private mirrors. |
+| `rvs art mirror add SOURCE` | Adds a Ravenstash-provided mirror. |
+| `rvs art mirror create --registry-kind FORMAT` | Adds the default mirror for a package format. |
+| `rvs art mirror create-custom NAME` | Adds a custom HTTPS package source. |
+| `rvs art mirror show MIRROR_ID` | Shows a mirror. |
+| `rvs art mirror set-age MIRROR_ID --min-age-hours HOURS` | Delays newly published packages for the chosen time. |
+| `rvs art mirror delete MIRROR_ID` | Deletes a mirror after confirmation. |
+| `rvs art mirror select SOURCE` | Chooses a Ravenstash-provided mirror. |
+| `rvs art mirror select --custom NAME` | Chooses a custom mirror. |
 
-```bash
-rvs profile list
-rvs profile current [--profile NAME] [--verbose]
-rvs profile use [NAME]
-rvs profile delete [NAME]
-rvs profile delete --all
-rvs profile rename OLD NEW
-```
+## Packages
 
-A local profile is a named CLI configuration. It associates one DevAPI endpoint,
-one credential slot, discovered package endpoints, and cached context; it is not
-the authenticated user or the acting account. `current` reports non-secret local
-configuration and the source of the effective selection.
+| Command | What it does |
+| --- | --- |
+| `rvs art package list --repo NAME --registry-kind FORMAT` | Lists packages. |
+| `rvs art package show PACKAGE --repo NAME --registry-kind FORMAT` | Shows a package and its versions. |
+| `rvs art package yank PACKAGE VERSION --repo NAME --registry-kind FORMAT` | Marks a version as withdrawn. |
+| `rvs art package delete-version PACKAGE VERSION --repo NAME --registry-kind FORMAT` | Deletes one version. |
+| `rvs art package delete PACKAGE --repo NAME --registry-kind FORMAT` | Deletes a package and all its versions. |
 
-## `rvs runtime`
+## PyPI, npm, and Maven helpers
 
-```bash
-rvs runtime install python|node|java VERSION [--force]
-rvs runtime uninstall python|node|java VERSION [--yes]
-rvs runtime list
-rvs runtime which python|node|java [VERSION] [--executable NAME]
-rvs runtime use python|node|java VERSION
-rvs runtime env
-rvs runtime setup-shell [--shell bash|zsh|fish]
-rvs runtime doctor
-```
+| Command | What it does |
+| --- | --- |
+| `rvs art pypi install PACKAGE...` | Installs Python packages. |
+| `rvs art pypi publish DIST_DIR` | Publishes Python package files. |
+| `rvs art pypi index-url` | Prints the private install address. |
+| `rvs art pypi upload-url` | Prints the private upload address. |
+| `rvs art npm install PACKAGE...` | Installs npm packages. |
+| `rvs art npm publish PACKAGE_DIR` | Publishes an npm package. |
+| `rvs art npm registry-url` | Prints the private npm address. |
+| `rvs art maven install GROUP:ARTIFACT:VERSION` | Downloads a Maven package. |
+| `rvs art maven deploy FILE --group GROUP --artifact ARTIFACT --version VERSION` | Publishes a Maven package. |
+| `rvs art maven repo-url` | Prints the private Maven address. |
 
-The runtime area is intentionally limited to Python, Node, and Java. Partial
-versions resolve to the newest matching installed semantic version. Managed
-shell shims resolve `.python-version`, `.node-version`, and `.java-version` at
-invocation time, so project pins written by `runtime use` are effective after
-the shim was installed.
+The publishing commands ask for confirmation. Add `--yes` only in a protected
+automation job.
 
-## Acting account and combined context
+## Package-tool commands
 
-```bash
-rvs account list [--profile NAME]
-rvs account current [--profile NAME]
-rvs account use HANDLE|personal|org:LABEL|STABLE_REF [--profile NAME]
-rvs context current [--profile NAME]
-
-rvs art select TARGET [--kind KIND] [--account ACCOUNT] [--profile NAME]
-rvs art current [--account ACCOUNT] [--profile NAME]
-rvs art clear [--account ACCOUNT] [--profile NAME]
-rvs art --target TARGET [--account ACCOUNT] [--kind KIND] install PACKAGE...
-```
-
-The authenticated user is the audit actor. The acting account is the personal or
-organization customer used for authorization, ownership, and metering. A package
-target is selected inside that account. `rvs context current` verifies and shows
-the effective tuple and selection provenance without collapsing those concepts.
-
-Repository targets are `namespace/repository` in the acting account.
-Realm prefixes and `@` notation are rejected. `rvs art --scope self` is the
-default; `--scope public` or `--public` currently fails with
-`PublicCatalogUnavailable` before any resource operation. Mirrors remain
-separate targets: `mirror:official-slug` or `custom-mirror:customer-name`.
-Resolution is always scoped to the acting account. `--kind` is needed only when
-a generic operation or duplicate cross-kind custom mirror name is ambiguous.
-Clearing a target does not change the login or account.
-
-## CLI updates
-
-`rvs update` checks only the signed candidate in the currently configured APT
-compatibility channel. `rvs update --apply` refreshes APT metadata and installs
-that compatible candidate. It never changes channels.
-
-Use `rvs upgrade --to 0.7` (or a later channel) to make a breaking compatibility
-transition explicit. The command authenticates Ravenstash's signed channel
-manifest, shows the migration notes, asks for confirmation, changes the APT
-source atomically, and restores the prior source if authentication or candidate
-validation fails.
-
-## `rvs art`
-
-Publishing requires confirmation of the resolved repository, acting account, and artifacts.
-Use `--yes` (`-y`) with `rvs art pypi publish`, `rvs art npm publish`, or
-`rvs art maven deploy` to skip confirmation. Native wrappers accept `--rvs-yes`
-(for example, `rvs npm --rvs-yes --rvs-target platform/backend publish`).
-Unattended publishing must pass the bypass flag. Native builds show their project
-or supplied references because the final artifacts may be produced during execution.
-
-Preview identity examples:
-
-| Format | Heading | Details |
-| --- | --- | --- |
-| PyPI | `PyPI acme-sdk==1.4.0` | Selected wheel/sdist filenames, grouped by name/version |
-| npm | `npm @acme/sdk@1.4.0` | Tarball or planned packing source; tag when known |
-| Maven | `Maven com.acme:sdk:1.4.0` | JAR/POM/classifier files; direct deployment also lists checksum sidecars |
-| Container | `Container oci.rvsta.sh/platform/backend/api:1.4.0` | Supplied reference and explicit platforms |
-| Helm | `Helm oci://oci.rvsta.sh/platform/backend/api-chart:1.4.0` | Chart archive; name/version read from `Chart.yaml` |
-
-The final question is `Publish these N files?` for a known file inventory, or
-`Publish these files/references?` when a native tool resolves the final output.
-Metadata that cannot be read is labeled unavailable, rather than inferred from a
-potentially renamed archive. Native build/project previews do not claim to enumerate
-future output or resolve all native configuration. Helm version build metadata uses
-`_` in OCI tags in place of `+`.
-
-Repository commands:
+`rvs` can run these tools with temporary Ravenstash access:
 
 ```bash
-rvs art repo list [--profile NAME] [--customer-id CUSTOMER_ID] [--registry-kind pypi|npm|maven|container|helm]
-rvs art repo create [NAMESPACE/]NAME --registry-kind pypi|npm|maven|container|helm [--profile NAME] [--customer-id CUSTOMER_ID] [--default]
-rvs art repo show REPOSITORY_NAME [--profile NAME]
-rvs art repo rename REPOSITORY_NAME NEW_NAME [--profile NAME]
-rvs art repo delete REPOSITORY_NAME [--profile NAME] [--yes]
-rvs art repo set-default pypi|npm|maven|container|helm REPOSITORY_NAME [--profile NAME]
-rvs art repo defaults [--profile NAME]
-rvs art repo upstream list REPOSITORY KIND [--profile NAME]
-rvs art repo upstream add REPOSITORY KIND --private-repository NAMESPACE/REPOSITORY [--priority N] [--min-age-hours HOURS] [--max-age-hours HOURS] [--profile NAME]
-rvs art repo upstream add REPOSITORY KIND --remote-cache CACHE [--priority N] [--min-age-hours HOURS] [--max-age-hours HOURS] [--profile NAME]
-rvs art repo upstream update REPOSITORY KIND ATTACHMENT [--priority N] [--min-age-hours HOURS] [--max-age-hours HOURS] [--profile NAME]
-rvs art repo upstream reorder REPOSITORY KIND ATTACHMENT... [--profile NAME]
-rvs art repo upstream remove REPOSITORY KIND ATTACHMENT [--profile NAME]
+rvs pip PIP_ARGUMENTS...
+rvs uv UV_ARGUMENTS...
+rvs twine TWINE_ARGUMENTS...
+rvs npm NPM_ARGUMENTS...
+rvs mvn MAVEN_ARGUMENTS...
+rvs docker DOCKER_ARGUMENTS...
+rvs helm HELM_ARGUMENTS...
+rvs oras --rvs-kind container|helm ORAS_ARGUMENTS...
 ```
 
-`--registry-kind` (short form `-k`) is the registry-kind selector.
+The commands accept `--rvs-profile`, `--rvs-account`, and `--rvs-target` where
+applicable. Publishing commands also accept `--rvs-yes` for protected automation.
 
-Repository names use lowercase letters, numbers, and hyphens. Defaults are
-stored per profile under `[profiles.<name>.registries.<registry-kind>]`; legacy
-top-level `[registries.<registry-kind>]` values are still read as a fallback. Renaming a
-repository also updates a matching default in the selected profile.
+pnpm, Yarn, Bun, Gradle, and sbt can use Ravenstash package addresses, but there
+are no `rvs pnpm`, `rvs yarn`, `rvs bun`, `rvs gradle`, or `rvs sbt` commands.
 
-Container and Helm are OCI-native private lanes. They do not support upstream
-attachments or remote caches. Classic non-OCI Helm repositories are not
-supported.
+Use `rvs oci-reference --kind container|helm` to print the permanent Ravenstash
+address for an image or chart.
 
-The `upstream` subgroup manages the complete ordered plan of at most four mixed
-private and remote sources. A private selector may be namespace-qualified and must
-resolve to a same-customer, same-kind lane. Omitting `--priority` appends. Private
-sources default to a disabled minimum-age guard; remote sources retain their server
-recommendation when the option is omitted. Reordering replaces the full order
-atomically.
+## Local runtimes and CLI updates
 
-Private mirror commands:
+| Command | What it does |
+| --- | --- |
+| `rvs runtime install RUNTIME VERSION` | Installs Python, Node.js, or Java. |
+| `rvs runtime uninstall RUNTIME VERSION` | Removes an installed runtime. |
+| `rvs runtime list` | Lists installed runtimes. |
+| `rvs runtime which RUNTIME` | Shows an installed runtime's program path. |
+| `rvs runtime use RUNTIME VERSION` | Chooses a runtime for the current project. |
+| `rvs runtime setup-shell` | Makes installed runtimes available in future shells. |
+| `rvs runtime doctor` | Checks the runtime setup. |
+| `rvs update` | Checks for a CLI update. |
+| `rvs update --apply` | Installs an update in the current release series. |
+| `rvs upgrade --to SERIES` | Moves to a newer release series after confirmation. |
 
-```bash
-rvs art mirror list [--profile NAME] [--customer-id CUSTOMER_ID] [--registry-kind pypi|npm|maven]
-rvs art mirror create --registry-kind pypi|npm|maven [--profile NAME] [--customer-id CUSTOMER_ID]
-rvs art mirror show CACHE_ID [--profile NAME]
-rvs art mirror set-age CACHE_ID --min-age-hours HOURS [--profile NAME]
-rvs art mirror delete CACHE_ID [--profile NAME] [--yes]
-rvs art mirror delete CACHE_ID --customer-id CUSTOMER_ID --registry-kind pypi|npm|maven [--profile NAME] [--yes]
-rvs art mirror add OFFICIAL_SOURCE [--select]
-rvs art mirror create-custom NAME --kind pypi|npm|maven --api-url URL --publication-control user-controlled|externally-controlled [--artifact-url URL] [--select]
-rvs art mirror select SOURCE
-rvs art mirror select --custom NAME [--kind KIND]
-rvs art mirror current
-rvs art mirror clear
-```
-
-Repository upstream configuration continues to use `--remote-cache`
-because it attaches the backing cache rather than the direct private mirror.
-
-Package metadata commands:
-
-```bash
-rvs art package list --repo REPOSITORY_NAME --registry-kind pypi|npm|maven [--profile NAME]
-rvs art package show NAME --repo REPOSITORY_NAME --registry-kind pypi|npm|maven [--profile NAME]
-rvs art package delete NAME --repo REPOSITORY_NAME --registry-kind pypi|npm|maven [--profile NAME] [--yes]
-rvs art package delete-version NAME VERSION --repo REPOSITORY_NAME --registry-kind pypi|npm|maven [--profile NAME] [--yes]
-rvs art package yank NAME VERSION --repo REPOSITORY_NAME --registry-kind pypi|npm|maven [--reason TEXT] [--profile NAME]
-```
-
-Package listings include download and bandwidth totals. `package show` includes
-per-version metrics plus artifact filenames, sizes, and SHA-256 digests.
-
-PyPI helpers:
-
-```bash
-rvs art pypi index-url [--repo REPOSITORY_NAME] [--profile NAME] [--customer-id CUSTOMER_ID]
-rvs art pypi upload-url [--repo REPOSITORY_NAME] [--profile NAME] [--customer-id CUSTOMER_ID]
-rvs art pypi install PACKAGE... [--repo REPOSITORY_NAME] [--profile NAME] [--customer-id CUSTOMER_ID]
-rvs art pypi publish [DIST_DIR] [--repo REPOSITORY_NAME] [--profile NAME] [--customer-id CUSTOMER_ID] [--yes|-y]
-rvs art pypi configure [--repo REPOSITORY_NAME] [--profile NAME] [--customer-id CUSTOMER_ID]
-```
-
-The install helper uses Ravenstash as pip's primary `PIP_INDEX_URL`. Direct
-publishing sends the wheel/sdist metadata fields expected by the legacy PyPI
-upload protocol, including the correct wheel Python tag or `source` marker.
-
-npm helpers:
-
-```bash
-rvs art npm registry-url [--repo REPOSITORY_NAME] [--profile NAME] [--customer-id CUSTOMER_ID]
-rvs art npm npmrc [--repo REPOSITORY_NAME] [--profile NAME] [--customer-id CUSTOMER_ID]
-rvs art npm install PACKAGE... [--repo REPOSITORY_NAME] [--profile NAME] [--customer-id CUSTOMER_ID]
-rvs art npm publish [PACKAGE_DIR] [--repo REPOSITORY_NAME] [--profile NAME] [--customer-id CUSTOMER_ID] [--yes|-y]
-rvs art npm configure [--repo REPOSITORY_NAME] [--profile NAME] [--customer-id CUSTOMER_ID]
-```
-
-Direct publishing runs native `npm pack` before sending the npm wire payload,
-so npm's packlist and lifecycle behavior apply. An `npm` executable is required.
-
-Maven helpers:
-
-```bash
-rvs art maven repo-url [--repo REPOSITORY_NAME] [--profile NAME] [--customer-id CUSTOMER_ID]
-rvs art maven settings [--repo REPOSITORY_NAME] [--profile NAME] [--customer-id CUSTOMER_ID]
-rvs art maven install GROUP:ARTIFACT:VERSION [--repo REPOSITORY_NAME] [--profile NAME] [--customer-id CUSTOMER_ID]
-rvs art maven deploy FILE --group GROUP --artifact ARTIFACT --version VERSION [--repo REPOSITORY_NAME] [--profile NAME] [--customer-id CUSTOMER_ID] [--yes|-y]
-rvs art maven configure [--repo REPOSITORY_NAME] [--profile NAME] [--customer-id CUSTOMER_ID]
-```
-
-`maven deploy` requires a canonical artifact filename matching the artifact ID
-and version, including valid timestamped `SNAPSHOT` forms.
-
-No package-token command is exposed in the alpha CLI.
-
-## Native Package-Manager Wrappers
-
-```bash
-rvs pip [--rvs-profile NAME] [--rvs-target TARGET] [--rvs-account ACCOUNT] [--rvs-customer-id CUSTOMER_ID] [--rvs-native-config respect|override|isolate] PIP_ARGS...
-rvs uv [--rvs-profile NAME] [--rvs-target TARGET] [--rvs-account ACCOUNT] [--rvs-customer-id CUSTOMER_ID] [--rvs-native-config respect|override|isolate] UV_ARGS...
-rvs twine [--rvs-profile NAME] [--rvs-target TARGET] [--rvs-account ACCOUNT] [--rvs-customer-id CUSTOMER_ID] [--rvs-native-config respect|override|isolate] TWINE_ARGS...
-rvs npm [--rvs-profile NAME] [--rvs-target TARGET] [--rvs-account ACCOUNT] [--rvs-customer-id CUSTOMER_ID] [--rvs-native-config respect|override|isolate] NPM_ARGS...
-rvs mvn [--rvs-profile NAME] [--rvs-target TARGET] [--rvs-account ACCOUNT] [--rvs-customer-id CUSTOMER_ID] [--rvs-native-config respect|override|isolate] MVN_ARGS...
-rvs docker [--rvs-profile NAME] [--rvs-target TARGET] [--rvs-account ACCOUNT] [--rvs-customer-id CUSTOMER_ID] DOCKER_ARGS...
-rvs helm [--rvs-profile NAME] [--rvs-target TARGET] [--rvs-account ACCOUNT] [--rvs-customer-id CUSTOMER_ID] HELM_ARGS...
-rvs oras --rvs-kind container|helm [--rvs-profile NAME] [--rvs-target TARGET] [--rvs-account ACCOUNT] [--rvs-customer-id CUSTOMER_ID] ORAS_ARGS...
-rvs oci-reference --kind container|helm [--target TARGET] [--account ACCOUNT] [--oci-path PATH] [--reference TAG_OR_DIGEST] [--profile NAME] [--customer-id CUSTOMER_ID]
-```
-
-These commands run the named native package manager. They are not aliases for
-`rvs art`. By default, `--rvs-native-config respect` leaves native registry
-selection alone, reads native config files and relevant environment variables,
-and injects short-lived Ravenstash credentials only when the invocation
-references Ravenstash registry URLs.
-
-Passing `--rvs-target` selects a private repository or private mirror for one
-invocation and overrides the saved selection. `--rvs-native-config isolate` also disables
-native config where the underlying tool supports it, such as `PIP_CONFIG_FILE`
-for pip and `UV_NO_CONFIG` for uv. Tokens are injected through subprocess
-environment variables or temporary files and are not written to persistent
-package-manager config files.
-
-Examples:
-
-```bash
-rvs npm install @acme/widgets
-rvs npm --rvs-target acme/internal-npm install @acme/widgets
-rvs npm --rvs-target acme/internal-npm publish
-
-rvs pip install acme-utils
-rvs pip --rvs-target acme/internal-pypi install acme-utils
-
-rvs uv sync
-rvs uv --rvs-target acme/internal-pypi --rvs-native-config isolate sync
-
-rvs twine --rvs-target acme/internal-pypi upload dist/*
-rvs mvn --rvs-target acme/internal-maven deploy
-
-rvs docker --rvs-target acme/runtime-images pull oci.rvsta.sh/acme/runtime-images/api:latest
-rvs helm --rvs-target acme/deployment-charts show chart oci://oci.rvsta.sh/acme/deployment-charts/charts/api --version 1.2.3
-rvs oras --rvs-kind container --rvs-target acme/runtime-images discover oci.rvsta.sh/acme/runtime-images/api:latest
-rvs oci-reference --kind container --target acme/runtime-images --oci-path api --reference latest
-```
-
-The OCI wrappers always scope one invocation to one exact logical repository.
-They obtain a short-lived Container or Helm capability through DevAPI, preserve
-unrelated native registry credentials in an ephemeral config copy, and install
-an exact-host `docker-credential-rvs` helper only in that copy. Secrets are not
-placed in argv and the user's Docker or Helm config is never rewritten. Docker,
-Helm, and ORAS share `oci.rvsta.sh`; `/v2/` is protocol plumbing used by the
-native clients and is not part of the documented repository reference.
-
-## `rvs ci`
-
-Placeholder commands:
-
-```bash
-rvs ci list
-rvs ci run [PIPELINE]
-rvs ci status [RUN_ID]
-rvs ci logs RUN_ID
-```
-
-Each command exits with "rvs ci is not implemented yet."
+See the [public CLI documentation](https://docs.ravenstash.com/cli/overview/) for
+task-focused guides and examples.

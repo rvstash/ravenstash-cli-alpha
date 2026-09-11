@@ -123,11 +123,11 @@ def _registry_url(profile: cfg_mod.ProfileConfig) -> tuple[str, str]:
 def _selected_kind(tool: OciTool, selected: OciRegistryKind | None) -> OciRegistryKind:
     if tool == "docker":
         if selected not in {None, "container"}:
-            output.fatal("rvs docker only supports the container registry kind.")
+            output.fatal("rvs docker only works with the Container package format.")
         return "container"
     if tool == "helm":
         if selected not in {None, "helm"}:
-            output.fatal("rvs helm only supports the helm registry kind.")
+            output.fatal("rvs helm only works with the Helm package format.")
         return "helm"
     if selected not in {"container", "helm"}:
         output.fatal("rvs oras requires --rvs-kind container or --rvs-kind helm.")

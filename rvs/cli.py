@@ -37,42 +37,42 @@ app.command("upgrade")(upgrade)
 app.command(
     "pip",
     context_settings=native_commands.PASSTHROUGH_CONTEXT,
-    help="Run pip with ephemeral Ravenstash auth for Ravenstash indexes.",
+    help="Run pip with temporary access to a Ravenstash PyPI repository.",
 )(native_commands.pip)
 app.command(
     "uv",
     context_settings=native_commands.PASSTHROUGH_CONTEXT,
-    help="Run uv with ephemeral Ravenstash auth for Ravenstash indexes.",
+    help="Run uv with temporary access to a Ravenstash PyPI repository.",
 )(native_commands.uv)
 app.command(
     "twine",
     context_settings=native_commands.PASSTHROUGH_CONTEXT,
-    help="Run twine with ephemeral Ravenstash auth for Ravenstash uploads.",
+    help="Run Twine with temporary access to publish to Ravenstash.",
 )(native_commands.twine)
 app.command(
     "npm",
     context_settings=native_commands.PASSTHROUGH_CONTEXT,
-    help="Run npm with ephemeral Ravenstash auth for Ravenstash registries.",
+    help="Run npm with temporary access to a Ravenstash npm repository.",
 )(native_commands.npm)
 app.command(
     "mvn",
     context_settings=native_commands.PASSTHROUGH_CONTEXT,
-    help="Run Maven with ephemeral Ravenstash auth for Ravenstash repositories.",
+    help="Run Maven with temporary access to a Ravenstash Maven repository.",
 )(native_commands.mvn)
 app.command(
     "docker",
     context_settings=oci_commands.PASSTHROUGH_CONTEXT,
-    help="Run Docker with temporary authentication; push, pull, and tag accept private image paths.",
+    help="Run Docker with temporary access; push, pull, and tag accept private image paths.",
 )(oci_commands.docker)
 app.command(
     "helm",
     context_settings=oci_commands.PASSTHROUGH_CONTEXT,
-    help="Run Helm with temporary authentication and selected-repository chart paths.",
+    help="Run Helm with temporary access and selected-repository chart paths.",
 )(oci_commands.helm)
 app.command(
     "oras",
     context_settings=oci_commands.PASSTHROUGH_CONTEXT,
-    help="Run ORAS with an exact Container or Helm Ravenstash credential.",
+    help="Run ORAS with temporary access to a Container or Helm repository.",
 )(oci_commands.oras)
 app.command("oci-reference")(oci_commands.oci_reference)
 
@@ -103,7 +103,7 @@ def main(
     json_output: bool = typer.Option(
         False,
         "--json",
-        help="Emit rvs-owned output as JSON.",
+        help="Print output from rvs as JSON.",
     ),
 ) -> None:
     """Ravenstash developer CLI."""

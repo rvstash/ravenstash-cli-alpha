@@ -12,7 +12,7 @@ from ..client import ApiClient, ApiError
 
 app = typer.Typer(
     name="context",
-    help="Inspect the effective user, local profile, acting account, and artifact target.",
+    help="Show who is signed in and which account and repository are selected.",
     no_args_is_help=True,
 )
 
@@ -58,14 +58,14 @@ def context_current(
         help="Local profile to inspect (default: selected profile).",
     ),
 ) -> None:
-    """Verify and show the complete effective Ravenstash CLI context."""
+    """Show the current Ravenstash sign-in and selections."""
     cfg = cfg_mod.load()
     profile_name = profile or cfg_mod.current_profile_name(cfg)
     selected_profile = cfg.active_profile(profile_name)
     try:
         identity = ApiClient.from_profile(profile_name).get("/me").json()
     except ApiError as exc:
-        output.fatal(f"Could not verify the effective Ravenstash context: {exc}")
+        output.fatal(f"Could not verify the current Ravenstash sign-in: {exc}")
 
     account_name, account = _account_display(profile_name)
     target = account.selected_target if account is not None else None
@@ -73,13 +73,13 @@ def context_current(
         {
             "User": _identity_display(identity),
             "Local profile": profile_name,
-            "Profile selection source": (
+            "Profile selected by": (
                 "command option (--profile)" if profile else cfg_mod.profile_selection_source()
             ),
-            "Acting account": account_name,
-            "Account selection source": cfg_mod.account_selection_source(profile_name, cfg),
-            "Package target": target.display_selector if target is not None else "not selected",
-            "DevAPI URL": selected_profile.api_url,
+            "Account": account_name,
+            "Account selected by": cfg_mod.account_selection_source(profile_name, cfg),
+            "Repository or mirror": target.display_selector if target is not None else "not selected",
+            "Ravenstash API": selected_profile.api_url,
         },
-        title="Current Ravenstash CLI context",
+        title="Current Ravenstash CLI selections",
     )

@@ -1,502 +1,120 @@
-# rvs Package Registry Quickstart
+# Ravenstash CLI quickstart
 
-This tutorial shows how to use the `rvs` CLI with Ravenstash private package
-repositories for PyPI, npm, and Maven. It is written for both humans and LLM
-agents, so it includes the operational model, command sequence, and failure
-cases that matter when automating workflows.
+This guide takes you from sign-in to installing a private package.
 
-## Mental Model
-
-`rvs auth login` authenticates one Ravenstash user through a named local CLI
-profile. Select the acting personal account or organization separately, then
-select a typed private repository or private-mirror target.
-
-The four context layers are intentionally distinct:
-
-- **user** — the authenticated human and audit actor;
-- **local profile** — a named CLI configuration and credential slot;
-- **acting account** — the personal or organization authorization and metering boundary;
-- **artifact target** — the repository or private mirror used inside that account.
-
-Package commands resolve a complete repository selector through DevAPI:
-
-- `<namespace>/<repository-name>` selects a namespace in the acting account;
-- no `internal:`, `global:`, or `@` prefix is used;
-- `rvs art --scope self` is the default; `--scope public` or `--public`
-  currently returns `PublicCatalogUnavailable`;
-- saved defaults contain immutable
-  `<namespace_unique_ref>/<repository_unique_ref>` pairs.
-
-Repository-management commands also accept a repository name alone when it is
-unique in the selected account.
-
-When a package command needs a target, `rvs` resolves it in this order:
-
-1. Use the one-shot `--target`, if provided.
-2. Use the selected target for the effective `(local profile, acting account)` pair.
-3. Read a legacy per-kind private default during migration.
-4. For `rvs art` read/install helpers, use the account-scoped official default
-   (`pypiorg`, `npmjs`, or `maven-central`) when its direct binding is enabled.
-
-The error looks like this:
-
-```text
-No pypi artifact target is selected. Pass --target or run `rvs art select`.
-```
-
-The same pattern applies to `npm` and `maven`.
-
-## Prerequisites
-
-Install `rvs` and make sure it is on `PATH`:
+## 1. Install and sign in
 
 ```bash
-rvs --help
-```
-
-For install flows, the native package manager must also be available:
-
-```bash
-python3 -m pip --version
-npm --version
-mvn --version
-```
-
-`rvs` can manage Python, Node.js, and Java runtimes, but Maven itself is treated
-as a system tool.
-
-## Authenticate
-
-Interactive login uses the Ravenstash device authorization flow:
-
-```bash
+curl -fsSL https://ravenstash.com/install.sh | bash
 rvs auth login
 ```
 
-For a named profile:
+The login command opens Ravenstash in your browser. Return to the terminal when
+the browser confirms that sign-in is complete.
 
-```bash
-rvs auth login --profile staging
-rvs profile use staging
-```
+## 2. Choose a personal account or organization
 
-Credential behavior:
-
-- Device login stores access and refresh tokens in the selected OS keyring,
-  initialized `pass` store, or passphrase-encrypted Ravenstash vault.
-- If none is available, the first login asks yes/no whether to install the
-  dedicated Ravenstash encrypted vault before browser authorization and names it
-  after installation. Plaintext storage is available only through the advanced
-  storage commands and is never an automatic fallback.
-- Local profile metadata lives in `~/.rvs/config.toml`.
-- `RVS_TOKEN` overrides stored credentials and is the automation path.
-- Never commit real tokens or `.env` files containing secrets.
-
-After login, inspect authentication and local-profile state separately:
-
-```bash
-rvs auth status
-rvs auth whoami
-rvs profile current
-rvs auth storage doctor
-```
-
-Select the acting account:
+List the accounts you can use:
 
 ```bash
 rvs account list
-rvs account use org:acme
-rvs context current
-rvs art select acme/backend
 ```
 
-For a personal account, use `rvs account use personal` instead. Acting-account
-selection is mandatory in headless flows even immediately after device login.
-Official private-mirror use requires its remote cache to be initialized once for
-the selected account:
+Choose one by its public name:
 
 ```bash
-rvs art mirror add pypiorg
-rvs art mirror add npmjs
-rvs art mirror add maven-central
+rvs account use Avery
+rvs account use AcmeHQ
 ```
 
-Without that binding, `mirror:pypiorg` (or its npm/Maven equivalent) returns 404
-by design. Initialization creates an authenticated private mirror with a 24-hour
-minimum-age default; merely knowing the curated slug does not grant access.
+Use your Ravenstash username for your personal account. Use the public handle
+shown on an organization's Ravenstash page for an organization. You only need
+to run one of these commands.
 
-The prompt becomes `(staging · org:acme · acme/backend)`. Two named login
-profiles may select the same organization while retaining distinct audit actors.
-
-`whoami` verifies and reports only the authenticated user through DevAPI.
-`context current` combines that user with the effective local profile, acting
-account, artifact target, and selection provenance.
-
-## Create Or Select Repositories
-
-List repositories owned by the selected personal account or organization:
+## 3. Choose a repository
 
 ```bash
 rvs art repo list
-rvs art repo list --registry-kind pypi
-rvs art repo list --registry-kind npm
-rvs art repo list --registry-kind maven
-rvs art repo list --registry-kind container
-rvs art repo list --registry-kind helm
+rvs art select platform/packages
 ```
 
-Create a repository and make it the default for that registry kind:
+The first name is the namespace and the second is the repository. Your current
+choice is remembered for the selected account and profile.
+
+Check it at any time:
 
 ```bash
-rvs art repo create my-python-packages --registry-kind pypi --default
-rvs art repo create my-node-packages --registry-kind npm --default
-rvs art repo create my-java-packages --registry-kind maven --default
-rvs art repo create runtime-images --registry-kind container --default
-rvs art repo create deployment-charts --registry-kind helm --default
+rvs context current
 ```
 
-Repository names use lowercase letters, numbers, and hyphens.
+## 4. Install a package
 
-Or set defaults for existing repositories:
+Use the command for your package format:
 
 ```bash
-rvs art repo set-default pypi <pypi-repo-name>
-rvs art repo set-default npm <npm-repo-name>
-rvs art repo set-default maven <maven-repo-name>
-rvs art repo set-default container <container-repo-name>
-rvs art repo set-default helm <helm-repo-name>
+rvs pip install internal-sdk
+rvs npm install @acme/design-system
+rvs mvn verify
 ```
 
-Check defaults:
+`rvs` gives the package tool temporary access for that command. It does not add
+a Ravenstash token to the project's package settings.
+
+## Use a private mirror
+
+Choose a Ravenstash-provided mirror when you need public packages:
 
 ```bash
-rvs art repo defaults
+rvs art mirror add pypiorg --select
+rvs pip install requests
 ```
 
-You can always bypass defaults with `--repo`:
+Use `npmjs` for npm or `maven-central` for Maven. A mirror is read-only, so
+select a private repository again before publishing.
+
+## Publish a package
+
+Select the destination first:
 
 ```bash
-rvs art pypi install requests --repo <pypi-repo-name>
-rvs art npm install lodash --repo <npm-repo-name>
-rvs art maven install com.example:lib:1.0.0 --repo <maven-repo-name>
-```
-
-Use `<namespace>/<repo-name>` to disambiguate equal repository names:
-
-```bash
-rvs art pypi index-url --repo <namespace>/<repo-name>
-```
-
-The CLI resolves that selector, saves immutable references for persistent
-defaults, and always generates native package URLs in this stable form:
-
-```text
-/in_abcdefgh/r_m7nk3p4q/
-```
-
-Namespace and repository renames therefore do not break CLI defaults.
-
-## `rvs art` vs Native Package-Manager Wrappers
-
-`rvs art ...` is the Ravenstash-native package workflow. It selects the
-Ravenstash repository from `--repo` or the saved default in `~/.rvs/config.toml`.
-The implementation may delegate to a native package manager or use Ravenstash
-registry adapters directly; that detail is not part of the user contract.
-
-The top-level native wrappers explicitly run the named package manager:
-
-```bash
-rvs pip install private-package
-rvs uv sync
+rvs art select platform/packages
 rvs twine upload dist/*
-rvs npm install @acme/widgets
-rvs mvn test
-rvs docker --rvs-target <namespace>/<container-repo-name> pull oci.rvsta.sh/<namespace-name>/<container-repo-name>/api:latest
-rvs helm --rvs-target <namespace>/<helm-repo-name> show chart oci://oci.rvsta.sh/<namespace-name>/<helm-repo-name>/charts/api --version 1.2.3
-rvs oras --rvs-kind container --rvs-target <namespace>/<container-repo-name> discover oci.rvsta.sh/<namespace-name>/<container-repo-name>/api:latest
 ```
 
-By default, the wrappers respect native config such as `.npmrc`, `pip.conf`,
-`.pypirc`, `settings.xml`, `pyproject.toml`, and `uv.toml`. If those files or
-the command arguments reference Ravenstash registry URLs, `rvs` injects a
-short-lived token only for the subprocess. It does not write tokens to
-persistent package-manager config files.
+You can also publish with `rvs npm publish` or `rvs mvn deploy`. Ravenstash shows
+the destination and asks for confirmation before uploading.
 
-Docker, Helm, and ORAS share Ravenstash's OCI endpoint. Their wrappers select
-one exact repository, request a scoped ephemeral credential, and overlay the
-`docker-credential-rvs` helper on a temporary copy of the native registry
-config. Existing credentials for other hosts are preserved and no Ravenstash
-secret is written to the user's config or command line. Use
-`rvs oci-reference --kind container|helm` to print a stable customer-facing
-reference; the clients' internal `/v2/` requests are intentionally hidden.
-
-Use `--rvs-target` when the wrapper should override native registry selection for
-one invocation:
+In a protected automation job, add `--rvs-yes` before the wrapped tool's normal
+arguments:
 
 ```bash
-rvs npm --rvs-target <namespace>/<npm-repo-name> install @acme/widgets
-rvs npm --rvs-target <namespace>/<npm-repo-name> publish
-rvs pip --rvs-target <namespace>/<pypi-repo-name> install private-package
-rvs uv --rvs-target <namespace>/<pypi-repo-name> sync
-rvs twine --rvs-target <namespace>/<pypi-repo-name> upload dist/*
-rvs mvn --rvs-target <namespace>/<maven-repo-name> deploy
+rvs npm --rvs-yes publish
 ```
 
-Use `--rvs-native-config isolate` for a cleaner subprocess environment where
-the native tool supports disabling persistent config:
+## Use another profile
+
+Profiles are useful when one computer connects to more than one Ravenstash
+environment:
 
 ```bash
-rvs pip --rvs-target <namespace>/<pypi-repo-name> --rvs-native-config isolate install private-package
-rvs uv --rvs-target <namespace>/<pypi-repo-name> --rvs-native-config isolate sync
+rvs auth login --profile work
+rvs profile use work
+rvs profile current
 ```
-
-## PyPI
-
-Publishing requires confirmation of the resolved repository, acting account, and artifacts.
-Use `--yes` (`-y`) with `rvs art pypi publish`, `rvs art npm publish`, or
-`rvs art maven deploy` to skip confirmation. Native wrappers accept `--rvs-yes`
-(for example, `rvs npm --rvs-yes --rvs-target platform/backend publish`).
-Unattended publishing must pass the bypass flag. Native builds show their project
-or supplied references because the final artifacts may be produced during execution.
-
-PyPI previews group only the selected files by package/version. One wheel is a valid
-upload; other platform wheels can be added to the same version later under new
-filenames. Existing filenames are rejected, so retry only missing files after a
-partial failure. The preview does not certify a complete release.
-
-Print the private install and publish URLs:
-
-```bash
-rvs art pypi index-url
-rvs art pypi upload-url
-```
-
-Install from the private repository:
-
-```bash
-rvs art pypi install requests
-```
-
-For this command, `rvs` delegates to `pip` and injects:
-
-```text
-PIP_INDEX_URL=https://__token__:<token>@<pypi-read-host>/<namespace_unique_ref>/<repository_unique_ref>/simple/
-```
-
-That environment variable is scoped to the subprocess. It is not written to a
-project file. Ravenstash is the primary index for this invocation, avoiding the
-ambiguous cross-index resolution caused by adding a private repository as an
-extra index.
-
-Publish wheels or source distributions:
-
-```bash
-python3 -m build
-rvs art pypi publish dist/
-```
-
-Current behavior: `rvs art pypi publish` does not shell out to `twine`. It
-implements the legacy PyPI upload protocol directly and posts to:
-
-```text
-https://<pypi-push-host>/<namespace_unique_ref>/<repository_unique_ref>/
-```
-
-To print a pip configuration snippet instead of running an install:
-
-```bash
-rvs art pypi configure
-```
-
-## npm
-
-Print the private npm registry URL:
-
-```bash
-rvs art npm registry-url
-```
-
-Install from the private repository:
-
-```bash
-rvs art npm install lodash
-```
-
-For this command, `rvs` delegates to `npm` and runs the equivalent of:
-
-```bash
-npm install --registry https://<npm-read-host>/<namespace_unique_ref>/<repository_unique_ref>/ lodash
-```
-
-It injects the auth token through npm's environment-backed config key:
-
-```text
-NPM_CONFIG_//<npm-read-host>/<namespace_unique_ref>/<repository_unique_ref>/:_authToken=<token>
-```
-
-Publish the package in the current directory:
-
-```bash
-rvs art npm publish .
-```
-
-Current behavior: `rvs art npm publish` does not shell out to `npm publish`. It
-runs native `npm pack`, reads `package.json`, builds the npm publish JSON body,
-and PUTs it to:
-
-```text
-https://<npm-push-host>/<namespace_unique_ref>/<repository_unique_ref>/<package-name>
-```
-
-It writes package metadata with download tarball URLs pointing at the private
-download registry:
-
-```text
-https://<npm-read-host>/<namespace_unique_ref>/<repository_unique_ref>/<package-name>/-/<tarball>
-```
-
-Using `npm pack` honors npm's normal packlist, lifecycle hooks, bundled
-dependencies, and generated files. An `npm` executable must be available.
-
-To print an `.npmrc` snippet:
-
-```bash
-rvs art npm npmrc
-rvs art npm configure
-```
-
-The snippet uses `${RVS_TOKEN}`. Export that variable before using the snippet
-with native `npm` commands.
-
-## Maven
-
-Print the private Maven repository URL:
-
-```bash
-rvs art maven repo-url
-```
-
-Fetch an artifact into the local Maven cache:
-
-```bash
-rvs art maven install com.example:lib:1.0.0
-```
-
-For this command, `rvs` writes a temporary `settings.xml` containing:
-
-- server id `rvs-private`
-- username `__token__`
-- the active token as the password
-- repository URL
-  `https://<maven-read-host>/<namespace_unique_ref>/<repository_unique_ref>/`
-
-It then runs:
-
-```bash
-mvn --settings=<temporary-settings-file> dependency:get -Dartifact=com.example:lib:1.0.0
-```
-
-The temporary settings file is removed after the command completes.
-
-Deploy an artifact file:
-
-```bash
-rvs art maven deploy ./target/lib-1.0.0.jar \
-  --group com.example \
-  --artifact lib \
-  --version 1.0.0
-```
-
-Current behavior: `rvs art maven deploy` does not shell out to `mvn deploy`. It
-uploads the artifact and checksum sidecars with HTTP PUTs under:
-
-```text
-https://<maven-push-host>/<namespace_unique_ref>/<repository_unique_ref>/<group-path>/<artifact>/<version>/
-```
-
-To print a reusable Maven `settings.xml` snippet:
-
-```bash
-rvs art maven settings
-rvs art maven configure
-```
-
-The printed snippet uses `${env.RVS_TOKEN}` as the password. Export `RVS_TOKEN`
-before using it with native Maven commands.
-
-## Automation Pattern
-
-For CI or headless agents, prefer `RVS_TOKEN` and explicit repository defaults:
-
-```bash
-export RVS_TOKEN=<automation-token>
-export RVS_PROFILE=ci
-
-rvs art repo set-default pypi <pypi-repo-name>
-rvs art pypi install private-package
-```
-
-Do not log tokens. Avoid echoing authenticated PyPI URLs because the token is
-embedded in the URL for `pip` compatibility.
 
 ## Troubleshooting
 
-No repository selected:
+Show the current choices:
 
 ```bash
-rvs art repo defaults
-rvs art repo set-default pypi <repo-name>
-```
-
-Unknown or ambiguous repository:
-
-```bash
-rvs art repo list
 rvs auth status
-rvs auth login
+rvs account current
+rvs art current
+rvs context current
 ```
 
-Pass `<namespace>/<repo-name>` or the immutable underscore pair shown by
-`rvs art repo list` when equal names exist in several authorized scopes.
+If no repository is selected, choose one with `rvs art select
+NAMESPACE/REPOSITORY`. If a name is unclear, use `rvs art repo list` and copy the
+namespace and repository names shown there.
 
-Not authenticated:
-
-```bash
-rvs auth login
-```
-
-Or for automation:
-
-```bash
-export RVS_TOKEN=<automation-token>
-```
-
-Native tool missing:
-
-```bash
-rvs runtime install python 3.12
-rvs runtime install node 22
-```
-
-Install Maven through the system package manager or another approved Java build
-toolchain path.
-
-## Agent Notes
-
-LLM agents should follow these rules when using `rvs`:
-
-- Do not assume login selects a repository.
-- Resolve the target registry kind first: `pypi`, `npm`, or `maven`.
-- Prefer `--repo <repo-name>` for one-off commands.
-- Use `rvs art repo set-default <registry-kind> <repo-name>` only when changing persistent
-  local CLI state is intended.
-- Treat customer, namespace, and repository internal IDs as different from
-  their immutable generated references.
-- Private registry URLs always use
-  `/<namespace_unique_ref>/<repository_unique_ref>`; never construct them
-  from a customer identifier.
-- The CLI control plane is DevAPI. Do not configure or call Central directly.
-- Use `RVS_TOKEN` for CI/headless flows.
-- Never write real tokens into committed files.
-- Remember that install flows delegate to native tools. Publish flows use `rvs`
-  registry adapters; npm publishing also invokes native `npm pack` first.
+For more help, see the [public CLI documentation](https://docs.ravenstash.com/cli/overview/).

@@ -44,9 +44,9 @@ app = typer.Typer(
 )
 
 repo_app = typer.Typer(help="Manage Ravenstash repositories.", no_args_is_help=True)
-upstream_app = typer.Typer(help="Manage ordered repository-lane upstreams.", no_args_is_help=True)
+upstream_app = typer.Typer(help="Manage the package sources used by a repository.", no_args_is_help=True)
 remote_app = typer.Typer(
-    help="Manage private mirrors backed by remote caches.", no_args_is_help=True
+    help="Manage private mirrors.", no_args_is_help=True
 )
 package_app = typer.Typer(help="Manage packages hosted in a repository.", no_args_is_help=True)
 pypi_app = typer.Typer(help="PyPI package repository helpers.", no_args_is_help=True)
@@ -66,7 +66,7 @@ _KINDS = ("pypi", "npm", "maven", "container", "helm")
 _PACKAGE_KINDS = ("pypi", "npm", "maven")
 _MAX_UPSTREAM_PRIORITY = 3
 _ROUTER = CanonicalRouter()
-_REPOSITORY_NAME_HELP = "Package repository name: lowercase letters, numbers, and hyphens."
+_REPOSITORY_NAME_HELP = "Repository name or namespace/repository."
 
 
 def _format_age_hours(value: float | int | str | None, *, missing: str) -> str:
@@ -81,23 +81,23 @@ def package_context(
     target: str | None = typer.Option(
         None,
         "--target",
-        help="One-shot artifact target: namespace/repository, mirror:<source>, or custom-mirror:<name>.",
+        help="Repository or mirror for this command: namespace/repository, mirror:<source>, or custom-mirror:<name>.",
     ),
     account: str | None = typer.Option(
         None,
         "--account",
-        help="One-shot acting account selector.",
+        help="Username or organization handle for this command.",
     ),
     kind: str | None = typer.Option(
-        None, "--kind", help="Registry kind when inference is ambiguous."
+        None, "--kind", help="Package format when it cannot be determined automatically."
     ),
-    profile: str | None = typer.Option(None, "--profile", help="One-shot local CLI profile."),
+    profile: str | None = typer.Option(None, "--profile", help="Local profile for this command."),
     scope: Literal["self", "public"] = typer.Option(
-        "self", "--scope", help="Resolve in the acting account or the public catalog."
+        "self", "--scope", hidden=True
     ),
-    public: bool = typer.Option(False, "--public", help="Use the public catalog scope."),
+    public: bool = typer.Option(False, "--public", hidden=True),
 ) -> None:
-    """Manage artifact targets and delegate package operations to native tools."""
+    """Choose repositories or mirrors and run package commands."""
     if public or scope == "public":
         output.fatal("PublicCatalogUnavailable: the public package catalog is not available yet.")
     ctx.obj = {
@@ -133,7 +133,7 @@ def _customer_id(profile: str | None, explicit_customer_id: str | None = None) -
     profile_name, _ = _profile(profile)
     customer_id = cfg_mod.current_customer_id(profile_name)
     if not customer_id:
-        output.fatal("No acting account is selected. Run `rvs account use` or pass --customer-id.")
+        output.fatal("No account is selected. Run `rvs account use USERNAME_OR_HANDLE`.")
     return customer_id
 
 
@@ -149,11 +149,11 @@ def target_select(
         ...,
         help="namespace/repository, mirror:<source>, or custom-mirror:<name>.",
     ),
-    kind: str | None = typer.Option(None, "--kind", help="Registry kind if ambiguous."),
-    account: str | None = typer.Option(None, "--account", help="Acting account selector."),
+    kind: str | None = typer.Option(None, "--kind", help="Package format if needed."),
+    account: str | None = typer.Option(None, "--account", help="Username or organization handle."),
     profile: str | None = typer.Option(None, "--profile", "-p"),
 ) -> None:
-    """Select the artifact target used when --target is omitted."""
+    """Choose the repository or mirror used when --target is omitted."""
     customer_id = _context_customer_id(profile, account)
     profile_name, selected_account = ensure_active_account(profile, customer_id)
     _, _, selected = resolve_target(
@@ -179,10 +179,10 @@ def target_select(
 
 @app.command("current")
 def target_current(
-    account: str | None = typer.Option(None, "--account", help="Acting account selector."),
+    account: str | None = typer.Option(None, "--account", help="Username or organization handle."),
     profile: str | None = typer.Option(None, "--profile", "-p"),
 ) -> None:
-    """Show the current profile, account, and artifact target."""
+    """Show the current profile, account, and repository or mirror."""
     customer_id = _context_customer_id(profile, account)
     profile_name, selected_account = ensure_active_account(profile, customer_id)
     selected = cfg_mod.selected_artifact_target(profile_name, selected_account.customer_id)
@@ -190,23 +190,23 @@ def target_current(
         {
             "Profile": profile_name,
             "Account": account_display_name(selected_account),
-            "Target": selected.display_selector if selected else "none",
-            "Target type": selected.target_type if selected else "none",
-            "Target owner ID": selected.customer_id if selected else "none",
-            "Registry kind": selected.registry_kind or "inferred by operation"
+            "Repository or mirror": selected.display_selector if selected else "none",
+            "Type": selected.target_type if selected else "none",
+            "Owner ID": selected.customer_id if selected else "none",
+            "Package format": selected.registry_kind or "determined by command"
             if selected
             else "none",
         },
-        title="Current package context",
+        title="Current package selection",
     )
 
 
 @app.command("clear")
 def target_clear(
-    account: str | None = typer.Option(None, "--account", help="Acting account selector."),
+    account: str | None = typer.Option(None, "--account", help="Username or organization handle."),
     profile: str | None = typer.Option(None, "--profile", "-p"),
 ) -> None:
-    """Clear the explicit artifact target without changing login or account."""
+    """Clear the selected repository or mirror without signing out."""
     customer_id = _context_customer_id(profile, account)
     profile_name, selected_account = ensure_active_account(profile, customer_id)
     try:
@@ -217,7 +217,7 @@ def target_clear(
         )
     except ValueError as exc:
         output.fatal(str(exc))
-    output.success(f"Cleared the artifact target for {account_display_name(selected_account)}.")
+    output.success(f"Cleared the repository or mirror for {account_display_name(selected_account)}.")
 
 
 def _project_package_kind() -> str | None:
@@ -235,7 +235,7 @@ def _project_package_kind() -> str | None:
 def package_install(
     packages: list[str] = typer.Argument(..., help="Package specifications to install."),
 ) -> None:
-    """Install from the one-shot, selected, or official-default artifact target."""
+    """Install from the named, selected, or default repository or mirror."""
     options = _root_package_options()
     kind = options.get("kind")
     if kind is not None:
@@ -255,7 +255,7 @@ def package_install(
         kind = selected.registry_kind if selected is not None else None
     kind = kind or _project_package_kind()
     if kind not in _PACKAGE_KINDS:
-        output.fatal("Cannot infer the package registry kind. Pass --kind pypi, npm, or maven.")
+        output.fatal("Cannot determine the package format. Pass --kind pypi, npm, or maven.")
     if kind == "pypi":
         pypi_install(packages=packages, repo=None, profile=None, customer_id=None)
     elif kind == "npm":
@@ -268,7 +268,7 @@ def package_install(
 
 def _require_kind(kind: str) -> cfg_mod.RegistryKind:
     if kind not in _KINDS:
-        output.fatal(f"Unknown registry kind '{kind}'. Use: pypi, npm, maven, container, helm")
+        output.fatal(f"Unknown package format '{kind}'. Use: pypi, npm, maven, container, helm")
     return cast("cfg_mod.RegistryKind", kind)
 
 
@@ -407,15 +407,15 @@ def _resolved_repository_unique_ref(
 @repo_app.command("list")
 def repo_list(
     profile: str | None = typer.Option(None, "--profile", "-p"),
-    customer_id: str | None = typer.Option(None, "--customer-id", help="Customer filter."),
+    customer_id: str | None = typer.Option(None, "--customer-id", help="Account ID.", hidden=True),
     kind: str | None = typer.Option(
         None,
         "--registry-kind",
         "-k",
-        help="Registry-kind filter: pypi | npm | maven | container | helm.",
+        help="Package format: pypi | npm | maven | container | helm.",
     ),
 ) -> None:
-    """List repositories in the acting account's namespaces."""
+    """List repositories in the selected account's namespaces."""
     if kind:
         _require_kind(kind)
     client = _client(profile)
@@ -442,7 +442,7 @@ def repo_list(
         return
 
     output.table(
-        ["Account", "Namespace", "Repository", "Stable reference", "Registry kinds"],
+        ["Account", "Namespace", "Repository", "Repository ID", "Package formats"],
         [
             [
                 entry["customer"]["account_label"],
@@ -463,12 +463,14 @@ def repo_create(
         ...,
         "--registry-kind",
         "-k",
-        help="Registry kind to enable; repeat to enable more than one.",
+        help="Package format to enable; repeat to enable more than one.",
     ),
     profile: str | None = typer.Option(None, "--profile", "-p"),
-    customer_id: str | None = typer.Option(None, "--customer-id", help="Owning customer ID."),
+    customer_id: str | None = typer.Option(
+        None, "--customer-id", help="Owner account ID.", hidden=True
+    ),
     set_default: bool = typer.Option(
-        False, "--default", help="Set as default for each selected registry kind."
+        False, "--default", help="Set as default for each selected package format."
     ),
 ) -> None:
     """Create a package repository."""
@@ -550,9 +552,9 @@ def repo_show(
             "Name": _repository_name_from_response(item, repo),
             "Account": entry["customer"]["account_label"],
             "Namespace": item["namespace_name"],
-            "Namespace reference": item["namespace_unique_ref"],
-            "Repository reference": item["repository_unique_ref"],
-            "Registry kinds": ", ".join(item.get("registry_kinds", [])),
+            "Namespace ID": item["namespace_unique_ref"],
+            "Repository ID": item["repository_unique_ref"],
+            "Package formats": ", ".join(item.get("registry_kinds", [])),
             "Packages": str(item.get("aggregate_package_count", item.get("package_count", "0"))),
             "Versions": str(item.get("aggregate_version_count", item.get("version_count", "0"))),
             "OCI paths": str(item.get("aggregate_oci_repository_count", "0")),
@@ -614,13 +616,13 @@ def repo_rename(
 def repo_set_default(
     kind: str = typer.Argument(
         ...,
-        help="Registry kind: pypi | npm | maven | container | helm",
-        metavar="REGISTRY_KIND",
+        help="Package format: pypi | npm | maven | container | helm",
+        metavar="FORMAT",
     ),
     repo: str = typer.Argument(..., help=_REPOSITORY_NAME_HELP),
     profile: str | None = typer.Option(None, "--profile", "-p"),
 ) -> None:
-    """Set the default package repository for a registry kind."""
+    """Set the default repository for a package format."""
     registry_kind = _require_kind(kind)
     profile_name = _profile_name(profile)
     entry = _resolve_repository_entry(repo, profile, kind=kind)
@@ -693,7 +695,7 @@ def upstream_list(
     kind: str = typer.Argument(...),
     profile: str | None = typer.Option(None, "--profile", "-p"),
 ) -> None:
-    """List the complete ordered upstream plan for one repository lane."""
+    """List the package sources used by one repository format."""
     registry_kind = _require_package_kind(kind)
     client = _client(profile)
     try:
@@ -712,15 +714,19 @@ def upstream_add(
     repository: str = typer.Argument(...),
     kind: str = typer.Argument(...),
     private_repository: str | None = typer.Option(None, "--private-repository"),
-    remote_cache: str | None = typer.Option(None, "--remote-cache"),
+    mirror: str | None = typer.Option(None, "--mirror", help="Private mirror ID."),
+    remote_cache: str | None = typer.Option(None, "--remote-cache", hidden=True),
     priority: int | None = typer.Option(None, "--priority", min=0, max=_MAX_UPSTREAM_PRIORITY),
     min_age_hours: float | None = typer.Option(None, "--min-age-hours", min=0),
     max_age_hours: float | None = typer.Option(None, "--max-age-hours", min=0),
     profile: str | None = typer.Option(None, "--profile", "-p"),
 ) -> None:
-    """Attach one private repository lane or remote cache."""
-    if (private_repository is None) == (remote_cache is None):
-        output.fatal("Pass exactly one of --private-repository or --remote-cache.")
+    """Add a private repository or mirror as a package source."""
+    if mirror is not None and remote_cache is not None:
+        output.fatal("Pass --mirror only once.")
+    selected_mirror = mirror or remote_cache
+    if (private_repository is None) == (selected_mirror is None):
+        output.fatal("Pass exactly one of --private-repository or --mirror.")
     registry_kind = _require_package_kind(kind)
     client = _client(profile)
     try:
@@ -733,7 +739,7 @@ def upstream_add(
             }
         else:
             remote_entry = client.get(
-                f"/remote-caches/{remote_cache}",
+                f"/remote-caches/{selected_mirror}",
                 params={"registry_kind": registry_kind},
             ).json()
             source_type = "remote"
@@ -741,7 +747,7 @@ def upstream_add(
             source_identity = {
                 "remote_cache_ref": remote_payload.get("remote_cache_ref")
                 or remote_payload.get("unique_ref")
-                or remote_cache
+                or selected_mirror
             }
         if priority is None:
             current_payload = client.get(
@@ -780,7 +786,7 @@ def upstream_update(
     max_age_hours: float | None = typer.Option(None, "--max-age-hours", min=0),
     profile: str | None = typer.Option(None, "--profile", "-p"),
 ) -> None:
-    """Update priority or age bounds for one attachment."""
+    """Change the order or package-age settings for one source."""
     body = {
         key: value
         for key, value in {
@@ -813,7 +819,7 @@ def upstream_reorder(
     attachments: list[str] = typer.Argument(...),
     profile: str | None = typer.Option(None, "--profile", "-p"),
 ) -> None:
-    """Replace the complete attachment order atomically."""
+    """Set the complete package-source order."""
     registry_kind = _require_package_kind(kind)
     client = _client(profile)
     try:
@@ -838,7 +844,7 @@ def upstream_remove(
     attachment: str = typer.Argument(...),
     profile: str | None = typer.Option(None, "--profile", "-p"),
 ) -> None:
-    """Remove one upstream attachment."""
+    """Remove one package source."""
     registry_kind = _require_package_kind(kind)
     client = _client(profile)
     try:
@@ -858,42 +864,46 @@ def upstream_remove(
 @remote_app.command("select")
 def remote_select(
     mirror: str = typer.Argument(..., help="Official source slug or custom mirror name."),
-    custom: bool = typer.Option(False, "--custom", help="Select a customer-defined mirror."),
-    kind: str | None = typer.Option(None, "--kind", help="Registry kind if ambiguous."),
-    account: str | None = typer.Option(None, "--account", help="Acting account selector."),
+    custom: bool = typer.Option(False, "--custom", help="Select a custom mirror."),
+    kind: str | None = typer.Option(None, "--kind", help="Package format if needed."),
+    account: str | None = typer.Option(None, "--account", help="Username or organization handle."),
     profile: str | None = typer.Option(None, "--profile", "-p"),
 ) -> None:
-    """Select an official or customer-defined private mirror."""
+    """Select a Ravenstash-provided or custom private mirror."""
     prefix = "custom-mirror" if custom else "mirror"
     target_select(f"{prefix}:{mirror}", kind=kind, account=account, profile=profile)
 
 
 @remote_app.command("current")
 def remote_current(
-    account: str | None = typer.Option(None, "--account", help="Acting account selector."),
+    account: str | None = typer.Option(
+        None, "--account", help="Username or organization handle."
+    ),
     profile: str | None = typer.Option(None, "--profile", "-p"),
 ) -> None:
-    """Show the current package context."""
+    """Show the selected repository or mirror."""
     target_current(account=account, profile=profile)
 
 
 @remote_app.command("clear")
 def remote_clear(
-    account: str | None = typer.Option(None, "--account", help="Acting account selector."),
+    account: str | None = typer.Option(
+        None, "--account", help="Username or organization handle."
+    ),
     profile: str | None = typer.Option(None, "--profile", "-p"),
 ) -> None:
-    """Clear the selected artifact target."""
+    """Clear the selected repository or mirror."""
     target_clear(account=account, profile=profile)
 
 
 @remote_app.command("list")
 def remote_list(
     profile: str | None = typer.Option(None, "--profile", "-p"),
-    customer_id: str | None = typer.Option(None, "--customer-id"),
+    customer_id: str | None = typer.Option(None, "--customer-id", hidden=True),
     account: str | None = typer.Option(None, "--account"),
     kind: str | None = typer.Option(None, "--kind", "--registry-kind", "-k"),
 ) -> None:
-    """List private mirrors for the selected customer."""
+    """List private mirrors for the selected account."""
     if kind:
         _require_package_kind(kind)
     client = _client(profile)
@@ -919,7 +929,7 @@ def remote_list(
         output.info("No private mirrors found.")
         return
     output.table(
-        ["Account", "Mirror type", "Publication", "Mirror target", "Registry kind", "Minimum age"],
+        ["Account", "Source", "Publication", "Mirror", "Package format", "Minimum age"],
         [
             [
                 str(entry.get("customer", {}).get("account_label", "")),
@@ -950,10 +960,10 @@ def remote_list(
 def remote_create(
     kind: str = typer.Option(..., "--registry-kind", "-k"),
     profile: str | None = typer.Option(None, "--profile", "-p"),
-    customer_id: str | None = typer.Option(None, "--customer-id"),
+    customer_id: str | None = typer.Option(None, "--customer-id", hidden=True),
     account: str | None = typer.Option(None, "--account"),
 ) -> None:
-    """Initialize a remote cache and its private mirror for a registry kind."""
+    """Create the default private mirror for a package format."""
     _require_package_kind(kind)
     client = _client(profile)
     try:
@@ -969,20 +979,20 @@ def remote_create(
     except ApiError as exc:
         output.fatal(str(exc))
     remote_id = item["remote_cache_ref"]
-    output.success(f"Initialized {kind} remote cache and private mirror '{remote_id}'.")
+    output.success(f"Created {kind} private mirror '{remote_id}'.")
 
 
 @remote_app.command("add")
 def remote_add_official(
     source: str = typer.Argument(..., help="Official source slug, such as pypiorg."),
-    kind: str | None = typer.Option(None, "--kind", help="Registry kind if ambiguous."),
+    kind: str | None = typer.Option(None, "--kind", help="Package format if needed."),
     min_age_hours: float | None = typer.Option(None, "--min-age-hours", min=0),
     max_age_hours: float | None = typer.Option(None, "--max-age-hours", min=0),
     select: bool = typer.Option(False, "--select", help="Select the mirror after creating it."),
     profile: str | None = typer.Option(None, "--profile", "-p"),
     account: str | None = typer.Option(None, "--account"),
 ) -> None:
-    """Initialize a Ravenstash-curated remote cache and private mirror."""
+    """Add a Ravenstash-provided private mirror."""
     customer_id = _context_customer_id(profile, account) or _customer_id(profile)
     if kind:
         _require_package_kind(kind)
@@ -1020,7 +1030,7 @@ def remote_add_official(
         output.fatal(str(exc))
     item = remote_cache_payload(entry)
     target_name = f"mirror:{item.get('official_slug') or item['remote_cache_ref']}"
-    output.success(f"Added official remote cache with private mirror '{target_name}'.")
+    output.success(f"Added private mirror '{target_name}'.")
     if select:
         target_select(
             target_name,
@@ -1032,8 +1042,8 @@ def remote_add_official(
 
 @remote_app.command("create-custom")
 def remote_create_custom(
-    name: str = typer.Argument(..., help="Customer-scoped custom mirror name."),
-    kind: str = typer.Option(..., "--kind", help="Registry kind: pypi, npm, or maven."),
+    name: str = typer.Argument(..., help="Name for the custom mirror."),
+    kind: str = typer.Option(..., "--kind", help="Package format: pypi, npm, or maven."),
     api_url: str = typer.Option(..., "--api-url", help="HTTPS metadata/API origin."),
     artifact_url: str | None = typer.Option(None, "--artifact-url"),
     publication_control: str = typer.Option(
@@ -1057,7 +1067,7 @@ def remote_create_custom(
     profile: str | None = typer.Option(None, "--profile", "-p"),
     account: str | None = typer.Option(None, "--account"),
 ) -> None:
-    """Create a custom remote cache and private mirror backed by HTTPS."""
+    """Create a private mirror for a custom HTTPS package source."""
     registry_kind = _require_package_kind(kind)
     customer_id = _context_customer_id(profile, account) or _customer_id(profile)
     if auth_scheme not in {"none", "basic", "bearer"}:
@@ -1126,20 +1136,20 @@ def remote_create_custom(
         output.fatal(str(exc))
     item = remote_cache_payload(entry)
     target_name = f"custom-mirror:{item.get('remote_name') or item['remote_cache_ref']}"
-    output.success(f"Created custom remote cache with private mirror '{target_name}'.")
+    output.success(f"Created private mirror '{target_name}'.")
     if select:
         target_select(target_name, kind=kind, account=account, profile=profile)
 
 
 @remote_app.command("show")
 def remote_show(
-    remote: str = typer.Argument(..., help="Remote cache ID."),
+    remote: str = typer.Argument(..., help="Mirror ID."),
     profile: str | None = typer.Option(None, "--profile", "-p"),
     account: str | None = typer.Option(None, "--account"),
     customer_id: str | None = typer.Option(None, "--customer-id", hidden=True),
     kind: str | None = typer.Option(None, "--kind", "--registry-kind", "-k"),
 ) -> None:
-    """Show a private mirror and its backing remote cache."""
+    """Show a private mirror."""
     if kind:
         _require_package_kind(kind)
     selected_customer = _context_customer_id(profile, account) or _customer_id(profile, customer_id)
@@ -1161,8 +1171,8 @@ def remote_show(
                 if item.get("source_type") == "official"
                 else f"custom-mirror:{item.get('remote_name') or item['remote_cache_ref']}"
             ),
-            "Registry kind": item.get("registry_kind"),
-            "Owner ID": item.get("customer_id"),
+            "Package format": item.get("registry_kind"),
+            "Account ID": item.get("customer_id"),
             "Private mirror": "ready",
             "Mirror minimum package age": _format_age_hours(
                 item.get("min_age_hours"), missing="No minimum"
@@ -1177,7 +1187,7 @@ def remote_show(
 
 @remote_app.command("set-age")
 def remote_set_age(
-    remote: str = typer.Argument(..., help="Remote cache ID."),
+    remote: str = typer.Argument(..., help="Mirror ID."),
     min_age_hours: float = typer.Option(..., "--min-age-hours", min=0),
     profile: str | None = typer.Option(None, "--profile", "-p"),
     account: str | None = typer.Option(None, "--account"),
@@ -1203,18 +1213,18 @@ def remote_set_age(
 
 @remote_app.command("delete")
 def remote_delete(
-    remote: str = typer.Argument(..., help="Remote cache ID."),
+    remote: str = typer.Argument(..., help="Mirror ID."),
     profile: str | None = typer.Option(None, "--profile", "-p"),
-    customer_id: str | None = typer.Option(None, "--customer-id"),
+    customer_id: str | None = typer.Option(None, "--customer-id", hidden=True),
     account: str | None = typer.Option(None, "--account"),
     kind: str | None = typer.Option(None, "--kind", "--registry-kind", "-k"),
     yes: bool = typer.Option(False, "--yes", "-y"),
 ) -> None:
-    """Delete a remote cache and its private mirror."""
+    """Delete a private mirror."""
     if kind:
         _require_package_kind(kind)
     if not yes:
-        typer.confirm(f"Delete remote cache and private mirror '{remote}'?", abort=True)
+        typer.confirm(f"Delete private mirror '{remote}'?", abort=True)
     selected_customer = _context_customer_id(profile, account) or _customer_id(profile, customer_id)
     params = {"customer_id": selected_customer, "registry_kind": kind}
     client = _client(profile)
@@ -1222,7 +1232,7 @@ def remote_delete(
         client.delete(f"/remote-caches/{remote}", params=params)
     except ApiError as exc:
         output.fatal(str(exc))
-    output.success(f"Deleted remote cache and private mirror '{remote}'.")
+    output.success(f"Deleted private mirror '{remote}'.")
 
 
 # ── package ──────────────────────────────────────────────────────────────────
@@ -1235,7 +1245,7 @@ def package_list(
         ...,
         "--registry-kind",
         "-k",
-        help="Registry kind: pypi | npm | maven.",
+        help="Package format: pypi | npm | maven.",
     ),
     profile: str | None = typer.Option(None, "--profile", "-p"),
 ) -> None:
@@ -1438,7 +1448,7 @@ def pypi_index_url(
     repo: str | None = typer.Option(None, "--repo", "-r", help=_REPOSITORY_NAME_HELP),
     profile: str | None = typer.Option(None, "--profile", "-p"),
     customer_id: str | None = typer.Option(
-        None, "--customer-id", help="Customer disambiguation override."
+        None, "--customer-id", help="Account ID for advanced use.", hidden=True
     ),
 ) -> None:
     """Print the private PyPI simple-index URL."""
@@ -1456,7 +1466,7 @@ def pypi_upload_url(
     repo: str | None = typer.Option(None, "--repo", "-r", help=_REPOSITORY_NAME_HELP),
     profile: str | None = typer.Option(None, "--profile", "-p"),
     customer_id: str | None = typer.Option(
-        None, "--customer-id", help="Customer disambiguation override."
+        None, "--customer-id", help="Account ID for advanced use.", hidden=True
     ),
 ) -> None:
     """Print the private PyPI upload URL."""
@@ -1483,7 +1493,7 @@ def pypi_install(
     repo: str | None = typer.Option(None, "--repo", "-r", help=_REPOSITORY_NAME_HELP),
     profile: str | None = typer.Option(None, "--profile", "-p"),
     customer_id: str | None = typer.Option(
-        None, "--customer-id", help="Customer disambiguation override."
+        None, "--customer-id", help="Account ID for advanced use.", hidden=True
     ),
 ) -> None:
     """Install Python packages using pip with Ravenstash credentials injected."""
@@ -1514,7 +1524,7 @@ def pypi_publish(
     repo: str | None = typer.Option(None, "--repo", "-r", help=_REPOSITORY_NAME_HELP),
     profile: str | None = typer.Option(None, "--profile", "-p"),
     customer_id: str | None = typer.Option(
-        None, "--customer-id", help="Customer disambiguation override."
+        None, "--customer-id", help="Account ID for advanced use.", hidden=True
     ),
 ) -> None:
     """Upload wheel and sdist files to a PyPI package repository."""
@@ -1556,7 +1566,7 @@ def pypi_configure(
     repo: str | None = typer.Option(None, "--repo", "-r", help=_REPOSITORY_NAME_HELP),
     profile: str | None = typer.Option(None, "--profile", "-p"),
     customer_id: str | None = typer.Option(
-        None, "--customer-id", help="Customer disambiguation override."
+        None, "--customer-id", help="Account ID for advanced use.", hidden=True
     ),
 ) -> None:
     """Print pip configuration for the private PyPI repository."""
@@ -1575,7 +1585,7 @@ def npm_registry_url(
     repo: str | None = typer.Option(None, "--repo", "-r", help=_REPOSITORY_NAME_HELP),
     profile: str | None = typer.Option(None, "--profile", "-p"),
     customer_id: str | None = typer.Option(
-        None, "--customer-id", help="Customer disambiguation override."
+        None, "--customer-id", help="Account ID for advanced use.", hidden=True
     ),
 ) -> None:
     """Print the private npm registry URL."""
@@ -1593,7 +1603,7 @@ def npmrc(
     repo: str | None = typer.Option(None, "--repo", "-r", help=_REPOSITORY_NAME_HELP),
     profile: str | None = typer.Option(None, "--profile", "-p"),
     customer_id: str | None = typer.Option(
-        None, "--customer-id", help="Customer disambiguation override."
+        None, "--customer-id", help="Account ID for advanced use.", hidden=True
     ),
 ) -> None:
     """Print an .npmrc snippet for the private npm repository."""
@@ -1617,7 +1627,7 @@ def npm_install(
     repo: str | None = typer.Option(None, "--repo", "-r", help=_REPOSITORY_NAME_HELP),
     profile: str | None = typer.Option(None, "--profile", "-p"),
     customer_id: str | None = typer.Option(
-        None, "--customer-id", help="Customer disambiguation override."
+        None, "--customer-id", help="Account ID for advanced use.", hidden=True
     ),
 ) -> None:
     """Install npm packages with Ravenstash credentials injected."""
@@ -1644,7 +1654,7 @@ def npm_publish(
     repo: str | None = typer.Option(None, "--repo", "-r", help=_REPOSITORY_NAME_HELP),
     profile: str | None = typer.Option(None, "--profile", "-p"),
     customer_id: str | None = typer.Option(
-        None, "--customer-id", help="Customer disambiguation override."
+        None, "--customer-id", help="Account ID for advanced use.", hidden=True
     ),
 ) -> None:
     """Publish an npm package to a Ravenstash npm repository."""
@@ -1688,7 +1698,7 @@ def npm_configure(
     repo: str | None = typer.Option(None, "--repo", "-r", help=_REPOSITORY_NAME_HELP),
     profile: str | None = typer.Option(None, "--profile", "-p"),
     customer_id: str | None = typer.Option(
-        None, "--customer-id", help="Customer disambiguation override."
+        None, "--customer-id", help="Account ID for advanced use.", hidden=True
     ),
 ) -> None:
     """Print .npmrc configuration for the private npm repository."""
@@ -1703,7 +1713,7 @@ def maven_repo_url(
     repo: str | None = typer.Option(None, "--repo", "-r", help=_REPOSITORY_NAME_HELP),
     profile: str | None = typer.Option(None, "--profile", "-p"),
     customer_id: str | None = typer.Option(
-        None, "--customer-id", help="Customer disambiguation override."
+        None, "--customer-id", help="Account ID for advanced use.", hidden=True
     ),
 ) -> None:
     """Print the private Maven repository URL."""
@@ -1751,7 +1761,7 @@ def maven_settings(
     repo: str | None = typer.Option(None, "--repo", "-r", help=_REPOSITORY_NAME_HELP),
     profile: str | None = typer.Option(None, "--profile", "-p"),
     customer_id: str | None = typer.Option(
-        None, "--customer-id", help="Customer disambiguation override."
+        None, "--customer-id", help="Account ID for advanced use.", hidden=True
     ),
 ) -> None:
     """Print a Maven settings.xml snippet for the private Maven repository."""
@@ -1774,7 +1784,7 @@ def maven_install(
     repo: str | None = typer.Option(None, "--repo", "-r", help=_REPOSITORY_NAME_HELP),
     profile: str | None = typer.Option(None, "--profile", "-p"),
     customer_id: str | None = typer.Option(
-        None, "--customer-id", help="Customer disambiguation override."
+        None, "--customer-id", help="Account ID for advanced use.", hidden=True
     ),
 ) -> None:
     """Fetch a Maven artifact into the local Maven cache."""
@@ -1814,7 +1824,7 @@ def maven_deploy(
     repo: str | None = typer.Option(None, "--repo", "-r", help=_REPOSITORY_NAME_HELP),
     profile: str | None = typer.Option(None, "--profile", "-p"),
     customer_id: str | None = typer.Option(
-        None, "--customer-id", help="Customer disambiguation override."
+        None, "--customer-id", help="Account ID for advanced use.", hidden=True
     ),
 ) -> None:
     """Deploy an artifact file to a Ravenstash Maven repository."""
@@ -1873,7 +1883,7 @@ def maven_configure(
     repo: str | None = typer.Option(None, "--repo", "-r", help=_REPOSITORY_NAME_HELP),
     profile: str | None = typer.Option(None, "--profile", "-p"),
     customer_id: str | None = typer.Option(
-        None, "--customer-id", help="Customer disambiguation override."
+        None, "--customer-id", help="Account ID for advanced use.", hidden=True
     ),
 ) -> None:
     """Print Maven settings.xml configuration for the private Maven repository."""
