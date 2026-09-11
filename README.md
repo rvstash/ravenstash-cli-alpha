@@ -564,6 +564,18 @@ The supported end-user install path is a signed self-contained distribution,
 not `pip install`. The CLI embeds Python 3.14; it does not use the system Python.
 User config, credentials, and managed runtimes stay in `~/.rvs`.
 
+The first public release targets this platform matrix. A target becomes supported
+when its signed release artifact passes clean-system certification.
+
+| Platform | Architectures | Install path |
+| --- | --- | --- |
+| Linux with glibc 2.28+ | x86-64, ARM64 | APT package or portable archive |
+| Linux with musl, including Alpine | x86-64, ARM64 | portable archive |
+| macOS 14+ on Apple Silicon; macOS 15+ on Intel | Apple Silicon, Intel | `install.sh` |
+| Windows 10/11 on x64; Windows 11 on ARM | x64, ARM64 | `install.ps1` |
+| NixOS and Nix on Linux/macOS | x86_64, aarch64 | versioned flake package |
+| WSL2 | x86_64, aarch64 | matching Linux path |
+
 Install the current recommended compatibility channel on Linux, WSL, or macOS:
 
 ```bash
@@ -587,6 +599,9 @@ notarized; Windows release executables carry Authenticode signatures. Review the
 <https://ravenstash.com/install.sh> before running it if required by your
 environment. Set `RVS_INSTALL_SCOPE=system` for `/opt/rvs` plus
 `/usr/local/bin`; the default portable install is rootless and per-user.
+
+See the [platform compatibility policy](docs/linux-compatibility.md) for exact
+OS floors, runtime availability, credential storage, and evaluation-only targets.
 
 Nix users install the versioned flake:
 

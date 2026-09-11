@@ -43,7 +43,8 @@ not gate a release by holding a publisher token.
    `packaging/install.ps1`, release notes, and any compatibility documentation
    in one reviewed commit on `dev`.
 2. Run the local checks documented in `AGENTS.md` plus the pinned Ubuntu 20.04
-   package build.
+   package build. Confirm `platform-ci` passes on the exact release commit for
+   native Linux, macOS, and Windows runners, both Alpine architectures, and Nix.
 3. Dispatch `.github/workflows/release.yml` from `dev` with the exact 40-character
    commit SHA, exact version, and policy-derived channel. Set `promote_channel`
    only when new installations should select that channel.
@@ -55,6 +56,16 @@ not gate a release by holding a publisher token.
    publishes the GitHub release against the source commit.
 5. Run the private real-environment smoke workflow for QA and staging. Run the
    production target only by explicit human dispatch.
+
+Do not call a target publicly supported from compatibility CI alone. Before the
+first public release, retain evidence that the exact signed artifacts were
+installed and exercised on clean systems, including real macOS Keychain and
+Windows Credential Manager sessions, WSL2, managed runtime downloads, and
+representative native package-tool wrappers. Nix must be built and exercised on
+each architecture/OS pair claimed by the release rather than only evaluated.
+Deploy and verify both `https://ravenstash.com/install.sh` and
+`https://ravenstash.com/install.ps1` before publishing website copy that directs
+users on those platforms to the new release.
 
 The daily `refresh-apt-metadata` workflow renews the signed seven-day
 `Valid-Until` without changing package contents or compatibility channels.

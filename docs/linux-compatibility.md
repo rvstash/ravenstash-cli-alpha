@@ -21,6 +21,12 @@ repeats native builds from one exact source commit, signs macOS and Windows laun
 notarizes macOS bundles, assembles one checksum inventory, and creates keyless Sigstore
 provenance for that complete inventory.
 
+Passing compatibility CI establishes that the source and unsigned candidate bundles
+run on the target hosts. Public support begins only when the exact release artifacts
+also pass signing, installation, and clean-system certification. This prevents an
+evaluated Nix output, an unsigned smoke-test bundle, or inherited Linux coverage from
+being presented as a certified release for Nix, macOS, Windows, or WSL.
+
 The glibc artifacts are built on Ubuntu 20.04. Portable amd64 smoke coverage includes
 Ubuntu 22.04, 24.04, and 26.04; Debian 12 and 13; Fedora 43 and 44; Rocky Linux 8 and
 9; AlmaLinux 10; Amazon Linux 2023; openSUSE Leap 15.6 and 16.0; and Arch Linux.
@@ -47,8 +53,9 @@ disposable write/read/delete operation before browser authorization.
   automatically.
 
 Release certification covers locked, unlocked, and absent desktop keyrings separately
-from headless sessions. Unit tests own provider selection, credential-pair rollback,
-refresh locking, vault behavior, and plaintext acknowledgement.
+from headless sessions on real platform credential stores. Unit tests own provider
+selection, credential-pair rollback, refresh locking, vault behavior, and plaintext
+acknowledgement, but do not replace that host-level certification.
 
 ## Managed runtimes and native clients
 
