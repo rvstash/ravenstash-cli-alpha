@@ -321,3 +321,9 @@ def test_node_install_rejects_unpublished_musl_archive(monkeypatch) -> None:
 
     with pytest.raises(SystemExit):
         node_rt.install("22")
+
+
+def test_node_converts_windows_paths_for_msys_gpgv() -> None:
+    path = node_rt.Path(r"C:\Users\runneradmin\AppData\Local\Temp\SHASUMS256.txt")
+
+    assert node_rt._msys_path(path) == "/c/Users/runneradmin/AppData/Local/Temp/SHASUMS256.txt"

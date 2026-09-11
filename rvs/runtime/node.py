@@ -11,7 +11,7 @@ import os
 import shutil
 import subprocess
 import tempfile
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from typing import Any
 
 import httpx
@@ -39,6 +39,22 @@ _MAX_SIGNED_MANIFEST_BYTES = 16 * 1024 * 1024
 
 # nodejs.org arch strings
 _ARCH_MAP = {"x64": "x64", "aarch64": "arm64"}
+
+
+def _msys_path(path: Path) -> str:
+    """Translate an absolute Windows path for an MSYS command."""
+    windows_path = PureWindowsPath(path)
+    drive = windows_path.drive.rstrip(":").lower()
+    if not drive:
+        return str(path).replace("\\", "/")
+    remainder = "/".join(windows_path.parts[1:])
+    return f"/{drive}/{remainder}"
+
+
+def _gpgv_path(path: Path, gpgv: str) -> str:
+    if os.name == "nt" and "msys" in gpgv.casefold():
+        return _msys_path(path)
+    return str(path)
 
 
 def _resolve_full_version(version: str) -> str:
@@ -103,9 +119,9 @@ def _verified_archive_digest(version: str, archive_name: str, temp_dir: Path) ->
     verification = subprocess.run(
         [
             gpgv,
-            f"--keyring={keyring}",
-            str(signature),
-            str(checksums),
+            f"--keyring={_gpgv_path(keyring, gpgv)}",
+            _gpgv_path(signature, gpgv),
+            _gpgv_path(checksums, gpgv),
         ],
         check=False,
         capture_output=True,
