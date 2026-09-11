@@ -102,9 +102,21 @@ jobs:
           compression-level: 0
           retention-days: 7
 
-  nixos:
-    name: NixOS source and package
-    runs-on: ubuntu-24.04
+  nix:
+    name: Nix package (${{ matrix.system }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - system: x86_64-linux
+            runner: ubuntu-24.04
+          - system: aarch64-linux
+            runner: ubuntu-24.04-arm
+          - system: aarch64-darwin
+            runner: macos-14
+          - system: x86_64-darwin
+            runner: macos-15-intel
+    runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
@@ -114,3 +126,6 @@ jobs:
         run: |
           nix flake show --all-systems --no-write-lock-file
           nix flake check --no-write-lock-file
+          nix build ".#packages.${{ matrix.system }}.default" --no-write-lock-file
+          ./result/bin/rvs --version
+          ./result/bin/rvs --help >/dev/null

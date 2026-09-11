@@ -8,12 +8,10 @@ initial commit rather than this repository's Git history.
 
 ## Trust boundaries
 
-The release jobs use five GitHub environments:
+The release jobs use three GitHub environments:
 
 | Environment | Credential scope |
 | --- | --- |
-| `macos-signing` | Apple signing and notarization credentials only |
-| `windows-signing` | Windows Authenticode credentials only |
 | `apt-signing` | APT private key and passphrase only |
 | `apt-storage` | Bucket-scoped R2 write key and account ID only |
 | `installer-delivery` | Cloudflare Worker deploy token and account ID only |
@@ -49,8 +47,8 @@ not gate a release by holding a publisher token.
    commit SHA, exact version, and policy-derived channel. Set `promote_channel`
    only when new installations should select that channel.
 4. The workflow proves the commit is on `dev`; builds Linux glibc, Linux musl,
-   macOS, and Windows artifacts for amd64/arm64; signs and notarizes the desktop
-   bundles; and attests the complete inventory. It restores and verifies the
+   macOS, and Windows artifacts for amd64/arm64; smoke-tests the frozen bundles;
+   and attests the complete inventory. It restores and verifies the
    entire signed APT tree, publishes `InRelease` last, installs both Debian
    architectures, optionally deploys the exact attested installer bytes, and
    publishes the GitHub release against the source commit.
@@ -58,11 +56,13 @@ not gate a release by holding a publisher token.
    production target only by explicit human dispatch.
 
 Do not call a target publicly supported from compatibility CI alone. Before the
-first public release, retain evidence that the exact signed artifacts were
+first public release, retain evidence that the exact release artifacts were
 installed and exercised on clean systems, including real macOS Keychain and
 Windows Credential Manager sessions, WSL2, managed runtime downloads, and
 representative native package-tool wrappers. Nix must be built and exercised on
-each architecture/OS pair claimed by the release rather than only evaluated.
+each architecture/OS pair claimed by the release. Apple notarization and Windows
+Authenticode are deferred, so the command-line installation documentation must
+say so explicitly.
 Deploy and verify both `https://ravenstash.com/install.sh` and
 `https://ravenstash.com/install.ps1` before publishing website copy that directs
 users on those platforms to the new release.

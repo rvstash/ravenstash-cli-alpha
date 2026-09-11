@@ -101,7 +101,7 @@ def test_installer_is_owned_by_cli_packaging_and_pins_release_identity() -> None
     assert f'$ReleaseVersion = "{version}"' in windows_source
     assert f'$CompatibilityChannel = "{channel}"' in windows_source
     assert "Get-FileHash -Algorithm SHA256" in windows_source
-    assert "Get-AuthenticodeSignature" in windows_source
+    assert "Get-AuthenticodeSignature" not in windows_source
     assert "RVS_GITHUB_TOKEN" in windows_source
 
 

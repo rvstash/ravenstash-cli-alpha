@@ -162,7 +162,6 @@ jobs:
           - name: macos-amd64
             runner: macos-15-intel
     runs-on: ${{ matrix.runner }}
-    environment: macos-signing
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
@@ -172,15 +171,13 @@ jobs:
         with:
           version: "0.11.24"
           enable-cache: false
-      - name: Build, sign, and notarize native macOS bundle
-        env:
-          RVS_APPLE_CERTIFICATE_BASE64: ${{ secrets.RVS_APPLE_CERTIFICATE_BASE64 }}
-          RVS_APPLE_CERTIFICATE_PASSWORD: ${{ secrets.RVS_APPLE_CERTIFICATE_PASSWORD }}
-          RVS_APPLE_SIGNING_IDENTITY: ${{ secrets.RVS_APPLE_SIGNING_IDENTITY }}
-          RVS_APPLE_ID: ${{ secrets.RVS_APPLE_ID }}
-          RVS_APPLE_APP_PASSWORD: ${{ secrets.RVS_APPLE_APP_PASSWORD }}
-          RVS_APPLE_TEAM_ID: ${{ secrets.RVS_APPLE_TEAM_ID }}
-        run: packaging/scripts/build_macos_bundle.sh
+      - name: Build and smoke-test native macOS bundle
+        shell: bash
+        run: |
+          uv sync --frozen --python 3.14 --group release
+          uv run python packaging/scripts/build_portable.py
+          bundle="$(find build/release -mindepth 1 -maxdepth 1 -type d -name 'rvs-v*' -print -quit)"
+          uv run python packaging/scripts/smoke_portable.py "$bundle"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: rvs-platform-${{ matrix.name }}-${{ inputs.source_sha }}
@@ -199,7 +196,6 @@ jobs:
           - name: windows-arm64
             runner: windows-11-arm
     runs-on: ${{ matrix.runner }}
-    environment: windows-signing
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
@@ -209,17 +205,14 @@ jobs:
         with:
           version: "0.11.24"
           enable-cache: false
-      - name: Build native Windows bundle
+      - name: Build and smoke-test native Windows bundle
         shell: pwsh
         run: |
           uv sync --frozen --python 3.14 --group release
           uv run python packaging/scripts/build_portable.py
-      - name: Authenticode-sign and verify Windows launchers
-        shell: pwsh
-        env:
-          RVS_CODESIGN_PFX_BASE64: ${{ secrets.RVS_CODESIGN_PFX_BASE64 }}
-          RVS_CODESIGN_PASSWORD: ${{ secrets.RVS_CODESIGN_PASSWORD }}
-        run: packaging/scripts/sign_windows_bundle.ps1
+          $bundle = Get-ChildItem build/release -Directory -Filter "rvs-v*" | Select-Object -First 1
+          if (-not $bundle) { throw "Windows release bundle was not built" }
+          uv run python packaging/scripts/smoke_portable.py $bundle.FullName
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: rvs-platform-${{ matrix.name }}-${{ inputs.source_sha }}

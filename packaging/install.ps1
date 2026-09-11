@@ -57,10 +57,6 @@ try {
         if (-not (Test-Path -LiteralPath $launcher -PathType Leaf)) {
             throw "Archive is missing $launcherName"
         }
-        $signature = Get-AuthenticodeSignature -LiteralPath $launcher
-        if ($signature.Status -ne "Valid") {
-            throw "$launcherName does not have a valid Authenticode signature"
-        }
     }
 
     if (-not $InstallRoot) {

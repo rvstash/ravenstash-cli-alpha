@@ -8,23 +8,22 @@ artifacts for the following targets:
 | --- | --- | --- |
 | Linux with glibc 2.28+ | amd64, arm64 | signed APT package and portable archive |
 | Linux with musl, including Alpine | amd64, arm64 | signed portable archive |
-| macOS 14+ on Apple Silicon; macOS 15+ on Intel | Intel, Apple Silicon | signed and notarized portable archive; `install.sh` |
-| Windows 10/11 on x64; Windows 11 on ARM | x64, ARM64 | Authenticode-signed ZIP; `install.ps1` |
+| macOS 14+ on Apple Silicon; macOS 15+ on Intel | Intel, Apple Silicon | checksummed portable archive; `install.sh` |
+| Windows 11 | x64, ARM64 | checksummed ZIP; `install.ps1` |
 | NixOS and Nix on Linux/macOS | x86_64, aarch64 | flake package |
 | WSL2 | x86_64, aarch64 | matching Linux path |
 
 The compatibility workflow tests source and frozen executables on native Linux,
 macOS, and Windows runners. Alpine artifacts are built and executed in native-architecture
-musl containers. CI builds the Nix package on x86-64 Linux; the flake exposes and
-evaluates packages for all four Linux/macOS architecture pairs. The release workflow
-repeats native builds from one exact source commit, signs macOS and Windows launchers,
-notarizes macOS bundles, assembles one checksum inventory, and creates keyless Sigstore
-provenance for that complete inventory.
+musl containers. CI builds and executes the Nix package natively for all four
+Linux/macOS architecture pairs. The release workflow repeats native builds from
+one exact source commit, assembles one checksum inventory, and creates keyless
+Sigstore provenance for that complete inventory.
 
-Passing compatibility CI establishes that the source and unsigned candidate bundles
+Passing compatibility CI establishes that the source and candidate bundles
 run on the target hosts. Public support begins only when the exact release artifacts
-also pass signing, installation, and clean-system certification. This prevents an
-evaluated Nix output, an unsigned smoke-test bundle, or inherited Linux coverage from
+also pass integrity, installation, and clean-system certification. This prevents an
+evaluated Nix output, a smoke-test bundle, or inherited Linux coverage from
 being presented as a certified release for Nix, macOS, Windows, or WSL.
 
 The glibc artifacts are built on Ubuntu 20.04. Portable amd64 smoke coverage includes
@@ -89,4 +88,6 @@ those BSD targets upstream, so a successful one-off build is insufficient.
 
 Review this matrix at least quarterly and before changing the Python, PyInstaller,
 cryptography, or keyring baselines. A target becomes supported only after its release
-artifact and clean-system certification pass.
+artifact and clean-system certification pass. Apple notarization and Windows
+Authenticode are deferred; their absence must remain explicit in installation and
+compatibility documentation.

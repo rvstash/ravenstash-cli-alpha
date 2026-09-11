@@ -571,8 +571,8 @@ when its signed release artifact passes clean-system certification.
 | --- | --- | --- |
 | Linux with glibc 2.28+ | x86-64, ARM64 | APT package or portable archive |
 | Linux with musl, including Alpine | x86-64, ARM64 | portable archive |
-| macOS 14+ on Apple Silicon; macOS 15+ on Intel | Apple Silicon, Intel | `install.sh` |
-| Windows 10/11 on x64; Windows 11 on ARM | x64, ARM64 | `install.ps1` |
+| macOS 14+ on Apple Silicon; macOS 15+ on Intel | Apple Silicon, Intel | checksummed portable archive; `install.sh` |
+| Windows 11 | x64, ARM64 | checksummed ZIP; `install.ps1` |
 | NixOS and Nix on Linux/macOS | x86_64, aarch64 | versioned flake package |
 | WSL2 | x86_64, aarch64 | matching Linux path |
 
@@ -594,8 +594,8 @@ repository before running either command. Public releases do not require it.
 Debian, Ubuntu, WSL, and derivatives use the signed APT channel. Other Linux
 systems and macOS use a portable archive authenticated by its OpenPGP-signed
 checksum inventory. Native artifacts cover Linux glibc and musl, macOS, and
-Windows on both x86-64 and ARM64. macOS release executables are signed and
-notarized; Windows release executables carry Authenticode signatures. Review the installer source at
+Windows on both x86-64 and ARM64. macOS and Windows are installed from the
+command line without Apple notarization or Authenticode signing. Review the installer source at
 <https://ravenstash.com/install.sh> before running it if required by your
 environment. Set `RVS_INSTALL_SCOPE=system` for `/opt/rvs` plus
 `/usr/local/bin`; the default portable install is rootless and per-user.
@@ -658,7 +658,8 @@ packaging/scripts/build-in-ubuntu20.sh
 
 That builds the Python 3.14 Linux PyInstaller bundle, Debian package, tarball,
 CycloneDX SBOM, and checksum file. Native macOS, Windows, and musl builders run
-in the platform and release workflows and feed one attested artifact inventory.
+in the platform and release workflows, smoke-test their frozen bundles, and feed
+one attested artifact inventory.
 See [`docs/linux-compatibility.md`](docs/linux-compatibility.md) for the distro,
 installer, headless, desktop-keyring, and known-gap release matrix.
 APT repository metadata is generated and signed separately:

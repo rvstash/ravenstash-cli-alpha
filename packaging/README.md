@@ -97,11 +97,11 @@ Ravenstash portable installation, it redirects only the installer-owned links in
 old release; unrelated files are preserved and reported. On Linux glibc, Linux
 musl, and macOS for amd64 or arm64 it verifies an OpenPGP-signed release inventory
 plus the archive's exact SHA-256 digest and performs a user-local install by default.
-The PowerShell installer selects Windows x64 or ARM64, verifies the release digest
-and Authenticode signature, installs per-user by default, and updates user `PATH`.
-The same protected
-release signer authenticates the APT repository and portable inventory; neither
-path accepts unsigned executable bytes. The build includes the installer in the
+The PowerShell installer selects Windows x64 or ARM64, verifies the release digest,
+installs per-user by default, and updates user `PATH`. Apple notarization and
+Windows Authenticode are deferred while these platforms use command-line
+distribution. The protected APT signer authenticates the APT repository and POSIX
+portable inventory. The build includes the installer in the
 checksummed and attested release artifacts. After the APT repository and GitHub
 release pass their publication gates, the release workflow embeds the exact
 attested bytes in a dedicated
@@ -127,14 +127,6 @@ values:
 | --- | --- | --- |
 | secret | `RVS_APT_GPG_PRIVATE_KEY` | ASCII-armored private signing key |
 | secret | `RVS_APT_GPG_PASSPHRASE` | Signing-key passphrase; may be empty |
-| secret | `RVS_APPLE_CERTIFICATE_BASE64` | Base64 Developer ID Application certificate archive |
-| secret | `RVS_APPLE_CERTIFICATE_PASSWORD` | Certificate archive password |
-| secret | `RVS_APPLE_SIGNING_IDENTITY` | Developer ID Application identity |
-| secret | `RVS_APPLE_ID` | Apple notarization account |
-| secret | `RVS_APPLE_APP_PASSWORD` | App-specific notarization password |
-| secret | `RVS_APPLE_TEAM_ID` | Apple developer team ID |
-| secret | `RVS_CODESIGN_PFX_BASE64` | Base64 Windows code-signing certificate archive |
-| secret | `RVS_CODESIGN_PASSWORD` | Windows certificate archive password |
 | secret | `R2_APT_ACCESS_KEY_ID` | Bucket-scoped R2 write credential |
 | secret | `R2_APT_SECRET_ACCESS_KEY` | Bucket-scoped R2 write credential |
 | variable | `R2_APT_ACCOUNT_ID` | Cloudflare account ID |
@@ -148,8 +140,7 @@ remains private. Connecting that custom domain and provisioning the
 bucket-scoped token are infrastructure prerequisites, not responsibilities of
 this source repository.
 
-The `macos-signing`, `windows-signing`, `apt-signing`, `apt-storage`, and
-`installer-delivery` environments keep
+The `apt-signing`, `apt-storage`, and `installer-delivery` environments keep
 their credentials separated. Releases are manual exact-SHA dispatches. The
 built-in token creates a draft against that source commit, populates it once,
 and publishes it. The private integration repository has no publishing
