@@ -45,7 +45,7 @@ try {
     Invoke-ReleaseDownload "$ReleaseBase/$archiveName" $archive
     Invoke-ReleaseDownload "$ReleaseBase/$checksumsName" $checksums
     $line = Get-Content $checksums | Where-Object { $_ -match "  $([regex]::Escape($archiveName))$" } | Select-Object -First 1
-    if (-not $line) { throw "Signed release inventory does not contain $archiveName" }
+    if (-not $line) { throw "Release checksum inventory does not contain $archiveName" }
     $expected = ($line -split '\s+')[0].ToLowerInvariant()
     $actual = (Get-FileHash -Algorithm SHA256 $archive).Hash.ToLowerInvariant()
     if ($actual -ne $expected) { throw "SHA-256 mismatch for $archiveName" }
