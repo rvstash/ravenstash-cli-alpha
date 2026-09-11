@@ -145,6 +145,7 @@ jobs:
         run: |
           bundle="$(find build/release -mindepth 1 -maxdepth 1 -type d -name 'rvs-v*' -print -quit)"
           export RVS_CERTIFICATION_BUNDLE="$PWD/$bundle/rvs"
+          # shellcheck disable=SC2016
           dbus-run-session -- bash -euc '
             printf "rvs-ci-keyring\n" | gnome-keyring-daemon --unlock
             export RVS_HOME="$RUNNER_TEMP/rvs-secret-service-certification"
