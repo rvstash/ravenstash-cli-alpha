@@ -42,8 +42,8 @@ Operational guidance for the `rvs` CLI package.
   documented GitHub environments and originate in production Infisical.
 - Never add destructive APT reset behavior. Published versions and repository
   objects are append-only; corrections use a new patch version.
-- Keep real-environment integration tests and their tokens in the separate
-  private integration repository. It must not receive signing, storage-write,
+- Keep real-environment integration tests and their tokens in the Ravenstash QA
+  repository. It must not receive signing, storage-write,
   or installer-deployment credentials.
 
 ## Verification

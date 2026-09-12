@@ -90,16 +90,17 @@ jobs:
           CHANNEL: ${{ inputs.channel }}
           SIGNER_IDENTITY: https://github.com/${{ github.repository }}/.github/workflows/release.yml@refs/heads/dev
         run: |
+          awk '
+            NF != 2 || $1 !~ /^[0-9a-f]{64}$/ || $2 ~ /(^|\/)\.\.?(\/|$)/ || $2 ~ /\// { exit 1 }
+            { print $2 }
+          ' "release-build/rvs-v${VERSION}-checksums.txt" \
+            > checksummed-assets.txt
           printf '%s\n' \
-            install.sh \
             "rvs-v${VERSION}-checksums.sigstore.json" \
             "rvs-v${VERSION}-checksums.txt" \
             "rvs-v${VERSION}-checksums.txt.asc" \
-            "rvs-v${VERSION}-linux-amd64.tar.gz" \
-            "rvs-v${VERSION}-sbom.cdx.json" \
-            "rvs_${VERSION}_amd64.deb" \
-            source-identity.txt \
-            | sort > expected-assets.txt
+            >> checksummed-assets.txt
+          sort checksummed-assets.txt > expected-assets.txt
           find release-build -maxdepth 1 -type f -printf '%f\n' \
             | sort > actual-assets.txt
           cmp expected-assets.txt actual-assets.txt
@@ -126,6 +127,7 @@ jobs:
             release-build/source-identity.txt
           cmp packaging/install.sh release-build/install.sh
           bash -n release-build/install.sh
+          cmp packaging/install.ps1 release-build/install.ps1
 
       - name: Refuse an installer rollback
         env:
@@ -147,6 +149,8 @@ jobs:
         run: |
           install -m 0644 release-build/install.sh \
             packaging/installer-worker/src/install.sh
+          install -m 0644 release-build/install.ps1 \
+            packaging/installer-worker/src/install.ps1
           cd packaging/installer-worker
           npm ci --ignore-scripts
           npm audit --audit-level=high
@@ -163,6 +167,7 @@ jobs:
       - name: Verify exact live bytes and security headers
         env:
           EXPECTED_INSTALLER: release-build/install.sh
+          EXPECTED_WINDOWS_INSTALLER: release-build/install.ps1
         run: |
           for attempt in {1..60}; do
             if curl --proto '=https' --proto-redir '=https' --tlsv1.2 \
@@ -176,7 +181,18 @@ jobs:
               && grep -Eiq '^cache-control: no-store' installer-headers.txt \
               && grep -Eiq '^strict-transport-security: max-age=31536000; includeSubDomains' installer-headers.txt \
               && grep -Eiq '^x-content-type-options: nosniff' installer-headers.txt; then
-              exit 0
+              if curl --proto '=https' --proto-redir '=https' --tlsv1.2 \
+                  --max-redirs 0 -fsS \
+                  --dump-header windows-installer-headers.txt \
+                  https://ravenstash.com/install.ps1 \
+                  --output live-install.ps1 \
+                && cmp "$EXPECTED_WINDOWS_INSTALLER" live-install.ps1 \
+                && grep -Eiq '^content-type: text/plain([;[:space:]]|$)' windows-installer-headers.txt \
+                && grep -Eiq '^cache-control: no-store' windows-installer-headers.txt \
+                && grep -Eiq '^strict-transport-security: max-age=31536000; includeSubDomains' windows-installer-headers.txt \
+                && grep -Eiq '^x-content-type-options: nosniff' windows-installer-headers.txt; then
+                exit 0
+              fi
             fi
             if [[ "$attempt" -lt 60 ]]; then
               sleep 5

@@ -21,8 +21,8 @@ All secret values originate in the production Infisical path
 stays in Infisical and is never copied into GitHub. The committed public key and
 fingerprint are public trust anchors, not credentials.
 
-The separate private integration repository owns QA, staging, and production
-smoke tests and tokens. It has no release credentials. A future GitHub App may
+The private Ravenstash QA repository owns QA, staging, and production smoke
+tests and tokens. It has no release credentials. A future GitHub App may
 report an integration result back to this repository, but integration tests do
 not gate a release by holding a publisher token.
 
@@ -67,7 +67,7 @@ Deploy and verify both `https://ravenstash.com/install.sh` and
 `https://ravenstash.com/install.ps1` before publishing website copy that directs
 users on those platforms to the new release.
 
-The daily `refresh-apt-metadata` workflow renews the signed seven-day
+The twice-weekly `refresh-apt-metadata` workflow renews the signed seven-day
 `Valid-Until` without changing package contents or compatibility channels.
 
 ## Clean public import
@@ -78,8 +78,8 @@ private integration configuration, and every secret. Search the complete tree
 for credentials and internal-only endpoints, run dependency and secret scans,
 then create one MIT-licensed initial commit in the empty public repository.
 
-Recreate the five GitHub environments from Infisical, configure branch and
-environment protections, enable release immutability, and test a non-promoted
-release before switching the installer and APT provenance identity to the new
-repository. Historical alpha releases remain in the private alpha repository;
-the public repository begins with the first beta release.
+Recreate the three publishing GitHub environments from Infisical, configure
+branch and environment protections, enable release immutability, and test a
+non-promoted release before switching the installer and APT provenance identity
+to the new repository. Historical alpha releases remain in the private alpha
+repository; the public repository begins with the first beta release.

@@ -147,7 +147,7 @@ this source repository.
 The `apt-signing`, `apt-storage`, and `installer-delivery` environments keep
 their credentials separated. Releases are manual exact-SHA dispatches. The
 built-in token creates a draft against that source commit, populates it once,
-and publishes it. The private integration repository has no publishing
+and publishes it. The Ravenstash QA repository has no publishing
 credentials and cannot sign, upload, or deploy releases.
 
 The committed public key is an identity pin, not a secret. The private key,

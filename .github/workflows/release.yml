@@ -70,8 +70,12 @@ jobs:
             --volume "$PWD/dist/release:/release:ro" \
             ubuntu@sha256:8feb4d8ca5354def3d8fce243717141ce31e2c428701f6682bd2fafe15388214 \
             /bin/bash -euc '
-              apt-get update
-              apt-get install --yes /release/rvs_*_amd64.deb
+              sed -i \
+                -e "s|http://archive.ubuntu.com/ubuntu/|http://azure.archive.ubuntu.com/ubuntu/|g" \
+                -e "s|http://security.ubuntu.com/ubuntu/|http://azure.archive.ubuntu.com/ubuntu/|g" \
+                /etc/apt/sources.list
+              apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=20 update
+              apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=20 install --yes /release/rvs_*_amd64.deb
               rvs --version
               rvs --help >/dev/null
               ravenstash --version
@@ -136,8 +140,12 @@ jobs:
             --volume "$PWD/dist/release:/release:ro" \
             ubuntu@sha256:8feb4d8ca5354def3d8fce243717141ce31e2c428701f6682bd2fafe15388214 \
             /bin/bash -euc '
-              apt-get update
-              apt-get install --yes /release/rvs_*_arm64.deb
+              sed -i \
+                -e "s|http://archive.ubuntu.com/ubuntu/|http://azure.archive.ubuntu.com/ubuntu/|g" \
+                -e "s|http://security.ubuntu.com/ubuntu/|http://azure.archive.ubuntu.com/ubuntu/|g" \
+                /etc/apt/sources.list
+              apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=20 update
+              apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=20 install --yes /release/rvs_*_arm64.deb
               test "$(dpkg --print-architecture)" = arm64
               rvs --version
               rvs --help >/dev/null
@@ -549,13 +557,17 @@ jobs:
             --volume "$PWD/packaging/repository/keys/ravenstash-rvs.gpg:/usr/share/keyrings/ravenstash-rvs.gpg:ro" \
             ubuntu@sha256:8feb4d8ca5354def3d8fce243717141ce31e2c428701f6682bd2fafe15388214 \
             /bin/bash -euc '
-              apt-get update
-              apt-get install --yes ca-certificates
+              sed -i \
+                -e "s|http://archive.ubuntu.com/ubuntu/|http://azure.archive.ubuntu.com/ubuntu/|g" \
+                -e "s|http://security.ubuntu.com/ubuntu/|http://azure.archive.ubuntu.com/ubuntu/|g" \
+                /etc/apt/sources.list
+              apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=20 update
+              apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=20 install --yes ca-certificates
               printf "%s\n" \
                 "deb [arch=amd64 signed-by=/usr/share/keyrings/ravenstash-rvs.gpg] https://releases.ravenstash.com/rvs/apt ${CHANNEL} main" \
                 > /etc/apt/sources.list.d/ravenstash-rvs.list
-              apt-get update
-              apt-get install --yes rvs
+              apt-get -o Acquire::Retries=3 -o Acquire::https::Timeout=20 update
+              apt-get -o Acquire::Retries=3 -o Acquire::https::Timeout=20 install --yes rvs
               test "$(dpkg-query -W -f="\${Version}" rvs)" = "$EXPECTED_VERSION"
               rvs --version
             '
@@ -581,13 +593,17 @@ jobs:
             --volume "$PWD/packaging/repository/keys/ravenstash-rvs.gpg:/usr/share/keyrings/ravenstash-rvs.gpg:ro" \
             ubuntu@sha256:8feb4d8ca5354def3d8fce243717141ce31e2c428701f6682bd2fafe15388214 \
             /bin/bash -euc '
-              apt-get update
-              apt-get install --yes ca-certificates
+              sed -i \
+                -e "s|http://archive.ubuntu.com/ubuntu/|http://azure.archive.ubuntu.com/ubuntu/|g" \
+                -e "s|http://security.ubuntu.com/ubuntu/|http://azure.archive.ubuntu.com/ubuntu/|g" \
+                /etc/apt/sources.list
+              apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=20 update
+              apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=20 install --yes ca-certificates
               printf "%s\n" \
                 "deb [arch=arm64 signed-by=/usr/share/keyrings/ravenstash-rvs.gpg] https://releases.ravenstash.com/rvs/apt ${CHANNEL} main" \
                 > /etc/apt/sources.list.d/ravenstash-rvs.list
-              apt-get update
-              apt-get install --yes rvs
+              apt-get -o Acquire::Retries=3 -o Acquire::https::Timeout=20 update
+              apt-get -o Acquire::Retries=3 -o Acquire::https::Timeout=20 install --yes rvs
               test "$(dpkg --print-architecture)" = arm64
               test "$(dpkg-query -W -f="\${Version}" rvs)" = "$EXPECTED_VERSION"
               rvs --version
@@ -703,6 +719,7 @@ jobs:
     needs:
       - assemble
       - publish-apt
+      - verify-apt-arm64
     runs-on: ubuntu-24.04
     permissions:
       contents: write
