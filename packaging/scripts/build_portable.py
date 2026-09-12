@@ -98,6 +98,11 @@ def main() -> None:
     bundle = frozen / "rvs"
     suffix = ".exe" if system == "windows" else ""
     executable = bundle / f"rvs{suffix}"
+    bundled_cryptography = list(bundle.rglob("cryptography"))
+    if system == "windows" and bundled_cryptography:
+        raise SystemExit("Windows bundle unexpectedly contains cryptography")
+    if system != "windows" and not bundled_cryptography:
+        raise SystemExit("POSIX bundle is missing encrypted-vault cryptography support")
     for alias in ("ravenstash", "docker-credential-rvs"):
         _copy_alias(executable, bundle / f"{alias}{suffix}")
     subprocess.run([str(executable), "--version"], check=True)

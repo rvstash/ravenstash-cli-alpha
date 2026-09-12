@@ -7,6 +7,7 @@ from PyInstaller.utils.hooks import collect_submodules, copy_metadata
 
 
 ROOT = Path.cwd()
+IS_WINDOWS = os.name == "nt"
 
 
 def _metadata(package: str):
@@ -50,7 +51,10 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=[],
+    # The encrypted vault is unavailable on Windows, where credentials use the
+    # native Credential Manager. Avoid shipping cryptography's statically linked
+    # Rust/OpenSSL extension when no supported Windows command can use it.
+    excludes=["cryptography"] if IS_WINDOWS else [],
     noarchive=False,
     optimize=0,
 )
@@ -64,7 +68,7 @@ exe = EXE(
     name="rvs",
     debug=False,
     bootloader_ignore_signals=False,
-    strip=False,
+    strip=not IS_WINDOWS,
     upx=True,
     console=True,
     disable_windowed_traceback=False,
@@ -77,7 +81,7 @@ coll = COLLECT(
     exe,
     a.binaries,
     a.datas,
-    strip=False,
+    strip=not IS_WINDOWS,
     upx=True,
     upx_exclude=[],
     name="rvs",

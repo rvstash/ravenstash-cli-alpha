@@ -52,6 +52,10 @@ The frozen bundle and Debian package expose both `rvs` and the long-form
 an informational notice when an AMD ROCm Validation Suite `rvs` executable is
 present under `/opt/rocm*`.
 
+Native symbols are stripped from Linux and macOS release bundles. Windows
+bundles omit the encrypted-vault `cryptography` dependency because that vault
+is unavailable on Windows; Windows credentials use Credential Manager instead.
+
 ## APT repository
 
 After building the `.deb`, generate static APT repository metadata. The channel
