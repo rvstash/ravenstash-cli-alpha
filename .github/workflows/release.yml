@@ -20,6 +20,11 @@ on:
         type: boolean
         required: true
         default: false
+      publish_release:
+        description: Publish signed APT state and the GitHub release after all build lanes pass
+        type: boolean
+        required: true
+        default: false
 
 permissions:
   contents: read
@@ -47,6 +52,8 @@ jobs:
           SOURCE_SHA: ${{ inputs.source_sha }}
           VERSION: ${{ inputs.version }}
           CHANNEL: ${{ inputs.channel }}
+          PROMOTE_CHANNEL: ${{ inputs.promote_channel }}
+          PUBLISH_RELEASE: ${{ inputs.publish_release }}
         run: |
           [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
           [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+([~+.-][A-Za-z0-9.-]+)?$ ]]
@@ -59,6 +66,10 @@ jobs:
           grep -Fx "readonly compatibility_channel=\"${CHANNEL}\"" packaging/install.sh
           grep -Fx "\$ReleaseVersion = \"${VERSION}\"" packaging/install.ps1
           grep -Fx "\$CompatibilityChannel = \"${CHANNEL}\"" packaging/install.ps1
+          if [[ "$PROMOTE_CHANNEL" == "true" && "$PUBLISH_RELEASE" != "true" ]]; then
+            echo "::error::promote_channel requires publish_release"
+            exit 1
+          fi
           test -z "$(git status --porcelain)"
 
       - name: Build and test in the pinned Ubuntu 20.04 environment
@@ -317,6 +328,7 @@ jobs:
           retention-days: 1
 
   restore:
+    if: inputs.publish_release
     runs-on: ubuntu-24.04
     environment: apt-storage
     steps:

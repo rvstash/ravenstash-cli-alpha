@@ -44,8 +44,11 @@ not gate a release by holding a publisher token.
    package build. Confirm `platform-ci` passes on the exact release commit for
    native Linux, macOS, and Windows runners, both Alpine architectures, and Nix.
 3. Dispatch `.github/workflows/release.yml` from `dev` with the exact 40-character
-   commit SHA, exact version, and policy-derived channel. Set `promote_channel`
-   only when new installations should select that channel.
+   commit SHA, exact version, and policy-derived channel. Leave `publish_release`
+   and `promote_channel` disabled to exercise the complete native build and
+   attestation graph without publishing. Enable `publish_release` only for an
+   approved immutable release, and enable `promote_channel` only when new
+   installations should select that channel.
 4. The workflow proves the commit is on `dev`; builds Linux glibc, Linux musl,
    macOS, and Windows artifacts for amd64/arm64; smoke-tests the frozen bundles;
    and attests the complete inventory. It restores and verifies the
