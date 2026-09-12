@@ -32,6 +32,7 @@ from ..artifacts.targets import registry_context
 from ..publishing import PublishItem, confirm_context, native_artifacts
 from ..runtime import tools
 from ..subprocesses import child_environment
+from ..tool_advisories import warn_if_old
 
 
 if TYPE_CHECKING:
@@ -127,6 +128,7 @@ class RegistryRoute:
 class ExecutionPlan:
     cmd: list[str]
     env: dict[str, str]
+    native_command: tuple[str, ...]
 
 
 def normalize_policy(value: str) -> ConfigPolicy:
@@ -141,6 +143,8 @@ def run(tool: NativeTool, argv: list[str], options: NativeOptions) -> None:
     """Run *tool* with ephemeral Ravenstash credential injection."""
     with tempfile.TemporaryDirectory(prefix="rvs-native-") as temp_dir:
         plan = _build_plan(tool, argv, options, Path(temp_dir))
+        if plan.native_command:
+            warn_if_old(tool, list(plan.native_command))
         result = subprocess.run(plan.cmd, env=plan.env, check=False)
         code = getattr(result, "returncode", 0)
         if code:
@@ -159,7 +163,7 @@ def _build_plan(
     native_arg_start = len(command_prefix)
     # Help/version do not resolve packages and need no account or target.
     if argv in (["--version"], ["-V"], ["--help"], ["-h"], ["help"]):
-        return ExecutionPlan(cmd=cmd, env=env)
+        return ExecutionPlan(cmd=cmd, env=env, native_command=())
     kind = _kind_for_tool(tool)
     customer_id = _selected_customer_id(options)
     saved = cfg_mod.selected_artifact_target(options.profile, customer_id)
@@ -191,7 +195,7 @@ def _build_plan(
     from .sources import warn_additional_sources
 
     warn_additional_sources(tool, argv, cmd[native_arg_start:], env, route)
-    return ExecutionPlan(cmd=cmd, env=env)
+    return ExecutionPlan(cmd=cmd, env=env, native_command=tuple(command_prefix))
 
 
 def _command_prefix_for(tool: NativeTool) -> list[str]:

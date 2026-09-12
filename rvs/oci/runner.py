@@ -25,6 +25,7 @@ from ..client import ApiClient, ApiError
 from ..publishing import confirm_publish, oci_artifacts
 from ..runtime import tools
 from ..subprocesses import child_environment
+from ..tool_advisories import warn_if_old
 from . import docker, helm
 from .registry import normalized_registry_host
 
@@ -427,6 +428,7 @@ def run(tool: OciTool, argv: list[str], options: OciOptions) -> None:
         if tool == "docker":
             env.setdefault("BUILDX_CONFIG", str((source.parent / "buildx").absolute()))
         executable = _executable(tool)
+        warn_if_old(tool, [executable])
         if tagging is not None and invocation is not None:
             source_image, destination = tagging
             docker.check_tag(executable, invocation, env, source_image, destination)
