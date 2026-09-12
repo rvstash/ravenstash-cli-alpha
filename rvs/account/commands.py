@@ -186,7 +186,9 @@ def _use_account(account: str, profile: str | None) -> None:
     saved = cfg_mod.set_active_account(profile=profile_name, customer=selected)
     output.success(f"Account '{display_name(saved)}' selected for {scope}.")
     if os.environ.get("RVS_CUSTOMER_ID"):
-        output.warn("RVS_CUSTOMER_ID is set and still overrides the selected account in this shell.")
+        output.warn(
+            "RVS_CUSTOMER_ID is set and still overrides the selected account in this shell."
+        )
 
 
 @app.command("use")

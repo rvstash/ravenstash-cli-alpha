@@ -19,9 +19,7 @@ from ..client import ApiClient, ApiError
 from .targets import resolve_target
 
 
-app = typer.Typer(
-    help="Generate temporary credentials for package tools.", no_args_is_help=True
-)
+app = typer.Typer(help="Generate temporary credentials for package tools.", no_args_is_help=True)
 
 
 def duration_seconds(value: str) -> int:

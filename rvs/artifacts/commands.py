@@ -44,10 +44,10 @@ app = typer.Typer(
 )
 
 repo_app = typer.Typer(help="Manage Ravenstash repositories.", no_args_is_help=True)
-upstream_app = typer.Typer(help="Manage the package sources used by a repository.", no_args_is_help=True)
-remote_app = typer.Typer(
-    help="Manage private mirrors.", no_args_is_help=True
+upstream_app = typer.Typer(
+    help="Manage the package sources used by a repository.", no_args_is_help=True
 )
+remote_app = typer.Typer(help="Manage private mirrors.", no_args_is_help=True)
 package_app = typer.Typer(help="Manage packages hosted in a repository.", no_args_is_help=True)
 pypi_app = typer.Typer(help="PyPI package repository helpers.", no_args_is_help=True)
 npm_app = typer.Typer(help="npm package repository helpers.", no_args_is_help=True)
@@ -92,9 +92,7 @@ def package_context(
         None, "--kind", help="Package format when it cannot be determined automatically."
     ),
     profile: str | None = typer.Option(None, "--profile", help="Local profile for this command."),
-    scope: Literal["self", "public"] = typer.Option(
-        "self", "--scope", hidden=True
-    ),
+    scope: Literal["self", "public"] = typer.Option("self", "--scope", hidden=True),
     public: bool = typer.Option(False, "--public", hidden=True),
 ) -> None:
     """Choose repositories or mirrors and run package commands."""
@@ -217,7 +215,9 @@ def target_clear(
         )
     except ValueError as exc:
         output.fatal(str(exc))
-    output.success(f"Cleared the repository or mirror for {account_display_name(selected_account)}.")
+    output.success(
+        f"Cleared the repository or mirror for {account_display_name(selected_account)}."
+    )
 
 
 def _project_package_kind() -> str | None:
@@ -876,9 +876,7 @@ def remote_select(
 
 @remote_app.command("current")
 def remote_current(
-    account: str | None = typer.Option(
-        None, "--account", help="Username or organization handle."
-    ),
+    account: str | None = typer.Option(None, "--account", help="Username or organization handle."),
     profile: str | None = typer.Option(None, "--profile", "-p"),
 ) -> None:
     """Show the selected repository or mirror."""
@@ -887,9 +885,7 @@ def remote_current(
 
 @remote_app.command("clear")
 def remote_clear(
-    account: str | None = typer.Option(
-        None, "--account", help="Username or organization handle."
-    ),
+    account: str | None = typer.Option(None, "--account", help="Username or organization handle."),
     profile: str | None = typer.Option(None, "--profile", "-p"),
 ) -> None:
     """Clear the selected repository or mirror."""

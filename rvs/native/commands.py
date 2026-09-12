@@ -46,8 +46,12 @@ def _native_config_option() -> str:
 def pip(
     ctx: typer.Context,
     rvs_profile: str | None = typer.Option(None, "--rvs-profile", help="Local CLI profile."),
-    rvs_target: str | None = typer.Option(None, "--rvs-target", help="Repository or mirror for this command."),
-    rvs_account: str | None = typer.Option(None, "--rvs-account", help="Username or organization handle."),
+    rvs_target: str | None = typer.Option(
+        None, "--rvs-target", help="Repository or mirror for this command."
+    ),
+    rvs_account: str | None = typer.Option(
+        None, "--rvs-account", help="Username or organization handle."
+    ),
     rvs_customer_id: str | None = typer.Option(
         None,
         "--rvs-customer-id",
@@ -71,8 +75,12 @@ def uv(
     ctx: typer.Context,
     rvs_yes: bool = typer.Option(False, "--rvs-yes", help="Skip publishing confirmation."),
     rvs_profile: str | None = typer.Option(None, "--rvs-profile", help="Local CLI profile."),
-    rvs_target: str | None = typer.Option(None, "--rvs-target", help="Repository or mirror for this command."),
-    rvs_account: str | None = typer.Option(None, "--rvs-account", help="Username or organization handle."),
+    rvs_target: str | None = typer.Option(
+        None, "--rvs-target", help="Repository or mirror for this command."
+    ),
+    rvs_account: str | None = typer.Option(
+        None, "--rvs-account", help="Username or organization handle."
+    ),
     rvs_customer_id: str | None = typer.Option(
         None,
         "--rvs-customer-id",
@@ -96,8 +104,12 @@ def twine(
     ctx: typer.Context,
     rvs_yes: bool = typer.Option(False, "--rvs-yes", help="Skip publishing confirmation."),
     rvs_profile: str | None = typer.Option(None, "--rvs-profile", help="Local CLI profile."),
-    rvs_target: str | None = typer.Option(None, "--rvs-target", help="Repository or mirror for this command."),
-    rvs_account: str | None = typer.Option(None, "--rvs-account", help="Username or organization handle."),
+    rvs_target: str | None = typer.Option(
+        None, "--rvs-target", help="Repository or mirror for this command."
+    ),
+    rvs_account: str | None = typer.Option(
+        None, "--rvs-account", help="Username or organization handle."
+    ),
     rvs_customer_id: str | None = typer.Option(
         None,
         "--rvs-customer-id",
@@ -121,8 +133,12 @@ def npm(
     ctx: typer.Context,
     rvs_yes: bool = typer.Option(False, "--rvs-yes", help="Skip publishing confirmation."),
     rvs_profile: str | None = typer.Option(None, "--rvs-profile", help="Local CLI profile."),
-    rvs_target: str | None = typer.Option(None, "--rvs-target", help="Repository or mirror for this command."),
-    rvs_account: str | None = typer.Option(None, "--rvs-account", help="Username or organization handle."),
+    rvs_target: str | None = typer.Option(
+        None, "--rvs-target", help="Repository or mirror for this command."
+    ),
+    rvs_account: str | None = typer.Option(
+        None, "--rvs-account", help="Username or organization handle."
+    ),
     rvs_customer_id: str | None = typer.Option(
         None,
         "--rvs-customer-id",
@@ -146,8 +162,12 @@ def mvn(
     ctx: typer.Context,
     rvs_yes: bool = typer.Option(False, "--rvs-yes", help="Skip publishing confirmation."),
     rvs_profile: str | None = typer.Option(None, "--rvs-profile", help="Local CLI profile."),
-    rvs_target: str | None = typer.Option(None, "--rvs-target", help="Repository or mirror for this command."),
-    rvs_account: str | None = typer.Option(None, "--rvs-account", help="Username or organization handle."),
+    rvs_target: str | None = typer.Option(
+        None, "--rvs-target", help="Repository or mirror for this command."
+    ),
+    rvs_account: str | None = typer.Option(
+        None, "--rvs-account", help="Username or organization handle."
+    ),
     rvs_customer_id: str | None = typer.Option(
         None,
         "--rvs-customer-id",

@@ -78,7 +78,9 @@ def context_current(
             ),
             "Account": account_name,
             "Account selected by": cfg_mod.account_selection_source(profile_name, cfg),
-            "Repository or mirror": target.display_selector if target is not None else "not selected",
+            "Repository or mirror": target.display_selector
+            if target is not None
+            else "not selected",
             "Ravenstash API": selected_profile.api_url,
         },
         title="Current Ravenstash CLI selections",

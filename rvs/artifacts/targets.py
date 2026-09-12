@@ -318,7 +318,9 @@ def effective_target(
             customer_id=account.customer_id,
             kind=kind,
         )
-    output.fatal(f"No {kind} repository or mirror is selected. Pass --target or run `rvs art select`.")
+    output.fatal(
+        f"No {kind} repository or mirror is selected. Pass --target or run `rvs art select`."
+    )
 
 
 def registry_context(
