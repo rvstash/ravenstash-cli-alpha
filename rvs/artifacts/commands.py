@@ -186,6 +186,43 @@ def _require_package_kind(kind: str) -> cfg_mod.RegistryKind:
     return cast("cfg_mod.RegistryKind", kind)
 
 
+def _require_lifecycle_kind(
+    kind: str,
+    *,
+    expected: str,
+    operation: str,
+) -> cfg_mod.RegistryKind:
+    registry_kind = _require_package_kind(kind)
+    if registry_kind != expected:
+        output.fatal(f"{operation} is supported only for {expected} packages.")
+    return registry_kind
+
+
+def _package_lifecycle_columns(
+    registry_kind: str,
+    version: dict,
+) -> tuple[list[str], list[str], list[str]]:
+    if registry_kind == "pypi":
+        return (
+            ["Yanked", "Yank reason"],
+            ["yanked", "yanked_reason"],
+            [
+                "yes" if version.get("yanked") else "no",
+                str(version.get("yanked_reason") or ""),
+            ],
+        )
+    if registry_kind == "npm":
+        return (
+            ["Deprecated", "Deprecation message"],
+            ["deprecated", "deprecated_reason"],
+            [
+                "yes" if version.get("deprecated") else "no",
+                str(version.get("deprecated_reason") or ""),
+            ],
+        )
+    return [], [], []
+
+
 def _split_repo_ref(repo_ref: str) -> tuple[str | None, str]:
     value = repo_ref.strip().strip("/")
     if not value:
@@ -1074,22 +1111,26 @@ def package_show(
         {
             "Repository": item.get("repository_unique_ref", repo),
             "Name": item.get("package_name") or item.get("normalized_name", name),
+            "Status": item.get("package_status") or "active",
             "Latest": item.get("latest_version") or "",
             "Versions": str(item.get("version_count", "")),
             "Size": str(item.get("total_size_bytes", "")),
         },
         title=name,
-        json_keys=["repository", "name", "latest", "versions", "size"],
+        json_keys=["repository", "name", "status", "latest", "versions", "size"],
     )
 
     versions = item.get("versions") or []
     if versions:
+        lifecycle_headings, lifecycle_keys, _ = _package_lifecycle_columns(
+            registry_kind, versions[0]
+        )
         output.table(
-            ["Version", "Yanked", "Files", "Size", "Downloads", "Bandwidth"],
+            ["Version", *lifecycle_headings, "Files", "Size", "Downloads", "Bandwidth"],
             [
                 [
                     version.get("version", ""),
-                    "yes" if version.get("yanked") else "no",
+                    *_package_lifecycle_columns(registry_kind, version)[2],
                     str(len(version.get("files") or [])),
                     str(version.get("total_size_bytes", "")),
                     str(version.get("downloads", "0")),
@@ -1097,7 +1138,14 @@ def package_show(
                 ]
                 for version in versions
             ],
-            json_keys=["version", "yanked", "files", "size", "downloads", "bandwidth"],
+            json_keys=[
+                "version",
+                *lifecycle_keys,
+                "files",
+                "size",
+                "downloads",
+                "bandwidth",
+            ],
         )
         artifacts = [
             [
@@ -1195,9 +1243,13 @@ def package_yank(
     profile: str | None = typer.Option(None, "--profile", "-p"),
 ) -> None:
     """Mark a package version as yanked."""
-    registry_kind = _require_package_kind(kind)
+    registry_kind = _require_lifecycle_kind(
+        kind,
+        expected="pypi",
+        operation="Yanking a package version",
+    )
     client = _client(profile)
-    body = {"reason": reason} if reason else None
+    body = {"yanked": True, "reason": reason}
     try:
         repository_unique_ref = _resolved_repository_unique_ref(repo, profile, kind=registry_kind)
         client.post(
@@ -1208,3 +1260,96 @@ def package_yank(
     except ApiError as exc:
         output.fatal(str(exc))
     output.success(f"Yanked {name}@{version} in '{repo}'.")
+
+
+@package_app.command("unyank")
+def package_unyank(
+    account: str | None = typer.Option(None, "--account"),
+    name: str = typer.Argument(..., help="Package name."),
+    version: str = typer.Argument(..., help="Version to unyank."),
+    repo: str = typer.Option(..., "--target", "-t", help=_REPOSITORY_NAME_HELP),
+    kind: str = typer.Option(..., "--format", "-f", help="Package format: pypi."),
+    profile: str | None = typer.Option(None, "--profile", "-p"),
+) -> None:
+    """Make a yanked PyPI package version selectable again."""
+    registry_kind = _require_lifecycle_kind(
+        kind,
+        expected="pypi",
+        operation="Unyanking a package version",
+    )
+    client = _client(profile)
+    try:
+        repository_unique_ref = _resolved_repository_unique_ref(repo, profile, kind=registry_kind)
+        client.post(
+            f"/repositories/{repository_unique_ref}/formats/{registry_kind}/packages/version/yank",
+            params={"package_name": name, "version": version},
+            json={"yanked": False, "reason": None},
+        )
+    except ApiError as exc:
+        output.fatal(str(exc))
+    output.success(f"Unyanked {name}@{version} in '{repo}'.")
+
+
+@package_app.command("deprecate")
+def package_deprecate(
+    account: str | None = typer.Option(None, "--account"),
+    name: str = typer.Argument(..., help="Package name."),
+    version: str = typer.Argument(..., help="Version to deprecate."),
+    repo: str = typer.Option(..., "--target", "-t", help=_REPOSITORY_NAME_HELP),
+    kind: str = typer.Option(..., "--format", "-f", help="Package format: npm."),
+    message: str = typer.Option(
+        ...,
+        "--message",
+        "-m",
+        help="Deprecation message shown by npm clients.",
+    ),
+    profile: str | None = typer.Option(None, "--profile", "-p"),
+) -> None:
+    """Attach a warning message to an npm package version."""
+    registry_kind = _require_lifecycle_kind(
+        kind,
+        expected="npm",
+        operation="Deprecating a package version",
+    )
+    normalized_message = message.strip()
+    if not normalized_message:
+        output.fatal("--message cannot be empty. Use undeprecate to clear the message.")
+    client = _client(profile)
+    try:
+        repository_unique_ref = _resolved_repository_unique_ref(repo, profile, kind=registry_kind)
+        client.patch(
+            f"/repositories/{repository_unique_ref}/formats/{registry_kind}/packages/version/deprecation",
+            params={"package_name": name, "version": version},
+            json={"deprecated": True, "message": normalized_message},
+        )
+    except ApiError as exc:
+        output.fatal(str(exc))
+    output.success(f"Deprecated {name}@{version} in '{repo}'.")
+
+
+@package_app.command("undeprecate")
+def package_undeprecate(
+    account: str | None = typer.Option(None, "--account"),
+    name: str = typer.Argument(..., help="Package name."),
+    version: str = typer.Argument(..., help="Version to undeprecate."),
+    repo: str = typer.Option(..., "--target", "-t", help=_REPOSITORY_NAME_HELP),
+    kind: str = typer.Option(..., "--format", "-f", help="Package format: npm."),
+    profile: str | None = typer.Option(None, "--profile", "-p"),
+) -> None:
+    """Clear the warning message from an npm package version."""
+    registry_kind = _require_lifecycle_kind(
+        kind,
+        expected="npm",
+        operation="Undeprecating a package version",
+    )
+    client = _client(profile)
+    try:
+        repository_unique_ref = _resolved_repository_unique_ref(repo, profile, kind=registry_kind)
+        client.patch(
+            f"/repositories/{repository_unique_ref}/formats/{registry_kind}/packages/version/deprecation",
+            params={"package_name": name, "version": version},
+            json={"deprecated": False, "message": None},
+        )
+    except ApiError as exc:
+        output.fatal(str(exc))
+    output.success(f"Undeprecated {name}@{version} in '{repo}'.")

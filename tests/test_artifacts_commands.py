@@ -51,8 +51,10 @@ class _FakeApiClient:
         return self.post(path, json=payload)
 
     def post(self, path: str, json: Any = None, **kwargs: Any) -> _JsonResponse:
-        self.calls.append(("POST", path, json if json is not None else kwargs))
+        payload = {"json": json, **kwargs} if json is not None and kwargs else json or kwargs
+        self.calls.append(("POST", path, payload))
         if path == "/package-credentials":
+            assert isinstance(json, dict)
             return _JsonResponse(
                 {
                     "access_token": "rvs_sltAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
@@ -61,8 +63,14 @@ class _FakeApiClient:
             )
         return _JsonResponse(self.responses.pop(0) if self.responses else {})
 
-    def patch(self, path: str, json: Any = None) -> _JsonResponse:
-        self.calls.append(("PATCH", path, json))
+    def patch(
+        self,
+        path: str,
+        json: Any = None,
+        params: dict[str, Any] | None = None,
+    ) -> _JsonResponse:
+        payload = {"json": json, "params": params} if params is not None else json
+        self.calls.append(("PATCH", path, payload))
         return _JsonResponse(self.responses.pop(0) if self.responses else {})
 
     def put(self, path: str, json: Any = None) -> _JsonResponse:
@@ -923,6 +931,20 @@ def test_artifacts_package_list_and_show_use_repository_package_paths(
     ]
     assert "demo" in list_result.output
     assert "1.2.3" in show_result.output
+    assert "Status" in show_result.output
+    assert "Yank reason" in show_result.output
+
+
+def test_package_lifecycle_columns_follow_format_semantics() -> None:
+    assert artifacts_cmd._package_lifecycle_columns(
+        "npm",
+        {"deprecated": True, "deprecated_reason": "use version 3"},
+    ) == (
+        ["Deprecated", "Deprecation message"],
+        ["deprecated", "deprecated_reason"],
+        ["yes", "use version 3"],
+    )
+    assert artifacts_cmd._package_lifecycle_columns("maven", {}) == ([], [], [])
 
 
 def test_artifacts_package_mutations_call_expected_api_paths(monkeypatch, tmp_path: Path) -> None:
@@ -972,10 +994,54 @@ def test_artifacts_package_mutations_call_expected_api_paths(monkeypatch, tmp_pa
             "bad build",
         ],
     )
+    unyank_result = runner.invoke(
+        artifacts_cmd.app,
+        [
+            "package",
+            "unyank",
+            "demo",
+            "1.0.1",
+            "--target",
+            "repo-pypi",
+            "--format",
+            "pypi",
+        ],
+    )
+    deprecate_result = runner.invoke(
+        artifacts_cmd.app,
+        [
+            "package",
+            "deprecate",
+            "demo",
+            "2.0.0",
+            "--target",
+            "repo-npm",
+            "--format",
+            "npm",
+            "--message",
+            "use version 3",
+        ],
+    )
+    undeprecate_result = runner.invoke(
+        artifacts_cmd.app,
+        [
+            "package",
+            "undeprecate",
+            "demo",
+            "2.0.0",
+            "--target",
+            "repo-npm",
+            "--format",
+            "npm",
+        ],
+    )
 
     assert delete_result.exit_code == 0
     assert delete_version_result.exit_code == 0
     assert yank_result.exit_code == 0
+    assert unyank_result.exit_code == 0
+    assert deprecate_result.exit_code == 0
+    assert undeprecate_result.exit_code == 0
     assert fake.calls == [
         (
             "GET",
@@ -1017,6 +1083,125 @@ def test_artifacts_package_mutations_call_expected_api_paths(monkeypatch, tmp_pa
         (
             "POST",
             "/repositories/r_xyzabcde/formats/pypi/packages/version/yank",
-            {"reason": "bad build"},
+            {
+                "json": {"yanked": True, "reason": "bad build"},
+                "params": {"package_name": "demo", "version": "1.0.1"},
+            },
+        ),
+        (
+            "GET",
+            "/repositories/resolve",
+            {
+                "selector": "repo-pypi",
+                "account_ref": "ac_23456789",
+                "format": "pypi",
+            },
+        ),
+        (
+            "POST",
+            "/repositories/r_xyzabcde/formats/pypi/packages/version/yank",
+            {
+                "json": {"yanked": False, "reason": None},
+                "params": {"package_name": "demo", "version": "1.0.1"},
+            },
+        ),
+        (
+            "GET",
+            "/repositories/resolve",
+            {
+                "selector": "repo-npm",
+                "account_ref": "ac_23456789",
+                "format": "npm",
+            },
+        ),
+        (
+            "PATCH",
+            "/repositories/r_xyzabcde/formats/npm/packages/version/deprecation",
+            {
+                "json": {"deprecated": True, "message": "use version 3"},
+                "params": {"package_name": "demo", "version": "2.0.0"},
+            },
+        ),
+        (
+            "GET",
+            "/repositories/resolve",
+            {
+                "selector": "repo-npm",
+                "account_ref": "ac_23456789",
+                "format": "npm",
+            },
+        ),
+        (
+            "PATCH",
+            "/repositories/r_xyzabcde/formats/npm/packages/version/deprecation",
+            {
+                "json": {"deprecated": False, "message": None},
+                "params": {"package_name": "demo", "version": "2.0.0"},
+            },
         ),
     ]
+
+
+@pytest.mark.parametrize(
+    ("args", "message"),
+    [
+        (
+            [
+                "package",
+                "yank",
+                "demo",
+                "1.0.0",
+                "--target",
+                "repo-npm",
+                "--format",
+                "npm",
+            ],
+            "only for pypi",
+        ),
+        (
+            [
+                "package",
+                "deprecate",
+                "demo",
+                "1.0.0",
+                "--target",
+                "repo-pypi",
+                "--format",
+                "pypi",
+                "--message",
+                "obsolete",
+            ],
+            "only for npm",
+        ),
+        (
+            [
+                "package",
+                "deprecate",
+                "demo",
+                "1.0.0",
+                "--target",
+                "repo-npm",
+                "--format",
+                "npm",
+                "--message",
+                "   ",
+            ],
+            "cannot be empty",
+        ),
+    ],
+)
+def test_artifacts_package_lifecycle_rejects_wrong_format_or_empty_message(
+    monkeypatch,
+    tmp_path: Path,
+    args: list[str],
+    message: str,
+) -> None:
+    _isolate_config(monkeypatch, tmp_path)
+    fake = _FakeApiClient()
+    _use_fake_client(monkeypatch, fake)
+
+    result = runner.invoke(artifacts_cmd.app, args)
+
+    assert result.exit_code != 0
+    assert message in result.output
+    assert fake.calls == []

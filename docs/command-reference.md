@@ -88,9 +88,15 @@ and adding or moving a source never shifts another source.
 | --- | --- |
 | `rvs art package list --target NAME --format FORMAT` | Lists packages. |
 | `rvs art package show PACKAGE --target NAME --format FORMAT` | Shows a package and its versions. |
-| `rvs art package yank PACKAGE VERSION --target NAME --format FORMAT` | Marks a version as withdrawn. |
+| `rvs art package yank PACKAGE VERSION --target NAME --format pypi` | Yanks a PyPI version, optionally with `--reason`. |
+| `rvs art package unyank PACKAGE VERSION --target NAME --format pypi` | Makes a yanked PyPI version selectable again. |
+| `rvs art package deprecate PACKAGE VERSION --target NAME --format npm --message TEXT` | Adds an npm deprecation warning. |
+| `rvs art package undeprecate PACKAGE VERSION --target NAME --format npm` | Clears an npm deprecation warning. |
 | `rvs art package delete-version PACKAGE VERSION --target NAME --format FORMAT` | Deletes one version. |
 | `rvs art package delete PACKAGE --target NAME --format FORMAT` | Deletes a package and all its versions. |
+
+Yanking is a PyPI resolver control. npm deprecation is warning metadata and does
+not prevent installation. Maven has no corresponding lifecycle operation.
 
 ## Package-tool commands
 

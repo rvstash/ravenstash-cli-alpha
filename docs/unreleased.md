@@ -6,6 +6,9 @@ The canonical group is `rvs art`. Format selectors are `--format/-f` and ORAS's
 creation, mirror current/clear, and redundant per-format URL/config commands.
 The experimental `art install` command and `art pypi|npm|maven install|publish`
 groups are also removed; use the native `rvs pip|uv|twine|npm|mvn` passthroughs.
+Package lifecycle management keeps registry-native semantics: `art package
+yank|unyank` supports PyPI, while `art package deprecate|undeprecate` supports
+npm deprecation messages. Package details show the applicable state and reason.
 
 Use `art token mint`, `art endpoint`, `art reference`, and `art native config`.
 Native `rvs mvn deploy` remains available. Official mirrors use `art mirror create [SOURCE]`.
