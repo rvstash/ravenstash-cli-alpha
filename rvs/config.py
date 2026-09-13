@@ -990,9 +990,7 @@ def _migrate_config_v3_to_v4(raw: dict) -> None:
                         account["account_handle"] = account.pop("customer_handle")
                     else:
                         account.pop("customer_handle", None)
-                    migrate_target(
-                        account.get("selected_target"), fallback_account_ref=reference
-                    )
+                    migrate_target(account.get("selected_target"), fallback_account_ref=reference)
                     migrated_accounts[reference] = account
             profile["accounts"] = migrated_accounts
             if profile_ref is None and len(migrated_accounts) == 1:

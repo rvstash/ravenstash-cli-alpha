@@ -692,7 +692,7 @@ def profile_current(
         False,
         "--verbose",
         "-v",
-        help="Show every resolved package repository endpoint.",
+        help="Show every resolved native registry endpoint.",
     ),
 ) -> None:
     """Show the selected local CLI profile and its non-secret configuration."""

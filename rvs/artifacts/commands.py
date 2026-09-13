@@ -120,7 +120,7 @@ def target_select(
         ...,
         help="namespace/repository, mirror:<source>, or custom-mirror:<name>.",
     ),
-    kind: str | None = typer.Option(None, "--format", help="Package format if needed."),
+    kind: str | None = typer.Option(None, "--format", help="Format if needed."),
     account: str | None = typer.Option(None, "--account", help="Username or organization handle."),
     profile: str | None = typer.Option(None, "--profile", "-p"),
 ) -> None:
@@ -164,11 +164,9 @@ def target_current(
             "Repository or mirror": selected.display_selector if selected else "none",
             "Type": selected.target_type if selected else "none",
             "Account ref": selected.customer_id if selected else "none",
-            "Package format": selected.registry_kind or "determined by command"
-            if selected
-            else "none",
+            "Format": selected.registry_kind or "determined by command" if selected else "none",
         },
-        title="Current package selection",
+        title="Current artifact selection",
         json_keys=["profile", "account", "target", "type", "account_ref", "format"],
     )
 
@@ -246,7 +244,7 @@ def package_install(
 
 def _require_kind(kind: str) -> cfg_mod.RegistryKind:
     if kind not in FORMATS:
-        output.fatal(f"Unknown package format '{kind}'. Use: pypi, npm, maven, container, helm")
+        output.fatal(f"Unknown format '{kind}'. Use: pypi, npm, maven, container, helm")
     return cast("cfg_mod.RegistryKind", kind)
 
 
@@ -380,12 +378,14 @@ def _resolved_repository_unique_ref(
 def repo_list(
     account: str | None = typer.Option(None, "--account"),
     profile: str | None = typer.Option(None, "--profile", "-p"),
-    customer_id: str | None = typer.Option(None, "--account-ref", help="Typed account reference.", hidden=True),
+    customer_id: str | None = typer.Option(
+        None, "--account-ref", help="Typed account reference.", hidden=True
+    ),
     kind: str | None = typer.Option(
         None,
         "--format",
         "-f",
-        help="Package format: pypi | npm | maven | container | helm.",
+        help="Format: pypi | npm | maven | container | helm.",
     ),
 ) -> None:
     """List repositories in the selected account's namespaces."""
@@ -411,11 +411,11 @@ def repo_list(
     entries = data if isinstance(data, list) else data.get("items", [])
     items = [entry["repository"] for entry in entries]
     if not items:
-        output.info("No package repositories found.")
+        output.info("No repositories found.")
         return
 
     output.table(
-        ["Account", "Namespace", "Repository", "Repository ID", "Package formats"],
+        ["Account", "Namespace", "Repository", "Repository ID", "Formats"],
         [
             [
                 entry["account"]["account_label"],
@@ -449,10 +449,10 @@ def repo_create(
         None, "--account-ref", help="Typed owner account reference.", hidden=True
     ),
     set_default: bool = typer.Option(
-        False, "--default", help="Set as default for each selected package format."
+        False, "--default", help="Set as default for each selected format."
     ),
 ) -> None:
-    """Create a package repository."""
+    """Create a repository."""
     if name.startswith(("internal:", "global:", "@")):
         output.fatal("Use namespace/repository without a realm prefix or @ notation.")
     namespace_selector, repository_name = _split_repo_ref(name)
@@ -502,9 +502,7 @@ def repo_create(
         output.fatal(str(exc))
 
     repository_name = _repository_name_from_response(repo, name)
-    output.success(
-        f"Created package repository '{repository_name}' with formats: {', '.join(kinds)}."
-    )
+    output.success(f"Created repository '{repository_name}' with formats: {', '.join(kinds)}.")
     if set_default and repository_name:
         default_repo = _repo_ref_from_response(repo, repository_name)
         for registry_kind in kinds:
@@ -523,7 +521,7 @@ def repo_show(
     repo: str = typer.Argument(..., help=_REPOSITORY_NAME_HELP),
     profile: str | None = typer.Option(None, "--profile", "-p"),
 ) -> None:
-    """Show package repository details."""
+    """Show repository details."""
     try:
         entry = _resolve_repository_entry(repo, profile)
         item = entry["repository"]
@@ -537,7 +535,7 @@ def repo_show(
             "Namespace": item["namespace_name"],
             "Namespace ID": item["namespace_unique_ref"],
             "Repository ID": item["repository_unique_ref"],
-            "Package formats": ", ".join(
+            "Formats": ", ".join(
                 detail["format"]
                 for detail in item.get("formats", [])
                 if isinstance(detail, dict) and isinstance(detail.get("format"), str)
@@ -551,7 +549,7 @@ def repo_show(
             ),
             "Created": str(item.get("created_at", "")),
         },
-        title=f"Package repository {repo}",
+        title=f"Repository {repo}",
         json_keys=[
             "name",
             "account",
@@ -576,26 +574,26 @@ def repo_delete(
     profile: str | None = typer.Option(None, "--profile", "-p"),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation prompt."),
 ) -> None:
-    """Delete a package repository."""
+    """Delete a repository."""
     if not yes:
-        typer.confirm(f"Delete package repository '{repo}' and its packages?", abort=True)
+        typer.confirm(f"Delete repository '{repo}' and all its content?", abort=True)
     client = _client(profile)
     try:
         entry = _resolve_repository_entry(repo, profile)
         client.delete(f"/repositories/{entry['repository']['repository_unique_ref']}")
     except ApiError as exc:
         output.fatal(str(exc))
-    output.success(f"Deleted package repository '{repo}'.")
+    output.success(f"Deleted repository '{repo}'.")
 
 
 @repo_app.command("rename")
 def repo_rename(
     account: str | None = typer.Option(None, "--account"),
-    repo: str = typer.Argument(..., help="Current package repository name."),
-    new_name: str = typer.Argument(..., help="New package repository name."),
+    repo: str = typer.Argument(..., help="Current repository name."),
+    new_name: str = typer.Argument(..., help="New repository name."),
     profile: str | None = typer.Option(None, "--profile", "-p"),
 ) -> None:
-    """Rename a package repository."""
+    """Rename a repository."""
     client = _client(profile)
     try:
         entry = _resolve_repository_entry(repo, profile)
@@ -612,7 +610,7 @@ def repo_rename(
         profile=profile,
     )
     renamed = _repository_name_from_response(item, new_name)
-    output.success(f"Renamed package repository '{repo}' to '{renamed}'.")
+    output.success(f"Renamed repository '{repo}' to '{renamed}'.")
 
 
 @repo_app.command("set-default")
@@ -620,13 +618,13 @@ def repo_set_default(
     account: str | None = typer.Option(None, "--account"),
     format: str = typer.Argument(
         ...,
-        help="Package format: pypi | npm | maven | container | helm",
+        help="Format: pypi | npm | maven | container | helm",
         metavar="FORMAT",
     ),
     repo: str = typer.Argument(..., help=_REPOSITORY_NAME_HELP),
     profile: str | None = typer.Option(None, "--profile", "-p"),
 ) -> None:
-    """Set the default repository for a package format."""
+    """Set the default repository for a format."""
     registry_kind = _require_kind(format)
     profile_name = _profile_name(profile)
     entry = _resolve_repository_entry(repo, profile, kind=format)
@@ -638,9 +636,7 @@ def repo_set_default(
         repository=repository,
         profile=profile_name,
     )
-    output.success(
-        f"Default {format} package repository for profile '{profile_name}' set to {stable}."
-    )
+    output.success(f"Default {format} repository for profile '{profile_name}' set to {stable}.")
 
 
 @repo_app.command("defaults")
@@ -648,7 +644,7 @@ def repo_defaults(
     account: str | None = typer.Option(None, "--account"),
     profile: str | None = typer.Option(None, "--profile", "-p"),
 ) -> None:
-    """Show default package repositories."""
+    """Show default repositories by format."""
     cfg = cfg_mod.load()
     profile_name = profile or cfg_mod.current_profile_name(cfg)
     rows = [
@@ -658,7 +654,7 @@ def repo_defaults(
     output.table(
         ["Format", "Default repository"],
         rows,
-        title=f"Package repository defaults ({profile_name})",
+        title=f"Repository defaults ({profile_name})",
         json_keys=["format", "default_repository"],
     )
 
@@ -888,7 +884,7 @@ def remote_list(
             "Source",
             "Publication",
             "Mirror",
-            "Package format",
+            "Format",
             "Minimum age",
         ],
         [
@@ -1020,7 +1016,7 @@ def remote_show(
                 if item.get("source_type") == "official"
                 else f"custom-mirror:{item.get('remote_name') or item['remote_cache_ref']}"
             ),
-            "Package format": item.get("format"),
+            "Format": item.get("format"),
             "Account ref": entry.get("account", {}).get("account_ref"),
             "Private mirror": "ready",
             "Mirror minimum package age": _format_age_hours(

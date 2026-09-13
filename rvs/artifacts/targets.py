@@ -45,7 +45,7 @@ class RegistryContext:
 def parse_target(value: str) -> TargetSpec:
     candidate = value.strip().strip("/")
     if not candidate:
-        output.fatal("Package target cannot be empty.")
+        output.fatal("Artifact target cannot be empty.")
     if candidate.startswith("mirror:"):
         selector = candidate.removeprefix("mirror:").strip().strip("/")
         target_type: cfg_mod.ArtifactTargetType = "official_cache"
@@ -190,7 +190,7 @@ def resolve_target(
     spec = parse_target(value)
     profile_name = profile or cfg_mod.current_profile_name()
     if kind is not None and kind not in {"pypi", "npm", "maven", "container", "helm"}:
-        output.fatal(f"Unknown package format '{kind}'.")
+        output.fatal(f"Unknown format '{kind}'.")
     if spec.target_type != "repository":
         registry_kind: str | None = _package_kind(kind)
     else:
