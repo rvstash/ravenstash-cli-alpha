@@ -1,9 +1,8 @@
 # rvs Examples
 
 These projects are small package examples for trying the current alpha `rvs`
-surface. They are ordinary Python, npm, and Maven projects; use native tooling
-for local build/test work, and use `rvs art` when interacting with a private
-Ravenstash package repository.
+surface. They are ordinary Python, npm, and Maven projects; `rvs` runs their
+native tools with temporary access to a selected Ravenstash repository.
 
 ```text
 examples/
@@ -34,27 +33,27 @@ rvs runtime use java 21
 ```bash
 rvs auth login
 rvs art repo list
-rvs art repo create my-python-packages --ecosystem pypi --default
-rvs art repo create my-node-packages --ecosystem npm --default
-rvs art repo create my-java-packages --ecosystem maven --default
+rvs art repo create my-python-packages --format pypi --default
+rvs art repo create my-node-packages --format npm --default
+rvs art repo create my-java-packages --format maven --default
 ```
 
 `rvs art` expects package repository names, such as `my-python-packages`.
 After a repository is set as the default for its ecosystem, the `--target` flag can be
 omitted for that ecosystem.
 
-## Package Helpers
+## Native Package Tools
 
 ```bash
 rvs art endpoint --format pypi
-rvs art pypi publish dist/
-rvs art pypi install my-private-package
+rvs twine upload dist/*
+rvs pip install my-private-package
 
 rvs art endpoint --format npm
-rvs art npm publish .
-rvs art npm install my-private-package
+rvs npm publish
+rvs npm install my-private-package
 
 rvs art endpoint --format maven
-rvs art maven publish target/app.jar --group-id com.example --artifact-id app --version 0.1.0
-rvs art maven install com.example:app:0.1.0
+rvs mvn deploy
+rvs mvn dependency:get -Dartifact=com.example:app:0.1.0
 ```

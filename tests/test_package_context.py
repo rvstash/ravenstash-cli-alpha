@@ -4,7 +4,6 @@ from typing import TYPE_CHECKING, Any
 
 import pytest
 from rvs import config as cfg_mod
-from rvs.artifacts import commands as artifacts_commands
 from rvs.artifacts.targets import parse_target, resolve_target
 from rvs.cli import app
 from rvs.client import ApiClient
@@ -362,61 +361,6 @@ def test_native_wrapper_uses_selected_cache_and_one_shot_does_not_mutate_it(
     assert cfg_mod.selected_artifact_target("alice", "personal-alice").display_selector == (
         "mirror:pypiorg"
     )
-
-
-def test_artifacts_install_uses_account_scoped_official_default_without_selection(
-    monkeypatch,
-    tmp_path: Path,
-) -> None:
-    isolate(monkeypatch, tmp_path)
-    monkeypatch.delenv("PIP_KEYRING_PROVIDER", raising=False)
-    personal = customer("personal-alice", "Alice", "personal")
-    fake = FakeApi(
-        [personal],
-        [remote(owner=personal, family="official", name="pypiorg", kind="pypi", suffix="py")],
-    )
-    monkeypatch.setattr(ApiClient, "from_profile", staticmethod(lambda profile=None: fake))
-    calls: list[tuple[list[str], dict[str, str]]] = []
-    monkeypatch.setattr(artifacts_commands.tools, "pip_cmd", lambda: ["/bin/pip"])
-    monkeypatch.setattr(
-        artifacts_commands.subprocess,
-        "run",
-        lambda cmd, *, env, check: calls.append((cmd, env.copy())),
-    )
-
-    result = runner.invoke(app, ["art", "install", "requests", "--format", "pypi"])
-
-    assert result.exit_code == 0, result.output
-    assert calls[0][0] == ["/bin/pip", "install", "requests"]
-    assert calls[0][1]["PIP_INDEX_URL"] == ("https://mirror.pypi.rvsta.sh/o/pypiorg/simple/")
-    assert "PIP_KEYRING_PROVIDER" not in calls[0][1]
-    assert cfg_mod.selected_artifact_target("alice", "personal-alice") is None
-
-
-def test_artifacts_repo_one_liner_alias_is_rejected(monkeypatch, tmp_path: Path) -> None:
-    isolate(monkeypatch, tmp_path)
-    calls: list[tuple[list[str], str | None]] = []
-    monkeypatch.setattr(
-        artifacts_commands,
-        "pypi_install",
-        lambda packages, repo, profile, customer_id: calls.append((packages, repo)),
-    )
-
-    result = runner.invoke(
-        app,
-        [
-            "art",
-            "--target",
-            "acme/backend",
-            "--format",
-            "pypi",
-            "install",
-            "internal-lib",
-        ],
-    )
-
-    assert result.exit_code != 0
-    assert calls == []
 
 
 class CrossAccountApi:

@@ -20,15 +20,15 @@ Use normal Python packaging tools to build distributions into `dist/`.
 
 ```bash
 rvs auth login
-rvs art repo create my-python-packages --ecosystem pypi --default
+rvs art repo create my-python-packages --format pypi --default
 rvs art endpoint --format pypi
 rvs art native config pip
-rvs art pypi publish dist/
+rvs twine upload dist/*
 rvs art package list --target <repo-name>
 ```
 
 To install from a private Ravenstash PyPI repository:
 
 ```bash
-rvs art pypi install rvs-demo-python --target <repo-name>
+rvs pip --rvs-target <namespace/repository> install rvs-demo-python
 ```

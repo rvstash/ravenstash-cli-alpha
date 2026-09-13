@@ -2,10 +2,7 @@
 
 from __future__ import annotations
 
-import subprocess
-import tempfile
-from pathlib import Path
-from typing import Literal, cast
+from typing import cast
 
 import click
 import typer
@@ -17,23 +14,13 @@ from ..account.commands import ensure_active_account, resolve_account
 from ..client import ApiClient, ApiError
 from ..devapi import collection_items
 from ..devapi import remote_cache as remote_cache_payload
-from ..native import runner as native_runner
-from ..publishing import confirm_context, maven_artifact, npm_artifact, pypi_artifacts
-from ..runtime import tools
-from ..subprocesses import child_environment
 from .auth_commands import app as native_auth_app
 from .formats import FORMATS, flatten_formats
 from .primitives import endpoint, native_app, reference
-from .registries import maven as maven_reg
-from .registries import npm as npm_reg
-from .registries import pypi as pypi_reg
-from .routing import CanonicalRouter, npm_auth_token_key
 from .targets import (
     DEFAULT_OFFICIAL_SOURCES,
     PackageKind,
-    RegistryContext,
     parse_target,
-    registry_context,
     resolve_repository_entry,
     resolve_target,
 )
@@ -51,17 +38,10 @@ upstream_app = typer.Typer(
 )
 remote_app = typer.Typer(help="Manage private mirrors.", no_args_is_help=True)
 package_app = typer.Typer(help="Manage packages hosted in a repository.", no_args_is_help=True)
-pypi_app = typer.Typer(help="PyPI package repository helpers.", no_args_is_help=True)
-npm_app = typer.Typer(help="npm package repository helpers.", no_args_is_help=True)
-maven_app = typer.Typer(help="Maven package repository helpers.", no_args_is_help=True)
-
 app.add_typer(repo_app, name="repo")
 repo_app.add_typer(upstream_app, name="upstream")
 app.add_typer(remote_app, name="mirror")
 app.add_typer(package_app, name="package")
-app.add_typer(pypi_app, name="pypi")
-app.add_typer(npm_app, name="npm")
-app.add_typer(maven_app, name="maven")
 app.add_typer(native_auth_app, name="token")
 app.add_typer(native_app, name="native")
 app.command("endpoint")(endpoint)
@@ -69,7 +49,6 @@ app.command("reference")(reference)
 
 _PACKAGE_KINDS = ("pypi", "npm", "maven")
 _MAX_UPSTREAM_POSITION = 4
-_ROUTER = CanonicalRouter()
 _REPOSITORY_NAME_HELP = "Repository name or namespace/repository."
 
 
@@ -192,56 +171,6 @@ def target_clear(
     )
 
 
-def _project_package_kind() -> str | None:
-    candidates: list[str] = []
-    if Path("pyproject.toml").exists() or Path("requirements.txt").exists():
-        candidates.append("pypi")
-    if Path("package.json").exists():
-        candidates.append("npm")
-    if Path("pom.xml").exists():
-        candidates.append("maven")
-    return candidates[0] if len(candidates) == 1 else None
-
-
-@app.command("install")
-def package_install(
-    target: str | None = typer.Option(None, "--target", "-t"),
-    account: str | None = typer.Option(None, "--account"),
-    kind: str | None = typer.Option(None, "--format", "-f"),
-    profile: str | None = typer.Option(None, "--profile", "-p"),
-    packages: list[str] = typer.Argument(..., help="Package specifications to install."),
-) -> None:
-    """Install from the named, selected, or default repository or mirror."""
-    options = _root_package_options()
-    kind = options.get("kind")
-    if kind is not None:
-        _require_package_kind(kind)
-    if kind is None and options.get("target"):
-        customer_id = _context_customer_id(options.get("profile"), options.get("account"))
-        _, _, resolved_target = resolve_target(
-            cast("str", options["target"]),
-            profile=options.get("profile"),
-            customer_id=customer_id,
-        )
-        kind = resolved_target.registry_kind
-    if kind is None:
-        customer_id = _context_customer_id(options.get("profile"), options.get("account"))
-        profile_name, selected_account = ensure_active_account(options.get("profile"), customer_id)
-        selected = cfg_mod.selected_artifact_target(profile_name, selected_account.customer_id)
-        kind = selected.registry_kind if selected is not None else None
-    kind = kind or _project_package_kind()
-    if kind not in _PACKAGE_KINDS:
-        output.fatal("Cannot determine the package format. Pass --format pypi, npm, or maven.")
-    if kind == "pypi":
-        pypi_install(packages=packages, repo=None, profile=None, customer_id=None)
-    elif kind == "npm":
-        npm_install(packages=packages, repo=None, profile=None, customer_id=None)
-    else:
-        if len(packages) != 1:
-            output.fatal("Maven install accepts one groupId:artifactId:version coordinate.")
-        maven_install(coords=packages[0], repo=None, profile=None, customer_id=None)
-
-
 def _require_kind(kind: str) -> cfg_mod.RegistryKind:
     if kind not in FORMATS:
         output.fatal(f"Unknown format '{kind}'. Use: pypi, npm, maven, container, helm")
@@ -300,33 +229,6 @@ def _root_package_options() -> dict[str, str | None]:
         "kind": params.get("kind") or params.get("registry_kind"),
         "profile": params.get("profile"),
     }
-
-
-def _registry_context(
-    kind: str,
-    repo: str | None,
-    profile: str | None,
-    customer_id: str | None = None,
-    *,
-    require_private: bool = False,
-    allow_official_default: bool = False,
-    operations: tuple[Literal["download", "upload"], ...] = ("download",),
-) -> RegistryContext:
-    options = _root_package_options()
-    effective_profile = profile or options.get("profile")
-    effective_customer_id = customer_id
-    if effective_customer_id is None and options.get("account"):
-        effective_customer_id = _context_customer_id(effective_profile, options.get("account"))
-    return registry_context(
-        kind=kind,
-        target=options.get("target"),
-        repo=repo,
-        profile=effective_profile,
-        customer_id=effective_customer_id,
-        allow_official_default=allow_official_default,
-        require_private=require_private,
-        operations=operations,
-    )
 
 
 def _resolve_repository_entry(
@@ -1306,264 +1208,3 @@ def package_yank(
     except ApiError as exc:
         output.fatal(str(exc))
     output.success(f"Yanked {name}@{version} in '{repo}'.")
-
-
-# ── PyPI ─────────────────────────────────────────────────────────────────────
-
-
-@pypi_app.command("install")
-def pypi_install(
-    account: str | None = typer.Option(None, "--account"),
-    packages: list[str] = typer.Argument(..., help="Package specs to install."),
-    repo: str | None = typer.Option(None, "--target", "-t", help=_REPOSITORY_NAME_HELP),
-    profile: str | None = typer.Option(None, "--profile", "-p"),
-    customer_id: str | None = typer.Option(
-        None, "--account-ref", help="Typed account reference for advanced use.", hidden=True
-    ),
-) -> None:
-    """Install Python packages using pip with Ravenstash credentials injected."""
-    context = _registry_context("pypi", repo, profile, customer_id, allow_official_default=True)
-    index_url = _ROUTER.pypi_index_url(
-        context.read_base_url, context.namespace_reference, context.repository_reference
-    )
-    with tempfile.TemporaryDirectory(prefix="rvs-pip-") as temp_dir:
-        env = child_environment({"PIP_INDEX_URL": index_url})
-        if context.token:
-            native_runner.inject_pip_auth(
-                env,
-                [index_url],
-                context.token,
-                Path(temp_dir),
-            )
-        else:
-            output.warn("No credentials found; running pip without private repository auth.")
-
-        cmd = [*tools.pip_cmd(), "install", *packages]
-        subprocess.run(cmd, env=env, check=True)
-
-
-@pypi_app.command("publish")
-def pypi_publish(
-    account: str | None = typer.Option(None, "--account"),
-    yes: bool = typer.Option(False, "--yes", "-y", help="Skip publishing confirmation."),
-    dist_dir: Path = typer.Argument(Path("dist"), help="Directory with wheels/sdists."),
-    repo: str | None = typer.Option(None, "--target", "-t", help=_REPOSITORY_NAME_HELP),
-    profile: str | None = typer.Option(None, "--profile", "-p"),
-    customer_id: str | None = typer.Option(
-        None, "--account-ref", help="Typed account reference for advanced use.", hidden=True
-    ),
-) -> None:
-    """Upload wheel and sdist files to a PyPI package repository."""
-    context = _registry_context(
-        "pypi",
-        repo,
-        profile,
-        customer_id,
-        require_private=True,
-        operations=("upload",),
-    )
-    assert context.push_base_url is not None
-    files = list(dist_dir.glob("*.whl")) + list(dist_dir.glob("*.tar.gz"))
-    if not files:
-        output.fatal(f"No .whl or .tar.gz files found in {dist_dir}")
-    confirm_context(context, pypi_artifacts(files), yes=yes)
-    results = pypi_reg.publish(
-        upload_url=_ROUTER.pypi_upload_url(
-            context.push_base_url,
-            context.namespace_reference,
-            context.repository_reference,
-        ),
-        token=context.token,
-        files=files,
-    )
-    failed = False
-    for result in results:
-        if result.ok:
-            output.success(f"Published {result.filename} ({result.version})")
-        else:
-            failed = True
-            output.error(f"Failed {result.filename}: {result.detail}")
-    if failed:
-        raise typer.Exit(1)
-
-
-# ── npm ──────────────────────────────────────────────────────────────────────
-
-
-@npm_app.command("install")
-def npm_install(
-    account: str | None = typer.Option(None, "--account"),
-    packages: list[str] = typer.Argument(..., help="Package specs to install."),
-    repo: str | None = typer.Option(None, "--target", "-t", help=_REPOSITORY_NAME_HELP),
-    profile: str | None = typer.Option(None, "--profile", "-p"),
-    customer_id: str | None = typer.Option(
-        None, "--account-ref", help="Typed account reference for advanced use.", hidden=True
-    ),
-) -> None:
-    """Install npm packages with Ravenstash credentials injected."""
-    context = _registry_context("npm", repo, profile, customer_id, allow_official_default=True)
-    registry_url = _ROUTER.npm_registry_url(
-        context.read_base_url,
-        context.namespace_reference,
-        context.repository_reference,
-    )
-    env = child_environment()
-    if context.token:
-        env[f"NPM_CONFIG_{npm_auth_token_key(registry_url)}"] = context.token
-    else:
-        output.warn("No credentials found; running npm without private repository auth.")
-    subprocess.run(
-        [tools.npm(), "install", "--registry", registry_url, *packages], env=env, check=True
-    )
-
-
-@npm_app.command("publish")
-def npm_publish(
-    account: str | None = typer.Option(None, "--account"),
-    yes: bool = typer.Option(False, "--yes", "-y", help="Skip publishing confirmation."),
-    package_dir: Path = typer.Argument(Path("."), help="Directory containing package.json."),
-    repo: str | None = typer.Option(None, "--target", "-t", help=_REPOSITORY_NAME_HELP),
-    profile: str | None = typer.Option(None, "--profile", "-p"),
-    customer_id: str | None = typer.Option(
-        None, "--account-ref", help="Typed account reference for advanced use.", hidden=True
-    ),
-) -> None:
-    """Publish an npm package to a Ravenstash npm repository."""
-    context = _registry_context(
-        "npm",
-        repo,
-        profile,
-        customer_id,
-        require_private=True,
-        operations=("upload",),
-    )
-    assert context.push_base_url is not None
-    confirm_context(context, [npm_artifact(package_dir)], yes=yes)
-    results = npm_reg.publish(
-        registry_url=_ROUTER.npm_upload_registry_url(
-            context.push_base_url,
-            context.namespace_reference,
-            context.repository_reference,
-        ),
-        token=context.token,
-        package_dir=package_dir,
-        download_registry_url=_ROUTER.npm_registry_url(
-            context.read_base_url,
-            context.namespace_reference,
-            context.repository_reference,
-        ),
-    )
-    failed = False
-    for result in results:
-        if result.ok:
-            output.success(f"Published {result.filename} ({result.version})")
-        else:
-            failed = True
-            output.error(f"Failed {result.filename}: {result.detail}")
-    if failed:
-        raise typer.Exit(1)
-
-
-# ── Maven ────────────────────────────────────────────────────────────────────
-
-
-@maven_app.command("install")
-def maven_install(
-    account: str | None = typer.Option(None, "--account"),
-    coords: str = typer.Argument(..., help="Maven coordinates: groupId:artifactId:version."),
-    repo: str | None = typer.Option(None, "--target", "-t", help=_REPOSITORY_NAME_HELP),
-    profile: str | None = typer.Option(None, "--profile", "-p"),
-    customer_id: str | None = typer.Option(
-        None, "--account-ref", help="Typed account reference for advanced use.", hidden=True
-    ),
-) -> None:
-    """Fetch a Maven artifact into the local Maven cache."""
-    context = _registry_context("maven", repo, profile, customer_id, allow_official_default=True)
-    repo_url = _ROUTER.maven_repo_url(
-        context.read_base_url, context.namespace_reference, context.repository_reference
-    )
-    settings_xml = maven_reg._build_settings_xml(repo_url, context.token)
-    with tempfile.NamedTemporaryFile(
-        mode="w", suffix=".xml", prefix="rvs-settings-", delete=False
-    ) as settings_file:
-        settings_file.write(settings_xml)
-        settings_path = settings_file.name
-
-    try:
-        subprocess.run(
-            [
-                tools.require("mvn", install_kind="system"),
-                f"--settings={settings_path}",
-                "dependency:get",
-                f"-Dartifact={coords}",
-            ],
-            env=child_environment(),
-            check=True,
-        )
-    finally:
-        Path(settings_path).unlink(missing_ok=True)
-
-
-@maven_app.command("publish")
-def maven_publish(
-    account: str | None = typer.Option(None, "--account"),
-    yes: bool = typer.Option(False, "--yes", "-y", help="Skip publishing confirmation."),
-    artifact_file: Path = typer.Argument(..., help="Artifact file to publish."),
-    group: str = typer.Option(..., "--group-id", "-g", help="Maven groupId."),
-    artifact: str = typer.Option(..., "--artifact-id", "-a", help="Maven artifactId."),
-    version: str = typer.Option(..., "--version", "-v", help="Maven version."),
-    repo: str | None = typer.Option(None, "--target", "-t", help=_REPOSITORY_NAME_HELP),
-    profile: str | None = typer.Option(None, "--profile", "-p"),
-    customer_id: str | None = typer.Option(
-        None, "--account-ref", help="Typed account reference for advanced use.", hidden=True
-    ),
-) -> None:
-    """Publish an artifact file to a Ravenstash Maven repository."""
-    if not artifact_file.exists():
-        output.fatal(f"Artifact file not found: {artifact_file}")
-    try:
-        maven_reg.validate_artifact_filename(artifact_file.name, artifact, version)
-    except ValueError as exc:
-        output.fatal(str(exc))
-    context = _registry_context(
-        "maven",
-        repo,
-        profile,
-        customer_id,
-        require_private=True,
-        operations=("upload",),
-    )
-    assert context.push_base_url is not None
-    confirm_context(
-        context,
-        [
-            maven_artifact(
-                group,
-                artifact,
-                version,
-                [str(artifact_file), str(artifact_file) + ".md5", str(artifact_file) + ".sha1"],
-            )
-        ],
-        yes=yes,
-    )
-    results = maven_reg.publish(
-        upload_url=_ROUTER.maven_upload_url(
-            context.push_base_url,
-            context.namespace_reference,
-            context.repository_reference,
-        ),
-        token=context.token,
-        group_id=group,
-        artifact_id=artifact,
-        version=version,
-        files=[artifact_file],
-    )
-    failed = False
-    for result in results:
-        if result.ok:
-            output.success(f"Published {result.filename}")
-        else:
-            failed = True
-            output.error(f"Failed {result.filename}: {result.detail}")
-    if failed:
-        raise typer.Exit(1)

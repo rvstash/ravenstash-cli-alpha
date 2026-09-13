@@ -1,4 +1,4 @@
-"""Confirmation shared by direct publishers and native launchers."""
+"""Publication previews and confirmation for native-tool launchers."""
 
 from __future__ import annotations
 
@@ -7,7 +7,9 @@ import json
 import re
 import tarfile
 import xml.etree.ElementTree as ET
+import zipfile
 from dataclasses import dataclass
+from email.parser import Parser
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -68,12 +70,40 @@ def confirm_context(
     confirm_publish(context.target.display_selector, account, artifacts, yes=yes)
 
 
-def pypi_artifacts(files: list[Path]) -> list[PublishItem]:
-    from .artifacts.registries.pypi import _read_metadata
+def _parse_pypi_metadata(raw: str) -> dict[str, str]:
+    message = Parser().parsestr(raw)
+    return {
+        header.lower().replace("-", "_"): value.strip()
+        for header in ("Name", "Version")
+        if (value := message.get(header))
+    }
 
+
+def _read_pypi_metadata(path: Path) -> dict[str, str]:
+    try:
+        if path.suffix == ".whl":
+            with zipfile.ZipFile(path) as archive:
+                member = next(
+                    name for name in archive.namelist() if name.endswith(".dist-info/METADATA")
+                )
+                return _parse_pypi_metadata(archive.read(member).decode("utf-8", errors="replace"))
+        if path.name.endswith(".tar.gz"):
+            with tarfile.open(path, "r:gz") as archive:
+                member = next(
+                    item for item in archive.getmembers() if item.name.endswith("/PKG-INFO")
+                )
+                stream = archive.extractfile(member)
+                if stream is not None:
+                    return _parse_pypi_metadata(stream.read().decode("utf-8", errors="replace"))
+    except OSError, KeyError, StopIteration, tarfile.TarError, zipfile.BadZipFile:
+        pass
+    return {}
+
+
+def pypi_artifacts(files: list[Path]) -> list[PublishItem]:
     groups: dict[str, list[str]] = {}
     for path in files:
-        meta = _read_metadata(path)
+        meta = _read_pypi_metadata(path)
         name, version = meta.get("name"), meta.get("version")
         if isinstance(name, str) and isinstance(version, str):
             identity = f"PyPI {re.sub(r'[-_.]+', '-', name).lower()}=={version}"
@@ -107,10 +137,6 @@ def npm_artifact(path: Path, *, tag: str = "latest") -> PublishItem:
             "npm (package/version unavailable)",
             (f"Package selected from {path}", f"npm tag: {tag}"),
         )
-
-
-def maven_artifact(group: str, artifact: str, version: str, files: list[str]) -> PublishItem:
-    return PublishItem(f"Maven {group}:{artifact}:{version}", tuple(files), len(files))
 
 
 def _option(argv: list[str], *names: str) -> str | None:

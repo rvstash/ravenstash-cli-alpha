@@ -19,18 +19,16 @@ system-wide or through your preferred local toolchain manager.
 
 ```bash
 rvs auth login
-rvs art repo create my-java-packages --ecosystem maven --default
+rvs art repo create my-java-packages --format maven --default
 rvs art endpoint --format maven
 rvs art native config mvn
-rvs art maven publish target/rvs-demo-java-0.1.0.jar \
-  --group-id com.ravenstash.demo \
-  --artifact-id rvs-demo-java \
-  --version 0.1.0
+rvs mvn deploy
 rvs art package list --target <repo-name>
 ```
 
 To fetch from a private Ravenstash Maven repository:
 
 ```bash
-rvs art maven install com.ravenstash.demo:rvs-demo-java:0.1.0 --target <repo-name>
+rvs mvn --rvs-target <namespace/repository> dependency:get \
+  -Dartifact=com.ravenstash.demo:rvs-demo-java:0.1.0
 ```

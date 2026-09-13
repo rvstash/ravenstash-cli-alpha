@@ -52,8 +52,9 @@ def mint(
 ) -> None:
     """Print a short-lived token for direct package-tool access.
 
-    Prefer normal rvs package commands when possible. The generated token is secret
-    until it expires. This command prints it to stdout; other messages go to stderr.
+    Prefer the rvs wrapper for your native tool when possible. The generated token
+    is secret until it expires. This command prints it to stdout; other messages go
+    to stderr.
     """
     try:
         seconds = duration_seconds(duration)

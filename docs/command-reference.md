@@ -92,20 +92,6 @@ and adding or moving a source never shifts another source.
 | `rvs art package delete-version PACKAGE VERSION --target NAME --format FORMAT` | Deletes one version. |
 | `rvs art package delete PACKAGE --target NAME --format FORMAT` | Deletes a package and all its versions. |
 
-## PyPI, npm, and Maven helpers
-
-| Command | What it does |
-| --- | --- |
-| `rvs art pypi install PACKAGE...` | Installs Python packages. |
-| `rvs art pypi publish DIST_DIR` | Publishes Python package files. |
-| `rvs art npm install PACKAGE...` | Installs npm packages. |
-| `rvs art npm publish PACKAGE_DIR` | Publishes an npm package. |
-| `rvs art maven install GROUP:ARTIFACT:VERSION` | Downloads a Maven package. |
-| `rvs art maven publish FILE --group-id GROUP --artifact-id ARTIFACT --version VERSION` | Publishes a Maven package. |
-
-The publishing commands ask for confirmation. Add `--yes` only in a protected
-automation job.
-
 ## Package-tool commands
 
 `rvs` can run these tools with temporary Ravenstash access:
@@ -124,6 +110,11 @@ rvs oras --rvs-format container|helm ORAS_ARGUMENTS...
 The commands accept `--rvs-profile`, `--rvs-account`, and `--rvs-target` where
 applicable. Advanced integrations may pass a typed `--rvs-account-ref`.
 Publishing commands also accept `--rvs-yes` for protected automation.
+
+These are native-tool passthroughs rather than a second package-management API.
+For example, use `rvs pip install PACKAGE`, `rvs twine upload dist/*`, `rvs npm
+publish`, or `rvs mvn deploy`. Publishing commands ask for confirmation unless
+`--rvs-yes` is supplied.
 
 pnpm, Yarn, Bun, Gradle, and sbt can use Ravenstash package addresses, but there
 are no `rvs pnpm`, `rvs yarn`, `rvs bun`, `rvs gradle`, or `rvs sbt` commands.

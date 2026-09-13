@@ -120,6 +120,14 @@ def test_removed_compatibility_groups_are_rejected() -> None:
     assert remote_cache_result.exit_code != 0
 
 
+@pytest.mark.parametrize("command", ["install", "pypi", "npm", "maven"])
+def test_artifact_execution_commands_are_removed(command: str) -> None:
+    result = runner.invoke(app, ["art", command, "--help"])
+
+    assert result.exit_code != 0
+    assert "No such command" in result.output
+
+
 @pytest.mark.parametrize("alias", ["art"])
 def test_repo_commands_are_registered(alias: str) -> None:
     repo_result = runner.invoke(app, [alias, "repo", "--help"])

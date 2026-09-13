@@ -258,7 +258,6 @@ def effective_target(
     repo: str | None = None,
     profile: str | None = None,
     customer_id: str | None = None,
-    allow_official_default: bool = False,
 ) -> tuple[str, cfg_mod.AccountContext, cfg_mod.ArtifactTarget]:
     registry_kind = _package_kind(kind)
     assert registry_kind is not None
@@ -310,13 +309,6 @@ def effective_target(
                 repository_name_cache=legacy.repository_name_cache,
             )
         return resolved_profile, resolved_account, resolved_target
-    if allow_official_default:
-        return resolve_target(
-            f"mirror:{DEFAULT_OFFICIAL_SOURCES[registry_kind]}",
-            profile=profile_name,
-            customer_id=account.customer_id,
-            kind=kind,
-        )
     output.fatal(
         f"No {kind} repository or mirror is selected. Pass --target or run `rvs art select`."
     )
@@ -329,7 +321,6 @@ def registry_context(
     repo: str | None = None,
     profile: str | None = None,
     customer_id: str | None = None,
-    allow_official_default: bool = False,
     require_private: bool = False,
     operations: tuple[PackageOperation, ...] = ("download",),
 ) -> RegistryContext:
@@ -339,7 +330,6 @@ def registry_context(
         repo=repo,
         profile=profile,
         customer_id=customer_id,
-        allow_official_default=allow_official_default,
     )
     if require_private and selected.target_type != "repository":
         output.fatal(f"'{selected.display_selector}' is read-only; select a private repository.")

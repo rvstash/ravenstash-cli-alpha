@@ -647,16 +647,6 @@ def _write_netrc(
     env["NETRC"] = str(netrc_path)
 
 
-def inject_pip_auth(
-    env: dict[str, str],
-    urls: list[str],
-    token: str,
-    temp_dir: Path,
-) -> None:
-    """Inject one ephemeral capability for the duration of a pip command."""
-    _write_netrc(env, urls, token, temp_dir)
-
-
 def _write_maven_settings(
     *,
     urls: list[str],

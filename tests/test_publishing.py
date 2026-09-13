@@ -10,7 +10,6 @@ import typer
 from rvs import config, output
 from rvs.publishing import (
     confirm_publish,
-    maven_artifact,
     native_artifacts,
     npm_artifact,
     oci_artifacts,
@@ -93,15 +92,12 @@ def test_npm_scoped_identity_tarball_and_tag(tmp_path):
 
 
 def test_maven_coordinates_and_classified_files(tmp_path, monkeypatch):
-    item = maven_artifact("com.acme", "sdk", "1.4.0", ["sdk-1.4.0.jar", "sdk-1.4.0-sources.jar"])
-    assert item.identity == "Maven com.acme:sdk:1.4.0"
-    assert item.file_count == 2
     monkeypatch.chdir(tmp_path)
     (tmp_path / "pom.xml").write_text(
         '<project xmlns="http://maven.apache.org/POM/4.0.0"><parent><groupId>com.acme</groupId><version>1.4.0</version></parent><artifactId>sdk</artifactId></project>'
     )
     project = native_artifacts("mvn", ["deploy"])[0]
-    assert project.identity == item.identity
+    assert project.identity == "Maven com.acme:sdk:1.4.0"
     assert project.file_count is None
     assert "resolved by Maven" in project.details[-1]
 
