@@ -2,6 +2,15 @@
 
 Operational guidance for the `rvs` CLI package.
 
+## Agent workflow
+
+- For cross-repository, product-policy, release, or production work, first read
+  `../../AGENTS.md` and the authoritative documents it identifies.
+- Reviews and investigations are read-only. For implementation, complete the
+  authorized local change and run the smallest relevant verification.
+- Do not commit, push, release, publish, or mutate a real environment unless the
+  user explicitly requests it. Report changed files and verification results.
+
 ## What this repository is
 
 - Ravenstash developer CLI for authentication, named local profiles, acting-account
