@@ -246,7 +246,7 @@ def resolve_target(
                     sorted({str(remote_cache(item).get("registry_kind")) for item in matches})
                 )
                 raise ValueError(
-                    f"Package target '{value}' is ambiguous across {kinds}. Pass --kind."
+                    f"Package target '{value}' is ambiguous across {kinds}. Pass --format."
                 )
             target = _remote_target(matches[0], spec.target_type)
     except (ApiError, KeyError, TypeError, ValueError) as exc:
@@ -358,7 +358,7 @@ def registry_context(
                 "/package-credentials",
                 {
                     "repository_unique_ref": selected.repository_unique_ref,
-                    "registry_kind": kind,
+                    "registry_kinds": [kind],
                     "operations": list(operations),
                     "duration_seconds": STATIC_NATIVE_DURATION_SECONDS,
                     "expected_target": {
@@ -370,15 +370,9 @@ def registry_context(
                     },
                 },
             ).json()
-            native_path = credential.get("native_path")
+            native_path = credential.get("native_paths", {}).get(kind)
             if not isinstance(native_path, str):
-                namespace_name = credential.get("namespace_name") or selected.namespace_name_cache
-                repository_name = (
-                    credential.get("repository_name") or selected.repository_name_cache
-                )
-                if not isinstance(namespace_name, str) or not isinstance(repository_name, str):
-                    raise ValueError("Private repository resolution omitted its native path")
-                native_path = f"/{namespace_name}/{repository_name}"
+                raise ValueError("Private repository resolution omitted its native path")
             native_parts = native_path.strip("/").split("/")
             if len(native_parts) != 2 or not all(native_parts):
                 raise ValueError("Private repository resolution returned an invalid native path")

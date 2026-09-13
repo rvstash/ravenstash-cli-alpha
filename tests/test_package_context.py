@@ -263,7 +263,7 @@ def test_custom_cache_kind_collision_requires_disambiguation(monkeypatch, tmp_pa
     ambiguous = runner.invoke(app, ["art", "select", "custom-mirror:piwheels"])
     selected = runner.invoke(
         app,
-        ["art", "select", "custom-mirror:piwheels", "--kind", "pypi"],
+        ["art", "select", "custom-mirror:piwheels", "--format", "pypi"],
     )
 
     assert ambiguous.exit_code == 1
@@ -387,7 +387,7 @@ def test_artifacts_install_uses_account_scoped_official_default_without_selectio
         lambda cmd, *, env, check: calls.append((cmd, env.copy())),
     )
 
-    result = runner.invoke(app, ["art", "--kind", "pypi", "install", "requests"])
+    result = runner.invoke(app, ["art", "install", "requests", "--format", "pypi"])
 
     assert result.exit_code == 0, result.output
     assert calls[0][0] == ["/bin/pip", "install", "requests"]
@@ -409,9 +409,9 @@ def test_artifacts_repo_one_liner_alias_is_rejected(monkeypatch, tmp_path: Path)
         app,
         [
             "art",
-            "--repo",
+            "--target",
             "acme/backend",
-            "--kind",
+            "--format",
             "pypi",
             "install",
             "internal-lib",
@@ -452,11 +452,14 @@ class CrossAccountApi:
         self.calls.append((path, json))
         assert path == "/package-credentials"
         assert json["repository_unique_ref"] == "r_abcdefgh"
-        assert json["registry_kind"] == "pypi"
+        assert json["registry_kinds"] == ["pypi"]
         return Response(
             {
                 "access_token": "rvs_sltCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCA",
-                "native_path": "/engineering/packages",
+                "native_paths": {"pypi": "/engineering/packages"},
+                "registry_kinds": ["pypi"],
+                "token_type": "bearer",
+                "expires_in": 14400,
             }
         )
 
@@ -563,9 +566,9 @@ def test_cross_account_print_token_keeps_stdout_secret_only(monkeypatch, tmp_pat
     isolate(monkeypatch, tmp_path)
     fake = CrossAccountApi()
     monkeypatch.setattr(ApiClient, "from_profile", staticmethod(lambda profile=None: fake))
-    args = ["art", "auth", "print-token", "--target", "in_23456789/r_abcdefgh"]
+    args = ["art", "token", "mint", "--target", "in_23456789/r_abcdefgh"]
     if json_output:
-        args.append("--json")
+        args.insert(0, "--json")
     result = runner.invoke(app, args)
     assert result.exit_code == 0, result.output
     secret = "rvs_sltCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCA"

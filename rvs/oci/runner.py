@@ -169,7 +169,7 @@ def resolve_route(
         client = ApiClient.from_profile(profile_name)
         credential_body: dict[str, object] = {
             "repository_unique_ref": target.repository_unique_ref,
-            "registry_kind": kind,
+            "registry_kinds": [kind],
             "operations": list(operations),
             "duration_seconds": STATIC_NATIVE_DURATION_SECONDS,
             "expected_target": {
@@ -185,7 +185,7 @@ def resolve_route(
             credential_body,
         ).json()
         token = validate_public_token(credential["access_token"], native=True)
-        native_path = credential["native_path"]
+        native_path = credential["native_paths"][kind]
     except ApiError as exc:
         output.fatal(str(exc))
     except (KeyError, TypeError, ValueError) as exc:
@@ -471,26 +471,4 @@ def _run_process(argv: list[str], env: dict[str, str]) -> None:
         raise typer.Exit(128 - returncode if returncode < 0 else returncode)
 
 
-def reference(
-    *,
-    kind: OciRegistryKind,
-    options: OciOptions,
-    oci_path: str | None,
-    reference_value: str | None,
-) -> str:
-    route = resolve_route("oras", OciOptions(**{**options.__dict__, "kind": kind}))
-    result = route.native_root
-    if oci_path:
-        components = oci_path.strip("/").split("/")
-        if not components or any(not _OCI_COMPONENT.fullmatch(item) for item in components):
-            output.fatal("OCI path contains an invalid repository component.")
-        result = f"{result}/{'/'.join(components)}"
-    if reference_value:
-        if not oci_path:
-            output.fatal("--reference requires --oci-path.")
-        separator = "@" if reference_value.startswith("sha256:") else ":"
-        result = f"{result}{separator}{reference_value}"
-    return result
-
-
-__all__ = ["OciOptions", "OciRegistryKind", "OciTool", "reference", "resolve_route", "run"]
+__all__ = ["OciOptions", "OciRegistryKind", "OciTool", "resolve_route", "run"]

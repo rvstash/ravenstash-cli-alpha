@@ -77,12 +77,18 @@ def fatal(msg: str) -> NoReturn:
     raise SystemExit(1)
 
 
-def table(columns: list[str], rows: list[list[str]], title: str | None = None) -> None:
+def table(
+    columns: list[str],
+    rows: list[list[str]],
+    title: str | None = None,
+    *,
+    json_keys: list[str] | None = None,
+) -> None:
     if _json_enabled:
         _emit_json(
             {
                 "title": title,
-                "items": [dict(zip(columns, row, strict=True)) for row in rows],
+                "items": [dict(zip(json_keys or columns, row, strict=True)) for row in rows],
             }
         )
         return
@@ -101,9 +107,16 @@ def section(title: str) -> None:
     console.print(f"\n[bold]{title}[/]")
 
 
-def kv(pairs: dict[str, str | None], title: str | None = None) -> None:
+def kv(
+    pairs: dict[str, str | None], title: str | None = None, *, json_keys: list[str] | None = None
+) -> None:
     if _json_enabled:
-        _emit_json({"title": title, "values": pairs})
+        _emit_json(
+            {
+                "title": title,
+                "values": dict(zip(json_keys, pairs.values(), strict=True)) if json_keys else pairs,
+            }
+        )
         return
     t = Table(show_header=False, box=None, padding=(0, 2, 0, 0))
     t.add_column("key", style="bold dim", no_wrap=True)

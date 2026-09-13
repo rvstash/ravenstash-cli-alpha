@@ -106,7 +106,7 @@ class _FakeDevApi:
         return _JsonResponse(
             {
                 "access_token": "rvs_sltAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
-                "native_path": "/staging/repo",
+                "native_paths": {kind: "/staging/repo" for kind in json["registry_kinds"]},
                 "namespace_name": "staging",
                 "namespace_realm": "internal",
                 "repository_name": "repo",

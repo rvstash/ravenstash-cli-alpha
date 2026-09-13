@@ -51,7 +51,7 @@ class _FakeApiClient:
             return _JsonResponse(
                 {
                     "access_token": "rvs_sltAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
-                    "native_path": "/test-account/repo",
+                    "native_paths": {kind: "/test-account/repo" for kind in json["registry_kinds"]},
                 }
             )
         return _JsonResponse(self.responses.pop(0) if self.responses else {})
@@ -166,7 +166,7 @@ def test_artifacts_repo_list_filters_by_kind_and_uses_profile_customer(
     )
     _use_fake_client(monkeypatch, fake)
 
-    result = runner.invoke(artifacts_cmd.app, ["repo", "list", "--registry-kind", "pypi"])
+    result = runner.invoke(artifacts_cmd.app, ["repo", "list", "--format", "pypi"])
 
     assert result.exit_code == 0
     assert fake.calls == [
@@ -215,7 +215,7 @@ def test_artifacts_repo_create_can_set_default_repo(monkeypatch, tmp_path: Path)
 
     result = runner.invoke(
         artifacts_cmd.app,
-        ["repo", "create", "new-node", "--registry-kind", "npm", "--default"],
+        ["repo", "create", "new-node", "--format", "npm", "--default"],
     )
 
     assert result.exit_code == 0
@@ -233,7 +233,48 @@ def test_artifacts_repo_create_can_set_default_repo(monkeypatch, tmp_path: Path)
         ),
     ]
     assert cfg_mod.load().registry_defaults("npm").default_repo == "in_abcdefgh/r_xyzabcde"
-    assert "with registry kinds: npm" in result.output
+    assert "with formats: npm" in result.output
+
+
+@pytest.mark.parametrize(
+    "flags",
+    [
+        ["-f", "pypi,npm,maven,container,helm"],
+        ["-f", "pypi, npm", "--format", "maven", "-f", "container,helm,pypi"],
+    ],
+)
+def test_repo_create_accepts_comma_separated_and_repeated_formats(monkeypatch, tmp_path, flags):
+    _isolate_config(monkeypatch, tmp_path)
+    fake = _FakeApiClient(
+        [
+            [
+                {
+                    "customer": _repository_entry()["customer"],
+                    "namespace": {
+                        "namespace_unique_ref": "in_abcdefgh",
+                        "namespace_name": "test-account",
+                        "namespace_realm": "internal",
+                        "is_default": True,
+                    },
+                }
+            ],
+            _repository_entry("packages"),
+        ]
+    )
+    _use_fake_client(monkeypatch, fake)
+    result = runner.invoke(artifacts_cmd.app, ["repo", "create", "packages", *flags])
+    assert result.exit_code == 0, result.output
+    assert fake.calls[-1][2]["registry_kinds"] == ["pypi", "npm", "maven", "container", "helm"]
+
+
+@pytest.mark.parametrize("value", ["pypi,", ",npm", "pypi,unknown", " "])
+def test_repo_create_rejects_invalid_format_set_before_api(monkeypatch, value):
+    monkeypatch.setattr(
+        artifacts_cmd, "_client", lambda *_: pytest.fail("Invalid formats reached API")
+    )
+    result = runner.invoke(artifacts_cmd.app, ["repo", "create", "packages", "-f", value])
+    assert result.exit_code != 0
+    assert "Unknown or empty format" in result.output
 
 
 @pytest.mark.parametrize("selector", ["Engineering", "in_abcdefgh"])
@@ -259,7 +300,7 @@ def test_create_resolves_namespace_inside_selected_customer(
     )
     _use_fake_client(monkeypatch, fake)
     result = runner.invoke(
-        artifacts_cmd.app, ["repo", "create", f"{selector}/{repo_name}", "-k", "npm"]
+        artifacts_cmd.app, ["repo", "create", f"{selector}/{repo_name}", "-f", "npm"]
     )
     assert result.exit_code == 0, result.output
     assert fake.calls == [
@@ -281,7 +322,7 @@ def test_create_with_deferred_personal_namespace_requests_onboarding(monkeypatch
     _isolate_config(monkeypatch, tmp_path)
     fake = _FakeApiClient([[]])
     _use_fake_client(monkeypatch, fake)
-    result = runner.invoke(artifacts_cmd.app, ["repo", "create", "new-node", "-k", "npm"])
+    result = runner.invoke(artifacts_cmd.app, ["repo", "create", "new-node", "-f", "npm"])
     assert result.exit_code != 0
     assert "finish onboarding" in result.output
     assert fake.calls == [("GET", "/namespaces", {"customer_id": "cus_123"})]
@@ -293,18 +334,18 @@ def test_public_scope_never_runs_private_mutation(monkeypatch, flags):
         raise AssertionError("Unavailable public scope must not reach the API")
 
     monkeypatch.setattr(artifacts_cmd.ApiClient, "from_profile", unexpected_client)
-    result = runner.invoke(artifacts_cmd.app, [*flags, "repo", "create", "demo", "-k", "npm"])
+    result = runner.invoke(artifacts_cmd.app, [*flags, "repo", "create", "demo", "-f", "npm"])
     assert result.exit_code != 0
-    assert "PublicCatalogUnavailable" in result.output
+    assert "No such option" in result.output
 
 
 def test_artifacts_repo_create_rejects_unknown_kind(monkeypatch, tmp_path: Path) -> None:
     _isolate_config(monkeypatch, tmp_path)
 
-    result = runner.invoke(artifacts_cmd.app, ["repo", "create", "bad", "--registry-kind", "gem"])
+    result = runner.invoke(artifacts_cmd.app, ["repo", "create", "bad", "--format", "gem"])
 
     assert result.exit_code == 1
-    assert "Unknown package format 'gem'" in result.stderr
+    assert "Unknown or empty format 'gem'" in result.stderr
 
 
 def test_artifacts_repo_show_renders_repository_details(monkeypatch, tmp_path: Path) -> None:
@@ -387,11 +428,13 @@ def test_artifacts_remote_management_and_upstream_configuration(
     _isolate_config(monkeypatch, tmp_path)
     fake = _FakeApiClient(
         [
+            [{"source_ref": "pypiorg", "registry_kind": "pypi"}],
             {
                 "customer": _repository_entry()["customer"],
                 "remote_repository": {
                     "id": "remote_1",
                     "public_id": "pypi",
+                    "remote_cache_ref": "pypi",
                     "registry_kind": "pypi",
                 },
             },
@@ -401,6 +444,7 @@ def test_artifacts_remote_management_and_upstream_configuration(
                 "remote_repository": {
                     "id": "remote_1",
                     "public_id": "pypi",
+                    "remote_cache_ref": "pypi",
                     "registry_kind": "pypi",
                 },
             },
@@ -418,9 +462,7 @@ def test_artifacts_remote_management_and_upstream_configuration(
     )
     _use_fake_client(monkeypatch, fake)
 
-    create_result = runner.invoke(
-        artifacts_cmd.app, ["mirror", "create", "--registry-kind", "pypi"]
-    )
+    create_result = runner.invoke(artifacts_cmd.app, ["mirror", "create", "--format", "pypi"])
     upstream_result = runner.invoke(
         artifacts_cmd.app,
         [
@@ -440,9 +482,14 @@ def test_artifacts_remote_management_and_upstream_configuration(
     assert upstream_result.exit_code == 0
     assert fake.calls == [
         (
+            "GET",
+            "/remote-caches/official-sources",
+            {"customer_id": "cus_123"},
+        ),
+        (
             "POST",
-            "/remote-caches",
-            {"customer_id": "cus_123", "registry_kind": "pypi"},
+            "/remote-caches/official",
+            {"customer_id": "cus_123", "source_ref": "pypiorg"},
         ),
         (
             "GET",
@@ -505,7 +552,7 @@ def test_artifacts_official_remote_add_uses_public_source_ref(monkeypatch, tmp_p
     )
     _use_fake_client(monkeypatch, fake)
 
-    result = runner.invoke(artifacts_cmd.app, ["mirror", "add", "pypiorg"])
+    result = runner.invoke(artifacts_cmd.app, ["mirror", "create", "pypiorg"])
 
     assert result.exit_code == 0
     assert fake.calls == [
@@ -519,57 +566,6 @@ def test_artifacts_official_remote_add_uses_public_source_ref(monkeypatch, tmp_p
             "/remote-caches/official",
             {"customer_id": "cus_123", "source_ref": "pypiorg"},
         ),
-    ]
-
-
-def test_artifacts_custom_remote_requires_and_submits_publication_control(
-    monkeypatch, tmp_path: Path
-) -> None:
-    _isolate_config(monkeypatch, tmp_path)
-    fake = _FakeApiClient(
-        [
-            {
-                "customer": _repository_entry()["customer"],
-                "remote_repository": {
-                    "id": "remote_custom_1",
-                    "public_id": "company-packages",
-                    "remote_name": "company-packages",
-                    "registry_kind": "pypi",
-                },
-            }
-        ]
-    )
-    _use_fake_client(monkeypatch, fake)
-
-    result = runner.invoke(
-        artifacts_cmd.app,
-        [
-            "mirror",
-            "create-custom",
-            "company-packages",
-            "--kind",
-            "pypi",
-            "--api-url",
-            "https://packages.example.test/simple/",
-            "--publication-control",
-            "user-controlled",
-        ],
-    )
-
-    assert result.exit_code == 0
-    assert fake.calls == [
-        (
-            "POST",
-            "/remote-caches/custom",
-            {
-                "customer_id": "cus_123",
-                "registry_kind": "pypi",
-                "remote_name": "company-packages",
-                "publication_control": "user_controlled",
-                "api_base_url": "https://packages.example.test/simple/",
-                "credential": {"auth_scheme": "none", "allowed_hosts": []},
-            },
-        )
     ]
 
 
@@ -877,11 +873,11 @@ def test_artifacts_package_list_and_show_use_repository_package_paths(
     _use_fake_client(monkeypatch, fake)
 
     list_result = runner.invoke(
-        artifacts_cmd.app, ["package", "list", "--repo", "repo-pypi", "--registry-kind", "pypi"]
+        artifacts_cmd.app, ["package", "list", "--target", "repo-pypi", "--format", "pypi"]
     )
     show_result = runner.invoke(
         artifacts_cmd.app,
-        ["package", "show", "demo", "--repo", "repo-pypi", "--registry-kind", "pypi"],
+        ["package", "show", "demo", "--target", "repo-pypi", "--format", "pypi"],
     )
 
     assert list_result.exit_code == 0
@@ -931,9 +927,9 @@ def test_artifacts_package_mutations_call_expected_api_paths(monkeypatch, tmp_pa
             "package",
             "delete",
             "demo",
-            "--repo",
+            "--target",
             "repo-pypi",
-            "--registry-kind",
+            "--format",
             "pypi",
             "--yes",
         ],
@@ -945,9 +941,9 @@ def test_artifacts_package_mutations_call_expected_api_paths(monkeypatch, tmp_pa
             "delete-version",
             "demo",
             "1.0.0",
-            "--repo",
+            "--target",
             "repo-pypi",
-            "--registry-kind",
+            "--format",
             "pypi",
             "--yes",
         ],
@@ -959,9 +955,9 @@ def test_artifacts_package_mutations_call_expected_api_paths(monkeypatch, tmp_pa
             "yank",
             "demo",
             "1.0.1",
-            "--repo",
+            "--target",
             "repo-pypi",
-            "--registry-kind",
+            "--format",
             "pypi",
             "--reason",
             "bad build",
@@ -1017,63 +1013,6 @@ def test_artifacts_package_mutations_call_expected_api_paths(monkeypatch, tmp_pa
     ]
 
 
-@pytest.mark.parametrize(
-    ("args", "expected"),
-    [
-        (
-            ["pypi", "index-url", "--profile", "staging"],
-            f"{PYPI_READ_URL}/test-account/repo/simple/",
-        ),
-        (
-            ["pypi", "upload-url", "--profile", "staging"],
-            f"{PYPI_PUSH_URL}/test-account/repo/",
-        ),
-        (
-            ["npm", "registry-url", "--profile", "staging"],
-            f"{NPM_READ_URL}/test-account/repo/",
-        ),
-        (
-            ["maven", "repo-url", "--profile", "staging"],
-            f"{MAVEN_READ_URL}/test-account/repo/",
-        ),
-    ],
-)
-def test_artifacts_registry_url_helpers_use_profile_and_default_repo(
-    monkeypatch,
-    tmp_path: Path,
-    args: list[str],
-    expected: str,
-) -> None:
-    _isolate_config(monkeypatch, tmp_path)
-
-    result = runner.invoke(artifacts_cmd.app, args)
-
-    assert result.exit_code == 0
-    assert result.output.strip() == expected
-
-
-def test_artifacts_configure_snippets_are_printed_for_native_toolchains(
-    monkeypatch,
-    tmp_path: Path,
-) -> None:
-    _isolate_config(monkeypatch, tmp_path)
-
-    pypi_result = runner.invoke(artifacts_cmd.app, ["pypi", "configure", "--profile", "staging"])
-    npm_result = runner.invoke(artifacts_cmd.app, ["npm", "configure", "--profile", "staging"])
-    maven_result = runner.invoke(artifacts_cmd.app, ["maven", "configure", "--profile", "staging"])
-
-    assert pypi_result.exit_code == 0
-    assert "index-url" in pypi_result.output
-    assert "extra-index-url" not in pypi_result.output
-    assert "/test-account/repo/" in pypi_result.output
-    assert npm_result.exit_code == 0
-    assert "_authToken=${RVS_ARTIFACTS_TOKEN}" in npm_result.output
-    assert "/test-account/repo/" in npm_result.output
-    assert maven_result.exit_code == 0
-    assert "<settings" in maven_result.output
-    assert "/test-account/repo/" in maven_result.output
-
-
 def test_pypi_install_uses_ephemeral_netrc_auth(
     monkeypatch,
     tmp_path: Path,
@@ -1124,7 +1063,7 @@ def test_pypi_install_refreshes_native_path_when_saved_target_name_changed(
             return _JsonResponse(
                 {
                     "access_token": "rvs_sltAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
-                    "native_path": "/test-account/new-name",
+                    "native_paths": {"pypi": "/test-account/new-name"},
                 }
             )
 
@@ -1318,12 +1257,12 @@ def test_maven_deploy_checks_file_and_calls_registry_adapter(monkeypatch, tmp_pa
         artifacts_cmd.app,
         [
             "maven",
-            "deploy",
+            "publish",
             str(artifact),
             "--yes",
-            "--group",
+            "--group-id",
             "com.example",
-            "--artifact",
+            "--artifact-id",
             "demo",
             "--version",
             "1.0.0",

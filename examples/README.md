@@ -40,21 +40,21 @@ rvs art repo create my-java-packages --ecosystem maven --default
 ```
 
 `rvs art` expects package repository names, such as `my-python-packages`.
-After a repository is set as the default for its ecosystem, the `--repo` flag can be
+After a repository is set as the default for its ecosystem, the `--target` flag can be
 omitted for that ecosystem.
 
 ## Package Helpers
 
 ```bash
-rvs art pypi index-url
+rvs art endpoint --format pypi
 rvs art pypi publish dist/
 rvs art pypi install my-private-package
 
-rvs art npm registry-url
+rvs art endpoint --format npm
 rvs art npm publish .
 rvs art npm install my-private-package
 
-rvs art maven repo-url
-rvs art maven deploy target/app.jar --group com.example --artifact app --version 0.1.0
+rvs art endpoint --format maven
+rvs art maven publish target/app.jar --group-id com.example --artifact-id app --version 0.1.0
 rvs art maven install com.example:app:0.1.0
 ```

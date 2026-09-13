@@ -51,6 +51,7 @@ class _Api:
                 "customer": {"customer_id": "customer-1"},
                 "repository": {
                     "repository_name": "images",
+                    "registry_kinds": ["container", "helm"],
                     "namespace_name": "main",
                     "namespace_realm": "internal",
                     "namespace_unique_ref": "in_abcdefgh",
@@ -76,7 +77,7 @@ class _Api:
         return _Response(
             {
                 "access_token": "rvs_sltDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDA",
-                "native_path": "/main/images",
+                "native_paths": {"container": "/main/images", "helm": "/main/images"},
                 "namespace_unique_ref": "in_abcdefgh",
                 "repository_unique_ref": "r_xyzabcde",
                 "namespace_name": "main",
@@ -138,7 +139,7 @@ customer_id = "customer-1"
         (
             "oras",
             [
-                "--rvs-kind",
+                "--rvs-format",
                 "container",
                 "push",
                 "oci.rvsta.sh/main/images/backend:latest",
@@ -215,7 +216,10 @@ def test_namespace_target_accepts_current_friendly_native_root(monkeypatch, tmp_
     class StablePathApi(_Api):
         def post(self, path: str, json=None) -> _Response:
             response = super().post(path, json)
-            response.value["native_path"] = "/in_abcdefgh/r_xyzabcde"
+            response.value["native_paths"] = {
+                "container": "/in_abcdefgh/r_xyzabcde",
+                "helm": "/in_abcdefgh/r_xyzabcde",
+            }
             return response
 
     monkeypatch.setattr(
@@ -342,7 +346,7 @@ def test_oras_requires_kind_and_rejects_second_ravenstash_target(
         app,
         [
             "oras",
-            "--rvs-kind",
+            "--rvs-format",
             "container",
             "--rvs-target",
             "main/images",
@@ -384,7 +388,10 @@ def test_oci_reference_prints_stable_root_without_v2(monkeypatch, tmp_path: Path
     class StablePathApi(_Api):
         def post(self, path: str, json=None) -> _Response:
             response = super().post(path, json)
-            response.value["native_path"] = "/in_abcdefgh/r_xyzabcde"
+            response.value["native_paths"] = {
+                "container": "/in_abcdefgh/r_xyzabcde",
+                "helm": "/in_abcdefgh/r_xyzabcde",
+            }
             return response
 
     monkeypatch.setattr(
@@ -395,19 +402,17 @@ def test_oci_reference_prints_stable_root_without_v2(monkeypatch, tmp_path: Path
     result = runner.invoke(
         app,
         [
-            "oci-reference",
-            "--kind",
+            "art",
+            "reference",
+            "team/api:1.2.3",
+            "--format",
             "helm",
             "--target",
             "main/charts",
-            "--oci-path",
-            "team/api",
-            "--reference",
-            "1.2.3",
         ],
     )
     assert result.exit_code == 0, result.output
-    assert result.output.strip() == ("oci.rvsta.sh/in_abcdefgh/r_xyzabcde/team/api:1.2.3")
+    assert result.output.strip() == ("oci.rvsta.sh/main/images/team/api:1.2.3")
     assert "/v2/" not in result.output
 
 
@@ -420,7 +425,7 @@ def test_oci_capability_rejects_noncanonical_native_path(monkeypatch, tmp_path: 
             return _Response(
                 {
                     "access_token": "rvs_sltDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDA",
-                    "native_path": "/_abcdefgh/_xyzabcde",
+                    "native_paths": {"container": "/_abcdefgh/_xyzabcde"},
                 }
             )
 
@@ -432,7 +437,7 @@ def test_oci_capability_rejects_noncanonical_native_path(monkeypatch, tmp_path: 
 
     result = runner.invoke(
         app,
-        ["oci-reference", "--kind", "container", "--target", "main/images"],
+        ["docker", "--rvs-target", "main/images", "pull", "backend:latest"],
     )
 
     assert result.exit_code != 0
@@ -446,21 +451,21 @@ def test_package_and_mirror_commands_reject_oci_kinds() -> None:
             "art",
             "package",
             "list",
-            "--repo",
+            "--target",
             "images",
-            "--registry-kind",
+            "--format",
             "container",
         ],
     )
     remote = runner.invoke(
         app,
-        ["art", "mirror", "create", "--registry-kind", "helm"],
+        ["art", "mirror", "create", "--format", "helm"],
     )
 
     assert package.exit_code != 0
     assert remote.exit_code != 0
     assert "Use rvs docker, rvs helm, or rvs oras" in package.output
-    assert "Use rvs docker, rvs helm, or rvs oras" in remote.output
+    assert "--format pypi, npm, or maven" in remote.output
 
 
 @pytest.mark.parametrize("command", [["push"], ["image", "push"]])

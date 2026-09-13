@@ -13,10 +13,10 @@ import httpx
 import typer
 
 from .. import output
-from ..account.commands import resolve_account
 from ..auth.token_format import validate_public_token
 from ..client import ApiClient, ApiError
-from .targets import resolve_target
+from .discovery import discover
+from .formats import flatten_formats
 
 
 app = typer.Typer(help="Create short-lived tokens for package tools.", no_args_is_help=True)
@@ -32,16 +32,13 @@ def duration_seconds(value: str) -> int:
     return seconds
 
 
-@app.command("print-token")
-def print_token(
-    target: str = typer.Option(
-        ..., "--target", help="namespace/repository, mirror:source, or custom-mirror:name."
+@app.command("mint")
+def mint(
+    target: str | None = typer.Option(None, "--target", "-t"),
+    formats: list[str] | None = typer.Option(
+        None, "--format", "-f", help="Comma-separated formats; may also be repeated."
     ),
-    kind: Literal["pypi", "npm", "maven", "container", "helm"] | None = typer.Option(
-        None,
-        "--kind",
-        help="Package format; needed only when it cannot be determined from the target.",
-    ),
+    all_formats: bool = typer.Option(False, "--all-formats"),
     access: Literal["read", "publish", "admin"] = typer.Option(
         "read",
         "--access",
@@ -50,11 +47,8 @@ def print_token(
     duration: str = typer.Option(
         "4h", "--duration", help="15m to 12h; source expiry may shorten it."
     ),
-    profile: str | None = typer.Option(None, "--profile"),
+    profile: str | None = typer.Option(None, "--profile", "-p"),
     account: str | None = typer.Option(None, "--account"),
-    as_json: bool = typer.Option(
-        False, "--json", help="Print the secret and its access and expiration as JSON."
-    ),
 ) -> None:
     """Print a short-lived token for direct package-tool access.
 
@@ -66,16 +60,18 @@ def print_token(
         # Existing account/target helpers may explain context changes. Their
         # diagnostics cannot contaminate a shell-captured bearer value.
         with contextlib.redirect_stdout(sys.stderr):
-            customer_id = str(resolve_account(account, profile)["customer_id"]) if account else None
-            profile_name, owner, selected = resolve_target(
-                target, profile=profile, customer_id=customer_id, kind=kind
+            requested = flatten_formats(formats or [])
+            if all_formats and requested:
+                raise ValueError("--all-formats and --format are mutually exclusive.")
+            found = discover(
+                target, profile, account, requested[0] if len(requested) == 1 else None
             )
-            selected_kind = kind or selected.registry_kind
-            if selected_kind is None:
-                raise ValueError(
-                    "This repository supports more than one package format. Pass --kind."
-                )
-            client = ApiClient.from_profile(profile_name)
+            selected = found.target
+            if not requested and not all_formats:
+                requested = [found.select_format(None)]
+            if any(item not in found.formats for item in requested):
+                raise ValueError("Every requested format must be enabled on the exact target.")
+            client = ApiClient.from_profile(found.profile)
             operations = {
                 "read": ["download"],
                 "publish": ["download", "upload"],
@@ -86,7 +82,8 @@ def print_token(
                     "/package-credentials",
                     {
                         "repository_unique_ref": selected.repository_unique_ref,
-                        "registry_kind": selected_kind,
+                        "registry_kinds": requested or None,
+                        "all_formats": all_formats,
                         "operations": operations,
                         "duration_seconds": seconds,
                         "expected_target": {
@@ -104,9 +101,9 @@ def print_token(
                 response = client.issue_native(
                     "/remote-package-credentials",
                     {
-                        "customer_id": owner.customer_id,
+                        "customer_id": selected.customer_id,
                         "remote_cache_ref": selected.remote_unique_ref,
-                        "registry_kind": selected_kind,
+                        "registry_kind": found.select_format(requested[0] if requested else None),
                         "duration_seconds": seconds,
                     },
                 ).json()
@@ -114,8 +111,16 @@ def print_token(
         if not isinstance(secret, str):
             raise ValueError("Ravenstash returned an invalid temporary token.")
         validate_public_token(secret, native=True)
-        if as_json or output.is_json():
-            click.echo(json.dumps(response, separators=(",", ":")))
+        if output.is_json():
+            result = {
+                "target": selected.display_selector,
+                "formats": response.get("registry_kinds", [response.get("registry_kind")]),
+                "access": access,
+                "access_token": secret,
+                "token_type": response["token_type"],
+                "expires_in": response["expires_in"],
+            }
+            click.echo(json.dumps(result, separators=(",", ":")))
         else:
             click.echo(secret)
     except (ApiError, httpx.HTTPError, ValueError, KeyError, TypeError) as exc:

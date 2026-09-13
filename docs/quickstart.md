@@ -65,7 +65,7 @@ a Ravenstash token to the project's package settings.
 Choose a Ravenstash-provided mirror when you need public packages:
 
 ```bash
-rvs art mirror add pypiorg --select
+rvs art mirror create pypiorg --select
 rvs pip install requests
 ```
 

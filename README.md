@@ -55,7 +55,7 @@ A private mirror gives your account a read-only view of a public or custom
 package source:
 
 ```bash
-rvs art mirror add pypiorg --select
+rvs art mirror create pypiorg --select
 rvs pip install requests
 ```
 
@@ -78,6 +78,24 @@ rvs mvn deploy
 
 In a protected automation job, use `--rvs-yes` with these wrapped tools. The
 built-in `rvs art` publishing commands use `--yes` instead.
+
+## Native setup and manual tokens
+
+Print instructions without changing files or creating credentials:
+
+```bash
+rvs art native config pip
+rvs art native config oras
+rvs art endpoint --format npm
+rvs art reference backend:latest --format container
+```
+
+For tools outside the wrappers, `rvs art token mint --format container,helm
+--access publish` creates one temporary credential for both formats in the selected
+repository. Native logins may share a host credential store; the templates use
+separate temporary OCI configs. A logout against a shared store can affect other tools.
+
+`rvs update --to SERIES` previews a newer release series. Only `--apply` installs it.
 
 ## Profiles and runtimes
 
@@ -114,3 +132,13 @@ Run the repository checks from this directory:
 ```
 
 `rvs` is licensed under the [MIT License](LICENSE).
+
+Multi-format options accept comma-separated values, repeated flags, or both:
+
+```bash
+rvs art repo create packages --format pypi,npm,maven,container,helm
+rvs art token mint --target platform/packages -f container -f helm
+```
+
+Whitespace is trimmed and duplicates are removed. Empty or unknown formats fail
+before any mutation. Commands requiring one format still accept only one.

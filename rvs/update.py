@@ -202,7 +202,7 @@ def _announce_new_channel(current_channel: str | None) -> None:
     latest = manifest["channels"][recommended]["latest"]
     output.info(
         f"rvs {latest} is available in release series {recommended}. "
-        f"Review the migration notes, then run: rvs upgrade --to {recommended.removeprefix('v')}"
+        f"Review the migration notes, then run: rvs update --to {recommended.removeprefix('v')}"
     )
 
 
@@ -226,6 +226,9 @@ def _restore_source(source: str) -> None:
 
 
 def update(
+    to: str | None = typer.Option(
+        None, "--to", help="Preview a newer release series; install with --apply."
+    ),
     apply: bool = typer.Option(
         False,
         "--apply",
@@ -239,6 +242,11 @@ def update(
     ),
 ) -> None:
     """Check for a Ravenstash CLI update, or install it with --apply."""
+    if yes and not apply:
+        output.fatal("--yes requires --apply.")
+    if to is not None:
+        _update_series(to, apply=apply, yes=yes)
+        return
     installed, candidate = _apt_versions()
     if installed is None:
         output.info(f"Ravenstash CLI {_cli_version()} is not managed by the rvs APT package.")
@@ -252,14 +260,14 @@ def update(
 
     current_channel = _current_channel()
     if not _upgrade_available(installed, candidate):
-        suffix = f" on channel {current_channel}" if current_channel else ""
+        suffix = f" on release series {current_channel}" if current_channel else ""
         output.success(f"rvs {installed} is current{suffix}.")
         _announce_new_channel(current_channel)
         return
 
     if current_channel and not version_matches_channel(candidate, current_channel):
         output.fatal(
-            f"APT candidate {candidate} does not belong to configured channel {current_channel}."
+            f"APT candidate {candidate} does not belong to configured release series {current_channel}."
         )
     output.info(f"rvs {candidate} is available (installed: {installed}).")
     if not apply:
@@ -273,15 +281,20 @@ def update(
 
     if _run_visible([str(_APT_GET), "update"]).returncode != 0:
         output.fatal("APT metadata refresh failed.")
-    if _run_visible([str(_APT_GET), "install", "--only-upgrade", "--yes", "rvs"]).returncode != 0:
+    refreshed_installed, refreshed_candidate = _apt_versions()
+    if refreshed_candidate != candidate or refreshed_installed != installed:
+        output.fatal("APT candidate changed during refresh; run rvs update again to review it.")
+    if (
+        _run_visible(
+            [str(_APT_GET), "install", "--only-upgrade", "--yes", f"rvs={candidate}"]
+        ).returncode
+        != 0
+    ):
         output.fatal("APT could not install the rvs update.")
     output.success(f"Updated rvs to {candidate}.")
 
 
-def upgrade(
-    to: str = typer.Option(..., "--to", help="Release series to use, such as 0.4 or 1."),
-    yes: bool = typer.Option(False, "--yes", "-y", help="Do not ask for confirmation."),
-) -> None:
+def _update_series(to: str, *, apply: bool, yes: bool) -> None:
     """Move the Ravenstash CLI to a newer release series."""
     try:
         target = normalize_channel(to)
@@ -292,27 +305,32 @@ def upgrade(
     if installed is None or current is None:
         output.fatal("rvs is not managed by a recognized Ravenstash APT source.")
     if target == current:
-        output.success(f"rvs already tracks compatibility channel {target}.")
+        update(to=None, apply=apply, yes=yes)
         return
     if channel_order(target) <= channel_order(current):
-        output.fatal("Channel downgrades are not supported automatically.")
+        output.fatal("Release-series downgrades are not supported automatically.")
 
     manifest = _channel_manifest()
     if manifest is None:
-        output.fatal("Cannot authenticate the Ravenstash compatibility-channel manifest.")
+        output.fatal("Cannot authenticate the Ravenstash release-series manifest.")
     channel_data = manifest["channels"].get(target)
     if not isinstance(channel_data, dict) or channel_data.get("status") != "supported":
-        output.fatal(f"Compatibility channel {target} is not available for upgrade.")
+        output.fatal(f"Release series {target} is not available for upgrade.")
     target_version = channel_data["latest"]
+    if not _upgrade_available(installed, target_version):
+        output.fatal("The target release is not newer than the installed package.")
     notes = channel_data.get(
         "migration_notes",
         f"https://docs.ravenstash.com/cli/releases/{target.removeprefix('v').replace('.', '-')}/",
     )
     output.warn(
-        f"This changes compatibility channel {current} to {target} and may include breaking changes."
+        f"This changes release series {current} to {target} and may include breaking changes."
     )
     output.info(f"Target release: {target_version}")
     output.info(f"Migration notes: {notes}")
+    if not apply:
+        output.info(f"Install it with: rvs update --to {to} --apply")
+        return
     if not yes:
         typer.confirm(f"Upgrade rvs from {current} to {target}?", abort=True)
 
@@ -321,22 +339,32 @@ def upgrade(
     except OSError:
         output.fatal("Cannot read the existing Ravenstash APT source.")
     if not _install_source(_source_for_channel(target)):
-        output.fatal("Could not change the Ravenstash APT compatibility channel.")
+        output.fatal("Could not change the Ravenstash APT release series.")
     if _run_visible([str(_APT_GET), "update"]).returncode != 0:
         _restore_source(previous_source)
         output.fatal(
-            "The target channel could not be authenticated; the prior channel was restored."
+            "The target release series could not be authenticated; the prior release series was restored."
         )
 
-    _installed_after_refresh, candidate = _apt_versions()
-    if candidate is None or not version_matches_channel(candidate, target):
+    installed_after_refresh, candidate = _apt_versions()
+    if (
+        installed_after_refresh != installed
+        or candidate is None
+        or candidate != target_version
+        or not version_matches_channel(candidate, target)
+    ):
         _restore_source(previous_source)
         output.fatal(
-            "The target channel returned an incompatible candidate; the prior channel was restored."
+            "The target release series returned an incompatible candidate; the prior release series was restored."
         )
-    if _run_visible([str(_APT_GET), "install", "--only-upgrade", "--yes", "rvs"]).returncode != 0:
+    if (
+        _run_visible(
+            [str(_APT_GET), "install", "--only-upgrade", "--yes", f"rvs={candidate}"]
+        ).returncode
+        != 0
+    ):
         _restore_source(previous_source)
         output.fatal(
-            "APT could not install the compatibility upgrade; the prior channel was restored."
+            "APT could not install the compatibility upgrade; the prior release series was restored."
         )
-    output.success(f"Updated rvs to {candidate} on compatibility channel {target}.")
+    output.success(f"Updated rvs to {candidate} on release series {target}.")

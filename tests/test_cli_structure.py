@@ -44,8 +44,6 @@ def test_root_help_exposes_clean_alpha_command_surface() -> None:
         "context",
         "runtime",
         "art",
-        "artifacts",
-        "ci",
     ):
         assert command in result.output
     for removed_root_command in ("pypi", "maven", "system", "sync", "tokens"):
@@ -105,8 +103,8 @@ default_repo = "private-pypi"
     payload = json.loads(result.output)
     assert payload["title"] == "Package repository defaults (default)"
     assert payload["items"][0] == {
-        "Registry kind": "pypi",
-        "Default repository": "private-pypi",
+        "format": "pypi",
+        "default_repository": "private-pypi",
     }
 
 
@@ -122,7 +120,7 @@ def test_removed_compatibility_groups_are_rejected() -> None:
     assert remote_cache_result.exit_code != 0
 
 
-@pytest.mark.parametrize("alias", ["art", "artifacts"])
+@pytest.mark.parametrize("alias", ["art"])
 def test_repo_commands_are_registered(alias: str) -> None:
     repo_result = runner.invoke(app, [alias, "repo", "--help"])
 
@@ -140,11 +138,12 @@ def test_retired_top_level_commands_are_removed(command: str) -> None:
 
 def test_artifact_spellings_share_one_command_application() -> None:
     groups = {group.name: group.typer_instance for group in app.registered_groups}
-    assert groups["art"] is groups["artifacts"]
+    assert "art" in groups
+    assert "artifacts" not in groups
     assert not {"repo", "pkg"}.intersection(groups)
 
 
-@pytest.mark.parametrize("alias", ["art", "artifacts"])
+@pytest.mark.parametrize("alias", ["art"])
 def test_artifact_alias_json_has_no_transition_warning(
     monkeypatch, tmp_path: Path, alias: str
 ) -> None:
@@ -152,7 +151,7 @@ def test_artifact_alias_json_has_no_transition_warning(
     result = runner.invoke(app, ["--json", alias, "repo", "defaults"])
     output.set_json(False)
     assert result.exit_code == 0
-    assert {item["Registry kind"] for item in json.loads(result.stdout)["items"]} == {
+    assert {item["format"] for item in json.loads(result.stdout)["items"]} == {
         "pypi",
         "npm",
         "maven",
@@ -167,7 +166,7 @@ def test_registry_kind_has_no_ecosystem_alias() -> None:
 
     assert result.exit_code == 0
     help_output = unstyle(result.output)
-    assert "--registry-kind" in help_output
+    assert "--format" in help_output
     assert "--ecosystem" not in help_output
 
 
@@ -202,5 +201,5 @@ def test_native_wrappers_reject_removed_repository_option(command: str) -> None:
 def test_ci_placeholder_commands_are_registered(args: list[str]) -> None:
     ci_result = runner.invoke(app, args)
 
-    assert ci_result.exit_code == 1
-    assert "rvs ci is not implemented yet" in ci_result.stderr
+    assert ci_result.exit_code == 2
+    assert "No such command" in ci_result.output

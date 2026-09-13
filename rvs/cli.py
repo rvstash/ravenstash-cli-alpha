@@ -8,12 +8,11 @@ from .account.commands import app as account_app
 from .artifacts.commands import app as artifacts_app
 from .auth.commands import app as auth_app
 from .auth.commands import profile_app
-from .ci.commands import app as ci_app
 from .context.commands import app as context_app
 from .native import commands as native_commands
 from .oci import commands as oci_commands
 from .runtime.commands import app as runtime_app
-from .update import update, upgrade
+from .update import update
 
 
 app = typer.Typer(
@@ -30,10 +29,7 @@ app.add_typer(account_app, name="account")
 app.add_typer(context_app, name="context")
 app.add_typer(runtime_app, name="runtime")
 app.add_typer(artifacts_app, name="art")
-app.add_typer(artifacts_app, name="artifacts")
-app.add_typer(ci_app, name="ci")
 app.command("update")(update)
-app.command("upgrade")(upgrade)
 app.command(
     "pip",
     context_settings=native_commands.PASSTHROUGH_CONTEXT,
@@ -74,7 +70,6 @@ app.command(
     context_settings=oci_commands.PASSTHROUGH_CONTEXT,
     help="Run ORAS with temporary access to a Container or Helm repository.",
 )(oci_commands.oras)
-app.command("oci-reference")(oci_commands.oci_reference)
 
 
 def _version_callback(value: bool) -> None:

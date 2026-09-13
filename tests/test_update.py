@@ -70,7 +70,7 @@ def test_update_apply_uses_fixed_apt_paths(monkeypatch: Any, tmp_path: Path) -> 
     assert result.exit_code == 0
     assert calls == [
         [str(apt_get), "update"],
-        [str(apt_get), "install", "--only-upgrade", "--yes", "rvs"],
+        [str(apt_get), "install", "--only-upgrade", "--yes", "rvs=0.3.0"],
     ]
 
 
@@ -82,7 +82,7 @@ def test_update_rejects_candidate_outside_configured_channel(monkeypatch: Any) -
     result = runner.invoke(app, ["update"])
 
     assert result.exit_code == 1
-    assert "does not belong to configured channel v0.3" in result.output
+    assert "does not belong to configured release series v0.3" in result.output
 
 
 def test_upgrade_changes_channel_only_after_authenticated_manifest(
@@ -124,15 +124,15 @@ def test_upgrade_changes_channel_only_after_authenticated_manifest(
 
     monkeypatch.setattr(update_mod, "_run_visible", fake_visible)
 
-    result = runner.invoke(app, ["upgrade", "--to", "0.4", "--yes"])
+    result = runner.invoke(app, ["update", "--apply", "--to", "0.4", "--yes"])
 
     assert result.exit_code == 0
     assert installed_sources == [update_mod._source_for_channel("v0.4")]
     assert calls == [
         [str(update_mod._APT_GET), "update"],
-        [str(update_mod._APT_GET), "install", "--only-upgrade", "--yes", "rvs"],
+        [str(update_mod._APT_GET), "install", "--only-upgrade", "--yes", "rvs=0.4.0"],
     ]
-    assert "compatibility channel v0.4" in result.output
+    assert "release series v0.4" in result.output
 
 
 def test_upgrade_restores_source_when_target_candidate_is_wrong(
@@ -159,8 +159,100 @@ def test_upgrade_restores_source_when_target_candidate_is_wrong(
     monkeypatch.setattr(update_mod, "_restore_source", restored.append)
     monkeypatch.setattr(update_mod, "_run_visible", lambda command: _completed())
 
-    result = runner.invoke(app, ["upgrade", "--to", "0.4", "--yes"])
+    result = runner.invoke(app, ["update", "--apply", "--to", "0.4", "--yes"])
 
     assert result.exit_code == 1
     assert restored == [previous_source]
     assert "incompatible candidate" in result.output
+
+
+def test_update_to_only_previews_and_never_changes_apt_source(monkeypatch):
+    monkeypatch.setattr(update_mod, "_apt_versions", lambda: ("0.3.4", "0.3.4"))
+    monkeypatch.setattr(update_mod, "_current_channel", lambda: "v0.3")
+    monkeypatch.setattr(
+        update_mod,
+        "_channel_manifest",
+        lambda: {
+            "schema": 1,
+            "recommended": "v0.4",
+            "channels": {"v0.4": {"latest": "0.4.0", "status": "supported"}},
+        },
+    )
+
+    def unexpected(*_args, **_kwargs):
+        raise AssertionError("preview attempted an APT change")
+
+    monkeypatch.setattr(update_mod, "_install_source", unexpected)
+    monkeypatch.setattr(update_mod, "_run_visible", unexpected)
+    monkeypatch.setattr(update_mod.typer, "confirm", unexpected)
+    result = runner.invoke(app, ["update", "--to", "0.4"])
+    assert result.exit_code == 0, result.output
+    assert "0.4.0" in result.stdout
+    assert "--apply" in result.stdout
+    assert "breaking changes" in result.stderr
+
+
+def test_update_yes_requires_explicit_apply(monkeypatch):
+    monkeypatch.setattr(
+        update_mod,
+        "_apt_versions",
+        lambda: (_ for _ in ()).throw(AssertionError("unexpected APT read")),
+    )
+    result = runner.invoke(app, ["update", "--to", "0.4", "--yes"])
+    assert result.exit_code == 1
+    assert "--yes requires --apply" in result.stderr
+
+
+def test_update_to_current_series_still_applies_available_update(monkeypatch, tmp_path):
+    apt_get = tmp_path / "apt-get"
+    apt_get.touch()
+    monkeypatch.setattr(update_mod, "_APT_GET", apt_get)
+    monkeypatch.setattr(update_mod, "_apt_versions", lambda: ("0.4.0", "0.4.1"))
+    monkeypatch.setattr(update_mod, "_current_channel", lambda: "v0.4")
+    calls = []
+    monkeypatch.setattr(
+        update_mod, "_run_visible", lambda command: calls.append(command) or _completed()
+    )
+    result = runner.invoke(app, ["update", "--to", "0.4", "--apply", "--yes"])
+    assert result.exit_code == 0, result.output
+    assert calls[-1] == [str(apt_get), "install", "--only-upgrade", "--yes", "rvs=0.4.1"]
+
+
+def test_update_to_rejects_package_downgrade_before_source_change(monkeypatch):
+    monkeypatch.setattr(update_mod, "_apt_versions", lambda: ("0.5.0", "0.3.4"))
+    monkeypatch.setattr(update_mod, "_current_channel", lambda: "v0.3")
+    monkeypatch.setattr(
+        update_mod,
+        "_channel_manifest",
+        lambda: {"channels": {"v0.4": {"latest": "0.4.0", "status": "supported"}}},
+    )
+    changed = []
+    monkeypatch.setattr(update_mod, "_install_source", changed.append)
+    result = runner.invoke(app, ["update", "--to", "0.4", "--apply", "--yes"])
+    assert result.exit_code == 1
+    assert "not newer" in result.stderr
+    assert changed == []
+
+
+def test_update_to_restores_source_if_installed_package_changes(monkeypatch, tmp_path):
+    versions = iter((("0.3.4", "0.3.4"), ("0.5.0", "0.4.0")))
+    monkeypatch.setattr(update_mod, "_apt_versions", lambda: next(versions))
+    monkeypatch.setattr(update_mod, "_current_channel", lambda: "v0.3")
+    monkeypatch.setattr(
+        update_mod,
+        "_channel_manifest",
+        lambda: {"channels": {"v0.4": {"latest": "0.4.0", "status": "supported"}}},
+    )
+    source = tmp_path / "source.list"
+    source.write_text("previous source\n")
+    monkeypatch.setattr(update_mod, "_APT_SOURCE", source)
+    monkeypatch.setattr(update_mod, "_install_source", lambda _: True)
+    restored, calls = [], []
+    monkeypatch.setattr(update_mod, "_restore_source", restored.append)
+    monkeypatch.setattr(
+        update_mod, "_run_visible", lambda command: calls.append(command) or _completed()
+    )
+    result = runner.invoke(app, ["update", "--to", "0.4", "--apply", "--yes"])
+    assert result.exit_code == 1
+    assert restored == ["previous source\n"]
+    assert calls == [[str(update_mod._APT_GET), "update"]]

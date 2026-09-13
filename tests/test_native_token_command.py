@@ -5,6 +5,7 @@ import httpx
 import pytest
 from rvs import output
 from rvs.artifacts import auth_commands
+from rvs.artifacts.discovery import Discovery
 from rvs.auth import credentials
 from rvs.cli import app
 from rvs.client import ApiClient, ApiError
@@ -25,7 +26,8 @@ def issuer(monkeypatch):
             "access_token": SECRET,
             "expires_in": 14400,
             "operations": ["download"],
-            "native_path": "/in_abcdefgh/r_abcdefgh",
+            "token_type": "bearer",
+            "registry_kinds": ["pypi"],
         },
     )
     target = SimpleNamespace(
@@ -36,20 +38,21 @@ def issuer(monkeypatch):
         repository_name_cache="packages",
         namespace_realm="internal",
         registry_kind="pypi",
+        display_selector="space/packages",
     )
 
     def resolve(*args, **kwargs):
         print("Resolved fixture target")
-        return "fixture", SimpleNamespace(customer_id="customer"), target
+        return Discovery("fixture", target, ("pypi",), ("in_abcdefgh", "r_abcdefgh"))
 
-    monkeypatch.setattr(auth_commands, "resolve_target", resolve)
+    monkeypatch.setattr(auth_commands, "discover", resolve)
     monkeypatch.setattr(ApiClient, "from_profile", lambda *args, **kwargs: client)
     yield client
     output.set_json(False)
 
 
 def test_manual_default_prints_only_the_secret_to_stdout(issuer):
-    result = runner.invoke(app, ["artifacts", "auth", "print-token", "--target", "space/packages"])
+    result = runner.invoke(app, ["art", "token", "mint", "--target", "space/packages"])
     assert result.exit_code == 0, result.output
     assert result.stdout == SECRET + "\n"
     assert "Resolved fixture target" in result.stderr
@@ -57,7 +60,7 @@ def test_manual_default_prints_only_the_secret_to_stdout(issuer):
     assert path == "/package-credentials"
     assert payload["duration_seconds"] == 14400
     assert payload["operations"] == ["download"]
-    assert payload["registry_kind"] == "pypi"
+    assert payload["registry_kinds"] == ["pypi"]
 
 
 def test_manual_kind_is_required_only_when_target_is_ambiguous(issuer, monkeypatch):
@@ -72,14 +75,16 @@ def test_manual_kind_is_required_only_when_target_is_ambiguous(issuer, monkeypat
     )
     monkeypatch.setattr(
         auth_commands,
-        "resolve_target",
-        lambda *args, **kwargs: ("fixture", SimpleNamespace(customer_id="customer"), target),
+        "discover",
+        lambda *args, **kwargs: Discovery(
+            "fixture", target, ("pypi", "container"), ("in_abcdefgh", "r_abcdefgh")
+        ),
     )
 
-    result = runner.invoke(app, ["art", "auth", "print-token", "--target", "space/packages"])
+    result = runner.invoke(app, ["art", "token", "mint", "--target", "space/packages"])
 
     assert result.exit_code == 1
-    assert "supports more than one package format" in result.stderr
+    assert "Select one enabled format" in result.stderr
     issuer.issue_native.assert_not_called()
 
 
@@ -89,18 +94,18 @@ def test_manual_json_and_publish_are_explicit(issuer):
     result = runner.invoke(
         app,
         [
-            "artifacts",
-            "auth",
-            "print-token",
+            "--json",
+            "art",
+            "token",
+            "mint",
             "--target",
             "space/packages",
-            "--kind",
-            "container",
+            "--format",
+            "pypi",
             "--access",
             "publish",
             "--duration",
             "12h",
-            "--json",
         ],
     )
     assert result.exit_code == 0, result.output
@@ -113,13 +118,13 @@ def test_manual_admin_requests_delete_without_changing_publish(issuer):
     result = runner.invoke(
         app,
         [
-            "artifacts",
-            "auth",
-            "print-token",
+            "art",
+            "token",
+            "mint",
             "--target",
             "space/packages",
-            "--kind",
-            "container",
+            "--format",
+            "pypi",
             "--access",
             "admin",
         ],
@@ -134,12 +139,12 @@ def test_invalid_lifetime_is_rejected_before_issuance(issuer, duration):
     result = runner.invoke(
         app,
         [
-            "artifacts",
-            "auth",
-            "print-token",
+            "art",
+            "token",
+            "mint",
             "--target",
             "space/packages",
-            "--kind",
+            "--format",
             "npm",
             "--duration",
             duration,

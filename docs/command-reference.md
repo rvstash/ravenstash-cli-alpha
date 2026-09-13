@@ -19,9 +19,8 @@ Run `rvs COMMAND --help` for every option accepted by an installed version.
 | `rvs profile rename OLD NEW` | Renames a profile. |
 | `rvs profile delete NAME` | Deletes a local profile. |
 
-When a package tool must connect without an `rvs` wrapper, run `rvs art auth
-print-token --target NAMESPACE/REPOSITORY`. The `--kind`, `--access`, and
-`--duration` flags are optional.
+When a package tool must connect without an `rvs` wrapper, run `rvs art token mint --target NAMESPACE/REPOSITORY`. The `--access` and
+`--duration` flags default to read and four hours. Select formats explicitly when the target enables more than one.
 
 ## Accounts and the current repository
 
@@ -46,15 +45,15 @@ when you want a different choice for only that command.
 | Command | What it does |
 | --- | --- |
 | `rvs art repo list` | Lists repositories. |
-| `rvs art repo create NAME --registry-kind FORMAT` | Creates a repository for one or more package formats. |
+| `rvs art repo create NAME --format FORMAT` | Creates a repository for one or more package formats. |
 | `rvs art repo show NAME` | Shows repository details. |
 | `rvs art repo rename OLD NEW` | Renames a repository. |
 | `rvs art repo delete NAME` | Deletes a repository after confirmation. |
 | `rvs art repo set-default FORMAT NAME` | Chooses the default repository for a package format. |
 | `rvs art repo defaults` | Lists the current defaults. |
 
-Supported formats are `pypi`, `npm`, `maven`, `container`, and `helm`. Repeat
-`--registry-kind` to create a repository that supports more than one format.
+Supported formats are `pypi`, `npm`, `maven`, `container`, and `helm`. Use commas
+or repeat `--format` to enable more than one.
 
 ## Package sources
 
@@ -72,9 +71,8 @@ Supported formats are `pypi`, `npm`, `maven`, `container`, and `helm`. Repeat
 | Command | What it does |
 | --- | --- |
 | `rvs art mirror list` | Lists private mirrors. |
-| `rvs art mirror add SOURCE` | Adds a Ravenstash-provided mirror. |
-| `rvs art mirror create --registry-kind FORMAT` | Adds the default mirror for a package format. |
-| `rvs art mirror create-custom NAME` | Adds a custom HTTPS package source. |
+| `rvs art mirror create SOURCE` | Adds a Ravenstash-provided mirror. |
+| `rvs art mirror create --format FORMAT` | Adds the default mirror for a package format. |
 | `rvs art mirror show MIRROR_ID` | Shows a mirror. |
 | `rvs art mirror set-age MIRROR_ID --min-age-hours HOURS` | Delays newly published packages for the chosen time. |
 | `rvs art mirror delete MIRROR_ID` | Deletes a mirror after confirmation. |
@@ -85,11 +83,11 @@ Supported formats are `pypi`, `npm`, `maven`, `container`, and `helm`. Repeat
 
 | Command | What it does |
 | --- | --- |
-| `rvs art package list --repo NAME --registry-kind FORMAT` | Lists packages. |
-| `rvs art package show PACKAGE --repo NAME --registry-kind FORMAT` | Shows a package and its versions. |
-| `rvs art package yank PACKAGE VERSION --repo NAME --registry-kind FORMAT` | Marks a version as withdrawn. |
-| `rvs art package delete-version PACKAGE VERSION --repo NAME --registry-kind FORMAT` | Deletes one version. |
-| `rvs art package delete PACKAGE --repo NAME --registry-kind FORMAT` | Deletes a package and all its versions. |
+| `rvs art package list --target NAME --format FORMAT` | Lists packages. |
+| `rvs art package show PACKAGE --target NAME --format FORMAT` | Shows a package and its versions. |
+| `rvs art package yank PACKAGE VERSION --target NAME --format FORMAT` | Marks a version as withdrawn. |
+| `rvs art package delete-version PACKAGE VERSION --target NAME --format FORMAT` | Deletes one version. |
+| `rvs art package delete PACKAGE --target NAME --format FORMAT` | Deletes a package and all its versions. |
 
 ## PyPI, npm, and Maven helpers
 
@@ -97,14 +95,10 @@ Supported formats are `pypi`, `npm`, `maven`, `container`, and `helm`. Repeat
 | --- | --- |
 | `rvs art pypi install PACKAGE...` | Installs Python packages. |
 | `rvs art pypi publish DIST_DIR` | Publishes Python package files. |
-| `rvs art pypi index-url` | Prints the private install address. |
-| `rvs art pypi upload-url` | Prints the private upload address. |
 | `rvs art npm install PACKAGE...` | Installs npm packages. |
 | `rvs art npm publish PACKAGE_DIR` | Publishes an npm package. |
-| `rvs art npm registry-url` | Prints the private npm address. |
 | `rvs art maven install GROUP:ARTIFACT:VERSION` | Downloads a Maven package. |
-| `rvs art maven deploy FILE --group GROUP --artifact ARTIFACT --version VERSION` | Publishes a Maven package. |
-| `rvs art maven repo-url` | Prints the private Maven address. |
+| `rvs art maven publish FILE --group-id GROUP --artifact-id ARTIFACT --version VERSION` | Publishes a Maven package. |
 
 The publishing commands ask for confirmation. Add `--yes` only in a protected
 automation job.
@@ -121,7 +115,7 @@ rvs npm NPM_ARGUMENTS...
 rvs mvn MAVEN_ARGUMENTS...
 rvs docker DOCKER_ARGUMENTS...
 rvs helm HELM_ARGUMENTS...
-rvs oras --rvs-kind container|helm ORAS_ARGUMENTS...
+rvs oras --rvs-format container|helm ORAS_ARGUMENTS...
 ```
 
 The commands accept `--rvs-profile`, `--rvs-account`, and `--rvs-target` where
@@ -130,7 +124,7 @@ applicable. Publishing commands also accept `--rvs-yes` for protected automation
 pnpm, Yarn, Bun, Gradle, and sbt can use Ravenstash package addresses, but there
 are no `rvs pnpm`, `rvs yarn`, `rvs bun`, `rvs gradle`, or `rvs sbt` commands.
 
-Use `rvs oci-reference --kind container|helm` to print the permanent Ravenstash
+Use `rvs art reference --format container|helm` to print the readable repository-qualified Ravenstash
 address for an image or chart.
 
 ## Local runtimes and CLI updates
@@ -146,7 +140,50 @@ address for an image or chart.
 | `rvs runtime doctor` | Checks the runtime setup. |
 | `rvs update` | Checks for a CLI update. |
 | `rvs update --apply` | Installs an update in the current release series. |
-| `rvs upgrade --to SERIES` | Moves to a newer release series after confirmation. |
+| `rvs update --to SERIES --apply` | Moves to a newer release series after confirmation. |
 
 See the [public CLI documentation](https://docs.ravenstash.com/cli/overview/) for
 task-focused guides and examples.
+
+## Native addresses and setup
+
+`rvs art endpoint --format FORMAT [--access read|publish]` prints one address.
+For Container/Helm this is the login host; other formats return the complete native
+URL. Read is the default. `rvs art reference [PATH[:TAG]|PATH@DIGEST] --format
+container|helm` prints a readable repository-qualified reference without adding a tag.
+Both commands use read-only discovery and work with leaf `--target/-t`, `--account`,
+and `--profile/-p` options.
+
+`rvs art native config TOOL` prints setup snippets and commands for `pip`, `uv`,
+`twine`, `npm`, `mvn` (`maven` also accepted), `docker`, `helm`, or `oras`. It does
+not mint credentials, execute tools, write files, select a target, or create mirrors.
+Pip always reads and Twine always publishes; both reject `--access`. Other tools
+default to read + publish for repositories and read for mirrors; `--access read`
+reduces the instructions. Explicit mirror publication is rejected. ORAS defaults
+to all enabled OCI formats, or accepts `--format container|helm`.
+
+Mint separately with `rvs art token mint --format container,helm --access publish`.
+Repeat `--format/-f` or use comma-separated values; `--all-formats` snapshots every
+enabled format on the exact repository. The selected target is used by default.
+Mirrors have one format and read access. Lifetimes are 15 minutes through 12 hours,
+default four hours, shortened by source expiry. `admin` adds native deletion.
+
+Use root `--json` for one structured result. Plain endpoint/reference/token output
+is one value; plain template output is a labelled document. Native wrappers keep
+the native tool's output. Diagnostics go to stderr for these capture-friendly commands.
+
+Custom mirror creation is available in the webapp. Existing custom mirrors remain
+available to CLI listing, selection, age changes, deletion, and upstream attachment.
+
+`rvs update --to SERIES` previews the selected newer release series without changing
+the active APT source. Add `--apply` to install. `--yes/-y` requires `--apply`.
+
+Multi-format options accept comma-separated values, repeated flags, or both:
+
+```bash
+rvs art repo create packages --format pypi,npm,maven,container,helm
+rvs art token mint --target platform/packages -f container -f helm
+```
+
+Whitespace is trimmed and duplicates are removed. Empty or unknown formats fail
+before any mutation. Commands requiring one format still accept only one.
