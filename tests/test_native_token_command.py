@@ -49,9 +49,7 @@ def issuer(monkeypatch):
 
 
 def test_manual_default_prints_only_the_secret_to_stdout(issuer):
-    result = runner.invoke(
-        app, ["artifacts", "auth", "print-token", "--target", "space/packages"]
-    )
+    result = runner.invoke(app, ["artifacts", "auth", "print-token", "--target", "space/packages"])
     assert result.exit_code == 0, result.output
     assert result.stdout == SECRET + "\n"
     assert "Resolved fixture target" in result.stderr
@@ -78,9 +76,7 @@ def test_manual_kind_is_required_only_when_target_is_ambiguous(issuer, monkeypat
         lambda *args, **kwargs: ("fixture", SimpleNamespace(customer_id="customer"), target),
     )
 
-    result = runner.invoke(
-        app, ["art", "auth", "print-token", "--target", "space/packages"]
-    )
+    result = runner.invoke(app, ["art", "auth", "print-token", "--target", "space/packages"])
 
     assert result.exit_code == 1
     assert "supports more than one package format" in result.stderr
