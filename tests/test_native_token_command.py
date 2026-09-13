@@ -77,7 +77,7 @@ def test_manual_kind_is_required_only_when_target_is_ambiguous(issuer, monkeypat
         auth_commands,
         "discover",
         lambda *args, **kwargs: Discovery(
-            "fixture", target, ("pypi", "container"), ("in_abcdefgh", "r_abcdefgh")
+            "fixture", target, ("pypi", "oci"), ("in_abcdefgh", "r_abcdefgh")
         ),
     )
 

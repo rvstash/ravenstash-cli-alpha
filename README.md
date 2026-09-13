@@ -87,11 +87,11 @@ Print instructions without changing files or creating credentials:
 rvs art native config pip
 rvs art native config oras
 rvs art endpoint --format npm
-rvs art reference backend:latest --format container
+rvs art reference backend:latest --format oci
 ```
 
-For tools outside the wrappers, `rvs art token mint --format container,helm
---access publish` creates one temporary credential for both formats in the selected
+For tools outside the wrappers, `rvs art token mint --format oci
+--access publish` creates one temporary credential for both content types in the selected
 repository. Native logins may share a host credential store; the templates use
 separate temporary OCI configs. A logout against a shared store can affect other tools.
 
@@ -136,9 +136,25 @@ Run the repository checks from this directory:
 Multi-format options accept comma-separated values, repeated flags, or both:
 
 ```bash
-rvs art repo create packages --format pypi,npm,maven,container,helm
+rvs art repo create packages --format pypi,npm,maven,oci
 rvs art token mint --target platform/packages -f container -f helm
 ```
 
 Whitespace is trimmed and duplicates are removed. Empty or unknown formats fail
 before any mutation. Commands requiring one format still accept only one.
+
+
+OCI is one repository format containing container images and Helm charts. Manage
+its graph without launching a native tool:
+
+```bash
+rvs art oci list --content-type helm_chart --target platform/packages
+rvs art oci manifest list charts/api
+rvs art oci manifest show charts/api@sha256:YOUR_DIGEST
+rvs art oci tag list charts/api
+```
+
+Lists expose `--limit` and `--cursor`; root `--json` retains pagination metadata.
+Use `rvs docker`, `rvs helm`, or `rvs oras` to transfer native content. ORAS needs
+no Ravenstash format flag. Wrapper credentials and logout changes stay in temporary
+configuration, including independent ORAS copy source/destination configs.

@@ -34,7 +34,7 @@ def found(monkeypatch):
     found = Discovery(
         "default",
         target,
-        ("pypi", "npm", "maven", "container", "helm"),
+        ("pypi", "npm", "maven", "oci"),
         ("in_abcdefgh", "r_abcdefgh"),
     )
     monkeypatch.setattr(primitives, "discover", lambda *args: found)
@@ -55,9 +55,9 @@ def found(monkeypatch):
         ("npm", ["npm"]),
         ("mvn", ["maven"]),
         ("maven", ["maven"]),
-        ("docker", ["container"]),
-        ("helm", ["helm"]),
-        ("oras", ["container", "helm"]),
+        ("docker", ["oci"]),
+        ("helm", ["oci"]),
+        ("oras", ["oci"]),
     ],
 )
 def test_templates_do_not_issue_credentials_or_write_config(found, tool, formats):
@@ -72,7 +72,7 @@ def test_templates_do_not_issue_credentials_or_write_config(found, tool, formats
     assert "--access admin" not in text
     assert "rvs art endpoint" in text
     if tool == "oras":
-        assert "--format container,helm" in text
+        assert "--format oci" in text
         assert text.count("--password-stdin") == 1
     if tool == "helm":
         assert "push api-1.2.0.tgz oci://oci.rvsta.sh/space/packages/charts" in text
@@ -104,8 +104,8 @@ def test_mirrors_default_to_read_and_never_downgrade_explicit_publish(found):
 
 
 def test_oras_only_prints_enabled_formats(found):
-    object.__setattr__(found, "formats", ("helm", "pypi"))
-    assert render(found, "oras", None, None)["formats"] == ["helm"]
+    object.__setattr__(found, "formats", ("oci", "pypi"))
+    assert render(found, "oras", None, None)["formats"] == ["oci"]
     with pytest.raises(ValueError):
         render(found, "oras", "container", None)
 
@@ -151,7 +151,7 @@ def test_reference_rejects_invalid_operand(operand):
     "operand", [None, "backend", "backend:latest", "charts/api:1.2.0", "backend@sha256:" + "a" * 64]
 )
 def test_reference_is_one_value_without_implicit_tag(found, operand):
-    args = ["art", "reference", "--format", "container"] + ([operand] if operand else [])
+    args = ["art", "reference", "--format", "oci"] + ([operand] if operand else [])
     result = runner.invoke(app, args)
     assert result.exit_code == 0, result.output
     assert (
@@ -161,10 +161,10 @@ def test_reference_is_one_value_without_implicit_tag(found, operand):
 
 def test_endpoint_requires_one_format_and_root_json_only(found):
     assert runner.invoke(app, ["art", "endpoint"]).exit_code == 1
-    result = runner.invoke(app, ["--json", "art", "endpoint", "--format", "helm"])
+    result = runner.invoke(app, ["--json", "art", "endpoint", "--format", "oci"])
     assert json.loads(result.stdout) == {
         "target": "space/packages",
-        "format": "helm",
+        "format": "oci",
         "access": "read",
         "endpoint": "oci.rvsta.sh",
     }
@@ -178,4 +178,4 @@ def test_token_format_parser_rejects_empty_unknown_and_all(values):
 
 
 def test_token_format_parser_flattens_and_deduplicates():
-    assert auth_commands.flatten_formats(["pypi, npm", "pypi", "helm"]) == ["pypi", "npm", "helm"]
+    assert auth_commands.flatten_formats(["pypi, npm", "pypi", "oci"]) == ["pypi", "npm", "oci"]

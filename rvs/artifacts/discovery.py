@@ -53,7 +53,7 @@ class Discovery:
         if access == "publish" and self.target.target_type != "repository":
             raise ValueError("Private mirrors are read-only.")
         registries = cfg.load().active_profile(self.profile).native_registries
-        if kind in {"container", "helm"}:
+        if kind in {"oci"}:
             return normalized_registry_host(registries.oci_registry_base_url)
         endpoints = registries.package(cast("PackageKind", kind))
         base = (
@@ -77,7 +77,7 @@ class Discovery:
     def reference(self, kind: str, operand: str | None = None) -> str:
         from ..oci.reference import qualify_reference
 
-        self.select_format(kind, ("container", "helm"))
+        self.select_format(kind, ("oci",))
         root = _friendly_oci_root(
             self.target.namespace_name_cache, self.target.repository_name_cache
         )

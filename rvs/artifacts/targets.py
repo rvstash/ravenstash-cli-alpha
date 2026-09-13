@@ -104,8 +104,7 @@ def _repository_target(entry: dict) -> cfg_mod.ArtifactTarget:
     repository_kinds = [
         item["format"]
         for item in repository.get("formats", [])
-        if isinstance(item, dict)
-        and item.get("format") in {"pypi", "npm", "maven", "container", "helm"}
+        if isinstance(item, dict) and item.get("format") in {"pypi", "npm", "maven", "oci"}
     ]
     inferred_kind = repository_kinds[0] if len(repository_kinds) == 1 else None
     return cfg_mod.ArtifactTarget(
@@ -189,7 +188,7 @@ def resolve_target(
 ) -> tuple[str, cfg_mod.AccountContext, cfg_mod.ArtifactTarget]:
     spec = parse_target(value)
     profile_name = profile or cfg_mod.current_profile_name()
-    if kind is not None and kind not in {"pypi", "npm", "maven", "container", "helm"}:
+    if kind is not None and kind not in {"pypi", "npm", "maven", "oci"}:
         output.fatal(f"Unknown format '{kind}'.")
     if spec.target_type != "repository":
         registry_kind: str | None = _package_kind(kind)

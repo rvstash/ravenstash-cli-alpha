@@ -26,12 +26,12 @@ from ..publishing import confirm_publish, oci_artifacts
 from ..runtime import tools
 from ..subprocesses import child_environment
 from ..tool_advisories import warn_if_old
-from . import docker, helm
+from . import docker, helm, oras
 from .registry import normalized_registry_host
 
 
 OciTool = Literal["docker", "helm", "oras"]
-OciRegistryKind = Literal["container", "helm"]
+OciRegistryKind = Literal["oci"]
 PackageOperation = Literal["download", "upload", "delete"]
 _OCI_COMPONENT = re.compile(r"^[a-z0-9]+(?:(?:[._]|__|-+)[a-z0-9]+)*$")
 _UNIQUE_ID = re.compile(r"^[23456789abcdefghijkmnpqrstuvwxyz]{8}$")
@@ -44,7 +44,6 @@ class OciOptions:
     target: str | None = None
     account: str | None = None
     customer_id: str | None = None
-    kind: OciRegistryKind | None = None
 
 
 @dataclass(frozen=True)
@@ -121,26 +120,12 @@ def _registry_url(profile: cfg_mod.ProfileConfig) -> tuple[str, str]:
     return value, normalized_registry_host(value)
 
 
-def _selected_kind(tool: OciTool, selected: OciRegistryKind | None) -> OciRegistryKind:
-    if tool == "docker":
-        if selected not in {None, "container"}:
-            output.fatal("rvs docker only works with the Container package format.")
-        return "container"
-    if tool == "helm":
-        if selected not in {None, "helm"}:
-            output.fatal("rvs helm only works with the Helm package format.")
-        return "helm"
-    if selected not in {"container", "helm"}:
-        output.fatal("rvs oras requires --rvs-format container or --rvs-format helm.")
-    return selected
-
-
 def resolve_route(
     tool: OciTool,
     options: OciOptions,
     operations: tuple[PackageOperation, ...] = ("download",),
 ) -> OciRoute:
-    kind = _selected_kind(tool, options.kind)
+    kind: OciRegistryKind = "oci"
     config = cfg_mod.load()
     profile_name = options.profile or cfg_mod.current_profile_name(config)
     customer_id = options.customer_id
@@ -347,19 +332,21 @@ def _operations_for(
     tool: OciTool,
     argv: list[str],
 ) -> tuple[PackageOperation, ...]:
-    arguments = {argument.lower() for argument in argv}
     if tool == "docker":
         return ("download", "upload") if docker.parse(argv).publishing else ("download",)
     if tool == "helm" and helm.parse(argv).publishing:
         return ("download", "upload")
-    if tool == "oras" and "delete" in arguments:
+    if tool == "oras" and oras.parse(argv).deleting:
         return ("download", "delete")
-    if tool == "oras" and arguments.intersection({"push", "cp", "copy", "attach", "tag"}):
+    if tool == "oras" and oras.parse(argv).publishing:
         return ("download", "upload")
     return ("download",)
 
 
 def run(tool: OciTool, argv: list[str], options: OciOptions) -> None:
+    if tool == "oras" and oras.local_only(argv):
+        _run_process([_executable(tool), *argv], child_environment({}))
+        return
     invocation = docker.parse(argv) if tool == "docker" else None
     helm_invocation = helm.parse(argv) if tool == "helm" else None
     route = resolve_route(tool, options, _operations_for(tool, argv))
@@ -380,7 +367,7 @@ def run(tool: OciTool, argv: list[str], options: OciOptions) -> None:
     publishing = (
         (invocation is not None and invocation.publishing)
         or (helm_invocation is not None and helm_invocation.publishing)
-        or (tool == "oras" and bool({"push", "cp", "copy", "attach", "tag"}.intersection(argv)))
+        or (tool == "oras" and oras.parse(argv).publishing)
     )
     if publishing:
         if route.account is None:
@@ -405,6 +392,21 @@ def run(tool: OciTool, argv: list[str], options: OciOptions) -> None:
         if helm_invocation is not None and helm_invocation.config is not None:
             source = helm_invocation.config
         registry_config = _write_registry_config(temp_dir, route, tool, source)
+        if tool == "oras":
+            try:
+                argv, sources = oras.registry_configs(argv)
+            except ValueError as exc:
+                output.fatal(str(exc))
+            injected: list[str] = []
+            for flag, selected in sources.items():
+                overlay_dir = temp_dir / flag.removeprefix("--")
+                overlay_dir.mkdir(mode=0o700)
+                overlay = _write_registry_config(
+                    overlay_dir, route, tool, Path(selected).expanduser() if selected else source
+                )
+                injected.extend((flag, str(overlay)))
+            end_options = argv.index("--") if "--" in argv else len(argv)
+            argv[end_options:end_options] = injected
         if tool == "docker":
             # Context TLS material and locally installed CLI plugins are directory-backed.
             for name in ("contexts", "cli-plugins"):

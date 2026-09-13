@@ -1,6 +1,6 @@
 """The public format vocabulary and shared set-valued option parser."""
 
-FORMATS = ("pypi", "npm", "maven", "container", "helm")
+FORMATS = ("pypi", "npm", "maven", "oci")
 
 
 def flatten_formats(values: list[str]) -> list[str]:

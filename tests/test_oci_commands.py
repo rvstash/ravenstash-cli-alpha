@@ -41,7 +41,7 @@ class _Api:
         if params.get("format") is None:
             assert "format" not in params
         else:
-            assert params["format"] in {"container", "helm"}
+            assert params["format"] in {"oci"}
         if params["selector"].startswith("in_"):
             assert "account_ref" not in params
         else:
@@ -58,8 +58,7 @@ class _Api:
                 "repository": {
                     "repository_name": "images",
                     "formats": [
-                        {"format": "container", "upstream_config_revision": 1},
-                        {"format": "helm", "upstream_config_revision": 1},
+                        {"format": "oci", "upstream_config_revision": 1},
                     ],
                     "namespace_name": "main",
                     "namespace_realm": "internal",
@@ -86,7 +85,7 @@ class _Api:
         return _Response(
             {
                 "access_token": "rvs_sltDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDA",
-                "native_paths": {"container": "/main/images", "helm": "/main/images"},
+                "native_paths": {"oci": "/main/images"},
                 "namespace_unique_ref": "in_abcdefgh",
                 "repository_unique_ref": "r_xyzabcde",
                 "namespace_name": "main",
@@ -149,8 +148,6 @@ account_ref = "ac_23456789"
         (
             "oras",
             [
-                "--rvs-format",
-                "container",
                 "push",
                 "oci.rvsta.sh/main/images/backend:latest",
                 "demo.txt",
@@ -227,8 +224,7 @@ def test_namespace_target_accepts_current_friendly_native_root(monkeypatch, tmp_
         def post(self, path: str, json=None) -> _Response:
             response = super().post(path, json)
             response.value["native_paths"] = {
-                "container": "/in_abcdefgh/r_xyzabcde",
-                "helm": "/in_abcdefgh/r_xyzabcde",
+                "oci": "/in_abcdefgh/r_xyzabcde",
             }
             return response
 
@@ -345,19 +341,13 @@ def test_native_signal_is_forwarded_with_shell_exit_code_and_secret_cleanup(
 
 
 @pytest.mark.parametrize("other_root", ["in_abcdefgh/r_23456789", "Main/Other"])
-def test_oras_requires_kind_and_rejects_second_ravenstash_target(
-    monkeypatch, tmp_path: Path, other_root
-) -> None:
+def test_oras_rejects_second_ravenstash_target(monkeypatch, tmp_path: Path, other_root) -> None:
     _setup(monkeypatch, tmp_path)
-    missing = runner.invoke(app, ["oras", "--rvs-target", "main/images", "discover"])
-    assert missing.exit_code != 0
 
     rejected = runner.invoke(
         app,
         [
             "oras",
-            "--rvs-format",
-            "container",
             "--rvs-target",
             "main/images",
             "cp",
@@ -399,8 +389,7 @@ def test_oci_reference_prints_stable_root_without_v2(monkeypatch, tmp_path: Path
         def post(self, path: str, json=None) -> _Response:
             response = super().post(path, json)
             response.value["native_paths"] = {
-                "container": "/in_abcdefgh/r_xyzabcde",
-                "helm": "/in_abcdefgh/r_xyzabcde",
+                "oci": "/in_abcdefgh/r_xyzabcde",
             }
             return response
 
@@ -416,7 +405,7 @@ def test_oci_reference_prints_stable_root_without_v2(monkeypatch, tmp_path: Path
             "reference",
             "team/api:1.2.3",
             "--format",
-            "helm",
+            "oci",
             "--target",
             "main/charts",
         ],
@@ -435,7 +424,7 @@ def test_oci_capability_rejects_noncanonical_native_path(monkeypatch, tmp_path: 
             return _Response(
                 {
                     "access_token": "rvs_sltDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDA",
-                    "native_paths": {"container": "/_abcdefgh/_xyzabcde"},
+                    "native_paths": {"oci": "/_abcdefgh/_xyzabcde"},
                 }
             )
 
@@ -464,7 +453,7 @@ def test_package_and_mirror_commands_reject_oci_kinds() -> None:
             "--target",
             "images",
             "--format",
-            "container",
+            "oci",
         ],
     )
     remote = runner.invoke(

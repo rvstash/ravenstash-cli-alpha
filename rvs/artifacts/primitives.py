@@ -57,7 +57,7 @@ def reference(
     try:
         with contextlib.redirect_stdout(sys.stderr):
             found = discover(target, profile, account, kind)
-            selected = found.select_format(kind, ("container", "helm"))
+            selected = found.select_format(kind, ("oci",))
             value = found.reference(selected, operand)
         result = {"target": found.target.display_selector, "format": selected, "reference": value}
         click.echo(json.dumps(result) if output.is_json() else value)

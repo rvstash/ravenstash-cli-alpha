@@ -250,8 +250,8 @@ def test_artifacts_repo_create_can_set_default_repo(monkeypatch, tmp_path: Path)
 @pytest.mark.parametrize(
     "flags",
     [
-        ["-f", "pypi,npm,maven,container,helm"],
-        ["-f", "pypi, npm", "--format", "maven", "-f", "container,helm,pypi"],
+        ["-f", "pypi,npm,maven,oci"],
+        ["-f", "pypi, npm", "--format", "maven", "-f", "oci,pypi"],
     ],
 )
 def test_repo_create_accepts_comma_separated_and_repeated_formats(monkeypatch, tmp_path, flags):
@@ -275,7 +275,7 @@ def test_repo_create_accepts_comma_separated_and_repeated_formats(monkeypatch, t
     _use_fake_client(monkeypatch, fake)
     result = runner.invoke(artifacts_cmd.app, ["repo", "create", "packages", *flags])
     assert result.exit_code == 0, result.output
-    assert fake.calls[-1][2]["formats"] == ["pypi", "npm", "maven", "container", "helm"]
+    assert fake.calls[-1][2]["formats"] == ["pypi", "npm", "maven", "oci"]
 
 
 @pytest.mark.parametrize("value", ["pypi,", ",npm", "pypi,unknown", " "])

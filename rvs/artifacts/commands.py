@@ -16,6 +16,7 @@ from ..devapi import collection_items
 from ..devapi import remote_cache as remote_cache_payload
 from .auth_commands import app as native_auth_app
 from .formats import FORMATS, flatten_formats
+from .oci_commands import app as oci_app
 from .primitives import endpoint, native_app, reference
 from .targets import (
     DEFAULT_OFFICIAL_SOURCES,
@@ -42,6 +43,7 @@ app.add_typer(repo_app, name="repo")
 repo_app.add_typer(upstream_app, name="upstream")
 app.add_typer(remote_app, name="mirror")
 app.add_typer(package_app, name="package")
+app.add_typer(oci_app, name="oci")
 app.add_typer(native_auth_app, name="token")
 app.add_typer(native_app, name="native")
 app.command("endpoint")(endpoint)
@@ -173,7 +175,7 @@ def target_clear(
 
 def _require_kind(kind: str) -> cfg_mod.RegistryKind:
     if kind not in FORMATS:
-        output.fatal(f"Unknown format '{kind}'. Use: pypi, npm, maven, container, helm")
+        output.fatal(f"Unknown format '{kind}'. Use: pypi, npm, maven, oci")
     return cast("cfg_mod.RegistryKind", kind)
 
 
@@ -324,7 +326,7 @@ def repo_list(
         None,
         "--format",
         "-f",
-        help="Format: pypi | npm | maven | container | helm.",
+        help="Format: pypi | npm | maven | oci.",
     ),
 ) -> None:
     """List repositories in the selected account's namespaces."""
@@ -557,7 +559,7 @@ def repo_set_default(
     account: str | None = typer.Option(None, "--account"),
     format: str = typer.Argument(
         ...,
-        help="Format: pypi | npm | maven | container | helm",
+        help="Format: pypi | npm | maven | oci",
         metavar="FORMAT",
     ),
     repo: str = typer.Argument(..., help=_REPOSITORY_NAME_HELP),

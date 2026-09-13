@@ -163,8 +163,7 @@ def test_artifact_alias_json_has_no_transition_warning(
         "pypi",
         "npm",
         "maven",
-        "container",
-        "helm",
+        "oci",
     }
     assert "DeprecationWarning" not in result.stderr
 

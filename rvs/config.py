@@ -67,7 +67,7 @@ import tomli_w
 from .paths import rvs_home
 
 
-RegistryKind = Literal["pypi", "npm", "maven", "container", "helm"]
+RegistryKind = Literal["pypi", "npm", "maven", "oci"]
 ArtifactTargetType = Literal["repository", "official_cache", "custom_cache"]
 NamespaceRealm = Literal["internal", "global"]
 
@@ -592,16 +592,9 @@ def _native_registries_from_mapping(
         except KeyError as exc:
             raise ValueError(f"{profile_name} {kind} registry endpoints are incomplete") from exc
 
-    raw_oci = value.get("container") or value.get("oci")
+    raw_oci = value.get("oci")
     if not isinstance(raw_oci, dict) or "registry_base_url" not in raw_oci:
-        raise ValueError(f"{profile_name} container registry endpoint is missing")
-    raw_helm = value.get("helm")
-    if isinstance(raw_helm, dict) and raw_helm.get("registry_base_url") != raw_oci.get(
-        "registry_base_url"
-    ):
-        raise ValueError(
-            f"{profile_name} container and Helm registry endpoints must share one OCI host"
-        )
+        raise ValueError(f"{profile_name} OCI registry endpoint is missing")
     discovered_oci_url = validate_service_url(
         str(raw_oci["registry_base_url"]), label=f"{profile_name} OCI registry URL"
     )
@@ -639,7 +632,7 @@ def _artifact_target_from_mapping(value: object) -> ArtifactTarget | None:
     ):
         return None
     registry_kind = value.get("format")
-    if registry_kind not in {None, "pypi", "npm", "maven", "container", "helm"}:
+    if registry_kind not in {None, "pypi", "npm", "maven", "oci"}:
         return None
     return ArtifactTarget(
         target_type=cast("ArtifactTargetType", target_type),
@@ -1101,7 +1094,7 @@ def _validate_raw_config(raw: dict) -> None:
             raise ValueError(f"registries must be a table at {profile_path}.registries")
         for registry_kind, defaults in registries.items():
             target_path = f"{profile_path}.registries.{registry_kind}"
-            if registry_kind not in {"pypi", "npm", "maven", "container", "helm"}:
+            if registry_kind not in {"pypi", "npm", "maven", "oci"}:
                 raise ValueError(f"invalid format at {target_path}")
             if not isinstance(defaults, dict):
                 raise ValueError(f"invalid registry defaults at {target_path}")

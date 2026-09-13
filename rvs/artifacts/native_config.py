@@ -19,8 +19,8 @@ TOOLS = {
     "twine": "pypi",
     "npm": "npm",
     "mvn": "maven",
-    "docker": "container",
-    "helm": "helm",
+    "docker": "oci",
+    "helm": "oci",
 }
 
 
@@ -48,12 +48,12 @@ def render(found: Discovery, tool: str, kind: str | None, access: str | None) ->
         raise ValueError("Private mirrors are read-only; publication is not available.")
     if tool == "oras":
         formats = (
-            [found.select_format(kind, ("container", "helm"))]
+            [found.select_format(kind, ("oci",))]
             if kind
-            else [item for item in found.formats if item in {"container", "helm"}]
+            else [item for item in found.formats if item in {"oci"}]
         )
         if not formats:
-            raise ValueError("ORAS requires an enabled Container or Helm format.")
+            raise ValueError("ORAS requires an enabled OCI format.")
     else:
         expected = TOOLS[tool]
         if kind is not None and kind != expected:
@@ -206,13 +206,18 @@ chmod 700 "$RVS_OCI_CONFIG"
                 if push:
                     text += f"\n{command} push api-1.2.0.tgz oci://{root}/charts{transport}"
             else:
-                path = "backend:latest" if fmt == "container" else "charts/api:1.2.0"
-                ref = found.reference(fmt, path)
-                text = f'# {fmt.title()}: copy an existing supported {"image" if fmt == "container" else "Helm chart"} graph.\n{command} manifest fetch --registry-config "$RVS_OCI_CONFIG/oras.json" {ref}{transport}'
-                if push:
-                    text += f'\n{command} cp --from-registry-config "$RVS_OCI_CONFIG/oras.json" --to-registry-config "$RVS_OCI_CONFIG/oras.json" SOURCE_REGISTRY/{path} {ref}'
-                    if found.oci_plain_http:
-                        text += " --to-plain-http"
+                for label, path in (
+                    ("Container OCI", "images/api:latest"),
+                    ("Helm OCI", "charts/api:1.2.0"),
+                ):
+                    ref = found.reference(fmt, path)
+                    text = f'# {label}: copy an existing supported graph.\n{command} manifest fetch --registry-config "$RVS_OCI_CONFIG/oras.json" {ref}{transport}'
+                    if push:
+                        text += f'\n{command} cp --from-registry-config "$RVS_OCI_CONFIG/oras.json" --to-registry-config "$RVS_OCI_CONFIG/oras.json" SOURCE_REGISTRY/{path} {ref}'
+                        if found.oci_plain_http:
+                            text += " --to-plain-http"
+                    add("command", text)
+                continue
             add("command", text)
         add(
             "command",
