@@ -5,7 +5,7 @@ from rvs.oci import helm
 from rvs.oci.runner import _operations_for
 
 
-ROOT = "registry.example/in_abcdefgh/r_xyzabcde"
+ROOT = "registry.example/in_abcdefgh/ar_xyzabcde"
 
 
 @pytest.mark.parametrize(

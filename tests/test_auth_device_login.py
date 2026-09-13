@@ -77,7 +77,7 @@ def _write_profiles_config(
     config_dir.mkdir()
     config_file.write_text(
         f"""
-config_version = 4
+config_version = 5
 default_profile = "{default_profile}"
 
 [profiles.default]
@@ -128,6 +128,7 @@ def test_config_token_is_ignored(monkeypatch, tmp_path: Path) -> None:
     config_dir.mkdir()
     config_file.write_text(
         """
+config_version = 5
 default_profile = "default"
 
 [profiles.default]
@@ -149,7 +150,7 @@ def test_staging_profile_uses_env_api_url_when_not_configured(monkeypatch, tmp_p
     config_dir = tmp_path / ".rvs"
     config_dir.mkdir()
     config_file = config_dir / "config.toml"
-    config_file.write_text('default_profile = "default"\n', encoding="utf-8")
+    config_file.write_text('config_version = 5\ndefault_profile = "default"\n', encoding="utf-8")
     monkeypatch.setattr(cfg_mod, "CONFIG_DIR", config_dir)
     monkeypatch.setattr(cfg_mod, "CONFIG_FILE", config_file)
     monkeypatch.setattr(cfg_mod, "PROFILE_ENV_FILE", config_dir / "profiles.env")

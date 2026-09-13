@@ -59,7 +59,7 @@ def transport(monkeypatch):
         select_format=Mock(),
         target=SimpleNamespace(
             target_type="repository",
-            repository_unique_ref="r_23456789",
+            repository_unique_ref="ar_23456789",
             display_selector="main/packages",
         ),
     )
@@ -81,7 +81,7 @@ def test_oci_list_has_one_format_and_preserves_cursor_envelope(transport):
     assert result.exit_code == 0, result.output
     assert json.loads(result.stdout) == {"items": [], "next_cursor": "next"}
     transport.get.assert_called_once_with(
-        "/repositories/r_23456789/oci/paths", params={"content_type": "helm_chart", "limit": 1}
+        "/repositories/ar_23456789/oci/paths", params={"content_type": "helm_chart", "limit": 1}
     )
 
 
@@ -113,7 +113,7 @@ def test_oci_exact_references_reach_typed_routes(transport, args, method, suffix
     result = runner.invoke(app, ["art", "oci", *args])
     assert result.exit_code == 0, result.output
     getattr(transport, method).assert_called_once_with(
-        "/repositories/r_23456789/oci/" + suffix, params=params
+        "/repositories/ar_23456789/oci/" + suffix, params=params
     )
 
 

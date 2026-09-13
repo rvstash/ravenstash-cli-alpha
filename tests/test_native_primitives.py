@@ -24,10 +24,10 @@ def found(monkeypatch):
     target = config.ArtifactTarget(
         target_type="repository",
         customer_id="customer",
-        stable_selector="in_abcdefgh/r_abcdefgh",
+        stable_selector="in_abcdefgh/ar_abcdefgh",
         display_selector="space/packages",
         namespace_unique_ref="in_abcdefgh",
-        repository_unique_ref="r_abcdefgh",
+        repository_unique_ref="ar_abcdefgh",
         namespace_name_cache="Space",
         repository_name_cache="Packages",
     )
@@ -35,7 +35,7 @@ def found(monkeypatch):
         "default",
         target,
         ("pypi", "npm", "maven", "oci"),
-        ("in_abcdefgh", "r_abcdefgh"),
+        ("in_abcdefgh", "ar_abcdefgh"),
     )
     monkeypatch.setattr(primitives, "discover", lambda *args: found)
     monkeypatch.setattr(config, "save", lambda *_: pytest.fail("template wrote configuration"))

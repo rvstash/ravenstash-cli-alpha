@@ -72,15 +72,13 @@ def parse_target(value: str) -> TargetSpec:
         if len(parts) != 2 or not all(parts):
             output.fatal("Repository targets must use namespace/repository.")
         namespace_part, repository_part = parts
-        if namespace_part.startswith("w_"):
-            output.fatal("w_ namespace references are retired; use an in_ reference.")
-        typed = namespace_part.startswith(("in_", "gn_", "r_")) or repository_part.startswith(
-            ("in_", "gn_", "r_")
+        typed = namespace_part.startswith(("in_", "gn_", "ar_")) or repository_part.startswith(
+            ("in_", "gn_", "ar_")
         )
         if typed and not (
-            namespace_part.startswith(("in_", "gn_")) and repository_part.startswith("r_")
+            namespace_part.startswith(("in_", "gn_")) and repository_part.startswith("ar_")
         ):
-            output.fatal("Stable repository targets require a matching typed namespace/r_ pair.")
+            output.fatal("Stable repository targets require a matching typed namespace/ar_ pair.")
         if typed:
             namespace_realm = "global" if namespace_part.startswith("gn_") else "internal"
     return TargetSpec(
@@ -156,8 +154,8 @@ def is_stable_repository_selector(selector: str) -> bool:
     are accepted only by repository-management commands, as before.
     """
     parts = selector.split("/")
-    return (len(parts) == 1 and parts[0].startswith("r_")) or (
-        len(parts) == 2 and parts[0].startswith(("in_", "gn_")) and parts[1].startswith("r_")
+    return (len(parts) == 1 and parts[0].startswith("ar_")) or (
+        len(parts) == 2 and parts[0].startswith(("in_", "gn_")) and parts[1].startswith("ar_")
     )
 
 

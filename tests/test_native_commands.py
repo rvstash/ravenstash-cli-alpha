@@ -87,7 +87,7 @@ class _FakeDevApi:
                     "namespace_unique_ref": "in_abcdefgh",
                     "namespace_name": "staging",
                     "namespace_realm": "internal",
-                    "repository_unique_ref": "r_xyzabcde",
+                    "repository_unique_ref": "ar_xyzabcde",
                     "formats": [
                         {"format": "pypi", "upstream_config_revision": 1},
                         {"format": "npm", "upstream_config_revision": 1},
@@ -134,7 +134,7 @@ def _isolate_config(monkeypatch: Any, tmp_path: Path) -> None:
     config_file = config_dir / "config.toml"
     config_file.write_text(
         f"""
-config_version = 4
+config_version = 5
 default_profile = "staging"
 
 [profiles.staging]
@@ -160,13 +160,13 @@ mirror_base_url = "{MAVEN_MIRROR_URL}"
 registry_base_url = "https://images.example.test"
 
 [profiles.staging.registries.pypi]
-default_repo = "in_abcdefgh/r_xyzabcde"
+default_repo = "in_abcdefgh/ar_xyzabcde"
 
 [profiles.staging.registries.npm]
-default_repo = "in_abcdefgh/r_xyzabcde"
+default_repo = "in_abcdefgh/ar_xyzabcde"
 
 [profiles.staging.registries.maven]
-default_repo = "in_abcdefgh/r_xyzabcde"
+default_repo = "in_abcdefgh/ar_xyzabcde"
 """.strip(),
         encoding="utf-8",
     )
@@ -271,7 +271,7 @@ def test_native_npm_respects_project_npmrc_and_injects_path_scoped_auth(
     _isolate_config(monkeypatch, tmp_path)
     _mock_native_tools(monkeypatch)
     (tmp_path / ".npmrc").write_text(
-        f"@acme:registry={NPM_READ_URL}/in_abcdefgh/r_xyzabcde/\n",
+        f"@acme:registry={NPM_READ_URL}/in_abcdefgh/ar_xyzabcde/\n",
         encoding="utf-8",
     )
     calls: list[dict[str, Any]] = []
@@ -511,7 +511,7 @@ def test_native_pip_respects_existing_index_and_injects_temp_netrc(
     monkeypatch.delenv("PIP_KEYRING_PROVIDER", raising=False)
     monkeypatch.setenv(
         "PIP_INDEX_URL",
-        f"{PYPI_READ_URL}/in_abcdefgh/r_xyzabcde/simple/",
+        f"{PYPI_READ_URL}/in_abcdefgh/ar_xyzabcde/simple/",
     )
     calls: list[dict[str, Any]] = []
     netrc_texts: list[str] = []
@@ -885,7 +885,7 @@ def test_missing_target_never_launches_or_infers_from_native_config(
     _isolate_config(monkeypatch, tmp_path)
     _mock_native_tools(monkeypatch)
     path = cfg_mod.CONFIG_FILE
-    path.write_text(path.read_text().replace('default_repo = "in_abcdefgh/r_xyzabcde"', ""))
+    path.write_text(path.read_text().replace('default_repo = "in_abcdefgh/ar_xyzabcde"', ""))
     monkeypatch.setenv("PIP_INDEX_URL", f"{PYPI_READ_URL}/staging/repo/simple/")
     calls = []
     _capture_run(monkeypatch, calls)
@@ -951,7 +951,7 @@ def test_foreign_lock_sources_warn_without_changes(
         (f"{NPM_READ_URL}@attacker.example/secret-path", True),
         (f"{NPM_READ_URL.replace('https://', 'http://')}/staging/repo/demo.tgz", True),
         (f"{NPM_READ_URL}:444/staging/repo/demo.tgz", True),
-        (f"{NPM_READ_URL}/in_another/r_another/demo.tgz", True),
+        (f"{NPM_READ_URL}/in_another/ar_another/demo.tgz", True),
     ],
 )
 def test_native_source_warning_uses_exact_target_origin(monkeypatch, tmp_path, source, warns):

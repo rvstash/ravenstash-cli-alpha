@@ -4,7 +4,7 @@ import pytest
 from rvs.oci.docker import expand, parse
 
 
-ROOT = "registry.example:5000/in_abcdefgh/r_xyzabcde"
+ROOT = "registry.example:5000/in_abcdefgh/ar_xyzabcde"
 
 
 @pytest.mark.parametrize("value", ["team/api:RC1", "api:1.0", "team/backend/worker:dev"])

@@ -23,7 +23,10 @@ def _isolate_config(monkeypatch, tmp_path: Path, content: str = "") -> None:
     config_dir = tmp_path / ".rvs"
     config_dir.mkdir()
     config_file = config_dir / "config.toml"
-    config_file.write_text(content or 'default_profile = "default"\n', encoding="utf-8")
+    normalized = content or 'default_profile = "default"\n'
+    if "config_version" not in normalized:
+        normalized = f"config_version = 5\n{normalized}"
+    config_file.write_text(normalized, encoding="utf-8")
     monkeypatch.setattr(cfg_mod, "CONFIG_DIR", config_dir)
     monkeypatch.setattr(cfg_mod, "CONFIG_FILE", config_file)
 

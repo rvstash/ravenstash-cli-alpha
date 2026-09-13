@@ -95,7 +95,7 @@ def _repository_entry(name: str = "repo") -> dict[str, Any]:
             "namespace_name": "test-account",
             "namespace_realm": "internal",
             "namespace_unique_ref": "in_abcdefgh",
-            "repository_unique_ref": "r_xyzabcde",
+            "repository_unique_ref": "ar_xyzabcde",
             "formats": [
                 {"format": kind, "upstream_config_revision": 7} for kind in ("pypi", "npm", "maven")
             ],
@@ -110,7 +110,7 @@ def _isolate_config(monkeypatch, tmp_path: Path, content: str | None = None) -> 
     config_file.write_text(
         content
         or """
-config_version = 4
+config_version = 5
 default_profile = "default"
 
 [profiles.default]
@@ -121,22 +121,22 @@ account_ref = "ac_23456789"
 account_ref = "ac_23456789"
 
 [profiles.default.registries.pypi]
-default_repo = "in_abcdefgh/r_xyzabcde"
+default_repo = "in_abcdefgh/ar_xyzabcde"
 
 [profiles.default.registries.npm]
-default_repo = "in_abcdefgh/r_xyzabcde"
+default_repo = "in_abcdefgh/ar_xyzabcde"
 
 [profiles.default.registries.maven]
-default_repo = "in_abcdefgh/r_xyzabcde"
+default_repo = "in_abcdefgh/ar_xyzabcde"
 
 [profiles.staging.registries.pypi]
-default_repo = "in_abcdefgh/r_xyzabcde"
+default_repo = "in_abcdefgh/ar_xyzabcde"
 
 [profiles.staging.registries.npm]
-default_repo = "in_abcdefgh/r_xyzabcde"
+default_repo = "in_abcdefgh/ar_xyzabcde"
 
 [profiles.staging.registries.maven]
-default_repo = "in_abcdefgh/r_xyzabcde"
+default_repo = "in_abcdefgh/ar_xyzabcde"
 """.strip(),
         encoding="utf-8",
     )
@@ -243,7 +243,7 @@ def test_artifacts_repo_create_can_set_default_repo(monkeypatch, tmp_path: Path)
             },
         ),
     ]
-    assert cfg_mod.load().registry_defaults("npm").default_repo == "in_abcdefgh/r_xyzabcde"
+    assert cfg_mod.load().registry_defaults("npm").default_repo == "in_abcdefgh/ar_xyzabcde"
     assert "with formats: npm" in result.output
 
 
@@ -422,15 +422,15 @@ def test_artifacts_repo_rename_updates_matching_profile_default(
         ),
         (
             "PATCH",
-            "/repositories/r_xyzabcde",
+            "/repositories/ar_xyzabcde",
             {"repository_name": new_name},
         ),
     ]
     saved = cfg_mod.load().registry_defaults("pypi", "default")
-    assert saved.default_repo == "in_abcdefgh/r_xyzabcde"
+    assert saved.default_repo == "in_abcdefgh/ar_xyzabcde"
     assert saved.namespace_name_cache == "test-account"
     assert saved.repository_name_cache == new_name
-    assert saved.repository_unique_ref == "r_xyzabcde"
+    assert saved.repository_unique_ref == "ar_xyzabcde"
 
 
 def test_artifacts_remote_management_and_upstream_configuration(
@@ -519,7 +519,7 @@ def test_artifacts_remote_management_and_upstream_configuration(
         ),
         (
             "POST",
-            "/repositories/r_xyzabcde/formats/pypi/upstreams",
+            "/repositories/ar_xyzabcde/formats/pypi/upstreams",
             {
                 "source_type": "remote",
                 "remote_cache_ref": "rc_abcdefgh",
@@ -654,7 +654,7 @@ def test_artifacts_repo_upstream_add_private_uses_source_lane_and_zero_age_defau
     source = _repository_entry("shared")
     source["repository"] = {
         **source["repository"],
-        "repository_unique_ref": "r_shared01",
+        "repository_unique_ref": "ar_shared01",
         "namespace_name": "libraries",
         "namespace_realm": "internal",
         "formats": [{"format": "pypi", "upstream_config_revision": 1}],
@@ -690,10 +690,10 @@ def test_artifacts_repo_upstream_add_private_uses_source_lane_and_zero_age_defau
     assert result.exit_code == 0
     assert fake.calls[-1] == (
         "POST",
-        "/repositories/r_xyzabcde/formats/pypi/upstreams",
+        "/repositories/ar_xyzabcde/formats/pypi/upstreams",
         {
             "source_type": "private",
-            "source_repository_unique_ref": "r_shared01",
+            "source_repository_unique_ref": "ar_shared01",
             "position": 1,
             "expected_revision": 7,
             "min_age_hours": 0.0,
@@ -711,7 +711,7 @@ def test_artifacts_repo_upstream_add_uses_explicit_sparse_position(
     source = _repository_entry("shared")
     source["repository"] = {
         **source["repository"],
-        "repository_unique_ref": "r_shared01",
+        "repository_unique_ref": "ar_shared01",
         "namespace_name": "libraries",
         "namespace_realm": "internal",
         "formats": [{"format": "pypi", "upstream_config_revision": 1}],
@@ -784,7 +784,7 @@ def test_artifacts_repo_upstream_reorder_is_removed_and_remove_uses_format_route
     assert removed.exit_code == 0
     assert (
         "DELETE",
-        "/repositories/r_xyzabcde/formats/npm/upstreams/attachment-b",
+        "/repositories/ar_xyzabcde/formats/npm/upstreams/attachment-b",
         {"expected_revision": 7},
     ) in fake.calls
 
@@ -911,7 +911,7 @@ def test_artifacts_package_list_and_show_use_repository_package_paths(
         ),
         (
             "GET",
-            "/repositories/r_xyzabcde/formats/pypi/packages",
+            "/repositories/ar_xyzabcde/formats/pypi/packages",
             None,
         ),
         (
@@ -925,7 +925,7 @@ def test_artifacts_package_list_and_show_use_repository_package_paths(
         ),
         (
             "GET",
-            "/repositories/r_xyzabcde/formats/pypi/packages/detail",
+            "/repositories/ar_xyzabcde/formats/pypi/packages/detail",
             {"package_name": "demo"},
         ),
     ]
@@ -1054,7 +1054,7 @@ def test_artifacts_package_mutations_call_expected_api_paths(monkeypatch, tmp_pa
         ),
         (
             "DELETE",
-            "/repositories/r_xyzabcde/formats/pypi/packages/detail",
+            "/repositories/ar_xyzabcde/formats/pypi/packages/detail",
             {"package_name": "demo"},
         ),
         (
@@ -1068,7 +1068,7 @@ def test_artifacts_package_mutations_call_expected_api_paths(monkeypatch, tmp_pa
         ),
         (
             "DELETE",
-            "/repositories/r_xyzabcde/formats/pypi/packages/version",
+            "/repositories/ar_xyzabcde/formats/pypi/packages/version",
             {"package_name": "demo", "version": "1.0.0"},
         ),
         (
@@ -1082,7 +1082,7 @@ def test_artifacts_package_mutations_call_expected_api_paths(monkeypatch, tmp_pa
         ),
         (
             "POST",
-            "/repositories/r_xyzabcde/formats/pypi/packages/version/yank",
+            "/repositories/ar_xyzabcde/formats/pypi/packages/version/yank",
             {
                 "json": {"yanked": True, "reason": "bad build"},
                 "params": {"package_name": "demo", "version": "1.0.1"},
@@ -1099,7 +1099,7 @@ def test_artifacts_package_mutations_call_expected_api_paths(monkeypatch, tmp_pa
         ),
         (
             "POST",
-            "/repositories/r_xyzabcde/formats/pypi/packages/version/yank",
+            "/repositories/ar_xyzabcde/formats/pypi/packages/version/yank",
             {
                 "json": {"yanked": False, "reason": None},
                 "params": {"package_name": "demo", "version": "1.0.1"},
@@ -1116,7 +1116,7 @@ def test_artifacts_package_mutations_call_expected_api_paths(monkeypatch, tmp_pa
         ),
         (
             "PATCH",
-            "/repositories/r_xyzabcde/formats/npm/packages/version/deprecation",
+            "/repositories/ar_xyzabcde/formats/npm/packages/version/deprecation",
             {
                 "json": {"deprecated": True, "message": "use version 3"},
                 "params": {"package_name": "demo", "version": "2.0.0"},
@@ -1133,7 +1133,7 @@ def test_artifacts_package_mutations_call_expected_api_paths(monkeypatch, tmp_pa
         ),
         (
             "PATCH",
-            "/repositories/r_xyzabcde/formats/npm/packages/version/deprecation",
+            "/repositories/ar_xyzabcde/formats/npm/packages/version/deprecation",
             {
                 "json": {"deprecated": False, "message": None},
                 "params": {"package_name": "demo", "version": "2.0.0"},

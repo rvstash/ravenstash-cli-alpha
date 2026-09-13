@@ -10,7 +10,7 @@ Config file shape
 -----------------
 ::
 
-    config_version = 4
+    config_version = 5
     default_profile = "default"
 
     [profiles.default]
@@ -40,13 +40,13 @@ Config file shape
     registry_base_url = "https://oci.rvsta.sh"
 
     [profiles.default.registries.pypi]
-    default_repo = "in_abcdefgh/r_m7nk3p4q"
+    default_repo = "in_abcdefgh/ar_m7nk3p4q"
 
     [profiles.default.registries.npm]
-    default_repo = "in_abcdefgh/r_n4b6v8cx"
+    default_repo = "in_abcdefgh/ar_n4b6v8cx"
 
     [profiles.default.registries.maven]
-    default_repo = "in_abcdefgh/r_p2q4r6st"
+    default_repo = "in_abcdefgh/ar_p2q4r6st"
 """
 
 from __future__ import annotations
@@ -79,12 +79,12 @@ SESSIONS_DIR_NAME = "sessions"
 
 DEFAULT_API_URL = "https://api.ravenstash.com"
 DEFAULT_REPOSITORY_DOMAIN = "rvsta.sh"
-CURRENT_CONFIG_VERSION = 4
+CURRENT_CONFIG_VERSION = 5
 _UNIQUE_ID_FRAGMENT = r"[23456789abcdefghijkmnpqrstuvwxyz]{8}"
 _ACCOUNT_REF_RE = re.compile(rf"^ac_{_UNIQUE_ID_FRAGMENT}$")
 _INTERNAL_NAMESPACE_REF_RE = re.compile(rf"^in_{_UNIQUE_ID_FRAGMENT}$")
 _GLOBAL_NAMESPACE_REF_RE = re.compile(rf"^gn_{_UNIQUE_ID_FRAGMENT}$")
-_REPOSITORY_REF_RE = re.compile(rf"^r_{_UNIQUE_ID_FRAGMENT}$")
+_REPOSITORY_REF_RE = re.compile(rf"^ar_{_UNIQUE_ID_FRAGMENT}$")
 
 
 @dataclass(frozen=True)
@@ -721,307 +721,22 @@ def _load_raw() -> dict:
         return tomllib.load(f)
 
 
-def _canonical_mirror_url(value: str, kind: Literal["pypi", "npm", "maven"]) -> str:
-    """Move a conventional pre-rename cache host to its mirror hostname."""
-    parsed = urlsplit(value)
-    hostname = parsed.hostname
-    legacy_prefix = f"cache.{kind}."
-    if (
-        hostname is None
-        or parsed.username is not None
-        or parsed.password is not None
-        or not hostname.lower().startswith(legacy_prefix)
-    ):
-        return value
-    canonical_hostname = f"mirror.{kind}.{hostname[len(legacy_prefix) :]}"
-    netloc = canonical_hostname
-    if parsed.port is not None:
-        netloc = f"{netloc}:{parsed.port}"
-    return urlunsplit((parsed.scheme, netloc, parsed.path, parsed.query, parsed.fragment))
-
-
-def _migrate_config_v0_to_v1(raw: dict) -> None:
-    """Rename discovered cache endpoints without disturbing unrelated profile data."""
-    profiles = raw.get("profiles")
-    if isinstance(profiles, dict):
-        for profile in profiles.values():
-            if not isinstance(profile, dict):
-                continue
-            native_registries = profile.get("native_registries")
-            if not isinstance(native_registries, dict):
-                continue
-            for kind in ("pypi", "npm", "maven"):
-                endpoints = native_registries.get(kind)
-                if not isinstance(endpoints, dict):
-                    continue
-                legacy_url = endpoints.pop("cache_base_url", None)
-                if "mirror_base_url" not in endpoints and legacy_url is not None:
-                    endpoints["mirror_base_url"] = _canonical_mirror_url(str(legacy_url), kind)
-    raw["config_version"] = 1
-
-
-def _migrate_config_v1_to_v2(raw: dict) -> None:
-    """Rename persisted workspace fields and retire service-private identifiers."""
-
-    def normalized_namespace_ref(value: object) -> object:
-        if isinstance(value, str) and value.startswith("w_"):
-            return f"in_{value[2:]}"
-        return value
-
-    def rename_field(value: dict, old: str, new: str, *, path: str) -> None:
-        if old not in value:
-            return
-        old_value = value[old]
-        new_value = value.get(new)
-        normalized_old = (
-            normalized_namespace_ref(old_value) if old == "workspace_unique_ref" else old_value
-        )
-        normalized_new = (
-            normalized_namespace_ref(new_value) if new == "namespace_unique_ref" else new_value
-        )
-        if new in value and normalized_new != normalized_old:
-            raise ValueError(f"conflicting legacy and current values at {path}.{new}")
-        value[new] = normalized_old
-        value.pop(old)
-
-    def migrate_target(value: object, *, path: str) -> None:
-        if not isinstance(value, dict):
-            return
-        if value.get("target_type") == "private":
-            value["target_type"] = "repository"
-        is_repository = value.get("target_type") == "repository" or (
-            "default_repo" in value
-            and isinstance(value.get("default_repo"), str)
-            and not str(value["default_repo"]).startswith(("mirror:", "custom-mirror:"))
-        )
-        for old, new in (
-            ("workspace_unique_ref", "namespace_unique_ref"),
-            ("workspace_name_cache", "namespace_name_cache"),
-        ):
-            rename_field(value, old, new, path=path)
-        value.pop("workspace_id", None)
-        value.pop("namespace_id", None)
-        value.pop("repository_id", None)
-        if "namespace_unique_ref" in value:
-            value["namespace_unique_ref"] = normalized_namespace_ref(value["namespace_unique_ref"])
-        for selector_key in ("stable_selector", "default_repo"):
-            selector = value.get(selector_key)
-            if isinstance(selector, str) and selector.startswith("w_"):
-                value[selector_key] = f"in_{selector[2:]}"
-            elif (
-                isinstance(selector, str)
-                and is_repository
-                and ":" not in selector
-                and selector.count("/") == 1
-                and not selector.startswith(("in_", "gn_"))
-            ):
-                value[selector_key] = f"internal:{selector}"
-        display_selector = value.get("display_selector")
-        if (
-            isinstance(display_selector, str)
-            and value.get("target_type") == "repository"
-            and ":" not in display_selector
-            and display_selector.count("/") == 1
-            and not display_selector.startswith(("in_", "gn_"))
-        ):
-            value["display_selector"] = f"internal:{display_selector}"
-        if is_repository:
-            value["namespace_realm"] = "internal"
-
-    profiles = raw.get("profiles")
-    if isinstance(profiles, dict):
-        for profile_name, profile in profiles.items():
-            if not isinstance(profile, dict):
-                continue
-            accounts = profile.get("accounts")
-            if isinstance(accounts, dict):
-                for customer_id, account in accounts.items():
-                    if isinstance(account, dict):
-                        migrate_target(
-                            account.get("selected_target"),
-                            path=f"profiles.{profile_name}.accounts.{customer_id}.selected_target",
-                        )
-            registries = profile.get("registries")
-            if isinstance(registries, dict):
-                for registry_kind, defaults in registries.items():
-                    migrate_target(
-                        defaults,
-                        path=f"profiles.{profile_name}.registries.{registry_kind}",
-                    )
-    raw["config_version"] = 2
-
-
-def _migrate_raw_config(raw: dict) -> bool:
-    """Apply every config migration needed by this CLI release in order."""
-    raw_version = raw.get("config_version", 0)
-    if isinstance(raw_version, bool) or not isinstance(raw_version, int) or raw_version < 0:
-        raise ValueError("config_version must be a non-negative integer")
-    version: int = raw_version
-    if version > CURRENT_CONFIG_VERSION:
+def _validate_config_version(raw: dict) -> None:
+    """Accept only the current public-reference config format."""
+    if not raw:
+        raw["config_version"] = CURRENT_CONFIG_VERSION
+        return
+    version = raw.get("config_version")
+    if isinstance(version, bool) or not isinstance(version, int):
+        raise ValueError("config_version must be an integer")
+    if version != CURRENT_CONFIG_VERSION:
         raise ValueError(
-            f"config version {version} requires a newer rvs release "
-            f"(this release supports version {CURRENT_CONFIG_VERSION})"
+            f"config version {version} is unsupported; reconfigure with this rvs release"
         )
-
-    changed = False
-    while version < CURRENT_CONFIG_VERSION:
-        if version == 0:
-            _migrate_config_v0_to_v1(raw)
-        elif version == 1:
-            _migrate_config_v1_to_v2(raw)
-        elif version == 2:
-            _migrate_config_v2_to_v3(raw)
-        elif version == 3:
-            _migrate_config_v3_to_v4(raw)
-        else:
-            raise RuntimeError(f"rvs has no config migration from version {version}")
-        next_version = raw.get("config_version")
-        if (
-            isinstance(next_version, bool)
-            or not isinstance(next_version, int)
-            or next_version != version + 1
-        ):
-            raise RuntimeError(
-                f"config migration from version {version} did not produce version {version + 1}"
-            )
-        version = next_version
-        changed = True
-    return changed
-
-
-def _migrate_config_v2_to_v3(raw: dict) -> None:
-    """Remove obsolete selector notation while preserving account and resource IDs."""
-    profiles = raw.get("profiles", {})
-    if isinstance(profiles, dict):
-        for profile in profiles.values():
-            if not isinstance(profile, dict):
-                continue
-            targets = []
-            accounts = profile.get("accounts", {})
-            if isinstance(accounts, dict):
-                targets.extend(
-                    account.get("selected_target")
-                    for account in accounts.values()
-                    if isinstance(account, dict)
-                )
-            registries = profile.get("registries", {})
-            if isinstance(registries, dict):
-                targets.extend(registries.values())
-            for target in targets:
-                if not isinstance(target, dict):
-                    continue
-                for key in ("stable_selector", "display_selector", "default_repo"):
-                    selector = target.get(key)
-                    if isinstance(selector, str) and selector.startswith(("internal:", "global:")):
-                        realm = target.get("namespace_realm", "internal")
-                        if key != "display_selector" and selector.split(":", 1)[0] != realm:
-                            raise ValueError(
-                                "repository selector conflicts with its namespace realm"
-                            )
-                        target[key] = selector.split(":", 1)[1]
-    raw["config_version"] = 3
-
-
-def _migrate_config_v3_to_v4(raw: dict) -> None:
-    """Replace service-private customer/kind keys with the public account/format vocabulary."""
-
-    def typed_account_ref(value: object) -> str | None:
-        if not isinstance(value, str):
-            return None
-        if _ACCOUNT_REF_RE.fullmatch(value):
-            return value
-        unique_id = value.removeprefix("_")
-        if re.fullmatch(_UNIQUE_ID_FRAGMENT, unique_id):
-            return f"ac_{unique_id}"
-        return None
-
-    def migrate_target(value: object, *, fallback_account_ref: str | None) -> None:
-        if not isinstance(value, dict):
-            return
-        old_account = value.pop("customer_id", None)
-        if "account_ref" not in value:
-            migrated_account_ref = typed_account_ref(old_account) or fallback_account_ref
-            if migrated_account_ref is not None:
-                value["account_ref"] = migrated_account_ref
-        if "registry_kind" in value and "format" not in value:
-            value["format"] = value.pop("registry_kind")
-        else:
-            value.pop("registry_kind", None)
-
-    profiles = raw.get("profiles")
-    if isinstance(profiles, dict):
-        for profile in profiles.values():
-            if not isinstance(profile, dict):
-                continue
-            profile_ref = typed_account_ref(profile.get("account_ref"))
-            if profile_ref is None:
-                profile_ref = typed_account_ref(profile.get("customer_unique_id"))
-            if profile_ref is None:
-                profile_ref = typed_account_ref(profile.get("customer_id"))
-
-            old_to_new: dict[str, str] = {}
-            migrated_accounts: dict[str, dict] = {}
-            accounts = profile.get("accounts")
-            if isinstance(accounts, dict):
-                for old_key, account in accounts.items():
-                    if not isinstance(old_key, str) or not isinstance(account, dict):
-                        continue
-                    reference = (
-                        typed_account_ref(account.get("account_ref"))
-                        or typed_account_ref(account.get("customer_unique_ref"))
-                        or typed_account_ref(old_key)
-                    )
-                    if reference is None:
-                        raise ValueError(
-                            "cannot migrate an account without an immutable public reference"
-                        )
-                    if reference in migrated_accounts and migrated_accounts[reference] != account:
-                        raise ValueError(f"conflicting account entries for {reference}")
-                    old_to_new[old_key] = reference
-                    account.pop("customer_unique_ref", None)
-                    if "customer_handle" in account and "account_handle" not in account:
-                        account["account_handle"] = account.pop("customer_handle")
-                    else:
-                        account.pop("customer_handle", None)
-                    migrate_target(account.get("selected_target"), fallback_account_ref=reference)
-                    migrated_accounts[reference] = account
-            profile["accounts"] = migrated_accounts
-            if profile_ref is None and len(migrated_accounts) == 1:
-                profile_ref = next(iter(migrated_accounts))
-
-            active = profile.get("active_account_ref")
-            if active is None:
-                old_active = profile.get("active_customer_id")
-                if isinstance(old_active, str):
-                    active = old_to_new.get(old_active) or typed_account_ref(old_active)
-            if active is not None:
-                profile["active_account_ref"] = active
-            profile.pop("active_customer_id", None)
-
-            if profile_ref is not None:
-                profile["account_ref"] = profile_ref
-            profile.pop("customer_id", None)
-            profile.pop("customer_unique_id", None)
-
-            registries = profile.get("registries")
-            if isinstance(registries, dict):
-                for defaults in registries.values():
-                    if not isinstance(defaults, dict):
-                        continue
-                    defaults_ref = (
-                        typed_account_ref(defaults.get("account_ref"))
-                        or typed_account_ref(defaults.get("customer_unique_ref"))
-                        or typed_account_ref(defaults.get("customer_id"))
-                        or profile_ref
-                    )
-                    migrate_target(defaults, fallback_account_ref=defaults_ref)
-                    defaults.pop("customer_unique_ref", None)
-
-    raw["config_version"] = 4
 
 
 def _validate_repository_target_identity(
-    value: dict, *, path: str, allow_legacy_short_selector: bool = False
+    value: dict, *, path: str, allow_short_selector: bool = False
 ) -> None:
     realm = value.get("namespace_realm", "internal" if "default_repo" in value else None)
     if realm not in {"internal", "global"}:
@@ -1043,7 +758,7 @@ def _validate_repository_target_identity(
     selector = value.get("stable_selector", value.get("default_repo"))
     if not isinstance(selector, str) or not selector:
         raise ValueError(f"missing repository selector at {path}")
-    if selector.startswith(("in_", "gn_", "w_", "r_")):
+    if selector.startswith(("in_", "gn_", "ar_")):
         parts = selector.split("/")
         if (
             len(parts) != 2
@@ -1058,7 +773,7 @@ def _validate_repository_target_identity(
     elif (
         selector.startswith("@")
         or ":" in selector
-        or (selector.count("/") != 1 and not (allow_legacy_short_selector and "/" not in selector))
+        or (selector.count("/") != 1 and not (allow_short_selector and "/" not in selector))
     ):
         raise ValueError(f"invalid repository selector at {path}")
 
@@ -1106,7 +821,7 @@ def _validate_raw_config(raw: dict) -> None:
                     _validate_repository_target_identity(
                         defaults,
                         path=target_path,
-                        allow_legacy_short_selector=True,
+                        allow_short_selector=True,
                     )
 
 
@@ -1136,32 +851,8 @@ def _write_raw(raw: dict) -> None:
             temporary_path.unlink(missing_ok=True)
 
 
-def _backup_pre_migration_config(version: int) -> None:
-    """Create an owner-only source backup before replacing a versioned config."""
-    backup_path = CONFIG_FILE.with_name(f"config.v{version}.toml.bak")
-    try:
-        descriptor = os.open(
-            backup_path,
-            os.O_WRONLY | os.O_CREAT | os.O_EXCL,
-            0o600,
-        )
-    except FileExistsError:
-        return
-    try:
-        with os.fdopen(descriptor, "wb") as backup:
-            backup.write(CONFIG_FILE.read_bytes())
-            backup.flush()
-            os.fsync(backup.fileno())
-    except Exception:
-        backup_path.unlink(missing_ok=True)
-        raise
-
-
 def stored_profile_api_url(profile_name: str) -> str | None:
     """Return a profile's persisted DevAPI URL without environment overrides."""
-    # Device login may use this accessor before any other config call. Run the
-    # ordinary validated loader first so every pending migration is durably
-    # committed (and backed up) before the caller can make a network request.
     load()
     raw = _load_raw()
     profiles = raw.get("profiles")
@@ -1177,10 +868,8 @@ def stored_profile_api_url(profile_name: str) -> str | None:
 
 
 def load() -> RvsConfig:
-    config_exists = CONFIG_FILE.exists()
     raw = _load_raw()
-    original_version = raw.get("config_version", 0)
-    migrated = _migrate_raw_config(raw)
+    _validate_config_version(raw)
     _validate_raw_config(raw)
     cfg = RvsConfig(
         default_profile=raw.get("default_profile", "default"),
@@ -1223,10 +912,6 @@ def load() -> RvsConfig:
             },
         )
 
-    if migrated and config_exists:
-        if isinstance(original_version, int):
-            _backup_pre_migration_config(original_version)
-        _write_raw(raw)
     return cfg
 
 

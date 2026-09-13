@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import os
 import stat
-import tomllib
 from typing import TYPE_CHECKING
 
 import pytest
@@ -66,6 +65,7 @@ def test_load_uses_env_api_url_for_configured_profile_without_api_url(
     config_dir.mkdir()
     config_file.write_text(
         """
+config_version = 5
 default_profile = "staging"
 
 [profiles.staging]
@@ -88,6 +88,7 @@ def test_env_api_url_overrides_saved_profile_url(monkeypatch, tmp_path: Path) ->
     config_dir.mkdir()
     config_file.write_text(
         """
+config_version = 5
 [profiles.staging]
 api_url = "https://api.ravenstash.com"
 """.strip(),
@@ -161,6 +162,7 @@ def test_localhost_repository_domain_uses_literal_host_and_keeps_routes(
     config_dir.mkdir()
     config_file.write_text(
         """
+config_version = 5
 [profiles.dev.native_registries.pypi]
 read_base_url = "https://download.example.test:43101/registry/pypi"
 push_base_url = "https://upload.example.test:43102/registry/pypi"
@@ -198,6 +200,7 @@ def test_discovered_heterogeneous_host_family_is_retained_without_domain_overrid
     config_dir.mkdir()
     config_file.write_text(
         """
+config_version = 5
 [profiles.work.native_registries.pypi]
 read_base_url = "https://python-download.example.test"
 push_base_url = "https://python-upload.example.test"
@@ -227,272 +230,7 @@ registry_base_url = "https://images.example.test"
     assert endpoints.oci_registry_base_url == "https://images.example.test"
 
 
-def test_load_directly_migrates_unversioned_v07_config_atomically(
-    monkeypatch,
-    tmp_path: Path,
-) -> None:
-    config_dir, config_file = _point_config(monkeypatch, tmp_path)
-    config_dir.mkdir()
-    config_file.write_text(
-        """
-default_profile = "default"
-custom_setting = "preserved"
-
-[profiles.default.native_registries.pypi]
-read_base_url = "https://pypi.rvsta.sh"
-push_base_url = "https://push.pypi.rvsta.sh"
-cache_base_url = "https://cache.pypi.rvsta.sh"
-
-[profiles.default.native_registries.npm]
-read_base_url = "https://npm.rvsta.sh"
-push_base_url = "https://push.npm.rvsta.sh"
-cache_base_url = "https://cache.npm.rvsta.sh"
-
-[profiles.default.native_registries.maven]
-read_base_url = "https://maven.rvsta.sh"
-push_base_url = "https://push.maven.rvsta.sh"
-cache_base_url = "https://cache.maven.rvsta.sh"
-
-[profiles.default.native_registries.oci]
-registry_base_url = "https://oci.rvsta.sh"
-
-[profiles.dev.native_registries.pypi]
-read_base_url = "http://localhost:8788/native/pypi"
-push_base_url = "http://localhost:6001/native/pypi"
-cache_base_url = "http://localhost:8788/native/pypi"
-
-[profiles.dev.native_registries.npm]
-read_base_url = "http://localhost:8788/native/npm"
-push_base_url = "http://localhost:6001/native/npm"
-cache_base_url = "http://localhost:8788/native/npm"
-
-[profiles.dev.native_registries.maven]
-read_base_url = "http://localhost:8788/native/maven"
-push_base_url = "http://localhost:6001/native/maven"
-cache_base_url = "http://localhost:8788/native/maven"
-
-[profiles.dev.native_registries.oci]
-registry_base_url = "http://localhost:8788"
-""".strip(),
-        encoding="utf-8",
-    )
-    original_inode = config_file.stat().st_ino
-
-    cfg = cfg_mod.load()
-
-    assert cfg.active_profile().native_registries.pypi.mirror_base_url == (
-        "https://mirror.pypi.rvsta.sh"
-    )
-    assert cfg.active_profile("dev").native_registries.pypi.mirror_base_url == (
-        "http://localhost:8788/native/pypi"
-    )
-    migrated = config_file.read_text(encoding="utf-8")
-    assert config_file.stat().st_ino != original_inode
-    assert "config_version = 4" in migrated
-    assert 'custom_setting = "preserved"' in migrated
-    assert "cache_base_url" not in migrated
-    assert migrated.count("mirror_base_url") == 6
-    assert "https://mirror.pypi.rvsta.sh" in migrated
-
-    migrated_inode = config_file.stat().st_ino
-    cfg_mod.load()
-
-    assert config_file.stat().st_ino == migrated_inode
-    assert config_file.read_text(encoding="utf-8") == migrated
-
-
-def test_failed_config_migration_does_not_replace_source_file(
-    monkeypatch,
-    tmp_path: Path,
-) -> None:
-    config_dir, config_file = _point_config(monkeypatch, tmp_path)
-    config_dir.mkdir()
-    original = """
-[profiles.default.native_registries.pypi]
-read_base_url = "not-a-url"
-push_base_url = "https://push.pypi.rvsta.sh"
-cache_base_url = "https://cache.pypi.rvsta.sh"
-
-[profiles.default.native_registries.npm]
-read_base_url = "https://npm.rvsta.sh"
-push_base_url = "https://push.npm.rvsta.sh"
-cache_base_url = "https://cache.npm.rvsta.sh"
-
-[profiles.default.native_registries.maven]
-read_base_url = "https://maven.rvsta.sh"
-push_base_url = "https://push.maven.rvsta.sh"
-cache_base_url = "https://cache.maven.rvsta.sh"
-
-[profiles.default.native_registries.oci]
-registry_base_url = "https://oci.rvsta.sh"
-""".strip()
-    config_file.write_text(original, encoding="utf-8")
-
-    with pytest.raises(ValueError, match="read URL must be an absolute"):
-        cfg_mod.load()
-
-    assert config_file.read_text(encoding="utf-8") == original
-
-
-def test_v1_namespace_migration_rewrites_targets_and_creates_one_time_backup(
-    monkeypatch,
-    tmp_path: Path,
-) -> None:
-    config_dir, config_file = _point_config(monkeypatch, tmp_path)
-    config_dir.mkdir()
-    original = """
-config_version = 1
-default_profile = "default"
-
-[profiles.default]
-api_url = "https://api.ravenstash.com"
-
-[profiles.default.accounts.customer-1]
-customer_unique_ref = "_abcdefgh"
-account_type = "personal"
-account_label = "Me"
-
-[profiles.default.accounts.customer-1.selected_target]
-target_type = "private"
-customer_id = "customer-1"
-registry_kind = "pypi"
-stable_selector = "w_abcdefgh/r_23456789"
-display_selector = "engineering/packages"
-workspace_id = "namespace-pkid"
-workspace_unique_ref = "w_abcdefgh"
-workspace_name_cache = "engineering"
-repository_id = "repository-pkid"
-repository_unique_ref = "r_23456789"
-repository_name_cache = "packages"
-
-[profiles.default.registries.pypi]
-target_type = "private"
-default_repo = "engineering/packages"
-workspace_unique_ref = "w_abcdefgh"
-workspace_name_cache = "engineering"
-repository_unique_ref = "r_23456789"
-repository_name_cache = "packages"
-""".strip()
-    config_file.write_text(original, encoding="utf-8")
-
-    assert cfg_mod.stored_profile_api_url("default") == "https://api.ravenstash.com"
-    loaded = cfg_mod.load()
-
-    target = loaded.profiles["default"].accounts["ac_abcdefgh"].selected_target
-    assert target is not None
-    assert target.target_type == "repository"
-    assert target.namespace_realm == "internal"
-    assert target.namespace_unique_ref == "in_abcdefgh"
-    assert target.stable_selector == "in_abcdefgh/r_23456789"
-    assert target.display_selector == "engineering/packages"
-    assert target.customer_id == "ac_abcdefgh"
-    assert target.registry_kind == "pypi"
-    defaults = loaded.registry_defaults("pypi")
-    assert defaults.default_repo == "engineering/packages"
-    assert defaults.namespace_unique_ref == "in_abcdefgh"
-
-    backup = config_dir / "config.v1.toml.bak"
-    assert backup.read_text(encoding="utf-8") == original
-    if os.name != "nt":
-        assert stat.S_IMODE(backup.stat().st_mode) == 0o600
-    migrated = config_file.read_text(encoding="utf-8")
-    assert "workspace" not in migrated
-    assert "namespace-pkid" not in migrated
-    assert "repository-pkid" not in migrated
-    migrated_raw = tomllib.loads(migrated)
-    migrated_profile = migrated_raw["profiles"]["default"]
-    assert migrated_profile["account_ref"] == "ac_abcdefgh"
-    assert "customer_id" not in migrated_profile
-    migrated_account = migrated_profile["accounts"]["ac_abcdefgh"]
-    assert "customer_unique_ref" not in migrated_account
-    assert migrated_account["selected_target"]["account_ref"] == "ac_abcdefgh"
-    assert migrated_account["selected_target"]["format"] == "pypi"
-    assert "registry_kind" not in migrated_account["selected_target"]
-
-    cfg_mod.load()
-    assert backup.read_text(encoding="utf-8") == original
-
-
-def test_v2_selector_migration_preserves_identity_and_backs_up_source(monkeypatch, tmp_path):
-    config_dir, config_file = _point_config(monkeypatch, tmp_path)
-    config_dir.mkdir()
-    original = """config_version = 2
-[profiles.default]
-customer_id = "original-customer-id"
-customer_unique_id = "abcdefgh"
-[profiles.default.registries.pypi]
-default_repo = "internal:main/packages"
-namespace_realm = "internal"
-namespace_unique_ref = "in_abcdefgh"
-repository_unique_ref = "r_23456789"
-"""
-    config_file.write_text(original, encoding="utf-8")
-    cfg = cfg_mod.load()
-    assert cfg.profiles["default"].customer_id == "ac_abcdefgh"
-    assert cfg.profiles["default"].customer_unique_id is None
-    defaults = cfg.registry_defaults("pypi")
-    assert defaults.default_repo == "main/packages"
-    assert defaults.namespace_unique_ref == "in_abcdefgh"
-    assert defaults.repository_unique_ref == "r_23456789"
-    assert (config_dir / "config.v2.toml.bak").read_text(encoding="utf-8") == original
-
-
-def test_v1_namespace_migration_rejects_conflicting_old_and_new_fields(
-    monkeypatch,
-    tmp_path: Path,
-) -> None:
-    config_dir, config_file = _point_config(monkeypatch, tmp_path)
-    config_dir.mkdir()
-    original = """
-config_version = 1
-
-[profiles.default.registries.pypi]
-workspace_unique_ref = "w_abcdefgh"
-namespace_unique_ref = "in_23456789"
-""".strip()
-    config_file.write_text(original, encoding="utf-8")
-
-    with pytest.raises(ValueError, match=r"profiles\.default\.registries\.pypi"):
-        cfg_mod.load()
-
-    assert config_file.read_text(encoding="utf-8") == original
-    assert not (config_dir / "config.v1.toml.bak").exists()
-
-
-def test_v1_namespace_migration_rejects_malformed_identity_before_replacement(
-    monkeypatch,
-    tmp_path: Path,
-) -> None:
-    config_dir, config_file = _point_config(monkeypatch, tmp_path)
-    config_dir.mkdir()
-    original = """
-config_version = 1
-
-[profiles.default.accounts.customer-1]
-customer_unique_ref = "_abcdefgh"
-account_type = "personal"
-account_label = "Me"
-
-[profiles.default.accounts.customer-1.selected_target]
-target_type = "private"
-customer_id = "customer-1"
-stable_selector = "w_invalid/r_23456789"
-display_selector = "engineering/packages"
-workspace_unique_ref = "w_invalid"
-workspace_name_cache = "engineering"
-repository_unique_ref = "r_23456789"
-repository_name_cache = "packages"
-""".strip()
-    config_file.write_text(original, encoding="utf-8")
-
-    with pytest.raises(ValueError, match="invalid namespace reference"):
-        cfg_mod.load()
-
-    assert config_file.read_text(encoding="utf-8") == original
-    assert not (config_dir / "config.v1.toml.bak").exists()
-
-
-def test_load_rejects_config_written_by_newer_cli_without_rewriting_it(
+def test_load_rejects_non_current_config_without_rewriting_it(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
@@ -501,7 +239,7 @@ def test_load_rejects_config_written_by_newer_cli_without_rewriting_it(
     original = 'config_version = 999\ndefault_profile = "default"\n'
     config_file.write_text(original, encoding="utf-8")
 
-    with pytest.raises(ValueError, match="requires a newer rvs release"):
+    with pytest.raises(ValueError, match="unsupported; reconfigure"):
         cfg_mod.load()
 
     assert config_file.read_text(encoding="utf-8") == original
@@ -598,8 +336,8 @@ def test_save_and_load_round_trips_profiles_and_registry_defaults(
                 expires_at="2099-01-01T00:00:00+00:00",
                 refresh_expires_at="2099-01-02T00:00:00+00:00",
                 registries={
-                    "pypi": cfg_mod.RegistryDefaults(default_repo="in_abcdefgh/r_23456789"),
-                    "npm": cfg_mod.RegistryDefaults(default_repo="in_abcdefgh/r_xyzabcde"),
+                    "pypi": cfg_mod.RegistryDefaults(default_repo="in_abcdefgh/ar_23456789"),
+                    "npm": cfg_mod.RegistryDefaults(default_repo="in_abcdefgh/ar_xyzabcde"),
                 },
             )
         },
@@ -625,8 +363,8 @@ def test_save_and_load_round_trips_profiles_and_registry_defaults(
     assert loaded.profiles["work"].customer_id == "ac_abcdefgh"
     assert loaded.profiles["work"].customer_unique_id is None
     assert loaded.profiles["work"].credential_store == "pass"
-    assert loaded.registry_defaults("pypi").default_repo == "in_abcdefgh/r_23456789"
-    assert loaded.registry_defaults("npm").default_repo == "in_abcdefgh/r_xyzabcde"
+    assert loaded.registry_defaults("pypi").default_repo == "in_abcdefgh/ar_23456789"
+    assert loaded.registry_defaults("npm").default_repo == "in_abcdefgh/ar_xyzabcde"
     assert loaded.registry_defaults("maven").default_repo is None
 
 
@@ -641,8 +379,8 @@ def test_saved_target_retains_identity_when_authority_marks_it_unavailable(
                 "default": cfg_mod.ProfileConfig(
                     registries={
                         "pypi": cfg_mod.RegistryDefaults(
-                            default_repo="in_abcdefgh/r_23456789",
-                            repository_unique_ref="r_23456789",
+                            default_repo="in_abcdefgh/ar_23456789",
+                            repository_unique_ref="ar_23456789",
                             authority_revision=4,
                         )
                     }
@@ -654,8 +392,8 @@ def test_saved_target_retains_identity_when_authority_marks_it_unavailable(
     cfg_mod.mark_registry_default_unavailable("pypi")
     saved = cfg_mod.load().registry_defaults("pypi")
 
-    assert saved.default_repo == "in_abcdefgh/r_23456789"
-    assert saved.repository_unique_ref == "r_23456789"
+    assert saved.default_repo == "in_abcdefgh/ar_23456789"
+    assert saved.repository_unique_ref == "ar_23456789"
     assert saved.authority_revision == 4
     assert saved.is_available is False
 

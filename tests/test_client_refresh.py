@@ -135,14 +135,14 @@ def test_repository_target_conflict_has_an_actionable_message() -> None:
                 "namespace_realm": "internal",
                 "repository_name": "old-repository",
                 "namespace_unique_ref": "in_abcdefgh",
-                "repository_unique_ref": "r_xyzabcde",
+                "repository_unique_ref": "ar_xyzabcde",
             },
             "current": {
                 "namespace_name": "new-namespace",
                 "namespace_realm": "internal",
                 "repository_name": "new-repository",
                 "namespace_unique_ref": "in_abcdefgh",
-                "repository_unique_ref": "r_xyzabcde",
+                "repository_unique_ref": "ar_xyzabcde",
             },
         },
     )
@@ -150,7 +150,7 @@ def test_repository_target_conflict_has_an_actionable_message() -> None:
     assert "no package operation was attempted" in str(error)
     assert "old-namespace/old-repository" in str(error)
     assert "new-namespace/new-repository" in str(error)
-    assert "in_abcdefgh/r_xyzabcde" in str(error)
+    assert "in_abcdefgh/ar_xyzabcde" in str(error)
     assert "rvs art repo set-default" in str(error)
 
 
@@ -177,6 +177,7 @@ def test_api_client_from_profile_honors_rvs_profile(monkeypatch, tmp_path) -> No
     config_file = config_dir / "config.toml"
     config_file.write_text(
         """
+config_version = 5
 default_profile = "default"
 
 [profiles.default]
@@ -213,6 +214,7 @@ def test_api_client_from_profile_never_refreshes_rvs_token_on_401(
     config_file = config_dir / "config.toml"
     config_file.write_text(
         """
+config_version = 5
 default_profile = "default"
 
 [profiles.default]

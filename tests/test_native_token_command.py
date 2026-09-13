@@ -32,7 +32,7 @@ def issuer(monkeypatch):
     )
     target = SimpleNamespace(
         target_type="repository",
-        repository_unique_ref="r_abcdefgh",
+        repository_unique_ref="ar_abcdefgh",
         namespace_unique_ref="in_abcdefgh",
         namespace_name_cache="space",
         repository_name_cache="packages",
@@ -43,7 +43,7 @@ def issuer(monkeypatch):
 
     def resolve(*args, **kwargs):
         print("Resolved fixture target")
-        return Discovery("fixture", target, ("pypi",), ("in_abcdefgh", "r_abcdefgh"))
+        return Discovery("fixture", target, ("pypi",), ("in_abcdefgh", "ar_abcdefgh"))
 
     monkeypatch.setattr(auth_commands, "discover", resolve)
     monkeypatch.setattr(ApiClient, "from_profile", lambda *args, **kwargs: client)
@@ -66,7 +66,7 @@ def test_manual_default_prints_only_the_secret_to_stdout(issuer):
 def test_manual_kind_is_required_only_when_target_is_ambiguous(issuer, monkeypatch):
     target = SimpleNamespace(
         target_type="repository",
-        repository_unique_ref="r_abcdefgh",
+        repository_unique_ref="ar_abcdefgh",
         namespace_unique_ref="in_abcdefgh",
         namespace_name_cache="space",
         repository_name_cache="packages",
@@ -77,7 +77,7 @@ def test_manual_kind_is_required_only_when_target_is_ambiguous(issuer, monkeypat
         auth_commands,
         "discover",
         lambda *args, **kwargs: Discovery(
-            "fixture", target, ("pypi", "oci"), ("in_abcdefgh", "r_abcdefgh")
+            "fixture", target, ("pypi", "oci"), ("in_abcdefgh", "ar_abcdefgh")
         ),
     )
 

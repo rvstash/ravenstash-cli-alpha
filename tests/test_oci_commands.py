@@ -24,7 +24,7 @@ def test_friendly_oci_root_normalizes_display_case_without_changing_identity() -
     assert oci_runner._friendly_oci_root("Acme-HQ", "images") == "acme-hq/images"
     assert oci_runner._friendly_oci_root("Engineering", "Images") == "engineering/images"
     assert oci_runner._friendly_oci_root("Engineering", "IMAGES") == "engineering/images"
-    assert oci_runner._stable_oci_root("in_abcdefgh", "r_xyzabcde") == "in_abcdefgh/r_xyzabcde"
+    assert oci_runner._stable_oci_root("in_abcdefgh", "ar_xyzabcde") == "in_abcdefgh/ar_xyzabcde"
 
 
 class _Response:
@@ -63,7 +63,7 @@ class _Api:
                     "namespace_name": "main",
                     "namespace_realm": "internal",
                     "namespace_unique_ref": "in_abcdefgh",
-                    "repository_unique_ref": "r_xyzabcde",
+                    "repository_unique_ref": "ar_xyzabcde",
                 },
             }
         )
@@ -79,7 +79,7 @@ class _Api:
             "namespace_unique_ref": "in_abcdefgh",
             "namespace_name": "main",
             "namespace_realm": "internal",
-            "repository_unique_ref": "r_xyzabcde",
+            "repository_unique_ref": "ar_xyzabcde",
             "repository_name": "images",
         }
         return _Response(
@@ -87,7 +87,7 @@ class _Api:
                 "access_token": "rvs_sltDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDA",
                 "native_paths": {"oci": "/main/images"},
                 "namespace_unique_ref": "in_abcdefgh",
-                "repository_unique_ref": "r_xyzabcde",
+                "repository_unique_ref": "ar_xyzabcde",
                 "namespace_name": "main",
                 "repository_name": "images",
             }
@@ -117,7 +117,7 @@ def _setup(monkeypatch, tmp_path: Path) -> None:
     config_file = config_dir / "config.toml"
     config_file.write_text(
         """
-config_version = 4
+config_version = 5
 default_profile = "default"
 
 [profiles.default]
@@ -224,7 +224,7 @@ def test_namespace_target_accepts_current_friendly_native_root(monkeypatch, tmp_
         def post(self, path: str, json=None) -> _Response:
             response = super().post(path, json)
             response.value["native_paths"] = {
-                "oci": "/in_abcdefgh/r_xyzabcde",
+                "oci": "/in_abcdefgh/ar_xyzabcde",
             }
             return response
 
@@ -240,8 +240,8 @@ def test_namespace_target_accepts_current_friendly_native_root(monkeypatch, tmp_
         ("download", "upload"),
     )
 
-    assert route.native_root == "oci.rvsta.sh/in_abcdefgh/r_xyzabcde"
-    assert route.accepted_roots == frozenset({"main/images", "in_abcdefgh/r_xyzabcde"})
+    assert route.native_root == "oci.rvsta.sh/in_abcdefgh/ar_xyzabcde"
+    assert route.accepted_roots == frozenset({"main/images", "in_abcdefgh/ar_xyzabcde"})
 
 
 def test_docker_preserves_other_native_credentials_but_replaces_ravenstash(
@@ -330,7 +330,7 @@ def test_native_signal_is_forwarded_with_shell_exit_code_and_secret_cleanup(
             "--rvs-target",
             "main/images",
             "push",
-            "oci.rvsta.sh/in_abcdefgh/r_xyzabcde/backend:latest",
+            "oci.rvsta.sh/in_abcdefgh/ar_xyzabcde/backend:latest",
             "--rvs-yes",
         ],
     )
@@ -340,7 +340,7 @@ def test_native_signal_is_forwarded_with_shell_exit_code_and_secret_cleanup(
     assert not captured["broker"].exists()
 
 
-@pytest.mark.parametrize("other_root", ["in_abcdefgh/r_23456789", "Main/Other"])
+@pytest.mark.parametrize("other_root", ["in_abcdefgh/ar_23456789", "Main/Other"])
 def test_oras_rejects_second_ravenstash_target(monkeypatch, tmp_path: Path, other_root) -> None:
     _setup(monkeypatch, tmp_path)
 
@@ -389,7 +389,7 @@ def test_oci_reference_prints_stable_root_without_v2(monkeypatch, tmp_path: Path
         def post(self, path: str, json=None) -> _Response:
             response = super().post(path, json)
             response.value["native_paths"] = {
-                "oci": "/in_abcdefgh/r_xyzabcde",
+                "oci": "/in_abcdefgh/ar_xyzabcde",
             }
             return response
 
@@ -420,13 +420,9 @@ def test_oci_capability_rejects_noncanonical_native_path(monkeypatch, tmp_path: 
 
     class InvalidPathApi(_Api):
         def post(self, path: str, json=None) -> _Response:
-            assert path == "/package-credentials"
-            return _Response(
-                {
-                    "access_token": "rvs_sltDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDA",
-                    "native_paths": {"oci": "/_abcdefgh/_xyzabcde"},
-                }
-            )
+            response = super().post(path, json)
+            response.value["native_paths"] = {"oci": "/in_abcdefgh/images"}
+            return response
 
     monkeypatch.setattr(
         oci_runner.ApiClient,

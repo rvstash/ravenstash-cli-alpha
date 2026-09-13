@@ -18,7 +18,10 @@ STAGING_API_URL = "https://staging.example.test"
 def _write_config(config_dir: Path, content: str) -> Path:
     config_dir.mkdir()
     config_file = config_dir / "config.toml"
-    config_file.write_text(content.strip(), encoding="utf-8")
+    normalized = content.strip()
+    if "config_version" not in normalized:
+        normalized = f"config_version = 5\n{normalized}"
+    config_file.write_text(normalized, encoding="utf-8")
     return config_file
 
 
@@ -93,7 +96,7 @@ def test_auth_whoami_reports_only_verified_user_identity(monkeypatch, tmp_path: 
         monkeypatch,
         tmp_path,
         """
-config_version = 4
+config_version = 5
 default_profile = "work"
 
 [profiles.work]
@@ -446,7 +449,7 @@ def test_auth_profile_rename_moves_metadata_and_deletes_old_token(
         monkeypatch,
         tmp_path,
         """
-config_version = 4
+config_version = 5
 default_profile = "work"
 
 [profiles.work]
