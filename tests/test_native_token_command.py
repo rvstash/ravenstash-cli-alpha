@@ -27,7 +27,7 @@ def issuer(monkeypatch):
             "expires_in": 14400,
             "operations": ["download"],
             "token_type": "bearer",
-            "registry_kinds": ["pypi"],
+            "formats": ["pypi"],
         },
     )
     target = SimpleNamespace(
@@ -60,7 +60,7 @@ def test_manual_default_prints_only_the_secret_to_stdout(issuer):
     assert path == "/package-credentials"
     assert payload["duration_seconds"] == 14400
     assert payload["operations"] == ["download"]
-    assert payload["registry_kinds"] == ["pypi"]
+    assert payload["formats"] == ["pypi"]
 
 
 def test_manual_kind_is_required_only_when_target_is_ambiguous(issuer, monkeypatch):

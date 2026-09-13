@@ -82,7 +82,7 @@ def mint(
                     "/package-credentials",
                     {
                         "repository_unique_ref": selected.repository_unique_ref,
-                        "registry_kinds": requested or None,
+                        "formats": requested or None,
                         "all_formats": all_formats,
                         "operations": operations,
                         "duration_seconds": seconds,
@@ -101,9 +101,9 @@ def mint(
                 response = client.issue_native(
                     "/remote-package-credentials",
                     {
-                        "customer_id": selected.customer_id,
+                        "account_ref": selected.customer_id,
                         "remote_cache_ref": selected.remote_unique_ref,
-                        "registry_kind": found.select_format(requested[0] if requested else None),
+                        "format": found.select_format(requested[0] if requested else None),
                         "duration_seconds": seconds,
                     },
                 ).json()
@@ -114,7 +114,7 @@ def mint(
         if output.is_json():
             result = {
                 "target": selected.display_selector,
-                "formats": response.get("registry_kinds", [response.get("registry_kind")]),
+                "formats": response.get("formats", [response.get("format")]),
                 "access": access,
                 "access_token": secret,
                 "token_type": response["token_type"],

@@ -68,7 +68,7 @@ app.command("endpoint")(endpoint)
 app.command("reference")(reference)
 
 _PACKAGE_KINDS = ("pypi", "npm", "maven")
-_MAX_UPSTREAM_PRIORITY = 3
+_MAX_UPSTREAM_POSITION = 4
 _ROUTER = CanonicalRouter()
 _REPOSITORY_NAME_HELP = "Repository name or namespace/repository."
 
@@ -100,7 +100,7 @@ def _customer_id(profile: str | None, explicit_customer_id: str | None = None) -
     options = _root_package_options()
     profile = profile or options.get("profile")
     if options.get("account"):
-        return str(resolve_account(cast("str", options["account"]), profile)["customer_id"])
+        return str(resolve_account(cast("str", options["account"]), profile)["account_ref"])
     profile_name, _ = _profile(profile)
     customer_id = cfg_mod.current_customer_id(profile_name)
     if not customer_id:
@@ -111,7 +111,7 @@ def _customer_id(profile: str | None, explicit_customer_id: str | None = None) -
 def _context_customer_id(profile: str | None, account: str | None) -> str | None:
     if account is None:
         return None
-    return str(resolve_account(account, profile)["customer_id"])
+    return str(resolve_account(account, profile)["account_ref"])
 
 
 @app.command("select")
@@ -163,13 +163,13 @@ def target_current(
             "Account": account_display_name(selected_account),
             "Repository or mirror": selected.display_selector if selected else "none",
             "Type": selected.target_type if selected else "none",
-            "Owner ID": selected.customer_id if selected else "none",
+            "Account ref": selected.customer_id if selected else "none",
             "Package format": selected.registry_kind or "determined by command"
             if selected
             else "none",
         },
         title="Current package selection",
-        json_keys=["profile", "account", "target", "type", "customer_id", "format"],
+        json_keys=["profile", "account", "target", "type", "account_ref", "format"],
     )
 
 
@@ -380,7 +380,7 @@ def _resolved_repository_unique_ref(
 def repo_list(
     account: str | None = typer.Option(None, "--account"),
     profile: str | None = typer.Option(None, "--profile", "-p"),
-    customer_id: str | None = typer.Option(None, "--customer-id", help="Account ID.", hidden=True),
+    customer_id: str | None = typer.Option(None, "--account-ref", help="Typed account reference.", hidden=True),
     kind: str | None = typer.Option(
         None,
         "--format",
@@ -395,8 +395,8 @@ def repo_list(
     params = {
         key: value
         for key, value in {
-            "customer_id": _customer_id(profile, customer_id),
-            "registry_kind": kind,
+            "account_ref": _customer_id(profile, customer_id),
+            "format": kind,
         }.items()
         if value is not None
     }
@@ -418,11 +418,15 @@ def repo_list(
         ["Account", "Namespace", "Repository", "Repository ID", "Package formats"],
         [
             [
-                entry["customer"]["account_label"],
+                entry["account"]["account_label"],
                 entry["repository"]["namespace_name"],
                 _repository_name_from_response(item),
                 (f"{item['namespace_unique_ref']}/{item['repository_unique_ref']}"),
-                ", ".join(item.get("registry_kinds", [])),
+                ", ".join(
+                    detail["format"]
+                    for detail in item.get("formats", [])
+                    if isinstance(detail, dict) and isinstance(detail.get("format"), str)
+                ),
             ]
             for entry, item in zip(entries, items, strict=True)
         ],
@@ -442,7 +446,7 @@ def repo_create(
     ),
     profile: str | None = typer.Option(None, "--profile", "-p"),
     customer_id: str | None = typer.Option(
-        None, "--customer-id", help="Owner account ID.", hidden=True
+        None, "--account-ref", help="Typed owner account reference.", hidden=True
     ),
     set_default: bool = typer.Option(
         False, "--default", help="Set as default for each selected package format."
@@ -460,13 +464,13 @@ def repo_create(
     try:
         selected_customer_id = _customer_id(profile, customer_id)
         namespaces_payload = client.get(
-            "/namespaces", params={"customer_id": selected_customer_id}
+            "/namespaces", params={"account_ref": selected_customer_id}
         ).json()
         namespaces = collection_items(namespaces_payload)
         matches = [
             entry
             for entry in namespaces
-            if entry["customer"]["customer_id"] == selected_customer_id
+            if entry["account"]["account_ref"] == selected_customer_id
             and (
                 (
                     entry["namespace"]["is_default"]
@@ -487,10 +491,10 @@ def repo_create(
             )
         selected_namespace = matches[0]
         payload = {
-            "customer_id": selected_namespace["customer"]["customer_id"],
+            "account_ref": selected_namespace["account"]["account_ref"],
             "namespace_unique_ref": selected_namespace["namespace"]["namespace_unique_ref"],
             "repository_name": repository_name,
-            "registry_kinds": kinds,
+            "formats": kinds,
         }
         entry = client.post("/repositories", json=payload).json()
         repo = entry["repository"]
@@ -506,7 +510,7 @@ def repo_create(
         for registry_kind in kinds:
             cfg_mod.set_registry_default_target(
                 registry_kind,
-                customer=entry["customer"],
+                customer=entry["account"],
                 repository=repo,
                 profile=profile,
             )
@@ -529,11 +533,15 @@ def repo_show(
     output.kv(
         {
             "Name": _repository_name_from_response(item, repo),
-            "Account": entry["customer"]["account_label"],
+            "Account": entry["account"]["account_label"],
             "Namespace": item["namespace_name"],
             "Namespace ID": item["namespace_unique_ref"],
             "Repository ID": item["repository_unique_ref"],
-            "Package formats": ", ".join(item.get("registry_kinds", [])),
+            "Package formats": ", ".join(
+                detail["format"]
+                for detail in item.get("formats", [])
+                if isinstance(detail, dict) and isinstance(detail.get("format"), str)
+            ),
             "Packages": str(item.get("aggregate_package_count", item.get("package_count", "0"))),
             "Versions": str(item.get("aggregate_version_count", item.get("version_count", "0"))),
             "OCI paths": str(item.get("aggregate_oci_repository_count", "0")),
@@ -599,7 +607,7 @@ def repo_rename(
     except ApiError as exc:
         output.fatal(str(exc))
     cfg_mod.refresh_matching_registry_targets(
-        customer=entry["customer"],
+        customer=entry["account"],
         repository=item,
         profile=profile,
     )
@@ -610,7 +618,7 @@ def repo_rename(
 @repo_app.command("set-default")
 def repo_set_default(
     account: str | None = typer.Option(None, "--account"),
-    kind: str = typer.Argument(
+    format: str = typer.Argument(
         ...,
         help="Package format: pypi | npm | maven | container | helm",
         metavar="FORMAT",
@@ -619,19 +627,19 @@ def repo_set_default(
     profile: str | None = typer.Option(None, "--profile", "-p"),
 ) -> None:
     """Set the default repository for a package format."""
-    registry_kind = _require_kind(kind)
+    registry_kind = _require_kind(format)
     profile_name = _profile_name(profile)
-    entry = _resolve_repository_entry(repo, profile, kind=kind)
+    entry = _resolve_repository_entry(repo, profile, kind=format)
     repository = entry["repository"]
     stable = f"{repository['namespace_unique_ref']}/{repository['repository_unique_ref']}"
     cfg_mod.set_registry_default_target(
         registry_kind,
-        customer=entry["customer"],
+        customer=entry["account"],
         repository=repository,
         profile=profile_name,
     )
     output.success(
-        f"Default {kind} package repository for profile '{profile_name}' set to {stable}."
+        f"Default {format} package repository for profile '{profile_name}' set to {stable}."
     )
 
 
@@ -656,22 +664,22 @@ def repo_defaults(
 
 
 def _upstream_path(repository_unique_ref: str, registry_kind: str) -> str:
-    return f"/repositories/{repository_unique_ref}/lanes/{registry_kind}/upstreams"
+    return f"/repositories/{repository_unique_ref}/formats/{registry_kind}/upstreams"
 
 
 def _upstream_revision(entry: dict, registry_kind: str) -> int:
-    lanes = entry["repository"]["lanes"]
-    lane = next(item for item in lanes if item["registry_kind"] == registry_kind)
-    return int(lane["upstream_config_revision"])
+    formats = entry["repository"]["formats"]
+    detail = next(item for item in formats if item["format"] == registry_kind)
+    return int(detail["upstream_config_revision"])
 
 
 def _print_upstreams(items: list[dict]) -> None:
     output.table(
-        ["ID", "Priority", "Type", "Source", "Minimum age", "Maximum age"],
+        ["ID", "Position", "Type", "Source", "Minimum age", "Maximum age"],
         [
             [
                 str(item.get("attachment_id") or item.get("id", "")),
-                str(item.get("priority", "")),
+                str(item.get("position", "")),
                 str(item.get("source_type", "")),
                 (
                     f"{item.get('source_namespace_name')}/{item.get('display_name') or item.get('source_repository_name')}"
@@ -684,7 +692,7 @@ def _print_upstreams(items: list[dict]) -> None:
             for item in items
         ],
         title="Repository upstreams",
-        json_keys=["id", "priority", "type", "source", "min_age_hours", "max_age_hours"],
+        json_keys=["id", "position", "type", "source", "min_age_hours", "max_age_hours"],
     )
 
 
@@ -692,11 +700,11 @@ def _print_upstreams(items: list[dict]) -> None:
 def upstream_list(
     account: str | None = typer.Option(None, "--account"),
     repository: str = typer.Argument(...),
-    kind: str = typer.Argument(...),
+    format: str = typer.Argument(..., metavar="FORMAT"),
     profile: str | None = typer.Option(None, "--profile", "-p"),
 ) -> None:
     """List the package sources used by one repository format."""
-    registry_kind = _require_package_kind(kind)
+    registry_kind = _require_package_kind(format)
     client = _client(profile)
     try:
         entry = _resolve_repository_entry(repository, profile, kind=registry_kind)
@@ -713,22 +721,20 @@ def upstream_list(
 def upstream_add(
     account: str | None = typer.Option(None, "--account"),
     repository: str = typer.Argument(...),
-    kind: str = typer.Argument(...),
+    format: str = typer.Argument(..., metavar="FORMAT"),
     private_repository: str | None = typer.Option(None, "--private-repository"),
-    mirror: str | None = typer.Option(None, "--mirror", help="Private mirror ID."),
-    remote_cache: str | None = typer.Option(None, "--remote-cache", hidden=True),
-    priority: int | None = typer.Option(None, "--priority", min=0, max=_MAX_UPSTREAM_PRIORITY),
+    remote_cache: str | None = typer.Option(
+        None, "--remote-cache", help="Remote-cache reference (rc_...)."
+    ),
+    position: int = typer.Option(..., "--position", min=1, max=_MAX_UPSTREAM_POSITION),
     min_age_hours: float | None = typer.Option(None, "--min-age-hours", min=0),
     max_age_hours: float | None = typer.Option(None, "--max-age-hours", min=0),
     profile: str | None = typer.Option(None, "--profile", "-p"),
 ) -> None:
-    """Add a private repository or mirror as a package source."""
-    if mirror is not None and remote_cache is not None:
-        output.fatal("Pass --mirror only once.")
-    selected_mirror = mirror or remote_cache
-    if (private_repository is None) == (selected_mirror is None):
-        output.fatal("Pass exactly one of --private-repository or --mirror.")
-    registry_kind = _require_package_kind(kind)
+    """Add a private repository or remote cache as a package source."""
+    if (private_repository is None) == (remote_cache is None):
+        output.fatal("Pass exactly one of --private-repository or --remote-cache.")
+    registry_kind = _require_package_kind(format)
     client = _client(profile)
     try:
         destination = _resolve_repository_entry(repository, profile, kind=registry_kind)
@@ -740,27 +746,20 @@ def upstream_add(
             }
         else:
             remote_entry = client.get(
-                f"/remote-caches/{selected_mirror}",
-                params={"registry_kind": registry_kind},
+                f"/remote-caches/{remote_cache}",
+                params={"format": registry_kind},
             ).json()
             source_type = "remote"
             remote_payload = remote_cache_payload(remote_entry)
             source_identity = {
                 "remote_cache_ref": remote_payload.get("remote_cache_ref")
                 or remote_payload.get("unique_ref")
-                or selected_mirror
+                or remote_cache
             }
-        if priority is None:
-            current_payload = client.get(
-                _upstream_path(destination["repository"]["repository_unique_ref"], registry_kind)
-            ).json()
-            effective_priority = len(collection_items(current_payload))
-        else:
-            effective_priority = priority
         body = {
             "source_type": source_type,
             **source_identity,
-            "priority": effective_priority,
+            "position": position,
             "expected_revision": _upstream_revision(destination, registry_kind),
             "max_age_hours": max_age_hours,
         }
@@ -781,18 +780,18 @@ def upstream_add(
 def upstream_update(
     account: str | None = typer.Option(None, "--account"),
     repository: str = typer.Argument(...),
-    kind: str = typer.Argument(...),
+    format: str = typer.Argument(..., metavar="FORMAT"),
     attachment: str = typer.Argument(...),
-    priority: int | None = typer.Option(None, "--priority", min=0, max=_MAX_UPSTREAM_PRIORITY),
+    position: int | None = typer.Option(None, "--position", min=1, max=_MAX_UPSTREAM_POSITION),
     min_age_hours: float | None = typer.Option(None, "--min-age-hours", min=0),
     max_age_hours: float | None = typer.Option(None, "--max-age-hours", min=0),
     profile: str | None = typer.Option(None, "--profile", "-p"),
 ) -> None:
-    """Change the order or package-age settings for one source."""
+    """Change the fixed position or package-age settings for one source."""
     body = {
         key: value
         for key, value in {
-            "priority": priority,
+            "position": position,
             "min_age_hours": min_age_hours,
             "max_age_hours": max_age_hours,
         }.items()
@@ -800,7 +799,7 @@ def upstream_update(
     }
     if not body:
         output.fatal("Pass at least one field to update.")
-    registry_kind = _require_package_kind(kind)
+    registry_kind = _require_package_kind(format)
     client = _client(profile)
     try:
         destination = _resolve_repository_entry(repository, profile, kind=registry_kind)
@@ -814,42 +813,16 @@ def upstream_update(
     _print_upstreams([item])
 
 
-@upstream_app.command("reorder")
-def upstream_reorder(
-    account: str | None = typer.Option(None, "--account"),
-    repository: str = typer.Argument(...),
-    kind: str = typer.Argument(...),
-    attachments: list[str] = typer.Argument(...),
-    profile: str | None = typer.Option(None, "--profile", "-p"),
-) -> None:
-    """Set the complete package-source order."""
-    registry_kind = _require_package_kind(kind)
-    client = _client(profile)
-    try:
-        destination = _resolve_repository_entry(repository, profile, kind=registry_kind)
-        payload = client.put(
-            f"{_upstream_path(destination['repository']['repository_unique_ref'], registry_kind)}/order",
-            json={
-                "attachment_ids": attachments,
-                "expected_revision": _upstream_revision(destination, registry_kind),
-            },
-        ).json()
-        items = collection_items(payload)
-    except (ApiError, KeyError, TypeError) as exc:
-        output.fatal(str(exc))
-    _print_upstreams(items)
-
-
 @upstream_app.command("remove")
 def upstream_remove(
     account: str | None = typer.Option(None, "--account"),
     repository: str = typer.Argument(...),
-    kind: str = typer.Argument(...),
+    format: str = typer.Argument(..., metavar="FORMAT"),
     attachment: str = typer.Argument(...),
     profile: str | None = typer.Option(None, "--profile", "-p"),
 ) -> None:
     """Remove one package source."""
-    registry_kind = _require_package_kind(kind)
+    registry_kind = _require_package_kind(format)
     client = _client(profile)
     try:
         destination = _resolve_repository_entry(repository, profile, kind=registry_kind)
@@ -881,7 +854,7 @@ def remote_select(
 @remote_app.command("list")
 def remote_list(
     profile: str | None = typer.Option(None, "--profile", "-p"),
-    customer_id: str | None = typer.Option(None, "--customer-id", hidden=True),
+    customer_id: str | None = typer.Option(None, "--account-ref", hidden=True),
     account: str | None = typer.Option(None, "--account"),
     kind: str | None = typer.Option(None, "--format", "-f"),
 ) -> None:
@@ -896,25 +869,32 @@ def remote_list(
         payload = client.get(
             "/remote-caches",
             params={
-                "customer_id": effective_customer_id,
-                "registry_kind": kind,
+                "account_ref": effective_customer_id,
+                "format": kind,
             },
         ).json()
         items = collection_items(payload)
     except ApiError as exc:
         output.fatal(str(exc))
     if kind:
-        items = [
-            entry for entry in items if remote_cache_payload(entry).get("registry_kind") == kind
-        ]
+        items = [entry for entry in items if remote_cache_payload(entry).get("format") == kind]
     if not items:
         output.info("No private mirrors found.")
         return
     output.table(
-        ["Account", "Source", "Publication", "Mirror", "Package format", "Minimum age"],
+        [
+            "Account",
+            "Remote-cache ref",
+            "Source",
+            "Publication",
+            "Mirror",
+            "Package format",
+            "Minimum age",
+        ],
         [
             [
-                str(entry.get("customer", {}).get("account_label", "")),
+                str(entry.get("account", {}).get("account_label", "")),
+                str(item["remote_cache_ref"]),
                 str(item.get("source_type") or "unknown"),
                 str(
                     item.get("publication_control")
@@ -929,13 +909,21 @@ def remote_list(
                     if item.get("source_type") == "official"
                     else f"custom-mirror:{item.get('remote_name') or item['remote_cache_ref']}"
                 ),
-                str(item.get("registry_kind", "")),
+                str(item.get("format", "")),
                 _format_age_hours(item.get("min_age_hours"), missing="No minimum"),
             ]
             for entry in items
             for item in [remote_cache_payload(entry)]
         ],
-        json_keys=["account", "source", "publication", "mirror", "format", "min_age_hours"],
+        json_keys=[
+            "account",
+            "remote_cache_ref",
+            "source",
+            "publication",
+            "mirror",
+            "format",
+            "min_age_hours",
+        ],
     )
 
 
@@ -961,14 +949,13 @@ def remote_create(
     try:
         sources_payload = client.get(
             "/remote-caches/official-sources",
-            params={"customer_id": customer_id},
+            params={"account_ref": customer_id},
         ).json()
         sources = collection_items(sources_payload)
         matches = [
             item
             for item in sources
-            if source == item.get("source_ref")
-            and (kind is None or item.get("registry_kind") == kind)
+            if source == item.get("source_ref") and (kind is None or item.get("format") == kind)
         ]
         if not matches:
             output.fatal(f"Official mirror source '{source}' was not found.")
@@ -976,7 +963,7 @@ def remote_create(
             output.fatal(f"Official mirror source '{source}' is ambiguous. Pass --format.")
         selected_source = matches[0]
         payload: dict[str, object] = {
-            "customer_id": customer_id,
+            "account_ref": customer_id,
             "source_ref": selected_source["source_ref"],
         }
         if min_age_hours is not None:
@@ -995,7 +982,7 @@ def remote_create(
     if select:
         target_select(
             target_name,
-            kind=str(item["registry_kind"]),
+            kind=str(item["format"]),
             account=account,
             profile=profile,
         )
@@ -1003,10 +990,12 @@ def remote_create(
 
 @remote_app.command("show")
 def remote_show(
-    remote: str = typer.Argument(..., help="Mirror ID."),
+    remote: str = typer.Argument(
+        ..., help="Remote-cache reference (rc_...).", metavar="REMOTE_CACHE_REF"
+    ),
     profile: str | None = typer.Option(None, "--profile", "-p"),
     account: str | None = typer.Option(None, "--account"),
-    customer_id: str | None = typer.Option(None, "--customer-id", hidden=True),
+    customer_id: str | None = typer.Option(None, "--account-ref", hidden=True),
     kind: str | None = typer.Option(None, "--format", "-f"),
 ) -> None:
     """Show a private mirror."""
@@ -1017,22 +1006,22 @@ def remote_show(
     try:
         entry = client.get(
             f"/remote-caches/{remote}",
-            params={"customer_id": selected_customer, "registry_kind": kind},
+            params={"account_ref": selected_customer, "format": kind},
         ).json()
         item = remote_cache_payload(entry)
     except (ApiError, KeyError, TypeError) as exc:
         output.fatal(str(exc))
     output.kv(
         {
-            "ID": item["remote_cache_ref"],
+            "Remote-cache ref": item["remote_cache_ref"],
             "Type": item.get("source_type"),
             "Target": (
                 f"mirror:{item.get('official_slug') or item['remote_cache_ref']}"
                 if item.get("source_type") == "official"
                 else f"custom-mirror:{item.get('remote_name') or item['remote_cache_ref']}"
             ),
-            "Package format": item.get("registry_kind"),
-            "Account ID": item.get("customer_id"),
+            "Package format": item.get("format"),
+            "Account ref": entry.get("account", {}).get("account_ref"),
             "Private mirror": "ready",
             "Mirror minimum package age": _format_age_hours(
                 item.get("min_age_hours"), missing="No minimum"
@@ -1043,11 +1032,11 @@ def remote_show(
         },
         title=f"Private mirror {remote}",
         json_keys=[
-            "id",
+            "remote_cache_ref",
             "type",
             "target",
             "format",
-            "account_id",
+            "account_ref",
             "private_mirror",
             "min_age_hours",
             "max_age_hours",
@@ -1057,11 +1046,13 @@ def remote_show(
 
 @remote_app.command("set-age")
 def remote_set_age(
-    remote: str = typer.Argument(..., help="Mirror ID."),
+    remote: str = typer.Argument(
+        ..., help="Remote-cache reference (rc_...).", metavar="REMOTE_CACHE_REF"
+    ),
     min_age_hours: float = typer.Option(..., "--min-age-hours", min=0),
     profile: str | None = typer.Option(None, "--profile", "-p"),
     account: str | None = typer.Option(None, "--account"),
-    customer_id: str | None = typer.Option(None, "--customer-id", hidden=True),
+    customer_id: str | None = typer.Option(None, "--account-ref", hidden=True),
     kind: str | None = typer.Option(None, "--format", "-f"),
 ) -> None:
     """Update the private mirror minimum package age."""
@@ -1073,7 +1064,7 @@ def remote_set_age(
     try:
         client.patch(
             f"/remote-caches/{remote}",
-            params={"customer_id": selected_customer, "registry_kind": kind},
+            params={"account_ref": selected_customer, "format": kind},
             json=payload,
         )
     except ApiError as exc:
@@ -1083,9 +1074,11 @@ def remote_set_age(
 
 @remote_app.command("delete")
 def remote_delete(
-    remote: str = typer.Argument(..., help="Mirror ID."),
+    remote: str = typer.Argument(
+        ..., help="Remote-cache reference (rc_...).", metavar="REMOTE_CACHE_REF"
+    ),
     profile: str | None = typer.Option(None, "--profile", "-p"),
-    customer_id: str | None = typer.Option(None, "--customer-id", hidden=True),
+    customer_id: str | None = typer.Option(None, "--account-ref", hidden=True),
     account: str | None = typer.Option(None, "--account"),
     kind: str | None = typer.Option(None, "--format", "-f"),
     yes: bool = typer.Option(False, "--yes", "-y"),
@@ -1096,7 +1089,7 @@ def remote_delete(
     if not yes:
         typer.confirm(f"Delete private mirror '{remote}'?", abort=True)
     selected_customer = _context_customer_id(profile, account) or _customer_id(profile, customer_id)
-    params = {"customer_id": selected_customer, "registry_kind": kind}
+    params = {"account_ref": selected_customer, "format": kind}
     client = _client(profile)
     try:
         client.delete(f"/remote-caches/{remote}", params=params)
@@ -1126,7 +1119,7 @@ def package_list(
     try:
         repository_unique_ref = _resolved_repository_unique_ref(repo, profile, kind=registry_kind)
         data = client.get(
-            f"/repositories/{repository_unique_ref}/lanes/{registry_kind}/packages"
+            f"/repositories/{repository_unique_ref}/formats/{registry_kind}/packages"
         ).json()
     except ApiError as exc:
         output.fatal(str(exc))
@@ -1173,7 +1166,7 @@ def package_show(
     try:
         repository_unique_ref = _resolved_repository_unique_ref(repo, profile, kind=registry_kind)
         item = client.get(
-            f"/repositories/{repository_unique_ref}/lanes/{registry_kind}/packages/detail",
+            f"/repositories/{repository_unique_ref}/formats/{registry_kind}/packages/detail",
             params={"package_name": name},
         ).json()
     except ApiError as exc:
@@ -1249,7 +1242,7 @@ def package_delete(
     try:
         repository_unique_ref = _resolved_repository_unique_ref(repo, profile, kind=registry_kind)
         client.delete(
-            f"/repositories/{repository_unique_ref}/lanes/{registry_kind}/packages/detail",
+            f"/repositories/{repository_unique_ref}/formats/{registry_kind}/packages/detail",
             params={"package_name": name},
         )
     except ApiError as exc:
@@ -1280,7 +1273,7 @@ def package_delete_version(
     try:
         repository_unique_ref = _resolved_repository_unique_ref(repo, profile, kind=registry_kind)
         client.delete(
-            f"/repositories/{repository_unique_ref}/lanes/{registry_kind}/packages/version",
+            f"/repositories/{repository_unique_ref}/formats/{registry_kind}/packages/version",
             params={"package_name": name, "version": version},
         )
     except ApiError as exc:
@@ -1310,7 +1303,7 @@ def package_yank(
     try:
         repository_unique_ref = _resolved_repository_unique_ref(repo, profile, kind=registry_kind)
         client.post(
-            f"/repositories/{repository_unique_ref}/lanes/{registry_kind}/packages/version/yank",
+            f"/repositories/{repository_unique_ref}/formats/{registry_kind}/packages/version/yank",
             params={"package_name": name, "version": version},
             json=body,
         )
@@ -1329,7 +1322,7 @@ def pypi_install(
     repo: str | None = typer.Option(None, "--target", "-t", help=_REPOSITORY_NAME_HELP),
     profile: str | None = typer.Option(None, "--profile", "-p"),
     customer_id: str | None = typer.Option(
-        None, "--customer-id", help="Account ID for advanced use.", hidden=True
+        None, "--account-ref", help="Typed account reference for advanced use.", hidden=True
     ),
 ) -> None:
     """Install Python packages using pip with Ravenstash credentials injected."""
@@ -1361,7 +1354,7 @@ def pypi_publish(
     repo: str | None = typer.Option(None, "--target", "-t", help=_REPOSITORY_NAME_HELP),
     profile: str | None = typer.Option(None, "--profile", "-p"),
     customer_id: str | None = typer.Option(
-        None, "--customer-id", help="Account ID for advanced use.", hidden=True
+        None, "--account-ref", help="Typed account reference for advanced use.", hidden=True
     ),
 ) -> None:
     """Upload wheel and sdist files to a PyPI package repository."""
@@ -1408,7 +1401,7 @@ def npm_install(
     repo: str | None = typer.Option(None, "--target", "-t", help=_REPOSITORY_NAME_HELP),
     profile: str | None = typer.Option(None, "--profile", "-p"),
     customer_id: str | None = typer.Option(
-        None, "--customer-id", help="Account ID for advanced use.", hidden=True
+        None, "--account-ref", help="Typed account reference for advanced use.", hidden=True
     ),
 ) -> None:
     """Install npm packages with Ravenstash credentials injected."""
@@ -1436,7 +1429,7 @@ def npm_publish(
     repo: str | None = typer.Option(None, "--target", "-t", help=_REPOSITORY_NAME_HELP),
     profile: str | None = typer.Option(None, "--profile", "-p"),
     customer_id: str | None = typer.Option(
-        None, "--customer-id", help="Account ID for advanced use.", hidden=True
+        None, "--account-ref", help="Typed account reference for advanced use.", hidden=True
     ),
 ) -> None:
     """Publish an npm package to a Ravenstash npm repository."""
@@ -1485,7 +1478,7 @@ def maven_install(
     repo: str | None = typer.Option(None, "--target", "-t", help=_REPOSITORY_NAME_HELP),
     profile: str | None = typer.Option(None, "--profile", "-p"),
     customer_id: str | None = typer.Option(
-        None, "--customer-id", help="Account ID for advanced use.", hidden=True
+        None, "--account-ref", help="Typed account reference for advanced use.", hidden=True
     ),
 ) -> None:
     """Fetch a Maven artifact into the local Maven cache."""
@@ -1519,17 +1512,17 @@ def maven_install(
 def maven_publish(
     account: str | None = typer.Option(None, "--account"),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip publishing confirmation."),
-    artifact_file: Path = typer.Argument(..., help="Artifact file to deploy."),
+    artifact_file: Path = typer.Argument(..., help="Artifact file to publish."),
     group: str = typer.Option(..., "--group-id", "-g", help="Maven groupId."),
     artifact: str = typer.Option(..., "--artifact-id", "-a", help="Maven artifactId."),
     version: str = typer.Option(..., "--version", "-v", help="Maven version."),
     repo: str | None = typer.Option(None, "--target", "-t", help=_REPOSITORY_NAME_HELP),
     profile: str | None = typer.Option(None, "--profile", "-p"),
     customer_id: str | None = typer.Option(
-        None, "--customer-id", help="Account ID for advanced use.", hidden=True
+        None, "--account-ref", help="Typed account reference for advanced use.", hidden=True
     ),
 ) -> None:
-    """Deploy an artifact file to a Ravenstash Maven repository."""
+    """Publish an artifact file to a Ravenstash Maven repository."""
     if not artifact_file.exists():
         output.fatal(f"Artifact file not found: {artifact_file}")
     try:
@@ -1572,7 +1565,7 @@ def maven_publish(
     failed = False
     for result in results:
         if result.ok:
-            output.success(f"Deployed {result.filename}")
+            output.success(f"Published {result.filename}")
         else:
             failed = True
             output.error(f"Failed {result.filename}: {result.detail}")

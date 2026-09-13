@@ -160,14 +160,14 @@ def test_repository_target_ambiguity_uses_public_account_references() -> None:
         {
             "code": "RepositoryTargetAmbiguous",
             "matches": [
-                {"customer_unique_ref": "_abcdefgh"},
-                {"customer_unique_ref": "_23456789"},
+                {"account_ref": "ac_abcdefgh"},
+                {"account_ref": "ac_23456789"},
             ],
         },
     )
 
     assert str(error) == (
-        "Repository target is ambiguous. Choose an account with --account: _abcdefgh, _23456789."
+        "Repository target is ambiguous. Choose an account with --account: ac_abcdefgh, ac_23456789."
     )
 
 

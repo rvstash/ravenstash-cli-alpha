@@ -39,7 +39,10 @@ class _FakeApiClient:
         self.calls.append(("GET", path, params))
         if path == "/repositories/resolve" and not self.responses:
             return _JsonResponse(_repository_entry())
-        return _JsonResponse(self.responses.pop(0))
+        payload = self.responses.pop(0)
+        if isinstance(payload, list):
+            payload = {"items": payload, "next_cursor": None}
+        return _JsonResponse(payload)
 
     def issue_native(self, path: str, payload: dict):
         assert payload["duration_seconds"] == 14400
@@ -51,7 +54,7 @@ class _FakeApiClient:
             return _JsonResponse(
                 {
                     "access_token": "rvs_sltAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
-                    "native_paths": {kind: "/test-account/repo" for kind in json["registry_kinds"]},
+                    "native_paths": {kind: "/test-account/repo" for kind in json["formats"]},
                 }
             )
         return _JsonResponse(self.responses.pop(0) if self.responses else {})
@@ -71,10 +74,11 @@ class _FakeApiClient:
 
 def _repository_entry(name: str = "repo") -> dict[str, Any]:
     return {
-        "customer": {
-            "customer_id": "cus_123",
-            "customer_unique_ref": "_custpid1",
+        "account": {
+            "account_ref": "ac_23456789",
             "account_label": "Test account",
+            "account_type": "organization",
+            "organization_role": "owner",
         },
         "repository": {
             "repository_name": name,
@@ -82,10 +86,8 @@ def _repository_entry(name: str = "repo") -> dict[str, Any]:
             "namespace_realm": "internal",
             "namespace_unique_ref": "in_abcdefgh",
             "repository_unique_ref": "r_xyzabcde",
-            "registry_kinds": ["pypi", "npm", "maven"],
-            "lanes": [
-                {"registry_kind": kind, "upstream_config_revision": 7}
-                for kind in ("pypi", "npm", "maven")
+            "formats": [
+                {"format": kind, "upstream_config_revision": 7} for kind in ("pypi", "npm", "maven")
             ],
         },
     }
@@ -98,16 +100,15 @@ def _isolate_config(monkeypatch, tmp_path: Path, content: str | None = None) -> 
     config_file.write_text(
         content
         or """
+config_version = 4
 default_profile = "default"
 
 [profiles.default]
 api_url = "https://api.ravenstash.com"
-customer_id = "cus_123"
-customer_unique_id = "custpid1"
+account_ref = "ac_23456789"
 
 [profiles.staging]
-customer_id = "cus_123"
-customer_unique_id = "custpid1"
+account_ref = "ac_23456789"
 
 [profiles.default.registries.pypi]
 default_repo = "in_abcdefgh/r_xyzabcde"
@@ -158,7 +159,7 @@ def test_artifacts_repo_list_filters_by_kind_and_uses_profile_customer(
                     **_repository_entry("repo-pypi"),
                     "repository": {
                         **_repository_entry("repo-pypi")["repository"],
-                        "registry_kinds": ["pypi", "npm"],
+                        "formats": ["pypi", "npm"],
                     },
                 },
             ]
@@ -173,7 +174,7 @@ def test_artifacts_repo_list_filters_by_kind_and_uses_profile_customer(
         (
             "GET",
             "/repositories",
-            {"customer_id": "cus_123", "registry_kind": "pypi"},
+            {"account_ref": "ac_23456789", "format": "pypi"},
         )
     ]
     assert "repo-pypi" in result.output
@@ -190,7 +191,7 @@ def test_artifacts_repo_list_omits_unset_query_filters(
     result = runner.invoke(artifacts_cmd.app, ["repo", "list"])
 
     assert result.exit_code == 0
-    assert fake.calls == [("GET", "/repositories", {"customer_id": "cus_123"})]
+    assert fake.calls == [("GET", "/repositories", {"account_ref": "ac_23456789"})]
 
 
 def test_artifacts_repo_create_can_set_default_repo(monkeypatch, tmp_path: Path) -> None:
@@ -199,7 +200,7 @@ def test_artifacts_repo_create_can_set_default_repo(monkeypatch, tmp_path: Path)
         [
             [
                 {
-                    "customer": _repository_entry()["customer"],
+                    "account": _repository_entry()["account"],
                     "namespace": {
                         "namespace_unique_ref": "in_abcdefgh",
                         "namespace_name": "test-account",
@@ -220,15 +221,15 @@ def test_artifacts_repo_create_can_set_default_repo(monkeypatch, tmp_path: Path)
 
     assert result.exit_code == 0
     assert fake.calls == [
-        ("GET", "/namespaces", {"customer_id": "cus_123"}),
+        ("GET", "/namespaces", {"account_ref": "ac_23456789"}),
         (
             "POST",
             "/repositories",
             {
-                "customer_id": "cus_123",
+                "account_ref": "ac_23456789",
                 "namespace_unique_ref": "in_abcdefgh",
                 "repository_name": "new-node",
-                "registry_kinds": ["npm"],
+                "formats": ["npm"],
             },
         ),
     ]
@@ -249,7 +250,7 @@ def test_repo_create_accepts_comma_separated_and_repeated_formats(monkeypatch, t
         [
             [
                 {
-                    "customer": _repository_entry()["customer"],
+                    "account": _repository_entry()["account"],
                     "namespace": {
                         "namespace_unique_ref": "in_abcdefgh",
                         "namespace_name": "test-account",
@@ -264,7 +265,7 @@ def test_repo_create_accepts_comma_separated_and_repeated_formats(monkeypatch, t
     _use_fake_client(monkeypatch, fake)
     result = runner.invoke(artifacts_cmd.app, ["repo", "create", "packages", *flags])
     assert result.exit_code == 0, result.output
-    assert fake.calls[-1][2]["registry_kinds"] == ["pypi", "npm", "maven", "container", "helm"]
+    assert fake.calls[-1][2]["formats"] == ["pypi", "npm", "maven", "container", "helm"]
 
 
 @pytest.mark.parametrize("value", ["pypi,", ",npm", "pypi,unknown", " "])
@@ -292,8 +293,8 @@ def test_create_resolves_namespace_inside_selected_customer(
     fake = _FakeApiClient(
         [
             [
-                {"customer": {"customer_id": "foreign"}, "namespace": namespace},
-                {"customer": _repository_entry()["customer"], "namespace": namespace},
+                {"account": {"account_ref": "foreign"}, "namespace": namespace},
+                {"account": _repository_entry()["account"], "namespace": namespace},
             ],
             _repository_entry(repo_name),
         ]
@@ -304,15 +305,15 @@ def test_create_resolves_namespace_inside_selected_customer(
     )
     assert result.exit_code == 0, result.output
     assert fake.calls == [
-        ("GET", "/namespaces", {"customer_id": "cus_123"}),
+        ("GET", "/namespaces", {"account_ref": "ac_23456789"}),
         (
             "POST",
             "/repositories",
             {
-                "customer_id": "cus_123",
+                "account_ref": "ac_23456789",
                 "namespace_unique_ref": "in_abcdefgh",
                 "repository_name": repo_name,
-                "registry_kinds": ["npm"],
+                "formats": ["npm"],
             },
         ),
     ]
@@ -325,7 +326,7 @@ def test_create_with_deferred_personal_namespace_requests_onboarding(monkeypatch
     result = runner.invoke(artifacts_cmd.app, ["repo", "create", "new-node", "-f", "npm"])
     assert result.exit_code != 0
     assert "finish onboarding" in result.output
-    assert fake.calls == [("GET", "/namespaces", {"customer_id": "cus_123"})]
+    assert fake.calls == [("GET", "/namespaces", {"account_ref": "ac_23456789"})]
 
 
 @pytest.mark.parametrize("flags", [["--public"], ["--scope", "public"]])
@@ -356,7 +357,7 @@ def test_artifacts_repo_show_renders_repository_details(monkeypatch, tmp_path: P
                 **_repository_entry("repo-pypi"),
                 "repository": {
                     **_repository_entry("repo-pypi")["repository"],
-                    "registry_kinds": ["pypi", "npm"],
+                    "formats": ["pypi", "npm"],
                     "lanes": [{}, {}],
                     "aggregate_package_count": 7,
                     "aggregate_version_count": 13,
@@ -377,7 +378,7 @@ def test_artifacts_repo_show_renders_repository_details(monkeypatch, tmp_path: P
         (
             "GET",
             "/repositories/resolve",
-            {"selector": "repo-pypi", "customer_id": "cus_123"},
+            {"selector": "repo-pypi", "account_ref": "ac_23456789"},
         )
     ]
     assert "repo-pypi" in result.output
@@ -407,7 +408,7 @@ def test_artifacts_repo_rename_updates_matching_profile_default(
         (
             "GET",
             "/repositories/resolve",
-            {"selector": "repo-pypi", "customer_id": "cus_123"},
+            {"selector": "repo-pypi", "account_ref": "ac_23456789"},
         ),
         (
             "PATCH",
@@ -428,33 +429,32 @@ def test_artifacts_remote_management_and_upstream_configuration(
     _isolate_config(monkeypatch, tmp_path)
     fake = _FakeApiClient(
         [
-            [{"source_ref": "pypiorg", "registry_kind": "pypi"}],
+            [{"source_ref": "pypiorg", "format": "pypi"}],
             {
-                "customer": _repository_entry()["customer"],
-                "remote_repository": {
+                "account": _repository_entry()["account"],
+                "remote_cache": {
                     "id": "remote_1",
                     "public_id": "pypi",
-                    "remote_cache_ref": "pypi",
-                    "registry_kind": "pypi",
+                    "remote_cache_ref": "rc_abcdefgh",
+                    "format": "pypi",
                 },
             },
             _repository_entry("repo-pypi"),
             {
-                "customer": _repository_entry()["customer"],
-                "remote_repository": {
+                "account": _repository_entry()["account"],
+                "remote_cache": {
                     "id": "remote_1",
                     "public_id": "pypi",
-                    "remote_cache_ref": "pypi",
-                    "registry_kind": "pypi",
+                    "remote_cache_ref": "rc_abcdefgh",
+                    "format": "pypi",
                 },
             },
-            [],
             {
                 "id": "attachment-1",
-                "priority": 0,
+                "position": 1,
                 "source_type": "remote",
                 "source_remote_name": "pypi",
-                "registry_kind": "pypi",
+                "format": "pypi",
                 "min_age_hours": 5.0,
                 "max_age_hours": None,
             },
@@ -471,8 +471,10 @@ def test_artifacts_remote_management_and_upstream_configuration(
             "add",
             "repo-pypi",
             "pypi",
-            "--mirror",
-            "pypi",
+            "--remote-cache",
+            "rc_abcdefgh",
+            "--position",
+            "1",
             "--min-age-hours",
             "5",
         ],
@@ -484,39 +486,34 @@ def test_artifacts_remote_management_and_upstream_configuration(
         (
             "GET",
             "/remote-caches/official-sources",
-            {"customer_id": "cus_123"},
+            {"account_ref": "ac_23456789"},
         ),
         (
             "POST",
             "/remote-caches/official",
-            {"customer_id": "cus_123", "source_ref": "pypiorg"},
+            {"account_ref": "ac_23456789", "source_ref": "pypiorg"},
         ),
         (
             "GET",
             "/repositories/resolve",
             {
                 "selector": "repo-pypi",
-                "customer_id": "cus_123",
-                "registry_kind": "pypi",
+                "account_ref": "ac_23456789",
+                "format": "pypi",
             },
         ),
         (
             "GET",
-            "/remote-caches/pypi",
-            {"registry_kind": "pypi"},
-        ),
-        (
-            "GET",
-            "/repositories/r_xyzabcde/lanes/pypi/upstreams",
-            None,
+            "/remote-caches/rc_abcdefgh",
+            {"format": "pypi"},
         ),
         (
             "POST",
-            "/repositories/r_xyzabcde/lanes/pypi/upstreams",
+            "/repositories/r_xyzabcde/formats/pypi/upstreams",
             {
                 "source_type": "remote",
-                "remote_cache_ref": "pypi",
-                "priority": 0,
+                "remote_cache_ref": "rc_abcdefgh",
+                "position": 1,
                 "expected_revision": 7,
                 "min_age_hours": 5.0,
                 "max_age_hours": None,
@@ -534,18 +531,18 @@ def test_artifacts_official_remote_add_uses_public_source_ref(monkeypatch, tmp_p
                     {
                         "source_ref": "pypiorg",
                         "display_name": "Python Package Index",
-                        "registry_kind": "pypi",
+                        "format": "pypi",
                     }
                 ],
                 "next_cursor": None,
             },
             {
-                "customer": _repository_entry()["customer"],
+                "account": _repository_entry()["account"],
                 "remote_cache": {
-                    "remote_cache_ref": "_cache001",
+                    "remote_cache_ref": "rc_23456789",
                     "source_type": "official",
                     "official_slug": "pypiorg",
-                    "registry_kind": "pypi",
+                    "format": "pypi",
                 },
             },
         ]
@@ -559,12 +556,12 @@ def test_artifacts_official_remote_add_uses_public_source_ref(monkeypatch, tmp_p
         (
             "GET",
             "/remote-caches/official-sources",
-            {"customer_id": "cus_123"},
+            {"account_ref": "ac_23456789"},
         ),
         (
             "POST",
             "/remote-caches/official",
-            {"customer_id": "cus_123", "source_ref": "pypiorg"},
+            {"account_ref": "ac_23456789", "source_ref": "pypiorg"},
         ),
     ]
 
@@ -577,13 +574,14 @@ def test_artifacts_official_remote_list_reports_external_publication_control(
         [
             [
                 {
-                    "customer": _repository_entry()["customer"],
-                    "remote_repository": {
+                    "account": _repository_entry()["account"],
+                    "remote_cache": {
                         "id": "remote_official_1",
                         "public_id": "pypi",
+                        "remote_cache_ref": "rc_23456789",
                         "official_slug": "pypi",
-                        "source_family": "official",
-                        "registry_kind": "pypi",
+                        "source_type": "official",
+                        "format": "pypi",
                         "min_age_hours": None,
                     },
                 }
@@ -601,8 +599,10 @@ def test_artifacts_official_remote_list_reports_external_publication_control(
     result = runner.invoke(artifacts_cmd.app, ["mirror", "list"])
 
     assert result.exit_code == 0
-    assert tables[0][0][2] == "Publication"
-    assert tables[0][1][0][2] == "externally_controlled"
+    assert tables[0][0][1] == "Remote-cache ref"
+    assert tables[0][1][0][1] == "rc_23456789"
+    assert tables[0][0][3] == "Publication"
+    assert tables[0][1][0][3] == "externally_controlled"
     assert tables[0][1][0][-1] == "No minimum"
 
 
@@ -611,13 +611,14 @@ def test_artifacts_mirror_show_formats_absent_age_bounds(monkeypatch, tmp_path: 
     fake = _FakeApiClient(
         [
             {
-                "remote_repository": {
+                "remote_cache": {
                     "id": "remote_official_1",
                     "public_id": "pypiorg",
+                    "remote_cache_ref": "rc_abcdefgh",
                     "official_slug": "pypiorg",
-                    "source_family": "official",
-                    "customer_id": "cus_123",
-                    "registry_kind": "pypi",
+                    "source_type": "official",
+                    "account_ref": "ac_23456789",
+                    "format": "pypi",
                     "min_age_hours": None,
                     "max_age_hours": None,
                 }
@@ -626,7 +627,7 @@ def test_artifacts_mirror_show_formats_absent_age_bounds(monkeypatch, tmp_path: 
     )
     _use_fake_client(monkeypatch, fake)
 
-    result = runner.invoke(artifacts_cmd.app, ["mirror", "show", "pypiorg"])
+    result = runner.invoke(artifacts_cmd.app, ["mirror", "show", "rc_abcdefgh"])
 
     assert result.exit_code == 0
     assert "No minimum" in result.output
@@ -646,19 +647,19 @@ def test_artifacts_repo_upstream_add_private_uses_source_lane_and_zero_age_defau
         "repository_unique_ref": "r_shared01",
         "namespace_name": "libraries",
         "namespace_realm": "internal",
-        "lanes": [{"id": "lane-b-pypi", "registry_kind": "pypi"}],
+        "formats": [{"format": "pypi", "upstream_config_revision": 1}],
     }
     attachment = {
         "id": "attachment-a-b",
-        "priority": 0,
+        "position": 1,
         "source_type": "private",
         "source_namespace_name": "libraries",
         "source_repository_name": "shared",
-        "registry_kind": "pypi",
+        "format": "pypi",
         "min_age_hours": None,
         "max_age_hours": None,
     }
-    fake = _FakeApiClient([destination, source, [], attachment])
+    fake = _FakeApiClient([destination, source, attachment])
     _use_fake_client(monkeypatch, fake)
 
     result = runner.invoke(
@@ -671,17 +672,19 @@ def test_artifacts_repo_upstream_add_private_uses_source_lane_and_zero_age_defau
             "pypi",
             "--private-repository",
             "libraries/shared",
+            "--position",
+            "1",
         ],
     )
 
     assert result.exit_code == 0
     assert fake.calls[-1] == (
         "POST",
-        "/repositories/r_xyzabcde/lanes/pypi/upstreams",
+        "/repositories/r_xyzabcde/formats/pypi/upstreams",
         {
             "source_type": "private",
             "source_repository_unique_ref": "r_shared01",
-            "priority": 0,
+            "position": 1,
             "expected_revision": 7,
             "min_age_hours": 0.0,
             "max_age_hours": None,
@@ -689,7 +692,7 @@ def test_artifacts_repo_upstream_add_private_uses_source_lane_and_zero_age_defau
     )
 
 
-def test_artifacts_repo_upstream_add_appends_after_existing_plan(
+def test_artifacts_repo_upstream_add_uses_explicit_sparse_position(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
@@ -701,19 +704,19 @@ def test_artifacts_repo_upstream_add_appends_after_existing_plan(
         "repository_unique_ref": "r_shared01",
         "namespace_name": "libraries",
         "namespace_realm": "internal",
-        "lanes": [{"id": "lane-b-pypi", "registry_kind": "pypi"}],
+        "formats": [{"format": "pypi", "upstream_config_revision": 1}],
     }
     attachment = {
         "id": "attachment-a-b",
-        "priority": 2,
+        "position": 3,
         "source_type": "private",
         "source_namespace_name": "libraries",
         "source_repository_name": "shared",
-        "registry_kind": "pypi",
+        "format": "pypi",
         "min_age_hours": None,
         "max_age_hours": None,
     }
-    fake = _FakeApiClient([destination, source, [{"id": "one"}, {"id": "two"}], attachment])
+    fake = _FakeApiClient([destination, source, attachment])
     _use_fake_client(monkeypatch, fake)
 
     result = runner.invoke(
@@ -726,19 +729,21 @@ def test_artifacts_repo_upstream_add_appends_after_existing_plan(
             "pypi",
             "--private-repository",
             "libraries/shared",
+            "--position",
+            "3",
         ],
     )
 
     assert result.exit_code == 0
-    assert fake.calls[-1][2]["priority"] == 2
+    assert fake.calls[-1][2]["position"] == 3
 
 
-def test_artifacts_repo_upstream_reorder_and_remove_use_generic_routes(
+def test_artifacts_repo_upstream_reorder_is_removed_and_remove_uses_format_route(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
     _isolate_config(monkeypatch, tmp_path)
-    fake = _FakeApiClient([_repository_entry("application"), [], _repository_entry("application")])
+    fake = _FakeApiClient([_repository_entry("application")])
     _use_fake_client(monkeypatch, fake)
 
     reordered = runner.invoke(
@@ -765,19 +770,11 @@ def test_artifacts_repo_upstream_reorder_and_remove_use_generic_routes(
         ],
     )
 
-    assert reordered.exit_code == 0
+    assert reordered.exit_code == 2
     assert removed.exit_code == 0
     assert (
-        "PUT",
-        "/repositories/r_xyzabcde/lanes/npm/upstreams/order",
-        {
-            "attachment_ids": ["attachment-b", "attachment-r"],
-            "expected_revision": 7,
-        },
-    ) in fake.calls
-    assert (
         "DELETE",
-        "/repositories/r_xyzabcde/lanes/npm/upstreams/attachment-b",
+        "/repositories/r_xyzabcde/formats/npm/upstreams/attachment-b",
         {"expected_revision": 7},
     ) in fake.calls
 
@@ -791,7 +788,15 @@ def test_artifacts_repo_upstream_add_requires_exactly_one_source(
 
     neither = runner.invoke(
         artifacts_cmd.app,
-        ["repo", "upstream", "add", "application", "pypi"],
+        [
+            "repo",
+            "upstream",
+            "add",
+            "application",
+            "pypi",
+            "--position",
+            "1",
+        ],
     )
     both = runner.invoke(
         artifacts_cmd.app,
@@ -805,6 +810,8 @@ def test_artifacts_repo_upstream_add_requires_exactly_one_source(
             "shared",
             "--remote-cache",
             "pypi",
+            "--position",
+            "1",
         ],
     )
 
@@ -814,7 +821,7 @@ def test_artifacts_repo_upstream_add_requires_exactly_one_source(
     assert "exactly one" in both.output
 
 
-def test_artifacts_repo_upstream_priority_is_limited_to_four_slots() -> None:
+def test_artifacts_repo_upstream_position_is_limited_to_four_slots() -> None:
     result = runner.invoke(
         artifacts_cmd.app,
         [
@@ -825,13 +832,13 @@ def test_artifacts_repo_upstream_priority_is_limited_to_four_slots() -> None:
             "pypi",
             "--private-repository",
             "shared",
-            "--priority",
-            "4",
+            "--position",
+            "5",
         ],
     )
 
     assert result.exit_code == 2
-    assert "0<=x<=3" in result.output
+    assert "1<=x<=4" in result.output
 
 
 def test_artifacts_package_list_and_show_use_repository_package_paths(
@@ -888,13 +895,13 @@ def test_artifacts_package_list_and_show_use_repository_package_paths(
             "/repositories/resolve",
             {
                 "selector": "repo-pypi",
-                "customer_id": "cus_123",
-                "registry_kind": "pypi",
+                "account_ref": "ac_23456789",
+                "format": "pypi",
             },
         ),
         (
             "GET",
-            "/repositories/r_xyzabcde/lanes/pypi/packages",
+            "/repositories/r_xyzabcde/formats/pypi/packages",
             None,
         ),
         (
@@ -902,13 +909,13 @@ def test_artifacts_package_list_and_show_use_repository_package_paths(
             "/repositories/resolve",
             {
                 "selector": "repo-pypi",
-                "customer_id": "cus_123",
-                "registry_kind": "pypi",
+                "account_ref": "ac_23456789",
+                "format": "pypi",
             },
         ),
         (
             "GET",
-            "/repositories/r_xyzabcde/lanes/pypi/packages/detail",
+            "/repositories/r_xyzabcde/formats/pypi/packages/detail",
             {"package_name": "demo"},
         ),
     ]
@@ -973,13 +980,13 @@ def test_artifacts_package_mutations_call_expected_api_paths(monkeypatch, tmp_pa
             "/repositories/resolve",
             {
                 "selector": "repo-pypi",
-                "customer_id": "cus_123",
-                "registry_kind": "pypi",
+                "account_ref": "ac_23456789",
+                "format": "pypi",
             },
         ),
         (
             "DELETE",
-            "/repositories/r_xyzabcde/lanes/pypi/packages/detail",
+            "/repositories/r_xyzabcde/formats/pypi/packages/detail",
             {"package_name": "demo"},
         ),
         (
@@ -987,13 +994,13 @@ def test_artifacts_package_mutations_call_expected_api_paths(monkeypatch, tmp_pa
             "/repositories/resolve",
             {
                 "selector": "repo-pypi",
-                "customer_id": "cus_123",
-                "registry_kind": "pypi",
+                "account_ref": "ac_23456789",
+                "format": "pypi",
             },
         ),
         (
             "DELETE",
-            "/repositories/r_xyzabcde/lanes/pypi/packages/version",
+            "/repositories/r_xyzabcde/formats/pypi/packages/version",
             {"package_name": "demo", "version": "1.0.0"},
         ),
         (
@@ -1001,13 +1008,13 @@ def test_artifacts_package_mutations_call_expected_api_paths(monkeypatch, tmp_pa
             "/repositories/resolve",
             {
                 "selector": "repo-pypi",
-                "customer_id": "cus_123",
-                "registry_kind": "pypi",
+                "account_ref": "ac_23456789",
+                "format": "pypi",
             },
         ),
         (
             "POST",
-            "/repositories/r_xyzabcde/lanes/pypi/packages/version/yank",
+            "/repositories/r_xyzabcde/formats/pypi/packages/version/yank",
             {"reason": "bad build"},
         ),
     ]
@@ -1051,7 +1058,7 @@ def test_pypi_install_refreshes_native_path_when_saved_target_name_changed(
     _isolate_config(monkeypatch, tmp_path)
     cfg_mod.set_registry_default_target(
         "pypi",
-        customer=_repository_entry("old-name")["customer"],
+        customer=_repository_entry("old-name")["account"],
         repository=_repository_entry("old-name")["repository"],
         profile="staging",
     )
@@ -1160,7 +1167,7 @@ def test_publish_confirmation_uses_resolved_org_and_blocks_upload(
 ) -> None:
     _isolate_config(monkeypatch, tmp_path)
     entry = _repository_entry("backend")
-    entry["customer"].update(account_type="organization", account_label="YYYY")
+    entry["account"].update(account_type="organization", account_label="YYYY")
     entry["repository"]["namespace_name"] = "platform"
     client = _FakeApiClient([entry])
     monkeypatch.setattr(
@@ -1240,7 +1247,7 @@ def test_npm_publish_calls_registry_adapter(monkeypatch, tmp_path: Path) -> None
     ]
 
 
-def test_maven_deploy_checks_file_and_calls_registry_adapter(monkeypatch, tmp_path: Path) -> None:
+def test_maven_publish_checks_file_and_calls_registry_adapter(monkeypatch, tmp_path: Path) -> None:
     _isolate_config(monkeypatch, tmp_path)
     monkeypatch.setenv("RVS_TOKEN", "rvs_ustAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")
     artifact = tmp_path / "demo-1.0.0.jar"

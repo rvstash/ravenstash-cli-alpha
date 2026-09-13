@@ -33,23 +33,13 @@ def validate_api_version(response: Any) -> None:
 
 
 def collection_items(payload: Any) -> list[dict[str, Any]]:
-    # v0 is explicitly unstable; accepting its immediately preceding bare-array
-    # shape makes development rollouts atomic without becoming a public promise.
-    if isinstance(payload, list):
-        return payload
     if not isinstance(payload, dict) or not isinstance(payload.get("items"), list):
         raise ValueError("DevAPI collection response is invalid")
     return payload["items"]
 
 
 def remote_cache(entry: dict[str, Any]) -> dict[str, Any]:
-    value = entry.get("remote_cache") or entry.get("remote_repository")
+    value = entry.get("remote_cache")
     if not isinstance(value, dict):
         raise ValueError("DevAPI remote-cache response is invalid")
-    normalized = dict(value)
-    normalized.setdefault(
-        "remote_cache_ref",
-        normalized.get("unique_ref") or normalized.get("public_id"),
-    )
-    normalized.setdefault("source_type", normalized.get("source_family"))
-    return normalized
+    return value

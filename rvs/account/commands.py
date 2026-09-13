@@ -22,9 +22,9 @@ def _profile_name(profile: str | None) -> str:
     return profile or cfg_mod.current_profile_name()
 
 
-def customers(profile: str | None = None) -> list[dict]:
+def accounts(profile: str | None = None) -> list[dict]:
     try:
-        payload = ApiClient.from_profile(profile).get("/customers").json()
+        payload = ApiClient.from_profile(profile).get("/accounts").json()
         if isinstance(payload, dict):
             payload = payload.get("items", [])
     except ApiError as exc:
@@ -35,7 +35,7 @@ def customers(profile: str | None = None) -> list[dict]:
 
 
 def resolve_account(selector: str, profile: str | None = None) -> dict:
-    items = customers(profile)
+    items = accounts(profile)
     value = selector.strip()
     if not value:
         output.fatal("Account name cannot be empty.")
@@ -44,8 +44,8 @@ def resolve_account(selector: str, profile: str | None = None) -> dict:
     handle_matches = [
         item
         for item in items
-        if isinstance(item.get("customer_handle"), str)
-        and item["customer_handle"].casefold() == lowered
+        if isinstance(item.get("account_handle"), str)
+        and item["account_handle"].casefold() == lowered
     ]
     if handle_matches:
         matches = handle_matches
@@ -59,9 +59,7 @@ def resolve_account(selector: str, profile: str | None = None) -> dict:
             for item in items
             if value
             in {
-                item.get("customer_id"),
-                item.get("customer_unique_id"),
-                item.get("customer_unique_ref"),
+                item.get("account_ref"),
             }
             or (
                 isinstance(item.get("account_label"), str)
@@ -72,7 +70,7 @@ def resolve_account(selector: str, profile: str | None = None) -> dict:
     if not matches:
         output.fatal(f"Account '{selector}' was not found for this profile.")
     if len(matches) > 1:
-        refs = ", ".join(str(item.get("customer_unique_ref")) for item in matches)
+        refs = ", ".join(str(item.get("account_ref")) for item in matches)
         output.fatal(f"More than one account matches '{selector}'. Use one of these IDs: {refs}")
     selected = matches[0]
     cfg_mod.cache_account(
@@ -96,8 +94,7 @@ def ensure_active_account(
         profile_config = cfg_mod.load().active_profile(profile_name)
         if effective_id == profile_config.customer_id:
             customer = {
-                "customer_id": effective_id,
-                "customer_unique_ref": profile_config.customer_unique_id or effective_id,
+                "account_ref": effective_id,
                 "account_type": "personal",
                 "account_label": "personal",
                 "organization_role": "owner",
@@ -105,8 +102,7 @@ def ensure_active_account(
             }
         elif customer_id is not None:
             customer = {
-                "customer_id": effective_id,
-                "customer_unique_ref": effective_id,
+                "account_ref": effective_id,
                 "account_type": "organization",
                 "account_label": effective_id,
                 "organization_role": None,
@@ -115,7 +111,7 @@ def ensure_active_account(
         else:
             customer = resolve_account(effective_id, profile_name)
     else:
-        items = customers(profile_name)
+        items = accounts(profile_name)
         personal = [item for item in items if item.get("account_type") == "personal"]
         if len(personal) != 1:
             output.fatal("No account is selected. Run `rvs account use USERNAME_OR_HANDLE`.")
@@ -143,20 +139,20 @@ def account_list(
     profile_name = _profile_name(profile)
     active_id = cfg_mod.current_customer_id(profile_name)
     rows = []
-    for item in customers(profile_name):
-        customer_id = str(item.get("customer_id", ""))
+    for item in accounts(profile_name):
+        account_ref = str(item.get("account_ref", ""))
         account_type = str(item.get("account_type", ""))
-        label = item.get("customer_handle") or (
+        label = item.get("account_handle") or (
             "personal" if account_type == "personal" else f"org:{item.get('account_label')}"
         )
         rows.append(
             [
-                f"{label} (active)" if customer_id == active_id else label,
-                str(item.get("customer_unique_ref", "")),
+                f"{label} (active)" if account_ref == active_id else label,
+                account_ref,
                 str(item.get("organization_role", "")),
             ]
         )
-    output.table(["Account", "Account ID", "Role"], rows)
+    output.table(["Account", "Account ref", "Role"], rows)
 
 
 @app.command("current")
@@ -172,7 +168,7 @@ def account_current(
             "Selected by": cfg_mod.account_selection_source(profile_name),
             "Display name": account.account_label,
             "Username or handle": account.customer_handle or "unknown",
-            "Account ID": account.customer_unique_ref,
+            "Account ref": account.customer_unique_ref,
             "Role": account.organization_role or "unknown",
         },
         title="Current Ravenstash account",
@@ -185,9 +181,9 @@ def _use_account(account: str, profile: str | None) -> None:
     scope = cfg_mod.account_selection_write_scope()
     saved = cfg_mod.set_active_account(profile=profile_name, customer=selected)
     output.success(f"Account '{display_name(saved)}' selected for {scope}.")
-    if os.environ.get("RVS_CUSTOMER_ID"):
+    if os.environ.get("RVS_ACCOUNT_REF"):
         output.warn(
-            "RVS_CUSTOMER_ID is set and still overrides the selected account in this shell."
+            "RVS_ACCOUNT_REF is set and still overrides the selected account in this shell."
         )
 
 

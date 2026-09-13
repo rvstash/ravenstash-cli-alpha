@@ -54,8 +54,8 @@ def pip(
     ),
     rvs_customer_id: str | None = typer.Option(
         None,
-        "--rvs-customer-id",
-        help="Account ID for advanced use.",
+        "--rvs-account-ref",
+        help="Typed account reference for advanced use.",
         hidden=True,
     ),
     rvs_native_config: str = typer.Option(
@@ -83,8 +83,8 @@ def uv(
     ),
     rvs_customer_id: str | None = typer.Option(
         None,
-        "--rvs-customer-id",
-        help="Account ID for advanced use.",
+        "--rvs-account-ref",
+        help="Typed account reference for advanced use.",
         hidden=True,
     ),
     rvs_native_config: str = typer.Option(
@@ -112,8 +112,8 @@ def twine(
     ),
     rvs_customer_id: str | None = typer.Option(
         None,
-        "--rvs-customer-id",
-        help="Account ID for advanced use.",
+        "--rvs-account-ref",
+        help="Typed account reference for advanced use.",
         hidden=True,
     ),
     rvs_native_config: str = typer.Option(
@@ -141,8 +141,8 @@ def npm(
     ),
     rvs_customer_id: str | None = typer.Option(
         None,
-        "--rvs-customer-id",
-        help="Account ID for advanced use.",
+        "--rvs-account-ref",
+        help="Typed account reference for advanced use.",
         hidden=True,
     ),
     rvs_native_config: str = typer.Option(
@@ -170,8 +170,8 @@ def mvn(
     ),
     rvs_customer_id: str | None = typer.Option(
         None,
-        "--rvs-customer-id",
-        help="Account ID for advanced use.",
+        "--rvs-account-ref",
+        help="Typed account reference for advanced use.",
         hidden=True,
     ),
     rvs_native_config: str = typer.Option(

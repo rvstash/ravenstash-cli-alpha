@@ -38,20 +38,29 @@ class _Response:
 class _Api:
     def get(self, path: str, params=None) -> _Response:
         assert path == "/repositories/resolve"
-        if params.get("registry_kind") is None:
-            assert "registry_kind" not in params
+        if params.get("format") is None:
+            assert "format" not in params
         else:
-            assert params["registry_kind"] in {"container", "helm"}
+            assert params["format"] in {"container", "helm"}
         if params["selector"].startswith("in_"):
-            assert "customer_id" not in params
+            assert "account_ref" not in params
         else:
-            assert params["customer_id"] == "customer-1"
+            assert params["account_ref"] == "ac_23456789"
         return _Response(
             {
-                "customer": {"customer_id": "customer-1"},
+                "account": {
+                    "account_ref": "ac_23456789",
+                    "account_handle": "personal",
+                    "account_type": "personal",
+                    "account_label": "personal",
+                    "organization_role": None,
+                },
                 "repository": {
                     "repository_name": "images",
-                    "registry_kinds": ["container", "helm"],
+                    "formats": [
+                        {"format": "container", "upstream_config_revision": 1},
+                        {"format": "helm", "upstream_config_revision": 1},
+                    ],
                     "namespace_name": "main",
                     "namespace_realm": "internal",
                     "namespace_unique_ref": "in_abcdefgh",
@@ -109,11 +118,12 @@ def _setup(monkeypatch, tmp_path: Path) -> None:
     config_file = config_dir / "config.toml"
     config_file.write_text(
         """
+config_version = 4
 default_profile = "default"
 
 [profiles.default]
 api_url = "https://api.example.test"
-customer_id = "customer-1"
+account_ref = "ac_23456789"
 """.strip(),
         encoding="utf-8",
     )

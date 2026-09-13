@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import stat
+import tomllib
 from typing import TYPE_CHECKING
 
 import pytest
@@ -77,8 +78,8 @@ customer_unique_id = "custpid1"
     profile = cfg_mod.load().active_profile()
 
     assert profile.api_url == "https://staging.example.test"
-    assert profile.customer_id == "cus_staging"
-    assert profile.customer_unique_id == "custpid1"
+    assert profile.customer_id is None
+    assert profile.customer_unique_id is None
 
 
 def test_env_api_url_overrides_saved_profile_url(monkeypatch, tmp_path: Path) -> None:
@@ -287,7 +288,7 @@ registry_base_url = "http://localhost:8788"
     )
     migrated = config_file.read_text(encoding="utf-8")
     assert config_file.stat().st_ino != original_inode
-    assert "config_version = 3" in migrated
+    assert "config_version = 4" in migrated
     assert 'custom_setting = "preserved"' in migrated
     assert "cache_base_url" not in migrated
     assert migrated.count("mirror_base_url") == 6
@@ -354,6 +355,7 @@ account_label = "Me"
 [profiles.default.accounts.customer-1.selected_target]
 target_type = "private"
 customer_id = "customer-1"
+registry_kind = "pypi"
 stable_selector = "w_abcdefgh/r_23456789"
 display_selector = "engineering/packages"
 workspace_id = "namespace-pkid"
@@ -376,13 +378,15 @@ repository_name_cache = "packages"
     assert cfg_mod.stored_profile_api_url("default") == "https://api.ravenstash.com"
     loaded = cfg_mod.load()
 
-    target = loaded.profiles["default"].accounts["customer-1"].selected_target
+    target = loaded.profiles["default"].accounts["ac_abcdefgh"].selected_target
     assert target is not None
     assert target.target_type == "repository"
     assert target.namespace_realm == "internal"
     assert target.namespace_unique_ref == "in_abcdefgh"
     assert target.stable_selector == "in_abcdefgh/r_23456789"
     assert target.display_selector == "engineering/packages"
+    assert target.customer_id == "ac_abcdefgh"
+    assert target.registry_kind == "pypi"
     defaults = loaded.registry_defaults("pypi")
     assert defaults.default_repo == "engineering/packages"
     assert defaults.namespace_unique_ref == "in_abcdefgh"
@@ -395,6 +399,15 @@ repository_name_cache = "packages"
     assert "workspace" not in migrated
     assert "namespace-pkid" not in migrated
     assert "repository-pkid" not in migrated
+    migrated_raw = tomllib.loads(migrated)
+    migrated_profile = migrated_raw["profiles"]["default"]
+    assert migrated_profile["account_ref"] == "ac_abcdefgh"
+    assert "customer_id" not in migrated_profile
+    migrated_account = migrated_profile["accounts"]["ac_abcdefgh"]
+    assert "customer_unique_ref" not in migrated_account
+    assert migrated_account["selected_target"]["account_ref"] == "ac_abcdefgh"
+    assert migrated_account["selected_target"]["format"] == "pypi"
+    assert "registry_kind" not in migrated_account["selected_target"]
 
     cfg_mod.load()
     assert backup.read_text(encoding="utf-8") == original
@@ -415,8 +428,8 @@ repository_unique_ref = "r_23456789"
 """
     config_file.write_text(original, encoding="utf-8")
     cfg = cfg_mod.load()
-    assert cfg.profiles["default"].customer_id == "original-customer-id"
-    assert cfg.profiles["default"].customer_unique_id == "abcdefgh"
+    assert cfg.profiles["default"].customer_id == "ac_abcdefgh"
+    assert cfg.profiles["default"].customer_unique_id is None
     defaults = cfg.registry_defaults("pypi")
     assert defaults.default_repo == "main/packages"
     assert defaults.namespace_unique_ref == "in_abcdefgh"
@@ -579,8 +592,7 @@ def test_save_and_load_round_trips_profiles_and_registry_defaults(
                     ),
                     oci_registry_base_url="https://oci.work.example",
                 ),
-                customer_id="cus_work",
-                customer_unique_id="custpid1",
+                customer_id="ac_abcdefgh",
                 credential_store="pass",
                 credential_type="expiring",
                 expires_at="2099-01-01T00:00:00+00:00",
@@ -610,8 +622,8 @@ def test_save_and_load_round_trips_profiles_and_registry_defaults(
         loaded.profiles["work"].native_registries.oci_registry_base_url
         == "https://oci.work.example"
     )
-    assert loaded.profiles["work"].customer_id == "cus_work"
-    assert loaded.profiles["work"].customer_unique_id == "custpid1"
+    assert loaded.profiles["work"].customer_id == "ac_abcdefgh"
+    assert loaded.profiles["work"].customer_unique_id is None
     assert loaded.profiles["work"].credential_store == "pass"
     assert loaded.registry_defaults("pypi").default_repo == "in_abcdefgh/r_23456789"
     assert loaded.registry_defaults("npm").default_repo == "in_abcdefgh/r_xyzabcde"
@@ -661,20 +673,19 @@ def test_set_profile_metadata_preserves_existing_values(monkeypatch, tmp_path: P
             profiles={
                 "default": cfg_mod.ProfileConfig(
                     api_url="https://api.example",
-                    customer_id="cus_old",
-                    customer_unique_id="oldpid1",
+                    customer_id="ac_abcdefgh",
                     credential_type="expiring",
                 )
             }
         )
     )
 
-    cfg_mod.set_profile_metadata("default", customer_id="cus_new")
+    cfg_mod.set_profile_metadata("default", customer_id="ac_23456789")
     profile = cfg_mod.load().profiles["default"]
 
     assert profile.api_url == "https://api.example"
-    assert profile.customer_id == "cus_new"
-    assert profile.customer_unique_id == "oldpid1"
+    assert profile.customer_id == "ac_23456789"
+    assert profile.customer_unique_id is None
     assert profile.credential_type == "expiring"
 
 

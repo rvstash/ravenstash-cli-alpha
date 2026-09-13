@@ -30,12 +30,12 @@ def _isolate_config(monkeypatch, tmp_path: Path) -> None:
     config_file = config_dir / "config.toml"
     config_file.write_text(
         """
+config_version = 4
 default_profile = "work"
 
 [profiles.work]
 api_url = "https://api.work.example"
-customer_id = "personal-user"
-customer_unique_id = "personal-ref"
+account_ref = "personal-user"
 """.strip(),
         encoding="utf-8",
     )
@@ -83,8 +83,7 @@ def test_context_current_shows_account_scoped_selected_target(monkeypatch, tmp_p
     cfg_mod.set_active_account(
         profile="work",
         customer={
-            "customer_id": "acme",
-            "customer_unique_ref": "org-ref",
+            "account_ref": "acme",
             "account_type": "organization",
             "account_label": "acme",
             "organization_role": "admin",
@@ -152,23 +151,26 @@ def test_account_use_warns_when_environment_still_overrides_selection(
     tmp_path: Path,
 ) -> None:
     _isolate_config(monkeypatch, tmp_path)
-    monkeypatch.setenv("RVS_CUSTOMER_ID", "forced-customer")
+    monkeypatch.setenv("RVS_ACCOUNT_REF", "forced-customer")
 
     class _Client:
         @staticmethod
         def get(path: str) -> _Response:
-            assert path == "/customers"
+            assert path == "/accounts"
             return _Response(
-                [
-                    {
-                        "customer_id": "acme",
-                        "customer_unique_ref": "org-ref",
-                        "account_type": "organization",
-                        "account_label": "acme",
-                        "organization_role": "admin",
-                        "authority_revision": 2,
-                    }
-                ]
+                {
+                    "items": [
+                        {
+                            "account_ref": "acme",
+                            "account_handle": "acme",
+                            "account_type": "organization",
+                            "account_label": "acme",
+                            "organization_role": "admin",
+                            "authority_revision": 2,
+                        }
+                    ],
+                    "next_cursor": None,
+                }
             )
 
     monkeypatch.setattr(
@@ -180,8 +182,8 @@ def test_account_use_warns_when_environment_still_overrides_selection(
     result = runner.invoke(app, ["account", "use", "org:acme"])
 
     assert result.exit_code == 0, result.output
-    assert "Account 'org:acme' selected for persisted profile" in result.output
-    assert "RVS_CUSTOMER_ID is set and still overrides" in result.stderr
+    assert "Account 'acme' selected for persisted profile" in result.output
+    assert "RVS_ACCOUNT_REF is set and still overrides" in result.stderr
     assert cfg_mod.load().profiles["work"].active_customer_id == "acme"
     assert cfg_mod.current_customer_id("work") == "forced-customer"
 

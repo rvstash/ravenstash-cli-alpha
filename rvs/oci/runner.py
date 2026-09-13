@@ -131,7 +131,7 @@ def _selected_kind(tool: OciTool, selected: OciRegistryKind | None) -> OciRegist
             output.fatal("rvs helm only works with the Helm package format.")
         return "helm"
     if selected not in {"container", "helm"}:
-        output.fatal("rvs oras requires --rvs-kind container or --rvs-kind helm.")
+        output.fatal("rvs oras requires --rvs-format container or --rvs-format helm.")
     return selected
 
 
@@ -145,7 +145,7 @@ def resolve_route(
     profile_name = options.profile or cfg_mod.current_profile_name(config)
     customer_id = options.customer_id
     if customer_id is None and options.account is not None:
-        customer_id = str(resolve_account(options.account, profile_name)["customer_id"])
+        customer_id = str(resolve_account(options.account, profile_name)["account_ref"])
     customer_id = customer_id or cfg_mod.current_customer_id(profile_name)
     selected = cfg_mod.selected_artifact_target(profile_name, customer_id)
     repo_ref = options.target
@@ -169,7 +169,7 @@ def resolve_route(
         client = ApiClient.from_profile(profile_name)
         credential_body: dict[str, object] = {
             "repository_unique_ref": target.repository_unique_ref,
-            "registry_kinds": [kind],
+            "formats": [kind],
             "operations": list(operations),
             "duration_seconds": STATIC_NATIVE_DURATION_SECONDS,
             "expected_target": {

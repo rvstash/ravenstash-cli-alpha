@@ -252,7 +252,7 @@ def _selected_customer_id(options: NativeOptions) -> str | None:
     if options.customer_id:
         return options.customer_id
     if options.account:
-        return str(resolve_account(options.account, options.profile)["customer_id"])
+        return str(resolve_account(options.account, options.profile)["account_ref"])
     profile_name = options.profile or cfg_mod.current_profile_name()
     return cfg_mod.current_customer_id(profile_name)
 

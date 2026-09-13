@@ -50,9 +50,9 @@ class ApiError(Exception):
             matches = self.detail.get("matches")
             if isinstance(matches, list):
                 choices = ", ".join(
-                    str(item.get("customer_unique_ref"))
+                    str(item.get("account_ref"))
                     for item in matches
-                    if isinstance(item, dict) and item.get("customer_unique_ref")
+                    if isinstance(item, dict) and item.get("account_ref")
                 )
                 suffix = f" Choose an account with --account: {choices}." if choices else ""
                 return f"Repository target is ambiguous.{suffix}"

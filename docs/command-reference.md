@@ -60,22 +60,25 @@ or repeat `--format` to enable more than one.
 | Command | What it does |
 | --- | --- |
 | `rvs art repo upstream list REPOSITORY FORMAT` | Lists the package sources used by a repository. |
-| `rvs art repo upstream add REPOSITORY FORMAT --private-repository NAMESPACE/REPOSITORY` | Adds another private repository as a source. |
-| `rvs art repo upstream add REPOSITORY FORMAT --mirror MIRROR_ID` | Adds a private mirror as a source. |
-| `rvs art repo upstream update REPOSITORY FORMAT SOURCE_ID` | Changes a source's order or package-age settings. |
-| `rvs art repo upstream reorder REPOSITORY FORMAT SOURCE_ID...` | Sets the complete source order. |
+| `rvs art repo upstream add REPOSITORY FORMAT --position N --private-repository NAMESPACE/REPOSITORY` | Adds another private repository at fixed position 1–4. |
+| `rvs art repo upstream add REPOSITORY FORMAT --position N --remote-cache rc_...` | Adds a remote cache at fixed position 1–4. |
+| `rvs art repo upstream update REPOSITORY FORMAT SOURCE_ID --position N` | Moves a source into an empty fixed position or changes its package-age settings. |
 | `rvs art repo upstream remove REPOSITORY FORMAT SOURCE_ID` | Removes a source. |
+
+The repository's own packages are always checked first and have no stored
+position. Configured upstream positions are `1` through `4`; gaps are retained,
+and adding or moving a source never shifts another source.
 
 ## Private mirrors
 
 | Command | What it does |
 | --- | --- |
-| `rvs art mirror list` | Lists private mirrors. |
+| `rvs art mirror list` | Lists private mirrors and their immutable `rc_...` remote-cache references. |
 | `rvs art mirror create SOURCE` | Adds a Ravenstash-provided mirror. |
 | `rvs art mirror create --format FORMAT` | Adds the default mirror for a package format. |
-| `rvs art mirror show MIRROR_ID` | Shows a mirror. |
-| `rvs art mirror set-age MIRROR_ID --min-age-hours HOURS` | Delays newly published packages for the chosen time. |
-| `rvs art mirror delete MIRROR_ID` | Deletes a mirror after confirmation. |
+| `rvs art mirror show REMOTE_CACHE_REF` | Shows a private mirror through its owning remote-cache reference. |
+| `rvs art mirror set-age REMOTE_CACHE_REF --min-age-hours HOURS` | Changes the direct private-mirror age policy. |
+| `rvs art mirror delete REMOTE_CACHE_REF` | Deletes the remote cache and its private-mirror surface after confirmation. |
 | `rvs art mirror select SOURCE` | Chooses a Ravenstash-provided mirror. |
 | `rvs art mirror select --custom NAME` | Chooses a custom mirror. |
 
@@ -119,7 +122,8 @@ rvs oras --rvs-format container|helm ORAS_ARGUMENTS...
 ```
 
 The commands accept `--rvs-profile`, `--rvs-account`, and `--rvs-target` where
-applicable. Publishing commands also accept `--rvs-yes` for protected automation.
+applicable. Advanced integrations may pass a typed `--rvs-account-ref`.
+Publishing commands also accept `--rvs-yes` for protected automation.
 
 pnpm, Yarn, Bun, Gradle, and sbt can use Ravenstash package addresses, but there
 are no `rvs pnpm`, `rvs yarn`, `rvs bun`, `rvs gradle`, or `rvs sbt` commands.

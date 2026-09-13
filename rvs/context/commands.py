@@ -6,7 +6,7 @@ import typer
 
 from .. import config as cfg_mod
 from .. import output
-from ..account.commands import customers, display_name
+from ..account.commands import accounts, display_name
 from ..client import ApiClient, ApiError
 
 
@@ -28,9 +28,9 @@ def _account_display(profile_name: str) -> tuple[str, cfg_mod.AccountContext | N
     if profile is not None and customer_id == profile.customer_id:
         return "personal", None
 
-    items = customers(profile_name)
+    items = accounts(profile_name)
     if customer_id:
-        matches = [item for item in items if item.get("customer_id") == customer_id]
+        matches = [item for item in items if item.get("account_ref") == customer_id]
     else:
         matches = [item for item in items if item.get("account_type") == "personal"]
     if len(matches) != 1 and customer_id:

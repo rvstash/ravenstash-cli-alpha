@@ -93,12 +93,13 @@ def test_auth_whoami_reports_only_verified_user_identity(monkeypatch, tmp_path: 
         monkeypatch,
         tmp_path,
         """
+config_version = 4
 default_profile = "work"
 
 [profiles.work]
 api_url = "https://api.work.example"
 pkg_api_url = "https://app.work.example/api"
-customer_id = "cus_work"
+account_ref = "ac_23456789"
 """,
     )
     calls: list[str] = []
@@ -108,8 +109,7 @@ customer_id = "cus_work"
         def json() -> dict[str, str]:
             return {
                 "email": "developer@example.test",
-                "customer_id": "cus_verified",
-                "customer_unique_id": "custpid1",
+                "account_ref": "ac_23456789",
             }
 
     class _Client:
@@ -446,11 +446,12 @@ def test_auth_profile_rename_moves_metadata_and_deletes_old_token(
         monkeypatch,
         tmp_path,
         """
+config_version = 4
 default_profile = "work"
 
 [profiles.work]
 api_url = "https://api.work.example"
-customer_id = "cus_work"
+account_ref = "ac_23456789"
 """,
     )
     deleted: list[str] = []
@@ -462,7 +463,7 @@ customer_id = "cus_work"
     assert result.exit_code == 0
     assert deleted == ["work"]
     assert "work" not in cfg.profiles
-    assert cfg.profiles["staging"].customer_id == "cus_work"
+    assert cfg.profiles["staging"].customer_id == "ac_23456789"
     assert cfg.default_profile == "staging"
     assert "renamed to 'staging'" in result.output
 

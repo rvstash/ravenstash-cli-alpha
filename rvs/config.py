@@ -10,14 +10,13 @@ Config file shape
 -----------------
 ::
 
-    config_version = 3
+    config_version = 4
     default_profile = "default"
 
     [profiles.default]
     api_url = "https://api.ravenstash.com"
     credential_store = "keyring"
-    customer_id = "cus_..."
-    customer_unique_id = "a8f3k2mz"
+    account_ref = "ac_a8f3k2mz"
     credential_type = "expiring"
     expires_at = "2026-06-17T16:00:00+00:00"
     refresh_expires_at = "2026-06-17T20:00:00+00:00"
@@ -80,8 +79,9 @@ SESSIONS_DIR_NAME = "sessions"
 
 DEFAULT_API_URL = "https://api.ravenstash.com"
 DEFAULT_REPOSITORY_DOMAIN = "rvsta.sh"
-CURRENT_CONFIG_VERSION = 3
+CURRENT_CONFIG_VERSION = 4
 _UNIQUE_ID_FRAGMENT = r"[23456789abcdefghijkmnpqrstuvwxyz]{8}"
+_ACCOUNT_REF_RE = re.compile(rf"^ac_{_UNIQUE_ID_FRAGMENT}$")
 _INTERNAL_NAMESPACE_REF_RE = re.compile(rf"^in_{_UNIQUE_ID_FRAGMENT}$")
 _GLOBAL_NAMESPACE_REF_RE = re.compile(rf"^gn_{_UNIQUE_ID_FRAGMENT}$")
 _REPOSITORY_REF_RE = re.compile(rf"^r_{_UNIQUE_ID_FRAGMENT}$")
@@ -285,10 +285,10 @@ def current_customer_id(
     profile_name: str | None = None,
     cfg: RvsConfig | None = None,
 ) -> str | None:
-    """Return the active customer for a profile, including this shell's override."""
+    """Return the active account for a profile, including this shell's override."""
     resolved_cfg = cfg or load()
     effective_profile = profile_name or current_profile_name(resolved_cfg)
-    explicit = os.environ.get("RVS_CUSTOMER_ID")
+    explicit = os.environ.get("RVS_ACCOUNT_REF")
     if explicit:
         return explicit
     session = load_session()
@@ -307,8 +307,8 @@ def account_selection_source(
     """Describe what selected the effective acting account."""
     resolved_cfg = cfg or load()
     effective_profile = profile_name or current_profile_name(resolved_cfg)
-    if os.environ.get("RVS_CUSTOMER_ID"):
-        return "environment (RVS_CUSTOMER_ID)"
+    if os.environ.get("RVS_ACCOUNT_REF"):
+        return "environment (RVS_ACCOUNT_REF)"
     session = load_session()
     if session.customer_id and (session.profile is None or session.profile == effective_profile):
         return "shell session"
@@ -351,7 +351,7 @@ def load_session() -> SessionContext:
         return SessionContext()
     return SessionContext(
         profile=raw.get("profile") if isinstance(raw.get("profile"), str) else None,
-        customer_id=(raw.get("customer_id") if isinstance(raw.get("customer_id"), str) else None),
+        customer_id=(raw.get("account_ref") if isinstance(raw.get("account_ref"), str) else None),
     )
 
 
@@ -366,7 +366,7 @@ def save_session(session: SessionContext) -> bool:
         key: value
         for key, value in {
             "profile": session.profile,
-            "customer_id": session.customer_id,
+            "account_ref": session.customer_id,
         }.items()
         if value is not None
     }
@@ -629,7 +629,7 @@ def _artifact_target_from_mapping(value: object) -> ArtifactTarget | None:
     if not isinstance(value, dict):
         return None
     target_type = value.get("target_type")
-    customer_id = value.get("customer_id")
+    customer_id = value.get("account_ref")
     stable_selector = value.get("stable_selector")
     display_selector = value.get("display_selector")
     if target_type not in {"repository", "official_cache", "custom_cache"}:
@@ -638,7 +638,7 @@ def _artifact_target_from_mapping(value: object) -> ArtifactTarget | None:
         isinstance(item, str) and item for item in (customer_id, stable_selector, display_selector)
     ):
         return None
-    registry_kind = value.get("registry_kind")
+    registry_kind = value.get("format")
     if registry_kind not in {None, "pypi", "npm", "maven", "container", "helm"}:
         return None
     return ArtifactTarget(
@@ -664,25 +664,24 @@ def _account_contexts_from_mapping(value: object) -> dict[str, AccountContext]:
     if not isinstance(value, dict):
         return {}
     result: dict[str, AccountContext] = {}
-    for customer_id, raw in value.items():
-        if not isinstance(customer_id, str) or not isinstance(raw, dict):
+    for account_ref, raw in value.items():
+        if not isinstance(account_ref, str) or not isinstance(raw, dict):
             continue
         account_type = raw.get("account_type")
-        unique_ref = raw.get("customer_unique_ref")
         label = raw.get("account_label")
         if account_type not in {"personal", "organization"}:
             continue
-        if not isinstance(unique_ref, str) or not isinstance(label, str):
+        if not account_ref or not isinstance(label, str):
             continue
-        result[customer_id] = AccountContext(
-            customer_id=customer_id,
-            customer_unique_ref=unique_ref,
+        result[account_ref] = AccountContext(
+            customer_id=account_ref,
+            customer_unique_ref=account_ref,
             account_type=account_type,
             account_label=label,
             organization_role=raw.get("organization_role"),
             authority_revision=raw.get("authority_revision"),
             selected_target=_artifact_target_from_mapping(raw.get("selected_target")),
-            customer_handle=raw.get("customer_handle"),
+            customer_handle=raw.get("account_handle"),
         )
     return result
 
@@ -690,7 +689,12 @@ def _account_contexts_from_mapping(value: object) -> dict[str, AccountContext]:
 def _artifact_target_mapping(target: ArtifactTarget) -> dict:
     return {
         key: value
-        for key, value in vars(target).items()
+        for key, value in {
+            **vars(target),
+            "account_ref": target.customer_id,
+            "format": target.registry_kind,
+        }.items()
+        if key not in {"customer_id", "registry_kind"}
         if value is not None and not (key == "is_available" and value is True)
     }
 
@@ -699,10 +703,9 @@ def _account_context_mapping(account: AccountContext) -> dict:
     return {
         key: value
         for key, value in {
-            "customer_unique_ref": account.customer_unique_ref,
             "account_type": account.account_type,
             "account_label": account.account_label,
-            "customer_handle": account.customer_handle,
+            "account_handle": account.customer_handle,
             "organization_role": account.organization_role,
             "authority_revision": account.authority_revision,
             "selected_target": (
@@ -875,6 +878,8 @@ def _migrate_raw_config(raw: dict) -> bool:
             _migrate_config_v1_to_v2(raw)
         elif version == 2:
             _migrate_config_v2_to_v3(raw)
+        elif version == 3:
+            _migrate_config_v3_to_v4(raw)
         else:
             raise RuntimeError(f"rvs has no config migration from version {version}")
         next_version = raw.get("config_version")
@@ -922,6 +927,106 @@ def _migrate_config_v2_to_v3(raw: dict) -> None:
                             )
                         target[key] = selector.split(":", 1)[1]
     raw["config_version"] = 3
+
+
+def _migrate_config_v3_to_v4(raw: dict) -> None:
+    """Replace service-private customer/kind keys with the public account/format vocabulary."""
+
+    def typed_account_ref(value: object) -> str | None:
+        if not isinstance(value, str):
+            return None
+        if _ACCOUNT_REF_RE.fullmatch(value):
+            return value
+        unique_id = value.removeprefix("_")
+        if re.fullmatch(_UNIQUE_ID_FRAGMENT, unique_id):
+            return f"ac_{unique_id}"
+        return None
+
+    def migrate_target(value: object, *, fallback_account_ref: str | None) -> None:
+        if not isinstance(value, dict):
+            return
+        old_account = value.pop("customer_id", None)
+        if "account_ref" not in value:
+            migrated_account_ref = typed_account_ref(old_account) or fallback_account_ref
+            if migrated_account_ref is not None:
+                value["account_ref"] = migrated_account_ref
+        if "registry_kind" in value and "format" not in value:
+            value["format"] = value.pop("registry_kind")
+        else:
+            value.pop("registry_kind", None)
+
+    profiles = raw.get("profiles")
+    if isinstance(profiles, dict):
+        for profile in profiles.values():
+            if not isinstance(profile, dict):
+                continue
+            profile_ref = typed_account_ref(profile.get("account_ref"))
+            if profile_ref is None:
+                profile_ref = typed_account_ref(profile.get("customer_unique_id"))
+            if profile_ref is None:
+                profile_ref = typed_account_ref(profile.get("customer_id"))
+
+            old_to_new: dict[str, str] = {}
+            migrated_accounts: dict[str, dict] = {}
+            accounts = profile.get("accounts")
+            if isinstance(accounts, dict):
+                for old_key, account in accounts.items():
+                    if not isinstance(old_key, str) or not isinstance(account, dict):
+                        continue
+                    reference = (
+                        typed_account_ref(account.get("account_ref"))
+                        or typed_account_ref(account.get("customer_unique_ref"))
+                        or typed_account_ref(old_key)
+                    )
+                    if reference is None:
+                        raise ValueError(
+                            "cannot migrate an account without an immutable public reference"
+                        )
+                    if reference in migrated_accounts and migrated_accounts[reference] != account:
+                        raise ValueError(f"conflicting account entries for {reference}")
+                    old_to_new[old_key] = reference
+                    account.pop("customer_unique_ref", None)
+                    if "customer_handle" in account and "account_handle" not in account:
+                        account["account_handle"] = account.pop("customer_handle")
+                    else:
+                        account.pop("customer_handle", None)
+                    migrate_target(
+                        account.get("selected_target"), fallback_account_ref=reference
+                    )
+                    migrated_accounts[reference] = account
+            profile["accounts"] = migrated_accounts
+            if profile_ref is None and len(migrated_accounts) == 1:
+                profile_ref = next(iter(migrated_accounts))
+
+            active = profile.get("active_account_ref")
+            if active is None:
+                old_active = profile.get("active_customer_id")
+                if isinstance(old_active, str):
+                    active = old_to_new.get(old_active) or typed_account_ref(old_active)
+            if active is not None:
+                profile["active_account_ref"] = active
+            profile.pop("active_customer_id", None)
+
+            if profile_ref is not None:
+                profile["account_ref"] = profile_ref
+            profile.pop("customer_id", None)
+            profile.pop("customer_unique_id", None)
+
+            registries = profile.get("registries")
+            if isinstance(registries, dict):
+                for defaults in registries.values():
+                    if not isinstance(defaults, dict):
+                        continue
+                    defaults_ref = (
+                        typed_account_ref(defaults.get("account_ref"))
+                        or typed_account_ref(defaults.get("customer_unique_ref"))
+                        or typed_account_ref(defaults.get("customer_id"))
+                        or profile_ref
+                    )
+                    migrate_target(defaults, fallback_account_ref=defaults_ref)
+                    defaults.pop("customer_unique_ref", None)
+
+    raw["config_version"] = 4
 
 
 def _validate_repository_target_identity(
@@ -980,9 +1085,9 @@ def _validate_raw_config(raw: dict) -> None:
         accounts = profile.get("accounts", {})
         if not isinstance(accounts, dict):
             raise ValueError(f"accounts must be a table at {profile_path}.accounts")
-        for customer_id, account in accounts.items():
-            account_path = f"{profile_path}.accounts.{customer_id}"
-            if not isinstance(customer_id, str) or not isinstance(account, dict):
+        for account_ref, account in accounts.items():
+            account_path = f"{profile_path}.accounts.{account_ref}"
+            if not isinstance(account_ref, str) or not account_ref or not isinstance(account, dict):
                 raise ValueError(f"invalid account table at {account_path}")
             selected = account.get("selected_target")
             if selected is None:
@@ -999,7 +1104,7 @@ def _validate_raw_config(raw: dict) -> None:
         for registry_kind, defaults in registries.items():
             target_path = f"{profile_path}.registries.{registry_kind}"
             if registry_kind not in {"pypi", "npm", "maven", "container", "helm"}:
-                raise ValueError(f"invalid registry kind at {target_path}")
+                raise ValueError(f"invalid format at {target_path}")
             if not isinstance(defaults, dict):
                 raise ValueError(f"invalid registry defaults at {target_path}")
             selector = defaults.get("default_repo")
@@ -1101,19 +1206,19 @@ def load() -> RvsConfig:
             native_registries=_native_registries_from_mapping(
                 vals.get("native_registries"), profile_name=name
             ),
-            customer_id=vals.get("customer_id"),
-            customer_unique_id=vals.get("customer_unique_id"),
+            customer_id=vals.get("account_ref"),
+            customer_unique_id=None,
             credential_store=vals.get("credential_store"),
             credential_type=vals.get("credential_type"),
             expires_at=vals.get("expires_at"),
             refresh_expires_at=vals.get("refresh_expires_at"),
-            active_customer_id=vals.get("active_customer_id"),
+            active_customer_id=vals.get("active_account_ref"),
             accounts=_account_contexts_from_mapping(vals.get("accounts")),
             registries={
                 kind: RegistryDefaults(
                     default_repo=defaults.get("default_repo"),
-                    customer_id=defaults.get("customer_id"),
-                    customer_unique_ref=defaults.get("customer_unique_ref"),
+                    customer_id=defaults.get("account_ref"),
+                    customer_unique_ref=defaults.get("account_ref"),
                     namespace_realm=defaults.get("namespace_realm"),
                     namespace_unique_ref=defaults.get("namespace_unique_ref"),
                     namespace_name_cache=defaults.get("namespace_name_cache"),
@@ -1153,16 +1258,15 @@ def save(cfg: RvsConfig) -> None:
                         "maven": vars(p.native_registries.maven),
                         "oci": {"registry_base_url": p.native_registries.oci_registry_base_url},
                     },
-                    "customer_id": p.customer_id,
-                    "customer_unique_id": p.customer_unique_id,
+                    "account_ref": p.customer_id,
                     "credential_store": p.credential_store,
                     "credential_type": p.credential_type,
                     "expires_at": p.expires_at,
                     "refresh_expires_at": p.refresh_expires_at,
-                    "active_customer_id": p.active_customer_id,
+                    "active_account_ref": p.active_customer_id,
                     "accounts": {
-                        customer_id: _account_context_mapping(account)
-                        for customer_id, account in p.accounts.items()
+                        account_ref: _account_context_mapping(account)
+                        for account_ref, account in p.accounts.items()
                     }
                     or None,
                     "registries": {
@@ -1170,8 +1274,7 @@ def save(cfg: RvsConfig) -> None:
                             key: value
                             for key, value in {
                                 "default_repo": defaults.default_repo,
-                                "customer_id": defaults.customer_id,
-                                "customer_unique_ref": defaults.customer_unique_ref,
+                                "account_ref": defaults.customer_id,
                                 "namespace_realm": defaults.namespace_realm,
                                 "namespace_unique_ref": defaults.namespace_unique_ref,
                                 "namespace_name_cache": defaults.namespace_name_cache,
@@ -1311,7 +1414,7 @@ def set_active_account(
     profile: str,
     customer: dict,
 ) -> AccountContext:
-    """Select and cache one authorized customer for a local profile."""
+    """Select and cache one authorized account for a local profile."""
     return cache_account(profile=profile, customer=customer, activate=True)
 
 
@@ -1324,14 +1427,14 @@ def cache_account(
     """Cache safe account metadata, optionally making the account active."""
     cfg = load()
     profile_config = cfg.profiles.get(profile, _default_profile_config(profile))
-    customer_id = str(customer["customer_id"])
+    customer_id = str(customer["account_ref"])
     existing = profile_config.accounts.get(customer_id)
     account = AccountContext(
         customer_id=customer_id,
-        customer_unique_ref=str(customer["customer_unique_ref"]),
+        customer_unique_ref=customer_id,
         account_type=cast("Literal['personal', 'organization']", customer["account_type"]),
         account_label=str(customer["account_label"]),
-        customer_handle=customer.get("customer_handle"),
+        customer_handle=customer.get("account_handle"),
         organization_role=customer.get("organization_role"),
         authority_revision=customer.get("authority_revision"),
         selected_target=existing.selected_target if existing is not None else None,
@@ -1445,8 +1548,8 @@ def set_registry_default_target(
     stable_selector = f"{repository['namespace_unique_ref']}/{repository['repository_unique_ref']}"
     profile_config.registries[kind] = RegistryDefaults(
         default_repo=stable_selector,
-        customer_id=customer["customer_id"],
-        customer_unique_ref=customer["customer_unique_ref"],
+        customer_id=customer["account_ref"],
+        customer_unique_ref=customer["account_ref"],
         namespace_realm=repository["namespace_realm"],
         namespace_unique_ref=repository["namespace_unique_ref"],
         namespace_name_cache=repository["namespace_name"],
@@ -1525,8 +1628,8 @@ def refresh_matching_registry_targets(
             continue
         profile_config.registries[kind] = RegistryDefaults(
             default_repo=stable_selector,
-            customer_id=customer["customer_id"],
-            customer_unique_ref=customer["customer_unique_ref"],
+            customer_id=customer["account_ref"],
+            customer_unique_ref=customer["account_ref"],
             namespace_realm=repository["namespace_realm"],
             namespace_unique_ref=repository["namespace_unique_ref"],
             namespace_name_cache=repository["namespace_name"],

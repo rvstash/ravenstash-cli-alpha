@@ -170,6 +170,15 @@ def test_registry_kind_has_no_ecosystem_alias() -> None:
     assert "--ecosystem" not in help_output
 
 
+def test_upstream_commands_call_the_public_positional_argument_format() -> None:
+    result = runner.invoke(app, ["art", "repo", "upstream", "add", "--help"])
+
+    assert result.exit_code == 0
+    help_output = unstyle(result.output)
+    assert "REPOSITORY FORMAT" in help_output
+    assert " KIND" not in help_output
+
+
 def test_repository_group_has_no_legacy_upstream_commands() -> None:
     result = runner.invoke(app, ["art", "repo", "--help"])
 

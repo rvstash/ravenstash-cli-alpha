@@ -57,21 +57,30 @@ class _JsonResponse:
 
 class _FakeDevApi:
     def get(self, path: str, params=None) -> _JsonResponse:
-        if path == "/customers":
+        if path == "/accounts":
             return _JsonResponse(
-                [
-                    {
-                        "customer_id": "cus_staging",
-                        "customer_unique_ref": "_custpid1",
-                    }
-                ]
+                {
+                    "items": [
+                        {
+                            "account_ref": "ac_23456789",
+                            "account_handle": "staging",
+                            "account_type": "personal",
+                            "account_label": "personal",
+                            "organization_role": None,
+                        }
+                    ],
+                    "next_cursor": None,
+                }
             )
         assert path == "/repositories/resolve"
         return _JsonResponse(
             {
-                "customer": {
-                    "customer_id": "cus_staging",
-                    "customer_unique_ref": "_custpid1",
+                "account": {
+                    "account_ref": "ac_23456789",
+                    "account_handle": "staging",
+                    "account_type": "personal",
+                    "account_label": "personal",
+                    "organization_role": None,
                 },
                 "repository": {
                     "repository_name": "repo",
@@ -79,6 +88,11 @@ class _FakeDevApi:
                     "namespace_name": "staging",
                     "namespace_realm": "internal",
                     "repository_unique_ref": "r_xyzabcde",
+                    "formats": [
+                        {"format": "pypi", "upstream_config_revision": 1},
+                        {"format": "npm", "upstream_config_revision": 1},
+                        {"format": "maven", "upstream_config_revision": 1},
+                    ],
                 },
             }
         )
@@ -90,8 +104,8 @@ class _FakeDevApi:
     def post(self, path: str, json: dict[str, Any] | None = None) -> _JsonResponse:
         if path == "/remote-package-credentials":
             assert json is not None
-            assert json["customer_id"] == "cus_staging"
-            assert json["registry_kind"] == "pypi"
+            assert json["account_ref"] == "ac_23456789"
+            assert json["format"] == "pypi"
             assert json["remote_cache_ref"]
             namespace = "o" if json["remote_cache_ref"] == "pypiorg" else "c"
             return _JsonResponse(
@@ -106,7 +120,7 @@ class _FakeDevApi:
         return _JsonResponse(
             {
                 "access_token": "rvs_sltAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
-                "native_paths": {kind: "/staging/repo" for kind in json["registry_kinds"]},
+                "native_paths": {kind: "/staging/repo" for kind in json["formats"]},
                 "namespace_name": "staging",
                 "namespace_realm": "internal",
                 "repository_name": "repo",
@@ -120,12 +134,12 @@ def _isolate_config(monkeypatch: Any, tmp_path: Path) -> None:
     config_file = config_dir / "config.toml"
     config_file.write_text(
         f"""
+config_version = 4
 default_profile = "staging"
 
 [profiles.staging]
 api_url = "{STAGING_API_URL}"
-customer_id = "cus_staging"
-customer_unique_id = "custpid1"
+account_ref = "ac_23456789"
 
 [profiles.staging.native_registries.pypi]
 read_base_url = "{PYPI_READ_URL}"
@@ -296,7 +310,7 @@ def test_native_publish_decline_does_not_launch(monkeypatch, tmp_path: Path, too
     _capture_run(monkeypatch, calls)
     result = runner.invoke(app, [tool, "--rvs-target", "staging/repo", *args], input="\n")
     assert result.exit_code != 0
-    assert "Publish to staging/repo (personal)" in result.output
+    assert "Publish to staging/repo (staging)" in result.output
     assert not calls
 
 
@@ -313,7 +327,7 @@ def test_native_detected_registry_confirms_resolved_account(
     class OrgApi(_FakeDevApi):
         def get(self, path, params=None):
             payload = super().get(path, params).json()
-            payload["customer"].update(account_type="organization", account_label="YYYY")
+            payload["account"].update(account_type="organization", account_label="YYYY")
             return _JsonResponse(payload)
 
     monkeypatch.setattr(ApiClient, "from_profile", staticmethod(lambda profile=None: OrgApi()))
@@ -323,7 +337,7 @@ def test_native_detected_registry_confirms_resolved_account(
     assert (result.exit_code == 0) == published, result.output
     assert bool(calls) == published
     if not flags:
-        assert "Publish to staging/repo (org:YYYY)" in result.output
+        assert "Publish to staging/repo (staging)" in result.output
     if calls:
         assert "--rvs-yes" not in calls[0]["cmd"]
 

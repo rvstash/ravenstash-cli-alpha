@@ -83,13 +83,13 @@ def test_delete_token_removes_access_and_refresh_tokens_and_clears_metadata(
         monkeypatch,
         tmp_path,
         """
+config_version = 4
 default_profile = "default"
 
 [profiles.default]
 api_url = "https://api.ravenstash.com"
 credential_store = "keyring"
-customer_id = "cus_123"
-customer_unique_id = "custpid1"
+account_ref = "ac_23456789"
 credential_type = "expiring"
 expires_at = "2099-01-01T00:00:00+00:00"
 refresh_expires_at = "2099-01-02T00:00:00+00:00"

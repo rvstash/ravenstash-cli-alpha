@@ -58,7 +58,7 @@ def docker(
     rvs_profile: str | None = typer.Option(None, "--rvs-profile"),
     rvs_target: str | None = typer.Option(None, "--rvs-target"),
     rvs_account: str | None = typer.Option(None, "--rvs-account"),
-    rvs_customer_id: str | None = typer.Option(None, "--rvs-customer-id", hidden=True),
+    rvs_customer_id: str | None = typer.Option(None, "--rvs-account-ref", hidden=True),
 ) -> None:
     _run(
         "docker",
@@ -78,7 +78,7 @@ def helm(
     rvs_profile: str | None = typer.Option(None, "--rvs-profile"),
     rvs_target: str | None = typer.Option(None, "--rvs-target"),
     rvs_account: str | None = typer.Option(None, "--rvs-account"),
-    rvs_customer_id: str | None = typer.Option(None, "--rvs-customer-id", hidden=True),
+    rvs_customer_id: str | None = typer.Option(None, "--rvs-account-ref", hidden=True),
 ) -> None:
     _run("helm", ctx, rvs_profile, rvs_target, rvs_account, rvs_customer_id, "helm", rvs_yes)
 
@@ -90,6 +90,6 @@ def oras(
     rvs_profile: str | None = typer.Option(None, "--rvs-profile"),
     rvs_target: str | None = typer.Option(None, "--rvs-target"),
     rvs_account: str | None = typer.Option(None, "--rvs-account"),
-    rvs_customer_id: str | None = typer.Option(None, "--rvs-customer-id", hidden=True),
+    rvs_customer_id: str | None = typer.Option(None, "--rvs-account-ref", hidden=True),
 ) -> None:
     _run("oras", ctx, rvs_profile, rvs_target, rvs_account, rvs_customer_id, rvs_kind, rvs_yes)

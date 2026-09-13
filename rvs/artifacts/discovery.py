@@ -89,7 +89,7 @@ def discover(
 ) -> Discovery:
     profile_name = profile or cfg.current_profile_name()
     customer_id = (
-        str(resolve_account(account, profile_name)["customer_id"])
+        str(resolve_account(account, profile_name)["account_ref"])
         if account
         else cfg.current_customer_id(profile_name)
     )
@@ -105,12 +105,16 @@ def discover(
     if spec.target_type == "repository":
         entry = resolve_repository_entry(client, spec.selector, customer_id)
         selected = _repository_target(entry)
-        formats = tuple(item for item in entry["repository"]["registry_kinds"] if item in FORMATS)
+        formats = tuple(
+            item["format"]
+            for item in entry["repository"]["formats"]
+            if isinstance(item, dict) and item.get("format") in FORMATS
+        )
         path = (str(selected.namespace_unique_ref), str(selected.repository_unique_ref))
     else:
-        params = {"customer_id": customer_id}
+        params = {"account_ref": customer_id}
         if kind is not None:
-            params["registry_kind"] = kind
+            params["format"] = kind
         entries = collection_items(client.get("/remote-caches", params=params).json())
         family = "official" if spec.target_type == "official_cache" else "custom"
         matches = [
@@ -130,7 +134,7 @@ def discover(
             )
         selected = _remote_target(matches[0], spec.target_type)
         remote = remote_cache(matches[0])
-        formats = (str(remote["registry_kind"]),)
+        formats = (str(remote["format"]),)
         path = (
             "o" if family == "official" else "c",
             str(remote["official_slug"] if family == "official" else remote["remote_name"]),

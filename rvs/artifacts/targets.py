@@ -99,17 +99,18 @@ def _package_kind(kind: str | None) -> PackageKind | None:
 
 
 def _repository_target(entry: dict) -> cfg_mod.ArtifactTarget:
-    customer = entry["customer"]
+    account = entry["account"]
     repository = entry["repository"]
     repository_kinds = [
-        kind
-        for kind in repository.get("registry_kinds", [])
-        if kind in {"pypi", "npm", "maven", "container", "helm"}
+        item["format"]
+        for item in repository.get("formats", [])
+        if isinstance(item, dict)
+        and item.get("format") in {"pypi", "npm", "maven", "container", "helm"}
     ]
     inferred_kind = repository_kinds[0] if len(repository_kinds) == 1 else None
     return cfg_mod.ArtifactTarget(
         target_type="repository",
-        customer_id=customer["customer_id"],
+        customer_id=account["account_ref"],
         stable_selector=(
             f"{repository['namespace_unique_ref']}/{repository['repository_unique_ref']}"
         ),
@@ -125,7 +126,7 @@ def _repository_target(entry: dict) -> cfg_mod.ArtifactTarget:
 
 
 def _remote_target(entry: dict, target_type: cfg_mod.ArtifactTargetType) -> cfg_mod.ArtifactTarget:
-    customer = entry["customer"]
+    account = entry["account"]
     remote = remote_cache(entry)
     family = remote.get("source_type")
     expected_family = "official" if target_type == "official_cache" else "custom"
@@ -138,10 +139,10 @@ def _remote_target(entry: dict, target_type: cfg_mod.ArtifactTargetType) -> cfg_
     unique_ref = remote["remote_cache_ref"]
     return cfg_mod.ArtifactTarget(
         target_type=target_type,
-        customer_id=customer["customer_id"],
+        customer_id=account["account_ref"],
         stable_selector=f"{prefix}:{unique_ref}",
         display_selector=f"{prefix}:{public_name}",
-        registry_kind=cast("cfg_mod.RegistryKind", remote["registry_kind"]),
+        registry_kind=cast("cfg_mod.RegistryKind", remote["format"]),
         remote_id=unique_ref,
         remote_unique_ref=unique_ref,
         remote_name_cache=public_name,
@@ -167,12 +168,12 @@ def resolve_repository_entry(
     stable = is_stable_repository_selector(selector)
     params = {"selector": selector}
     if not stable:
-        params["customer_id"] = customer_id
+        params["account_ref"] = customer_id
     if kind is not None:
-        params["registry_kind"] = kind
+        params["format"] = kind
     entry = client.get("/repositories/resolve", params=params).json()
-    owner = entry["customer"]
-    if owner["customer_id"] != customer_id:
+    owner = entry["account"]
+    if owner["account_ref"] != customer_id:
         if not stable:
             output.fatal("The repository belongs to a different account.")
         output.resource_account_hint(selector, customer_id, owner)
@@ -203,11 +204,7 @@ def resolve_target(
             entry = resolve_repository_entry(
                 client, spec.selector, effective_customer_id, registry_kind
             )
-            raw_customer = entry["customer"]
-            raw_customer.setdefault("customer_unique_ref", raw_customer["customer_id"])
-            raw_customer.setdefault("account_type", "personal")
-            raw_customer.setdefault("account_label", raw_customer["customer_unique_ref"])
-            raw_customer.setdefault("organization_role", "owner")
+            raw_customer = entry["account"]
             account = cfg_mod.cache_account(
                 profile=profile_name,
                 customer=raw_customer,
@@ -222,8 +219,8 @@ def resolve_target(
                     params={
                         key: value
                         for key, value in {
-                            "customer_id": account.customer_id,
-                            "registry_kind": registry_kind,
+                            "account_ref": account.customer_id,
+                            "format": registry_kind,
                         }.items()
                         if value is not None
                     },
@@ -243,7 +240,7 @@ def resolve_target(
                 raise ValueError(f"Package target '{value}' was not found in this account")
             if len(matches) > 1:
                 kinds = ", ".join(
-                    sorted({str(remote_cache(item).get("registry_kind")) for item in matches})
+                    sorted({str(remote_cache(item).get("format")) for item in matches})
                 )
                 raise ValueError(
                     f"Package target '{value}' is ambiguous across {kinds}. Pass --format."
@@ -358,7 +355,7 @@ def registry_context(
                 "/package-credentials",
                 {
                     "repository_unique_ref": selected.repository_unique_ref,
-                    "registry_kinds": [kind],
+                    "formats": [kind],
                     "operations": list(operations),
                     "duration_seconds": STATIC_NATIVE_DURATION_SECONDS,
                     "expected_target": {
@@ -383,10 +380,10 @@ def registry_context(
             credential = client.issue_native(
                 "/remote-package-credentials",
                 {
-                    "customer_id": account.customer_id,
+                    "account_ref": account.customer_id,
                     "remote_cache_ref": selected.remote_unique_ref,
                     "duration_seconds": STATIC_NATIVE_DURATION_SECONDS,
-                    "registry_kind": kind,
+                    "format": kind,
                 },
             ).json()
             native_parts = credential["native_path"].strip("/").split("/")

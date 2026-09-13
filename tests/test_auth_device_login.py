@@ -77,20 +77,19 @@ def _write_profiles_config(
     config_dir.mkdir()
     config_file.write_text(
         f"""
+config_version = 4
 default_profile = "{default_profile}"
 
 [profiles.default]
 api_url = "https://api.ravenstash.com"
-customer_id = "cus_default"
-customer_unique_id = "custpid1"
+account_ref = "ac_23456789"
 credential_type = "{credential_type}"
 expires_at = "2099-01-01T00:00:00+00:00"
 refresh_expires_at = "{refresh_expires_at}"
 
 [profiles.work]
 api_url = "https://api.work.example"
-customer_id = "cus_work"
-customer_unique_id = "workpid1"
+account_ref = "ac_3456789a"
 credential_type = "{credential_type}"
 expires_at = "2099-01-01T00:00:00+00:00"
 refresh_expires_at = "{refresh_expires_at}"
@@ -392,8 +391,7 @@ def test_device_login_handles_slow_down_and_stores_expiring_jwt(
                 "token_type": "Bearer",
                 "expires_in": 900,
                 "refresh_expires_in": 14400,
-                "customer_id": "cus_123",
-                "customer_unique_id": "custpid1",
+                "account_ref": "ac_23456789",
                 "native_registries": NATIVE_REGISTRIES,
             },
         ),
@@ -436,8 +434,8 @@ def test_device_login_handles_slow_down_and_stores_expiring_jwt(
     assert len(metadata_writes) == 1
     assert metadata_writes[0]["profile"] == "default"
     assert metadata_writes[0]["api_url"] == "https://api.ravenstash.com"
-    assert metadata_writes[0]["customer_id"] == "cus_123"
-    assert metadata_writes[0]["customer_unique_id"] == "custpid1"
+    assert metadata_writes[0]["customer_id"] == "ac_23456789"
+    assert metadata_writes[0]["customer_unique_id"] is None
     assert metadata_writes[0]["native_registries"] == NATIVE_REGISTRIES
     assert metadata_writes[0]["credential_type"] == "expiring"
     assert metadata_writes[0]["expires_at"]
@@ -493,8 +491,7 @@ def test_device_login_replaces_active_profile_and_revokes_previous_refresh(
                 "token_type": "Bearer",
                 "expires_in": 900,
                 "refresh_expires_in": 14400,
-                "customer_id": "cus_123",
-                "customer_unique_id": "custpid1",
+                "account_ref": "ac_23456789",
                 "native_registries": NATIVE_REGISTRIES,
             },
         ),
@@ -596,8 +593,7 @@ def test_device_login_does_not_revoke_expired_previous_refresh(
                 "token_type": "Bearer",
                 "expires_in": 900,
                 "refresh_expires_in": 14400,
-                "customer_id": "cus_123",
-                "customer_unique_id": "custpid1",
+                "account_ref": "ac_23456789",
                 "native_registries": NATIVE_REGISTRIES,
             },
         ),
@@ -694,8 +690,7 @@ def test_refresh_expiring_credential_rotates_tokens(
                 "token_type": "Bearer",
                 "expires_in": 900,
                 "refresh_expires_in": 14400,
-                "customer_id": "cus_123",
-                "customer_unique_id": "custpid1",
+                "account_ref": "ac_23456789",
                 "native_registries": NATIVE_REGISTRIES,
             },
         )
@@ -720,7 +715,7 @@ def test_refresh_expiring_credential_rotates_tokens(
     ]
     profile = cfg_mod.load().profiles["default"]
     assert profile.credential_type == "expiring"
-    assert profile.customer_unique_id == "custpid1"
+    assert profile.customer_unique_id is None
     assert (
         profile.native_registries.pypi.read_base_url == "https://pypi.packages.enterprise.example"
     )
