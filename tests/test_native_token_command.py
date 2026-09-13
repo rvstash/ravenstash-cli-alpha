@@ -35,6 +35,7 @@ def issuer(monkeypatch):
         namespace_name_cache="space",
         repository_name_cache="packages",
         namespace_realm="internal",
+        registry_kind="pypi",
     )
 
     def resolve(*args, **kwargs):
@@ -49,7 +50,7 @@ def issuer(monkeypatch):
 
 def test_manual_default_prints_only_the_secret_to_stdout(issuer):
     result = runner.invoke(
-        app, ["artifacts", "auth", "print-token", "--target", "space/packages", "--kind", "pypi"]
+        app, ["artifacts", "auth", "print-token", "--target", "space/packages"]
     )
     assert result.exit_code == 0, result.output
     assert result.stdout == SECRET + "\n"
@@ -58,6 +59,32 @@ def test_manual_default_prints_only_the_secret_to_stdout(issuer):
     assert path == "/package-credentials"
     assert payload["duration_seconds"] == 14400
     assert payload["operations"] == ["download"]
+    assert payload["registry_kind"] == "pypi"
+
+
+def test_manual_kind_is_required_only_when_target_is_ambiguous(issuer, monkeypatch):
+    target = SimpleNamespace(
+        target_type="repository",
+        repository_unique_ref="r_abcdefgh",
+        namespace_unique_ref="in_abcdefgh",
+        namespace_name_cache="space",
+        repository_name_cache="packages",
+        namespace_realm="internal",
+        registry_kind=None,
+    )
+    monkeypatch.setattr(
+        auth_commands,
+        "resolve_target",
+        lambda *args, **kwargs: ("fixture", SimpleNamespace(customer_id="customer"), target),
+    )
+
+    result = runner.invoke(
+        app, ["art", "auth", "print-token", "--target", "space/packages"]
+    )
+
+    assert result.exit_code == 1
+    assert "supports more than one package format" in result.stderr
+    issuer.issue_native.assert_not_called()
 
 
 def test_manual_json_and_publish_are_explicit(issuer):

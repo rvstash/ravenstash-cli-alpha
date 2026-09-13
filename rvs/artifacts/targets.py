@@ -101,10 +101,12 @@ def _package_kind(kind: str | None) -> PackageKind | None:
 def _repository_target(entry: dict) -> cfg_mod.ArtifactTarget:
     customer = entry["customer"]
     repository = entry["repository"]
-    package_kinds = [
-        kind for kind in repository.get("registry_kinds", []) if kind in {"pypi", "npm", "maven"}
+    repository_kinds = [
+        kind
+        for kind in repository.get("registry_kinds", [])
+        if kind in {"pypi", "npm", "maven", "container", "helm"}
     ]
-    inferred_kind = package_kinds[0] if len(package_kinds) == 1 else None
+    inferred_kind = repository_kinds[0] if len(repository_kinds) == 1 else None
     return cfg_mod.ArtifactTarget(
         target_type="repository",
         customer_id=customer["customer_id"],

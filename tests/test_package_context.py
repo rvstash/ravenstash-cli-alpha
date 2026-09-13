@@ -452,6 +452,7 @@ class CrossAccountApi:
         self.calls.append((path, json))
         assert path == "/package-credentials"
         assert json["repository_unique_ref"] == "r_abcdefgh"
+        assert json["registry_kind"] == "pypi"
         return Response(
             {
                 "access_token": "rvs_sltCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCA",
@@ -562,7 +563,7 @@ def test_cross_account_print_token_keeps_stdout_secret_only(monkeypatch, tmp_pat
     isolate(monkeypatch, tmp_path)
     fake = CrossAccountApi()
     monkeypatch.setattr(ApiClient, "from_profile", staticmethod(lambda profile=None: fake))
-    args = ["art", "auth", "print-token", "--target", "in_23456789/r_abcdefgh", "--kind", "pypi"]
+    args = ["art", "auth", "print-token", "--target", "in_23456789/r_abcdefgh"]
     if json_output:
         args.append("--json")
     result = runner.invoke(app, args)

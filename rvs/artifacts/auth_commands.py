@@ -19,7 +19,7 @@ from ..client import ApiClient, ApiError
 from .targets import resolve_target
 
 
-app = typer.Typer(help="Generate temporary credentials for package tools.", no_args_is_help=True)
+app = typer.Typer(help="Create short-lived tokens for package tools.", no_args_is_help=True)
 
 
 def duration_seconds(value: str) -> int:
@@ -37,11 +37,15 @@ def print_token(
     target: str = typer.Option(
         ..., "--target", help="namespace/repository, mirror:source, or custom-mirror:name."
     ),
-    kind: Literal["pypi", "npm", "maven", "container", "helm"] = typer.Option(..., "--kind"),
+    kind: Literal["pypi", "npm", "maven", "container", "helm"] | None = typer.Option(
+        None,
+        "--kind",
+        help="Package format; needed only when it cannot be determined from the target.",
+    ),
     access: Literal["read", "publish", "admin"] = typer.Option(
         "read",
         "--access",
-        help="Admin also permits deletion when your source token allows it.",
+        help="Admin also permits deletion when your sign-in or automation token allows it.",
     ),
     duration: str = typer.Option(
         "4h", "--duration", help="15m to 12h; source expiry may shorten it."
@@ -49,14 +53,13 @@ def print_token(
     profile: str | None = typer.Option(None, "--profile"),
     account: str | None = typer.Option(None, "--account"),
     as_json: bool = typer.Option(
-        False, "--json", help="Print the secret and its scope/expiry metadata as JSON."
+        False, "--json", help="Print the secret and its access and expiration as JSON."
     ),
 ) -> None:
-    """Print one rvs_slt token to stdout for manual native configuration.
+    """Print a short-lived token for direct package-tool access.
 
-    Prefer normal rvs package commands, which handle temporary credentials for you.
-    The generated bearer is sensitive until it expires. This command deliberately
-    reveals it; diagnostics are written to stderr.
+    Prefer normal rvs package commands when possible. The generated token is secret
+    until it expires. This command prints it to stdout; other messages go to stderr.
     """
     try:
         seconds = duration_seconds(duration)
@@ -67,6 +70,11 @@ def print_token(
             profile_name, owner, selected = resolve_target(
                 target, profile=profile, customer_id=customer_id, kind=kind
             )
+            selected_kind = kind or selected.registry_kind
+            if selected_kind is None:
+                raise ValueError(
+                    "This repository supports more than one package format. Pass --kind."
+                )
             client = ApiClient.from_profile(profile_name)
             operations = {
                 "read": ["download"],
@@ -78,7 +86,7 @@ def print_token(
                     "/package-credentials",
                     {
                         "repository_unique_ref": selected.repository_unique_ref,
-                        "registry_kind": kind,
+                        "registry_kind": selected_kind,
                         "operations": operations,
                         "duration_seconds": seconds,
                         "expected_target": {
@@ -98,13 +106,13 @@ def print_token(
                     {
                         "customer_id": owner.customer_id,
                         "remote_cache_ref": selected.remote_unique_ref,
-                        "registry_kind": kind,
+                        "registry_kind": selected_kind,
                         "duration_seconds": seconds,
                     },
                 ).json()
         secret = response.get("access_token")
         if not isinstance(secret, str):
-            raise ValueError("DevAPI returned an invalid temporary credential format.")
+            raise ValueError("Ravenstash returned an invalid temporary token.")
         validate_public_token(secret, native=True)
         if as_json or output.is_json():
             click.echo(json.dumps(response, separators=(",", ":")))

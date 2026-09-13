@@ -19,6 +19,10 @@ Run `rvs COMMAND --help` for every option accepted by an installed version.
 | `rvs profile rename OLD NEW` | Renames a profile. |
 | `rvs profile delete NAME` | Deletes a local profile. |
 
+When a package tool must connect without an `rvs` wrapper, run `rvs art auth
+print-token --target NAMESPACE/REPOSITORY`. The `--kind`, `--access`, and
+`--duration` flags are optional.
+
 ## Accounts and the current repository
 
 | Command | What it does |
