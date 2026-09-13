@@ -11,7 +11,10 @@ from . import runner
 PASSTHROUGH_CONTEXT = {
     "allow_extra_args": True,
     "ignore_unknown_options": True,
-    "help_option_names": ["-h", "--help"],
+    # Maven -D properties are parsed as combined short options by Click. Keeping
+    # -h as an eager wrapper flag makes a value such as `-Dartifact=org.apache...`
+    # print RVS help and exit successfully instead of launching Maven.
+    "help_option_names": ["--help"],
 }
 
 

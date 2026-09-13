@@ -181,7 +181,6 @@ class ProfileConfig:
         default_factory=lambda: _default_native_registries("default")
     )
     customer_id: str | None = None
-    customer_unique_id: str | None = None
     credential_store: str | None = None
     credential_type: str | None = None
     expires_at: str | None = None
@@ -887,7 +886,6 @@ def load() -> RvsConfig:
                 vals.get("native_registries"), profile_name=name
             ),
             customer_id=vals.get("account_ref"),
-            customer_unique_id=None,
             credential_store=vals.get("credential_store"),
             credential_type=vals.get("credential_type"),
             expires_at=vals.get("expires_at"),
@@ -987,7 +985,6 @@ def set_profile_value(profile: str, api_url: str | None = None) -> None:
         else existing.api_url,
         native_registries=existing.native_registries,
         customer_id=existing.customer_id,
-        customer_unique_id=existing.customer_unique_id,
         credential_store=existing.credential_store,
         credential_type=existing.credential_type,
         expires_at=existing.expires_at,
@@ -1008,7 +1005,6 @@ def clear_profile_credential_metadata(profile: str) -> None:
         api_url=existing.api_url,
         native_registries=existing.native_registries,
         customer_id=None,
-        customer_unique_id=None,
         credential_store=existing.credential_store,
         credential_type=None,
         expires_at=None,
@@ -1026,7 +1022,6 @@ def set_profile_metadata(
     api_url: str | None = None,
     native_registries: object | None = None,
     customer_id: str | None = None,
-    customer_unique_id: str | None = None,
     credential_store: str | None = None,
     credential_type: str | None = None,
     expires_at: str | None = None,
@@ -1044,9 +1039,6 @@ def set_profile_metadata(
             else existing.native_registries
         ),
         customer_id=customer_id if customer_id is not None else existing.customer_id,
-        customer_unique_id=customer_unique_id
-        if customer_unique_id is not None
-        else existing.customer_unique_id,
         credential_store=credential_store
         if credential_store is not None
         else existing.credential_store,

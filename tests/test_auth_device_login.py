@@ -436,7 +436,6 @@ def test_device_login_handles_slow_down_and_stores_expiring_jwt(
     assert metadata_writes[0]["profile"] == "default"
     assert metadata_writes[0]["api_url"] == "https://api.ravenstash.com"
     assert metadata_writes[0]["customer_id"] == "ac_23456789"
-    assert metadata_writes[0]["customer_unique_id"] is None
     assert metadata_writes[0]["native_registries"] == NATIVE_REGISTRIES
     assert metadata_writes[0]["credential_type"] == "expiring"
     assert metadata_writes[0]["expires_at"]
@@ -653,7 +652,6 @@ def test_store_expiring_credential_rolls_back_when_metadata_cannot_be_saved(
             token="access",
             refresh_token="refresh",
             customer_id="cus_123",
-            customer_unique_id="custpid1",
             native_registries=NATIVE_REGISTRIES,
             expires_in=900,
             refresh_expires_in=14400,
@@ -716,7 +714,6 @@ def test_refresh_expiring_credential_rotates_tokens(
     ]
     profile = cfg_mod.load().profiles["default"]
     assert profile.credential_type == "expiring"
-    assert profile.customer_unique_id is None
     assert (
         profile.native_registries.pypi.read_base_url == "https://pypi.packages.enterprise.example"
     )

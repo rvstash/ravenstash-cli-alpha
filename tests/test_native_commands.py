@@ -840,6 +840,53 @@ def test_native_maven_read_only_mirror_uses_only_download_route(tmp_path: Path) 
     assert MAVEN_PUSH_URL not in settings_text
 
 
+def test_native_maven_passthrough_accepts_dependency_get_flags(
+    monkeypatch: Any, tmp_path: Path
+) -> None:
+    _isolate_config(monkeypatch, tmp_path)
+    _mock_native_tools(monkeypatch)
+    monkeypatch.setattr(
+        native_runner,
+        "_resolve_route",
+        lambda *_args, **_kwargs: native_runner.RegistryRoute(
+            "maven",
+            MAVEN_MIRROR_URL,
+            None,
+            "o",
+            "maven-central",
+            "download-token",
+        ),
+    )
+    calls: list[dict[str, Any]] = []
+    _capture_run(monkeypatch, calls)
+    native_args = [
+        "--batch-mode",
+        "--no-transfer-progress",
+        "-U",
+        f"-Dmaven.repo.local={tmp_path / 'm2'}",
+        "org.apache.maven.plugins:maven-dependency-plugin:3.8.1:get",
+        "-Dartifact=org.apache.commons:commons-lang3:3.14.0",
+        "-Dtransitive=false",
+    ]
+    result = runner.invoke(
+        app,
+        [
+            "mvn",
+            "--rvs-target",
+            "mirror:maven-central",
+            "--rvs-native-config",
+            "isolate",
+            *native_args,
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert len(calls) == 1
+    command = calls[0]["cmd"]
+    assert command[0:2] == ["/bin/mvn", "--settings"]
+    assert command[-len(native_args) :] == native_args
+
+
 def test_native_maven_deploy_file_injects_upload_destination(
     monkeypatch: Any,
     tmp_path: Path,
@@ -951,7 +998,7 @@ def test_foreign_lock_sources_warn_without_changes(
         (f"{NPM_READ_URL}@attacker.example/secret-path", True),
         (f"{NPM_READ_URL.replace('https://', 'http://')}/staging/repo/demo.tgz", True),
         (f"{NPM_READ_URL}:444/staging/repo/demo.tgz", True),
-        (f"{NPM_READ_URL}/in_another/ar_another/demo.tgz", True),
+        (f"{NPM_READ_URL}/in_ijkmnpqr/ar_mnpqrstu/demo.tgz", True),
     ],
 )
 def test_native_source_warning_uses_exact_target_origin(monkeypatch, tmp_path, source, warns):

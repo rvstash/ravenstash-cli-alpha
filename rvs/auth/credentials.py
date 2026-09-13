@@ -505,7 +505,6 @@ def refresh_expiring_credential(
                 api_url=p.api_url,
                 native_registries=payload.get("native_registries"),
                 customer_id=payload.get("account_ref"),
-                customer_unique_id=None,
                 credential_store=store,
                 credential_type=EXPIRING_CREDENTIAL_TYPE,
                 expires_at=expires_at.isoformat(),

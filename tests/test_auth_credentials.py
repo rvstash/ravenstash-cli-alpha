@@ -109,7 +109,6 @@ refresh_expires_at = "2099-01-02T00:00:00+00:00"
     assert profile.native_registries.pypi.read_base_url == "https://pypi.rvsta.sh"
     assert profile.native_registries.pypi.push_base_url == "https://push.pypi.rvsta.sh"
     assert profile.customer_id is None
-    assert profile.customer_unique_id is None
     assert profile.credential_store == "keyring"
     assert profile.credential_type is None
     assert profile.expires_at is None

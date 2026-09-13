@@ -654,7 +654,7 @@ def test_artifacts_repo_upstream_add_private_uses_source_lane_and_zero_age_defau
     source = _repository_entry("shared")
     source["repository"] = {
         **source["repository"],
-        "repository_unique_ref": "ar_shared01",
+        "repository_unique_ref": "ar_shared23",
         "namespace_name": "libraries",
         "namespace_realm": "internal",
         "formats": [{"format": "pypi", "upstream_config_revision": 1}],
@@ -693,7 +693,7 @@ def test_artifacts_repo_upstream_add_private_uses_source_lane_and_zero_age_defau
         "/repositories/ar_xyzabcde/formats/pypi/upstreams",
         {
             "source_type": "private",
-            "source_repository_unique_ref": "ar_shared01",
+            "source_repository_unique_ref": "ar_shared23",
             "position": 1,
             "expected_revision": 7,
             "min_age_hours": 0.0,
@@ -711,7 +711,7 @@ def test_artifacts_repo_upstream_add_uses_explicit_sparse_position(
     source = _repository_entry("shared")
     source["repository"] = {
         **source["repository"],
-        "repository_unique_ref": "ar_shared01",
+        "repository_unique_ref": "ar_shared23",
         "namespace_name": "libraries",
         "namespace_realm": "internal",
         "formats": [{"format": "pypi", "upstream_config_revision": 1}],

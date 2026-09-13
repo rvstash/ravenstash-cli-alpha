@@ -69,8 +69,6 @@ config_version = 5
 default_profile = "staging"
 
 [profiles.staging]
-customer_id = "cus_staging"
-customer_unique_id = "custpid1"
 """.strip(),
         encoding="utf-8",
     )
@@ -79,7 +77,6 @@ customer_unique_id = "custpid1"
 
     assert profile.api_url == "https://staging.example.test"
     assert profile.customer_id is None
-    assert profile.customer_unique_id is None
 
 
 def test_env_api_url_overrides_saved_profile_url(monkeypatch, tmp_path: Path) -> None:
@@ -361,7 +358,6 @@ def test_save_and_load_round_trips_profiles_and_registry_defaults(
         == "https://oci.work.example"
     )
     assert loaded.profiles["work"].customer_id == "ac_abcdefgh"
-    assert loaded.profiles["work"].customer_unique_id is None
     assert loaded.profiles["work"].credential_store == "pass"
     assert loaded.registry_defaults("pypi").default_repo == "in_abcdefgh/ar_23456789"
     assert loaded.registry_defaults("npm").default_repo == "in_abcdefgh/ar_xyzabcde"
@@ -423,7 +419,6 @@ def test_set_profile_metadata_preserves_existing_values(monkeypatch, tmp_path: P
 
     assert profile.api_url == "https://api.example"
     assert profile.customer_id == "ac_23456789"
-    assert profile.customer_unique_id is None
     assert profile.credential_type == "expiring"
 
 
