@@ -14,6 +14,10 @@ curl -fsSL https://ravenstash.com/install.sh | bash
 rvs --version
 ```
 
+The currently published alpha installer supports Linux amd64. Native Linux
+arm64, Alpine, macOS, Windows, Nix, and WSL2 artifacts are gated on the first
+public release certification described in the compatibility policy.
+
 For supported systems and upgrade instructions, see the
 [CLI overview](https://docs.ravenstash.com/cli/overview/).
 
