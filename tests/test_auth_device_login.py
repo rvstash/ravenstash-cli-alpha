@@ -309,7 +309,11 @@ def test_auth_delete_all_profiles(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setattr(cfg_mod, "CONFIG_DIR", config_dir)
     monkeypatch.setattr(cfg_mod, "CONFIG_FILE", config_dir / "config.toml")
     deleted: list[str] = []
-    monkeypatch.setattr(auth_cmd.auth_mod, "delete_token", lambda profile: deleted.append(profile))
+    monkeypatch.setattr(
+        auth_cmd.auth_mod,
+        "delete_token_from_all_stores",
+        lambda profile: deleted.append(profile),
+    )
 
     result = runner.invoke(auth_cmd.profile_app, ["delete", "-a"])
     cfg = cfg_mod.load()
@@ -318,6 +322,31 @@ def test_auth_delete_all_profiles(monkeypatch, tmp_path: Path) -> None:
     assert deleted == ["default", "work"]
     assert cfg.profiles == {}
     assert cfg.default_profile == "default"
+    assert "All profiles deleted." in result.output
+
+
+def test_auth_delete_all_profiles_resets_config_before_v5(monkeypatch, tmp_path: Path) -> None:
+    config_dir = tmp_path / ".rvs"
+    _write_profiles_config(config_dir)
+    config_file = config_dir / "config.toml"
+    config_file.write_text(
+        config_file.read_text(encoding="utf-8").replace("config_version = 5", "config_version = 4"),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(cfg_mod, "CONFIG_DIR", config_dir)
+    monkeypatch.setattr(cfg_mod, "CONFIG_FILE", config_file)
+    deleted: list[str] = []
+    monkeypatch.setattr(
+        auth_cmd.auth_mod,
+        "delete_token_from_all_stores",
+        lambda profile: deleted.append(profile),
+    )
+
+    result = runner.invoke(auth_cmd.profile_app, ["delete", "--all"])
+
+    assert result.exit_code == 0
+    assert deleted == ["default", "work"]
+    assert cfg_mod.load() == cfg_mod.RvsConfig()
     assert "All profiles deleted." in result.output
 
 

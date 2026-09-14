@@ -756,19 +756,16 @@ def profile_delete(
     if all_profiles and profile:
         output.fatal("Use either a profile name or `--all`, not both.")
 
-    cfg = cfg_mod.load()
     if all_profiles:
-        profiles = list(cfg.profiles)
-        if not profiles:
-            output.info("No profiles configured.")
-            return
+        profiles = cfg_mod.profile_names_for_reset()
         for profile_name in profiles:
-            auth_mod.delete_token(profile_name)
+            auth_mod.delete_token_from_all_stores(profile_name)
         cfg_mod.delete_all_profiles()
         output.success("All profiles deleted.")
         _warn_env_profile_override()
         return
 
+    cfg = cfg_mod.load()
     profile_name = profile or _current_profile_name(cfg)
     _require_profile(cfg, profile_name)
     auth_mod.delete_token(profile_name)

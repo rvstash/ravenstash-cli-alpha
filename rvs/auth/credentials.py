@@ -585,6 +585,12 @@ def delete_token_from_store(profile: str, credential_store: str) -> None:
     _store_delete(credential_store, _refresh_profile(profile))
 
 
+def delete_token_from_all_stores(profile: str) -> None:
+    """Remove a profile's credentials without consulting local config."""
+    for credential_store in sorted(_CREDENTIAL_STORES - {"auto"}):
+        delete_token_from_store(profile, credential_store)
+
+
 def delete_token(profile: str) -> None:
     """Remove stored credentials for *profile*."""
     preference = _credential_store_preference(profile)

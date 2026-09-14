@@ -1237,11 +1237,21 @@ def delete_profile(profile: str) -> bool:
     return True
 
 
+def profile_names_for_reset() -> list[str]:
+    """Read profile names without requiring the config format to be supported."""
+    try:
+        raw = _load_raw()
+    except OSError, tomllib.TOMLDecodeError:
+        return []
+    profiles = raw.get("profiles")
+    if not isinstance(profiles, dict):
+        return []
+    return [name for name in profiles if isinstance(name, str)]
+
+
 def delete_all_profiles() -> None:
-    cfg = load()
-    cfg.profiles = {}
-    cfg.default_profile = "default"
-    save(cfg)
+    """Replace any local config version with an empty current-format baseline."""
+    save(RvsConfig())
     if _session_file() is not None:
         save_session(SessionContext(profile="default"))
 
