@@ -3,9 +3,9 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
+import tempfile
+import unittest
 from pathlib import Path
-
-import pytest
 
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -21,7 +21,7 @@ def _run(command: list[str], *, env: dict[str, str] | None = None) -> str:
         env=env,
     )
     if result.returncode != 0:
-        pytest.fail(
+        raise AssertionError(
             f"command failed ({result.returncode}): {' '.join(command)}\n"
             f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
         )
@@ -55,12 +55,8 @@ def _build_deb(root: Path, version: str, architecture: str) -> Path:
     return output
 
 
-@pytest.mark.skipif(
-    any(shutil.which(command) is None for command in ("apt-ftparchive", "dpkg-deb", "gpg")),
-    reason="APT repository tooling is unavailable",
-)
-def test_new_architecture_keeps_older_channel_indexes_valid(tmp_path: Path) -> None:
-    gpg_home = tmp_path / "gnupg"
+def _exercise_multarch_append(root: Path) -> None:
+    gpg_home = root / "gnupg"
     gpg_home.mkdir(mode=0o700)
     base_env = os.environ | {"GNUPGHOME": str(gpg_home)}
     _run(
@@ -81,7 +77,7 @@ def test_new_architecture_keeps_older_channel_indexes_valid(tmp_path: Path) -> N
     fingerprint = next(
         line.split(":")[9] for line in listing.splitlines() if line.startswith("fpr:")
     )
-    keyring = tmp_path / "rvs.gpg"
+    keyring = root / "rvs.gpg"
     with keyring.open("wb") as stream:
         subprocess.run(
             ["gpg", "--batch", "--export", fingerprint],
@@ -95,37 +91,37 @@ def test_new_architecture_keeps_older_channel_indexes_valid(tmp_path: Path) -> N
         "RVS_APT_GPG_FINGERPRINT": fingerprint,
         "RVS_APT_PROMOTE_CHANNEL": "0",
     }
-    bootstrap = tmp_path / "bootstrap"
+    bootstrap = root / "bootstrap"
     bootstrap.mkdir()
     (bootstrap / "BOOTSTRAP").touch()
-    v03 = tmp_path / "v03"
+    v03 = root / "v03"
     _run(
         [
             str(APPEND),
             str(bootstrap),
-            str(_build_deb(tmp_path, "0.3.1", "amd64")),
+            str(_build_deb(root, "0.3.1", "amd64")),
             str(v03),
             str(keyring),
         ],
         env=common_env | {"RVS_APT_CHANNEL": "v0.3"},
     )
-    amd64 = tmp_path / "amd64"
+    amd64 = root / "amd64"
     _run(
         [
             str(APPEND),
             str(v03),
-            str(_build_deb(tmp_path, "0.12.1", "amd64")),
+            str(_build_deb(root, "0.12.1", "amd64")),
             str(amd64),
             str(keyring),
         ],
         env=common_env | {"RVS_APT_CHANNEL": "v0.12"},
     )
-    multarch = tmp_path / "multarch"
+    multarch = root / "multarch"
     _run(
         [
             str(APPEND),
             str(amd64),
-            str(_build_deb(tmp_path, "0.12.1", "arm64")),
+            str(_build_deb(root, "0.12.1", "arm64")),
             str(multarch),
             str(keyring),
         ],
@@ -136,3 +132,17 @@ def test_new_architecture_keeps_older_channel_indexes_valid(tmp_path: Path) -> N
     assert (
         "Architecture: arm64" in (multarch / "dists/v0.12/main/binary-arm64/Packages").read_text()
     )
+
+
+class AppendMultiarchTests(unittest.TestCase):
+    @unittest.skipIf(
+        any(shutil.which(command) is None for command in ("apt-ftparchive", "dpkg-deb", "gpg")),
+        "APT repository tooling is unavailable",
+    )
+    def test_new_architecture_keeps_older_channel_indexes_valid(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            _exercise_multarch_append(Path(directory))
+
+
+if __name__ == "__main__":
+    unittest.main()
