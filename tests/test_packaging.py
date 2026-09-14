@@ -274,7 +274,7 @@ def test_release_slot_check_fails_closed(
     result = subprocess.run(
         [
             str(ROOT / "packaging/scripts/assert-github-release-slot-empty.sh"),
-            "rvstash/ravenstash-cli",
+            "rvstash/ravenstash-cli-alpha",
             "v0.13.2",
         ],
         check=False,
@@ -412,7 +412,7 @@ def test_package_manager_manifests_cover_both_desktop_architectures(tmp_path: Pa
             str(ROOT / "packaging/scripts/generate_package_manifests.py"),
             str(release),
             "0.12.0",
-            "rvstash/ravenstash-cli",
+            "rvstash/ravenstash-cli-alpha",
         ],
         check=True,
     )
@@ -436,5 +436,5 @@ def test_package_manager_manifests_cover_both_desktop_architectures(tmp_path: Pa
     assert "package-manifests/homebrew/rvs@0.12.rb" in names
     assert "Architecture: x64" in installer_text
     assert "Architecture: arm64" in installer_text
-    assert "ravenstash-cli/releases/download/v0.12.0" in installer_text
+    assert "ravenstash-cli-alpha/releases/download/v0.12.0" in installer_text
     assert 'arch arm: "arm64", intel: "amd64"' in cask_text

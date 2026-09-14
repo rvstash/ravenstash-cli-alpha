@@ -28,8 +28,8 @@ classifiers = [
 
 [project.urls]
 Homepage = "https://ravenstash.com"
-Repository = "https://github.com/rvstash/ravenstash-cli"
-Issues = "https://github.com/rvstash/ravenstash-cli/issues"
+Repository = "https://github.com/rvstash/ravenstash-cli-alpha"
+Issues = "https://github.com/rvstash/ravenstash-cli-alpha/issues"
 
 [project.scripts]
 rvs = "rvs.entrypoint:main"

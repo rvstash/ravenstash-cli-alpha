@@ -10,7 +10,7 @@ problem when practical.
 ## Reporting a vulnerability
 
 Do not open a public issue for a suspected vulnerability. Use
-[GitHub private vulnerability reporting](https://github.com/rvstash/ravenstash-cli/security/advisories/new)
+[GitHub private vulnerability reporting](https://github.com/rvstash/ravenstash-cli-alpha/security/advisories/new)
 and include:
 
 - the affected rvs version and operating system;

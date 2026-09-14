@@ -1,9 +1,9 @@
 # Support
 
 - For usage questions and ideas, start a
-  [GitHub Discussion](https://github.com/rvstash/ravenstash-cli/discussions).
+  [GitHub Discussion](https://github.com/rvstash/ravenstash-cli-alpha/discussions).
 - For a reproducible CLI bug or feature proposal, use the repository's
-  [issue forms](https://github.com/rvstash/ravenstash-cli/issues/new/choose).
+  [issue forms](https://github.com/rvstash/ravenstash-cli-alpha/issues/new/choose).
 - For account, billing, abuse, or other private matters, email
   [contact@ravenstash.com](mailto:contact@ravenstash.com). Do not put credentials
   or customer data in a public issue.
