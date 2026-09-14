@@ -52,8 +52,9 @@ when you want a different choice for only that command.
 | `rvs art repo set-default FORMAT NAME` | Chooses the default repository for a package format. |
 | `rvs art repo defaults` | Lists the current defaults. |
 
-Supported formats are `pypi`, `npm`, `maven`, `container`, and `helm`. Use commas
-or repeat `--format` to enable more than one.
+Supported formats are `pypi`, `npm`, `maven`, and `oci`. Container images and
+Helm charts are content types within OCI. Use commas or repeat `--format` to
+enable more than one format.
 
 ## Package sources
 
@@ -110,7 +111,7 @@ rvs npm NPM_ARGUMENTS...
 rvs mvn MAVEN_ARGUMENTS...
 rvs docker DOCKER_ARGUMENTS...
 rvs helm HELM_ARGUMENTS...
-rvs oras --rvs-format container|helm ORAS_ARGUMENTS...
+rvs oras ORAS_ARGUMENTS...
 ```
 
 The commands accept `--rvs-profile`, `--rvs-account`, and `--rvs-target` where
@@ -125,8 +126,10 @@ publish`, or `rvs mvn deploy`. Publishing commands ask for confirmation unless
 pnpm, Yarn, Bun, Gradle, and sbt can use Ravenstash package addresses, but there
 are no `rvs pnpm`, `rvs yarn`, `rvs bun`, `rvs gradle`, or `rvs sbt` commands.
 
-Use `rvs art reference --format container|helm` to print the readable repository-qualified Ravenstash
-address for an image or chart.
+Use `rvs art reference --format oci` to print the readable
+repository-qualified Ravenstash address for an image or chart. ORAS does not
+take a Ravenstash content-type or format flag; the manifest determines the
+content type.
 
 ## Local runtimes and CLI updates
 
@@ -149,9 +152,9 @@ task-focused guides and examples.
 ## Native addresses and setup
 
 `rvs art endpoint --format FORMAT [--access read|publish]` prints one address.
-For Container/Helm this is the login host; other formats return the complete native
-URL. Read is the default. `rvs art reference [PATH[:TAG]|PATH@DIGEST] --format
-container|helm` prints a readable repository-qualified reference without adding a tag.
+For OCI this is the login host; other formats return the complete native URL.
+Read is the default. `rvs art reference [PATH[:TAG]|PATH@DIGEST] --format oci`
+prints a readable repository-qualified reference without adding a tag.
 Both commands use read-only discovery and work with leaf `--target/-t`, `--account`,
 and `--profile/-p` options.
 
@@ -160,10 +163,10 @@ and `--profile/-p` options.
 not mint credentials, execute tools, write files, select a target, or create mirrors.
 Pip always reads and Twine always publishes; both reject `--access`. Other tools
 default to read + publish for repositories and read for mirrors; `--access read`
-reduces the instructions. Explicit mirror publication is rejected. ORAS defaults
-to all enabled OCI formats, or accepts `--format container|helm`.
+reduces the instructions. Explicit mirror publication is rejected. ORAS uses the
+single enabled OCI format; `--format`, when needed, accepts `oci`.
 
-Mint separately with `rvs art token mint --format container,helm --access publish`.
+Mint separately with `rvs art token mint --format oci --access publish`.
 Repeat `--format/-f` or use comma-separated values; `--all-formats` snapshots every
 enabled format on the exact repository. The selected target is used by default.
 Mirrors have one format and read access. Lifetimes are 15 minutes through 12 hours,
@@ -182,8 +185,8 @@ the active APT source. Add `--apply` to install. `--yes/-y` requires `--apply`.
 Multi-format options accept comma-separated values, repeated flags, or both:
 
 ```bash
-rvs art repo create packages --format pypi,npm,maven,container,helm
-rvs art token mint --target platform/packages -f container -f helm
+rvs art repo create packages --format pypi,npm,maven,oci
+rvs art token mint --target platform/packages -f pypi -f oci
 ```
 
 Whitespace is trimmed and duplicates are removed. Empty or unknown formats fail

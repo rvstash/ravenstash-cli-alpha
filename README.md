@@ -3,9 +3,10 @@
 `rvs` lets you sign in to Ravenstash, choose a personal account or organization,
 and use private package repositories from the command line.
 
-It works with PyPI, npm, Maven, Container, and Helm repositories. It can also
-run pip, uv, Twine, npm, Maven, Docker, Helm, and ORAS with temporary Ravenstash
-access, so credentials do not need to be saved in project files.
+It works with repositories for PyPI, npm, Maven, and OCI content, including
+container images and Helm charts. It can also run pip, uv, Twine, npm, Maven,
+Docker, Helm, and ORAS with temporary Ravenstash access, so credentials do not
+need to be saved in project files.
 
 ## Install
 
@@ -137,7 +138,7 @@ Multi-format options accept comma-separated values, repeated flags, or both:
 
 ```bash
 rvs art repo create packages --format pypi,npm,maven,oci
-rvs art token mint --target platform/packages -f container -f helm
+rvs art token mint --target platform/packages -f pypi -f oci
 ```
 
 Whitespace is trimmed and duplicates are removed. Empty or unknown formats fail

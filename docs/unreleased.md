@@ -1,7 +1,8 @@
 # Unreleased command and native-credential changes
 
-The canonical group is `rvs art`. Format selectors are `--format/-f` and ORAS's
-`--rvs-format`; artifact targets use `--target/-t` on leaf commands. Removed commands:
+The canonical group is `rvs art`. Format selectors are `--format/-f`; ORAS has
+no Ravenstash format flag because its manifest determines the OCI content type.
+Artifact targets use `--target/-t` on leaf commands. Removed commands:
 `artifacts`, `ci`, `upgrade`, `oci-reference`, `art auth print-token`, custom mirror
 creation, mirror current/clear, and redundant per-format URL/config commands.
 The experimental `art install` command and `art pypi|npm|maven install|publish`
@@ -24,8 +25,8 @@ without minting or writing anything. See the [command reference](command-referen
 Multi-format options accept comma-separated values, repeated flags, or both:
 
 ```bash
-rvs art repo create packages --format pypi,npm,maven,container,helm
-rvs art token mint --target platform/packages -f container -f helm
+rvs art repo create packages --format pypi,npm,maven,oci
+rvs art token mint --target platform/packages -f pypi -f oci
 ```
 
 Whitespace is trimmed and duplicates are removed. Empty or unknown formats fail

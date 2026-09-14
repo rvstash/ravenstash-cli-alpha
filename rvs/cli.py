@@ -68,7 +68,7 @@ app.command(
 app.command(
     "oras",
     context_settings=oci_commands.PASSTHROUGH_CONTEXT,
-    help="Run ORAS with temporary access to a Container or Helm repository.",
+    help="Run ORAS with temporary access to an OCI-enabled repository.",
 )(oci_commands.oras)
 
 
