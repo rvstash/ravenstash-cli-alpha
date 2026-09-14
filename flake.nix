@@ -22,7 +22,7 @@
               cargoDeps = pkgs.rustPlatform.fetchCargoVendor {
                 pname = "cryptography";
                 inherit version src;
-                hash = pkgs.lib.fakeHash;
+                hash = "sha256-aGokDcpVxfSolwEUOcEyP/8nrrLuRXC3YyrTT+Dv36I=";
               };
               patches = [ ];
               doCheck = false;
