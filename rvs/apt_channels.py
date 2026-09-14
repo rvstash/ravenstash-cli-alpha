@@ -5,8 +5,10 @@ from __future__ import annotations
 import re
 
 
-_CHANNEL_PATTERN = re.compile(r"^v(?:(0)\.([0-9]+)|([1-9][0-9]*))$")
-_VERSION_PATTERN = re.compile(r"^([0-9]+)\.([0-9]+)\.([0-9]+)(?:[~+.-][A-Za-z0-9.-]+)?$")
+_CHANNEL_PATTERN = re.compile(r"^v([0-9]+)\.([0-9]+)$")
+_VERSION_PATTERN = re.compile(
+    r"^([0-9]+)\.([0-9]+)\.([0-9]+)(?:rc[1-9][0-9]*|[~+.-][A-Za-z0-9.-]+)?$"
+)
 
 
 def channel_for_version(version: str) -> str:
@@ -15,14 +17,14 @@ def channel_for_version(version: str) -> str:
     if match is None:
         raise ValueError(f"unsupported rvs version: {version}")
     major, minor, _patch = (int(value) for value in match.groups()[:3])
-    return f"v0.{minor}" if major == 0 else f"v{major}"
+    return f"v{major}.{minor}"
 
 
 def normalize_channel(value: str) -> str:
-    """Normalize a user-facing channel such as ``0.4`` or ``1``."""
+    """Normalize a user-facing release series such as ``0.14`` or ``v1.1``."""
     candidate = value if value.startswith("v") else f"v{value}"
     if _CHANNEL_PATTERN.fullmatch(candidate) is None:
-        raise ValueError("channels must look like 0.4, v0.4, 1, or v1")
+        raise ValueError("release series must look like 0.14 or v1.1")
     return candidate
 
 
@@ -38,6 +40,4 @@ def channel_order(channel: str) -> tuple[int, int]:
     normalized = normalize_channel(channel)
     match = _CHANNEL_PATTERN.fullmatch(normalized)
     assert match is not None
-    if match.group(1) == "0":
-        return (0, int(match.group(2)))
-    return (int(match.group(3)), 0)
+    return (int(match.group(1)), int(match.group(2)))

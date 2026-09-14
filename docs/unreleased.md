@@ -15,8 +15,9 @@ Use `art token mint`, `art endpoint`, `art reference`, and `art native config`.
 Native `rvs mvn deploy` remains available. Official mirrors use `art mirror create [SOURCE]`.
 Repository upstreams attach caches with `--remote-cache rc_...`; `art mirror list`
 prints that immutable reference while the mirror group remains the direct-access surface.
-`update --to SERIES` previews; adding `--apply` installs. No transitional aliases
-are provided for retired commands.
+`update --to SERIES` previews; adding `--apply` installs. Signed GitHub
+prereleases can be verified with `update --candidate X.Y.ZrcN` and installed by
+adding `--apply`. No transitional aliases are provided for retired commands.
 
 A native token selects one or more explicit formats on one exact target. ORAS can
 use a single host login for Container and Helm. Native setup prints instructions

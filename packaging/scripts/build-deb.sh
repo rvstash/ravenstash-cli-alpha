@@ -6,6 +6,7 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/common.sh"
 require_cmd dpkg-deb
 
 VERSION="${RVS_VERSION:-$(rvs_version)}"
+DEBIAN_VERSION="$(rvs_debian_version "$VERSION")"
 ARCH="${RVS_ARCH:-$(rvs_arch)}"
 if [[ "$ARCH" == "unsupported" ]]; then
   echo "error: unsupported architecture $(uname -m)" >&2
@@ -31,7 +32,7 @@ cp README.md "$STAGING/usr/share/doc/rvs/README.md"
 install -m 0755 packaging/scripts/postinstall.sh "$STAGING/DEBIAN/postinst"
 cat > "$STAGING/DEBIAN/control" <<EOF
 Package: rvs
-Version: ${VERSION}
+Version: ${DEBIAN_VERSION}
 Architecture: ${ARCH}
 Maintainer: Ravenstash <support@ravenstash.com>
 Depends: ca-certificates, gpgv

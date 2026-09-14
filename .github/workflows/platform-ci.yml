@@ -3,8 +3,10 @@ run-name: Platform CI · ${{ github.event_name }} · ${{ github.ref_name }} · $
 
 on:
   push:
-    branches: [dev]
+    branches: [main, "release/**"]
   pull_request:
+    branches: [main, "release/**"]
+    types: [opened, synchronize, reopened, ready_for_review]
   workflow_dispatch:
 
 permissions:
@@ -16,6 +18,7 @@ concurrency:
 
 jobs:
   source:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     name: source (${{ matrix.name }})
     strategy:
       fail-fast: false
@@ -75,6 +78,7 @@ jobs:
           retention-days: 7
 
   alpine:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     name: Alpine musl (${{ matrix.arch }})
     strategy:
       fail-fast: false
@@ -119,6 +123,7 @@ jobs:
           retention-days: 7
 
   nix:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     name: Nix package (${{ matrix.system }})
     strategy:
       fail-fast: false
@@ -148,7 +153,7 @@ jobs:
 
   platform-ci-gate:
     name: Platform CI gate
-    if: ${{ always() }}
+    if: ${{ always() && (github.event_name != 'pull_request' || github.event.pull_request.draft == false) }}
     needs:
       - source
       - alpine

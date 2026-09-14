@@ -154,7 +154,7 @@ def test_top_level_workflow_run_names_are_distinct_and_purpose_first() -> None:
         "promote-installer.yml": "Promote rvs ",
         "refresh-apt.yml": "Refresh APT metadata ·",
         "release-policy-ci.yml": "Release policy ·",
-        "release.yml": "Release rvs ",
+        "release.yml": "${{ inputs.kind == 'candidate'",
     }
 
     for filename, prefix in expected_prefixes.items():
@@ -202,7 +202,10 @@ def test_publication_graph_parallelizes_safe_jobs_and_serializes_mutations() -> 
     assert jobs["verify-apt"]["needs"] == "publish-apt"
     assert jobs["verify-apt"]["strategy"]["fail-fast"] is False
     assert len(jobs["verify-apt"]["strategy"]["matrix"]["include"]) == 2
-    assert jobs["publish-github-release"]["needs"] == "verify-apt"
+    assert set(jobs["publish-github-release"]["needs"]) == {"sign", "verify-apt"}
+    assert jobs["restore-apt"]["if"] == "inputs.kind == 'stable'"
+    assert jobs["publish-apt"]["if"] == "inputs.kind == 'stable'"
+    assert jobs["verify-apt"]["if"] == "inputs.kind == 'stable'"
 
 
 def test_release_builds_once_and_appends_architectures_once() -> None:
@@ -211,7 +214,9 @@ def test_release_builds_once_and_appends_architectures_once() -> None:
 
     assert "candidate_run_id" not in publication
     assert "release-candidate.yml" not in publication
-    assert 'test "$GITHUB_SHA" = "$SOURCE_SHA"' in publication
+    assert "refs/remotes/origin/${SOURCE_BRANCH}" in publication
+    assert "inputs.kind == 'candidate'" in publication
+    assert "--prerelease" in publication
     for gate in (
         "ci.yml",
         "platform-ci.yml",
@@ -268,7 +273,7 @@ def test_release_slot_check_fails_closed(
     result = subprocess.run(
         [
             str(ROOT / "packaging/scripts/assert-github-release-slot-empty.sh"),
-            "rvstash/ravenstash-cli-alpha",
+            "rvstash/ravenstash-cli",
             "v0.13.2",
         ],
         check=False,
@@ -318,6 +323,24 @@ def test_debian_package_installs_node_signature_verifier() -> None:
     assert '"$STAGING/usr/bin/docker-credential-rvs"' in manifest
 
 
+@pytest.mark.skipif(os.name == "nt", reason="Debian version helper is POSIX-only")
+def test_release_candidate_uses_debian_prerelease_ordering() -> None:
+    helper = ROOT / "packaging/scripts/common.sh"
+    converted = subprocess.run(
+        ["bash", "-c", f'source "{helper}"; rvs_debian_version 0.14.0rc2'],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    ordering = subprocess.run(
+        ["dpkg", "--compare-versions", converted.stdout.strip(), "lt", "0.14.0"],
+        check=False,
+    )
+
+    assert converted.stdout == "0.14.0~rc2\n"
+    assert ordering.returncode == 0
+
+
 def test_frozen_bundle_dispatches_docker_credential_helper() -> None:
     entrypoint = (ROOT / "packaging" / "pyinstaller" / "entrypoint.py").read_text(encoding="utf-8")
     shared_entrypoint = (ROOT / "rvs" / "entrypoint.py").read_text(encoding="utf-8")
@@ -333,7 +356,7 @@ def test_installer_is_owned_by_cli_packaging_and_pins_release_identity() -> None
     project = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
     version = project["project"]["version"]
     major, minor, _patch = version.split(".", 2)
-    channel = f"v0.{minor}" if major == "0" else f"v{major}"
+    channel = f"v{major}.{minor}"
 
     if os.name != "nt":
         assert INSTALLER.stat().st_mode & 0o111
@@ -388,7 +411,7 @@ def test_package_manager_manifests_cover_both_desktop_architectures(tmp_path: Pa
             str(ROOT / "packaging/scripts/generate_package_manifests.py"),
             str(release),
             "0.12.0",
-            "rvstash/ravenstash-cli-alpha",
+            "rvstash/ravenstash-cli",
         ],
         check=True,
     )
@@ -412,5 +435,5 @@ def test_package_manager_manifests_cover_both_desktop_architectures(tmp_path: Pa
     assert "package-manifests/homebrew/rvs@0.12.rb" in names
     assert "Architecture: x64" in installer_text
     assert "Architecture: arm64" in installer_text
-    assert "ravenstash-cli-alpha/releases/download/v0.12.0" in installer_text
+    assert "ravenstash-cli/releases/download/v0.12.0" in installer_text
     assert 'arch arm: "arm64", intel: "amd64"' in cask_text

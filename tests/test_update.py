@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -52,6 +53,147 @@ def test_update_does_not_self_replace_non_apt_install(monkeypatch: Any) -> None:
     assert result.exit_code == 0
     assert "not managed by the rvs APT package" in result.output
     assert "install.sh" in result.output
+
+
+def test_candidate_version_maps_to_debian_prerelease() -> None:
+    assert update_mod._candidate_debian_version("0.14.0rc2") == "0.14.0~rc2"
+
+
+def test_candidate_preview_verifies_without_installing(monkeypatch: Any, tmp_path: Path) -> None:
+    for name in ("gpgv", "dpkg-deb"):
+        (tmp_path / name).touch()
+    monkeypatch.setattr(update_mod, "_APT_KEYRING", tmp_path / "keyring")
+    update_mod._APT_KEYRING.touch()
+    monkeypatch.setattr(update_mod, "_GPGV", tmp_path / "gpgv")
+    monkeypatch.setattr(update_mod, "_DPKG_DEB", tmp_path / "dpkg-deb")
+    monkeypatch.setattr(update_mod, "_apt_versions", lambda: ("0.13.4", "0.13.4"))
+    monkeypatch.setattr(update_mod, "_upgrade_available", lambda installed, candidate: True)
+
+    def fake_download(candidate: str, destination: Path) -> Path:
+        package = destination / f"rvs_{candidate}_amd64.deb"
+        package.touch()
+        return package
+
+    monkeypatch.setattr(update_mod, "_download_candidate", fake_download)
+    monkeypatch.setattr(
+        update_mod,
+        "_run_visible",
+        lambda command: (_ for _ in ()).throw(AssertionError("preview installed a package")),
+    )
+
+    result = runner.invoke(app, ["update", "--candidate", "0.14.0rc1"])
+
+    assert result.exit_code == 0, result.output
+    assert "Verified signed release candidate rvs 0.14.0rc1" in result.output
+    assert "--candidate 0.14.0rc1 --apply" in result.output
+
+
+def test_candidate_apply_installs_verified_local_package(monkeypatch: Any, tmp_path: Path) -> None:
+    apt_get = tmp_path / "apt-get"
+    gpgv = tmp_path / "gpgv"
+    dpkg_deb = tmp_path / "dpkg-deb"
+    keyring = tmp_path / "keyring"
+    for path in (apt_get, gpgv, dpkg_deb, keyring):
+        path.touch()
+    monkeypatch.setattr(update_mod, "_APT_GET", apt_get)
+    monkeypatch.setattr(update_mod, "_APT_KEYRING", keyring)
+    monkeypatch.setattr(update_mod, "_GPGV", gpgv)
+    monkeypatch.setattr(update_mod, "_DPKG_DEB", dpkg_deb)
+    monkeypatch.setattr(update_mod, "_apt_versions", lambda: ("0.13.4", "0.13.4"))
+    monkeypatch.setattr(update_mod, "_upgrade_available", lambda installed, candidate: True)
+
+    def fake_download(candidate: str, destination: Path) -> Path:
+        package = destination / f"rvs_{candidate}_amd64.deb"
+        package.touch()
+        return package
+
+    monkeypatch.setattr(update_mod, "_download_candidate", fake_download)
+    calls: list[list[str]] = []
+    monkeypatch.setattr(
+        update_mod,
+        "_run_visible",
+        lambda command: calls.append(command) or _completed(),
+    )
+
+    result = runner.invoke(app, ["update", "--candidate", "0.14.0rc1", "--apply", "--yes"])
+
+    assert result.exit_code == 0, result.output
+    assert len(calls) == 1
+    assert calls[0][:3] == [str(apt_get), "install", "--yes"]
+    assert calls[0][3].endswith("/rvs_0.14.0rc1_amd64.deb")
+
+
+def test_candidate_rejects_stable_version_and_series_option(monkeypatch: Any) -> None:
+    invalid = runner.invoke(app, ["update", "--candidate", "0.14.0"])
+    combined = runner.invoke(app, ["update", "--candidate", "0.14.0rc1", "--to", "0.14"])
+
+    assert invalid.exit_code == 1
+    assert "must look like 0.14.0rc1" in invalid.output
+    assert combined.exit_code == 1
+    assert "cannot be used together" in combined.output
+
+
+def test_candidate_download_authenticates_release_assets(monkeypatch: Any, tmp_path: Path) -> None:
+    candidate = "0.14.0rc1"
+    package_name = f"rvs_{candidate}_amd64.deb"
+    package = b"signed candidate package"
+    checksum_name = f"rvs-v{candidate}-checksums.txt"
+    checksum = f"{hashlib.sha256(package).hexdigest()}  {package_name}\n".encode()
+    signature_name = f"{checksum_name}.asc"
+    tag = f"v{candidate}"
+    root = f"{update_mod._RELEASE_DOWNLOAD_ROOT}/{tag}"
+    payloads = {
+        f"{root}/{package_name}": package,
+        f"{root}/{checksum_name}": checksum,
+        f"{root}/{signature_name}": b"signature",
+    }
+    release = {
+        "tag_name": tag,
+        "draft": False,
+        "prerelease": True,
+        "assets": [
+            {"name": name, "browser_download_url": f"{root}/{name}"}
+            for name in (package_name, checksum_name, signature_name)
+        ],
+    }
+
+    class Response:
+        def __init__(self, content: bytes = b"", json_data: Any = None) -> None:
+            self.content = content
+            self._json = json_data
+
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> Any:
+            return self._json
+
+    class Client:
+        def __enter__(self) -> Client:
+            return self
+
+        def __exit__(self, *_args: Any) -> None:
+            return None
+
+        def get(self, url: str, **_kwargs: Any) -> Response:
+            if url == f"{update_mod._GITHUB_API}/releases/tags/{tag}":
+                return Response(json_data=release)
+            return Response(content=payloads[url])
+
+    monkeypatch.setattr(update_mod.httpx, "Client", lambda **_kwargs: Client())
+    monkeypatch.setattr(update_mod.platform, "machine", lambda: "x86_64")
+
+    def fake_run(command: list[str]) -> Any:
+        if command[0] == str(update_mod._GPGV):
+            return _completed()
+        return _completed(stdout="rvs\n0.14.0~rc1\namd64\n")
+
+    monkeypatch.setattr(update_mod, "_run", fake_run)
+
+    result = update_mod._download_candidate(candidate, tmp_path)
+
+    assert result == tmp_path / package_name
+    assert result.read_bytes() == package
 
 
 def test_apt_source_uses_native_arm64_architecture(monkeypatch: Any) -> None:

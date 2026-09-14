@@ -22,9 +22,10 @@ class ChannelPolicyTests(unittest.TestCase):
         self.assertEqual(channel_for_version("0.4.0~rc.1"), "v0.4")
         self.assertFalse(version_matches_channel("0.4.0", "v0.3"))
 
-    def test_post_one_major_is_a_compatibility_boundary(self) -> None:
-        self.assertEqual(channel_for_version("1.9.0"), "v1")
-        self.assertEqual(channel_for_version("2.0.0"), "v2")
+    def test_every_minor_is_a_compatibility_boundary(self) -> None:
+        self.assertEqual(channel_for_version("1.0.9"), "v1.0")
+        self.assertEqual(channel_for_version("1.1.0"), "v1.1")
+        self.assertEqual(channel_for_version("2.0.0"), "v2.0")
 
     def test_legacy_stable_never_moves_beyond_v03(self) -> None:
         self.assertEqual(compatibility_channel("stable"), "v0.3")
