@@ -1,9 +1,15 @@
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
+from typing import TYPE_CHECKING
 
 from rvs.entrypoint import _version_requested
+
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 def test_only_standalone_version_flags_take_the_fast_path() -> None:
@@ -31,3 +37,39 @@ assert "rvs.cli" not in sys.modules
 
     assert result.returncode == 0, result.stderr
     assert result.stdout.startswith("Ravenstash CLI ")
+
+
+def test_invalid_config_is_reported_without_a_traceback(tmp_path: Path) -> None:
+    (tmp_path / "config.toml").write_text("config_version = 999\n", encoding="utf-8")
+
+    result = subprocess.run(
+        [sys.executable, "-m", "rvs.entrypoint", "profile", "current"],
+        check=False,
+        capture_output=True,
+        text=True,
+        env=os.environ | {"RVS_HOME": str(tmp_path)},
+    )
+
+    assert result.returncode == 1
+    assert result.stdout == ""
+    assert "config version 999 requires a newer rvs release" in result.stderr
+    assert "rvs profile delete --all" in result.stderr
+    assert "Traceback" not in result.stderr
+
+
+def test_malformed_config_is_reported_without_a_traceback(tmp_path: Path) -> None:
+    (tmp_path / "config.toml").write_text("profiles = [\n", encoding="utf-8")
+
+    result = subprocess.run(
+        [sys.executable, "-m", "rvs.entrypoint", "profile", "current"],
+        check=False,
+        capture_output=True,
+        text=True,
+        env=os.environ | {"RVS_HOME": str(tmp_path)},
+    )
+
+    assert result.returncode == 1
+    assert result.stdout == ""
+    assert "could not read" in result.stderr
+    assert "rvs profile delete --all" in result.stderr
+    assert "Traceback" not in result.stderr

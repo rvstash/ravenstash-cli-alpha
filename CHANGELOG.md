@@ -20,6 +20,17 @@ All notable user-facing changes to `rvs` are recorded here. The format follows
 - CI runs for ready pull requests and protected-branch commits, not ordinary
   feature-branch pushes.
 - Pull requests use rebase merges exclusively.
+- The project and its release artifacts are now licensed under Apache-2.0.
+- Runtime dependencies pin `cryptography` and `idna` to their reviewed exact
+  versions.
+
+### Fixed
+
+- Invalid or unsupported local configuration now produces a concise recovery
+  message instead of a Python traceback.
+- Runtime SBOM generation no longer emits the project as an unknown dependency.
+- Portable and Debian release artifacts now include the project license,
+  notice, and bundled runtime dependency license metadata.
 
 ## [0.13.4] - 2026-09-14
 

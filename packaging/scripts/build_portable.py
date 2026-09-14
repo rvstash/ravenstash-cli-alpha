@@ -116,6 +116,8 @@ def main() -> None:
         shutil.rmtree(staging)
     shutil.copytree(bundle, staging)
     shutil.copy2(ROOT / "README.md", staging / "README.md")
+    shutil.copy2(ROOT / "LICENSE", staging / "LICENSE")
+    shutil.copy2(ROOT / "NOTICE", staging / "NOTICE")
     if system == "windows":
         archive = release / f"{archive_root}.zip"
         with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED) as output:

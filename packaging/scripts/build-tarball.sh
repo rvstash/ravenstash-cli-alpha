@@ -21,6 +21,8 @@ rm -rf "$STAGING"
 mkdir -p "$STAGING"
 cp -a dist/pyinstaller/rvs/. "$STAGING/"
 cp README.md "$STAGING/README.md"
+cp LICENSE "$STAGING/LICENSE"
+cp NOTICE "$STAGING/NOTICE"
 
 mkdir -p dist/release
 tar \
