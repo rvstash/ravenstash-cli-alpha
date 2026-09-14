@@ -37,5 +37,5 @@ Detailed release notes: [RVS 0.13.4](docs/releases/0.13.4.md).
 
 Detailed notes for every earlier release are in [docs/releases](docs/releases/).
 
-[Unreleased]: https://github.com/rvstash/ravenstash-cli/compare/v0.13.4...HEAD
-[0.13.4]: https://github.com/rvstash/ravenstash-cli/releases/tag/v0.13.4
+[Unreleased]: https://github.com/rvstash/ravenstash-cli-alpha/compare/v0.13.4...HEAD
+[0.13.4]: https://github.com/rvstash/ravenstash-cli-alpha/releases/tag/v0.13.4
