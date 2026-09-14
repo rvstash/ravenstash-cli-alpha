@@ -75,13 +75,12 @@ key can be used by setting `RVS_APT_GPG_PASSPHRASE_FILE` to a mode-`0600` file.
 The generated repository includes the binary public key
 `dist/apt/ravenstash-rvs.gpg`.
 
-Production publishing is owned by this repository. A candidate workflow builds
+Production publishing is owned by this repository. One release workflow builds
 eight isolated native targets in parallel, rejects filename collisions during
-assembly, and attests one immutable inventory. The publication workflow consumes
-that exact candidate by run ID; it does not rebuild release artifacts. It
-authenticates the prior `InRelease`, every metadata digest, every listed package
-digest, and the absence of unlisted pool objects before a separate signing job
-sees the tree. Both Debian architectures are appended before one index-generation
+assembly, attests one immutable inventory, and publishes those exact bytes without
+rebuilding them. It authenticates the prior `InRelease`, every metadata digest,
+every listed package digest, and the absence of unlisted pool objects before a
+separate signing job sees the tree. Both Debian architectures are appended before one index-generation
 and signing pass. A different job batches immutable pool/by-hash objects first,
 then mutable indexes and releases, with `InRelease` and channel discovery last.
 If an interrupted older publish omitted an architecture's indexes, the
@@ -162,9 +161,9 @@ bucket-scoped token are infrastructure prerequisites, not responsibilities of
 this source repository.
 
 The `apt-signing`, `apt-storage`, and `installer-delivery` environments keep
-their credentials separated. Releases are manual exact-SHA dispatches. The
-built-in token creates a draft against that source commit, populates it once,
-and publishes it. The Ravenstash QA repository has no publishing
+their credentials separated. Releases are manual exact-SHA dispatches represented
+by one end-to-end workflow run. The built-in token creates a draft against that
+source commit, populates it once, and publishes it. The Ravenstash QA repository has no publishing
 credentials and cannot sign, upload, or deploy releases.
 
 The committed public key is an identity pin, not a secret. The private key,

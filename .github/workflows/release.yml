@@ -1,15 +1,11 @@
-name: release-publish
-run-name: Publish rvs v${{ inputs.version }} · ${{ inputs.channel }} · candidate ${{ inputs.candidate_run_id }}
+name: release
+run-name: Release rvs v${{ inputs.version }} · ${{ inputs.channel }} · ${{ inputs.source_sha }}
 
 on:
   workflow_dispatch:
     inputs:
-      candidate_run_id:
-        description: Successful release-candidate workflow run ID
-        type: number
-        required: true
       source_sha:
-        description: Exact 40-character source commit from the candidate
+        description: Exact 40-character source commit from the dev branch
         type: string
         required: true
       version:
@@ -29,31 +25,30 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  validate-candidate:
-    name: Validate candidate reference
+  validate:
+    name: Validate release identity
     runs-on: ubuntu-24.04
     permissions:
       actions: read
       contents: read
     steps:
-      - name: Check out exact candidate source
+      - name: Check out exact release source
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
           ref: ${{ inputs.source_sha }}
           persist-credentials: false
           fetch-depth: 0
-      - name: Validate publication inputs and candidate run
+      - name: Validate source, version, channel, and release slot
         env:
           GH_TOKEN: ${{ github.token }}
-          CANDIDATE_RUN_ID: ${{ inputs.candidate_run_id }}
           SOURCE_SHA: ${{ inputs.source_sha }}
           VERSION: ${{ inputs.version }}
           CHANNEL: ${{ inputs.channel }}
         run: |
           test "$GITHUB_REF" = refs/heads/dev
-          [[ "$CANDIDATE_RUN_ID" =~ ^[0-9]+$ ]]
           [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
           [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+([~+.-][A-Za-z0-9.-]+)?$ ]]
+          test "$GITHUB_SHA" = "$SOURCE_SHA"
           test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
           git merge-base --is-ancestor "$SOURCE_SHA" refs/remotes/origin/dev
           python3 packaging/repository/channel_policy.py validate "$VERSION" "$CHANNEL"
@@ -62,21 +57,245 @@ jobs:
           grep -Fx "readonly compatibility_channel=\"${CHANNEL}\"" packaging/install.sh
           grep -Fx "\$ReleaseVersion = \"${VERSION}\"" packaging/install.ps1
           grep -Fx "\$CompatibilityChannel = \"${CHANNEL}\"" packaging/install.ps1
-          run="/repos/${GITHUB_REPOSITORY}/actions/runs/${CANDIDATE_RUN_ID}"
-          test "$(gh api "$run" --jq .conclusion)" = success
-          test "$(gh api "$run" --jq .event)" = workflow_dispatch
-          test "$(gh api "$run" --jq .head_branch)" = dev
-          test "$(gh api "$run" --jq .path)" = .github/workflows/release-candidate.yml
-          artifact_count="$(
-            gh api "$run/artifacts?per_page=100" \
-              --jq "[.artifacts[] | select(.expired == false and .name == \"rvs-candidate-${SOURCE_SHA}\")] | length"
-          )"
-          test "$artifact_count" = 1
           packaging/scripts/assert-github-release-slot-empty.sh \
             "$GITHUB_REPOSITORY" "v${VERSION}"
+      - name: Require successful checks for the exact source
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_SHA: ${{ inputs.source_sha }}
+        run: |
+          workflows=(
+            ci.yml
+            platform-ci.yml
+            platform-certification.yml
+            release-policy-ci.yml
+          )
+          {
+            echo "## Required release gates"
+            echo
+            for workflow in "${workflows[@]}"; do
+              run_id="$(
+                gh api \
+                  "/repos/${GITHUB_REPOSITORY}/actions/workflows/${workflow}/runs?head_sha=${SOURCE_SHA}&per_page=100" \
+                  --jq '.workflow_runs | map(select(.conclusion == "success")) | first | .id // empty'
+              )"
+              test -n "$run_id"
+              echo "- \`${workflow}\`: run [\`${run_id}\`](https://github.com/${GITHUB_REPOSITORY}/actions/runs/${run_id})"
+            done
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  linux-glibc-amd64:
+    name: Build · Linux glibc · amd64
+    needs: validate
+    uses: ./.github/workflows/_build-release-target.yml
+    with:
+      source_sha: ${{ inputs.source_sha }}
+      version: ${{ inputs.version }}
+      target: linux-glibc-amd64
+      runner: ubuntu-24.04
+      kind: glibc
+      architecture: amd64
+      include_metadata: true
+      artifact_paths: |
+        dist/release/rvs_${{ inputs.version }}_amd64.deb
+        dist/release/rvs-v${{ inputs.version }}-linux-amd64.tar.gz
+
+  linux-glibc-arm64:
+    name: Build · Linux glibc · arm64
+    needs: validate
+    uses: ./.github/workflows/_build-release-target.yml
+    with:
+      source_sha: ${{ inputs.source_sha }}
+      version: ${{ inputs.version }}
+      target: linux-glibc-arm64
+      runner: ubuntu-24.04-arm
+      kind: glibc
+      architecture: arm64
+      artifact_paths: |
+        dist/release/rvs_${{ inputs.version }}_arm64.deb
+        dist/release/rvs-v${{ inputs.version }}-linux-arm64.tar.gz
+
+  linux-musl-amd64:
+    name: Build · Linux musl · amd64
+    needs: validate
+    uses: ./.github/workflows/_build-release-target.yml
+    with:
+      source_sha: ${{ inputs.source_sha }}
+      version: ${{ inputs.version }}
+      target: linux-musl-amd64
+      runner: ubuntu-24.04
+      kind: musl
+      architecture: amd64
+      artifact_paths: dist/release/rvs-v${{ inputs.version }}-linux-musl-amd64.tar.gz
+
+  linux-musl-arm64:
+    name: Build · Linux musl · arm64
+    needs: validate
+    uses: ./.github/workflows/_build-release-target.yml
+    with:
+      source_sha: ${{ inputs.source_sha }}
+      version: ${{ inputs.version }}
+      target: linux-musl-arm64
+      runner: ubuntu-24.04-arm
+      kind: musl
+      architecture: arm64
+      artifact_paths: dist/release/rvs-v${{ inputs.version }}-linux-musl-arm64.tar.gz
+
+  macos-arm64:
+    name: Build · macOS · Apple Silicon
+    needs: validate
+    uses: ./.github/workflows/_build-release-target.yml
+    with:
+      source_sha: ${{ inputs.source_sha }}
+      version: ${{ inputs.version }}
+      target: macos-arm64
+      runner: macos-14
+      kind: portable
+      architecture: arm64
+      artifact_paths: dist/release/rvs-v${{ inputs.version }}-macos-arm64.tar.gz
+
+  macos-amd64:
+    name: Build · macOS · Intel
+    needs: validate
+    uses: ./.github/workflows/_build-release-target.yml
+    with:
+      source_sha: ${{ inputs.source_sha }}
+      version: ${{ inputs.version }}
+      target: macos-amd64
+      runner: macos-15-intel
+      kind: portable
+      architecture: amd64
+      artifact_paths: dist/release/rvs-v${{ inputs.version }}-macos-amd64.tar.gz
+
+  windows-amd64:
+    name: Build · Windows · x64
+    needs: validate
+    uses: ./.github/workflows/_build-release-target.yml
+    with:
+      source_sha: ${{ inputs.source_sha }}
+      version: ${{ inputs.version }}
+      target: windows-amd64
+      runner: windows-2022
+      kind: portable
+      architecture: amd64
+      artifact_paths: dist/release/rvs-v${{ inputs.version }}-windows-amd64.zip
+
+  windows-arm64:
+    name: Build · Windows · ARM64
+    needs: validate
+    uses: ./.github/workflows/_build-release-target.yml
+    with:
+      source_sha: ${{ inputs.source_sha }}
+      version: ${{ inputs.version }}
+      target: windows-arm64
+      runner: windows-11-arm
+      kind: portable
+      architecture: arm64
+      artifact_paths: dist/release/rvs-v${{ inputs.version }}-windows-arm64.zip
+
+  assemble:
+    name: Assemble and attest release
+    needs:
+      - linux-glibc-amd64
+      - linux-glibc-arm64
+      - linux-musl-amd64
+      - linux-musl-arm64
+      - macos-arm64
+      - macos-amd64
+      - windows-amd64
+      - windows-arm64
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Check out exact release source
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          ref: ${{ inputs.source_sha }}
+          persist-credentials: false
+      - name: Download isolated target handoffs
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          pattern: rvs-target-*-${{ inputs.source_sha }}
+          path: build/targets
+      - name: Install pinned Sigstore signer
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6
+        with:
+          cosign-release: v3.0.6
+      - name: Assemble a collision-free release inventory
+        env:
+          SOURCE_SHA: ${{ inputs.source_sha }}
+          VERSION: ${{ inputs.version }}
+          CHANNEL: ${{ inputs.channel }}
+        run: |
+          install -d build/release
+          expected=(
+            "rvs_${VERSION}_amd64.deb"
+            "rvs_${VERSION}_arm64.deb"
+            "rvs-v${VERSION}-linux-amd64.tar.gz"
+            "rvs-v${VERSION}-linux-arm64.tar.gz"
+            "rvs-v${VERSION}-linux-musl-amd64.tar.gz"
+            "rvs-v${VERSION}-linux-musl-arm64.tar.gz"
+            "rvs-v${VERSION}-macos-amd64.tar.gz"
+            "rvs-v${VERSION}-macos-arm64.tar.gz"
+            "rvs-v${VERSION}-windows-amd64.zip"
+            "rvs-v${VERSION}-windows-arm64.zip"
+            "rvs-v${VERSION}-sbom.cdx.json"
+          )
+          for filename in "${expected[@]}"; do
+            mapfile -t matches < <(find build/targets -type f -name "$filename" -print)
+            test "${#matches[@]}" = 1
+            install -m 0644 "${matches[0]}" "build/release/$filename"
+          done
+          install -m 0755 packaging/install.sh build/release/install.sh
+          install -m 0644 packaging/install.ps1 build/release/install.ps1
+          python3 packaging/scripts/generate_package_manifests.py \
+            build/release "$VERSION" "$GITHUB_REPOSITORY"
+          printf '%s\n' \
+            "source_repository=${GITHUB_REPOSITORY}" \
+            "source_sha=${SOURCE_SHA}" \
+            "version=${VERSION}" \
+            "channel=${CHANNEL}" \
+            "release_run_id=${GITHUB_RUN_ID}" \
+            "release_workflow=.github/workflows/release.yml" \
+            > build/release/source-identity.txt
+          (
+            cd build/release
+            find . -maxdepth 1 -type f ! -name '*-checksums.txt' ! -name '*.sigstore.json' \
+              -printf '%f\n' | LC_ALL=C sort | xargs sha256sum > "rvs-v${VERSION}-checksums.txt"
+          )
+          cosign sign-blob --yes \
+            --bundle "build/release/rvs-v${VERSION}-checksums.sigstore.json" \
+            "build/release/rvs-v${VERSION}-checksums.txt"
+      - name: Summarize immutable release inventory
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          {
+            echo "## Release inventory"
+            echo
+            echo "- Run ID: \`${GITHUB_RUN_ID}\`"
+            echo "- Source: \`${{ inputs.source_sha }}\`"
+            echo "- Version: \`${VERSION}\`"
+            echo "- Channel: \`${{ inputs.channel }}\`"
+            echo
+            echo '```text'
+            sed 's/^/  /' "build/release/rvs-v${VERSION}-checksums.txt"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload immutable release inventory
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: rvs-release-${{ inputs.source_sha }}
+          path: build/release/*
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 3
 
   restore-apt:
     name: Restore authenticated APT state
+    needs: validate
     runs-on: ubuntu-24.04
     environment: apt-storage
     steps:
@@ -119,7 +338,7 @@ jobs:
   sign:
     name: Sign APT delta and portable inventory
     needs:
-      - validate-candidate
+      - assemble
       - restore-apt
     runs-on: ubuntu-24.04
     environment: apt-signing
@@ -141,25 +360,23 @@ jobs:
           sudo apt-get install --yes apt-utils dpkg-dev gnupg gpgv
       - name: Materialize pinned trusted keyring
         run: packaging/repository/prepare_keyring.sh
-      - name: Download immutable candidate
+      - name: Download immutable release inventory
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
-          name: rvs-candidate-${{ inputs.source_sha }}
+          name: rvs-release-${{ inputs.source_sha }}
           path: build
-          run-id: ${{ inputs.candidate_run_id }}
-          github-token: ${{ github.token }}
       - name: Download authenticated prior state
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
           name: authenticated-prior-apt-${{ github.run_id }}
           path: prior
-      - name: Authenticate candidate and prior state before exposing signer
+      - name: Authenticate release inventory and prior state before exposing signer
         env:
           VERSION: ${{ inputs.version }}
           SOURCE_SHA: ${{ inputs.source_sha }}
           CHANNEL: ${{ inputs.channel }}
-          CANDIDATE_RUN_ID: ${{ inputs.candidate_run_id }}
-          SIGNER_IDENTITY: https://github.com/${{ github.repository }}/.github/workflows/release-candidate.yml@refs/heads/dev
+          RELEASE_RUN_ID: ${{ github.run_id }}
+          SIGNER_IDENTITY: https://github.com/${{ github.repository }}/.github/workflows/release.yml@refs/heads/dev
         run: |
           cosign verify-blob \
             --bundle "build/rvs-v${VERSION}-checksums.sigstore.json" \
@@ -174,8 +391,8 @@ jobs:
           grep -Fx "source_sha=${SOURCE_SHA}" build/source-identity.txt
           grep -Fx "version=${VERSION}" build/source-identity.txt
           grep -Fx "channel=${CHANNEL}" build/source-identity.txt
-          grep -Fx "candidate_run_id=${CANDIDATE_RUN_ID}" build/source-identity.txt
-          grep -Fx "candidate_workflow=.github/workflows/release-candidate.yml" \
+          grep -Fx "release_run_id=${RELEASE_RUN_ID}" build/source-identity.txt
+          grep -Fx "release_workflow=.github/workflows/release.yml" \
             build/source-identity.txt
           test "$(find build -maxdepth 1 -type f -name "rvs_${VERSION}_amd64.deb" | wc -l)" = 1
           test "$(find build -maxdepth 1 -type f -name "rvs_${VERSION}_arm64.deb" | wc -l)" = 1
@@ -342,13 +559,11 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
           persist-credentials: false
-      - name: Download immutable candidate
+      - name: Download immutable release inventory
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
-          name: rvs-candidate-${{ inputs.source_sha }}
+          name: rvs-release-${{ inputs.source_sha }}
           path: build
-          run-id: ${{ inputs.candidate_run_id }}
-          github-token: ${{ github.token }}
       - name: Download signed portable inventory
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
@@ -383,23 +598,14 @@ jobs:
       actions: write
       contents: read
     steps:
-      - name: Delete current-run handoffs and consumed candidate
+      - name: Delete current-run handoffs
         continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
-          CANDIDATE_RUN_ID: ${{ inputs.candidate_run_id }}
-          SOURCE_SHA: ${{ inputs.source_sha }}
         run: |
           gh api --paginate \
             "/repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/artifacts?per_page=100" \
             --jq '.artifacts[].id' \
-            | while read -r artifact_id; do
-                gh api --method DELETE \
-                  "/repos/${GITHUB_REPOSITORY}/actions/artifacts/${artifact_id}"
-              done
-          gh api \
-            "/repos/${GITHUB_REPOSITORY}/actions/runs/${CANDIDATE_RUN_ID}/artifacts?per_page=100" \
-            --jq ".artifacts[] | select(.name == \"rvs-candidate-${SOURCE_SHA}\") | .id" \
             | while read -r artifact_id; do
                 gh api --method DELETE \
                   "/repos/${GITHUB_REPOSITORY}/actions/artifacts/${artifact_id}"

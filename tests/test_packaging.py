@@ -127,10 +127,9 @@ def test_apt_publisher_uses_constant_number_of_storage_calls(tmp_path: Path) -> 
     assert len(calls.read_text(encoding="utf-8").splitlines()) == 8
 
 
-def test_release_candidate_keeps_target_handoffs_isolated() -> None:
-    candidate_path = ROOT / ".github/workflows/release-candidate.yml"
-    candidate = candidate_path.read_text(encoding="utf-8")
-    jobs = yaml.safe_load(candidate)["jobs"]
+def test_release_keeps_target_handoffs_isolated() -> None:
+    release_text = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
+    jobs = yaml.safe_load(release_text)["jobs"]
     build_jobs = {name: job for name, job in jobs.items() if "uses" in job}
     artifact_names = [
         Path(path).name
@@ -138,9 +137,9 @@ def test_release_candidate_keeps_target_handoffs_isolated() -> None:
         for path in job["with"]["artifact_paths"].splitlines()
     ]
 
-    assert "merge-multiple: true" not in candidate
-    assert "Download isolated target handoffs" in candidate
-    assert 'test "${#matches[@]}" = 1' in candidate
+    assert "merge-multiple: true" not in release_text
+    assert "Download isolated target handoffs" in release_text
+    assert 'test "${#matches[@]}" = 1' in release_text
     assert len(build_jobs) == 8
     assert {job["needs"] for job in build_jobs.values()} == {"validate"}
     assert len(artifact_names) == len(set(artifact_names)) == 10
@@ -153,9 +152,9 @@ def test_publication_graph_parallelizes_safe_jobs_and_serializes_mutations() -> 
     )
     jobs = publication["jobs"]
 
-    assert "needs" not in jobs["validate-candidate"]
-    assert "needs" not in jobs["restore-apt"]
-    assert set(jobs["sign"]["needs"]) == {"validate-candidate", "restore-apt"}
+    assert "needs" not in jobs["validate"]
+    assert jobs["restore-apt"]["needs"] == "validate"
+    assert set(jobs["sign"]["needs"]) == {"assemble", "restore-apt"}
     assert jobs["publish-apt"]["needs"] == "sign"
     assert jobs["verify-apt"]["needs"] == "publish-apt"
     assert jobs["verify-apt"]["strategy"]["fail-fast"] is False
@@ -163,28 +162,32 @@ def test_publication_graph_parallelizes_safe_jobs_and_serializes_mutations() -> 
     assert jobs["publish-github-release"]["needs"] == "verify-apt"
 
 
-def test_publication_consumes_candidate_and_appends_architectures_once() -> None:
+def test_release_builds_once_and_appends_architectures_once() -> None:
     publication = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
     append = "packaging/repository/append_and_sign_apt.sh"
 
-    assert "run-id: ${{ inputs.candidate_run_id }}" in publication
+    assert "candidate_run_id" not in publication
+    assert "release-candidate.yml" not in publication
+    assert 'test "$GITHUB_SHA" = "$SOURCE_SHA"' in publication
+    for gate in (
+        "ci.yml",
+        "platform-ci.yml",
+        "platform-certification.yml",
+        "release-policy-ci.yml",
+    ):
+        assert gate in publication
+    assert "rvs-release-${{ inputs.source_sha }}" in publication
     assert publication.count(append) == 1
     assert '"build/rvs_${VERSION}_amd64.deb"' in publication
     assert '"build/rvs_${VERSION}_arm64.deb"' in publication
-    assert "  build:" not in publication
     assert "RVS_APT_PROMOTE_CHANNEL" not in publication
 
 
 def test_successful_publication_is_not_failed_by_best_effort_cleanup() -> None:
-    candidate = (ROOT / ".github/workflows/release-candidate.yml").read_text(encoding="utf-8")
     publication = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
     promotion = (ROOT / ".github/workflows/promote-installer.yml").read_text(encoding="utf-8")
 
-    assert "Delete only target-specific artifacts\n        continue-on-error: true" in candidate
-    assert (
-        "Delete current-run handoffs and consumed candidate\n        continue-on-error: true"
-        in publication
-    )
+    assert "Delete current-run handoffs\n        continue-on-error: true" in publication
     assert "Delete temporary promotion artifacts\n        continue-on-error: true" in promotion
 
 

@@ -66,8 +66,8 @@ jobs:
           SOURCE_SHA: ${{ inputs.source_sha }}
           VERSION: ${{ inputs.version }}
           CHANNEL: ${{ inputs.channel }}
-          CANDIDATE_SIGNER: https://github.com/${{ github.repository }}/.github/workflows/release-candidate.yml@refs/heads/dev
-          LEGACY_SIGNER: https://github.com/${{ github.repository }}/.github/workflows/release.yml@refs/heads/dev
+          CURRENT_RELEASE_SIGNER: https://github.com/${{ github.repository }}/.github/workflows/release.yml@refs/heads/dev
+          LEGACY_CANDIDATE_SIGNER: https://github.com/${{ github.repository }}/.github/workflows/release-candidate.yml@refs/heads/dev
         run: |
           [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
           [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+([~+.-][A-Za-z0-9.-]+)?$ ]]
@@ -88,12 +88,12 @@ jobs:
             --pattern "rvs-v${VERSION}-checksums*"
           if ! cosign verify-blob \
             --bundle "release-build/rvs-v${VERSION}-checksums.sigstore.json" \
-            --certificate-identity "$CANDIDATE_SIGNER" \
+            --certificate-identity "$CURRENT_RELEASE_SIGNER" \
             --certificate-oidc-issuer https://token.actions.githubusercontent.com \
             "release-build/rvs-v${VERSION}-checksums.txt"; then
             cosign verify-blob \
               --bundle "release-build/rvs-v${VERSION}-checksums.sigstore.json" \
-              --certificate-identity "$LEGACY_SIGNER" \
+              --certificate-identity "$LEGACY_CANDIDATE_SIGNER" \
               --certificate-oidc-issuer https://token.actions.githubusercontent.com \
               "release-build/rvs-v${VERSION}-checksums.txt"
           fi
@@ -332,8 +332,8 @@ jobs:
           SOURCE_SHA: ${{ inputs.source_sha }}
           VERSION: ${{ inputs.version }}
           CHANNEL: ${{ inputs.channel }}
-          CANDIDATE_SIGNER: https://github.com/${{ github.repository }}/.github/workflows/release-candidate.yml@refs/heads/dev
-          LEGACY_SIGNER: https://github.com/${{ github.repository }}/.github/workflows/release.yml@refs/heads/dev
+          CURRENT_RELEASE_SIGNER: https://github.com/${{ github.repository }}/.github/workflows/release.yml@refs/heads/dev
+          LEGACY_CANDIDATE_SIGNER: https://github.com/${{ github.repository }}/.github/workflows/release-candidate.yml@refs/heads/dev
         run: |
           awk '
             NF != 2 || $1 !~ /^[0-9a-f]{64}$/ || $2 ~ /(^|\/)\.\.?(\/|$)/ || $2 ~ /\// { exit 1 }
@@ -350,12 +350,12 @@ jobs:
 
           if ! cosign verify-blob \
             --bundle "release-build/rvs-v${VERSION}-checksums.sigstore.json" \
-            --certificate-identity "$CANDIDATE_SIGNER" \
+            --certificate-identity "$CURRENT_RELEASE_SIGNER" \
             --certificate-oidc-issuer https://token.actions.githubusercontent.com \
             "release-build/rvs-v${VERSION}-checksums.txt"; then
             cosign verify-blob \
               --bundle "release-build/rvs-v${VERSION}-checksums.sigstore.json" \
-              --certificate-identity "$LEGACY_SIGNER" \
+              --certificate-identity "$LEGACY_CANDIDATE_SIGNER" \
               --certificate-oidc-issuer https://token.actions.githubusercontent.com \
               "release-build/rvs-v${VERSION}-checksums.txt"
           fi
@@ -375,7 +375,10 @@ jobs:
           grep -Fx "version=${VERSION}" release-build/source-identity.txt
           grep -Fx "channel=${CHANNEL}" release-build/source-identity.txt
           grep -Eq \
-            '^(candidate_run_id=[0-9]+|promote_channel=(true|false))$' \
+            '^(candidate_run_id=[0-9]+|release_run_id=[0-9]+|promote_channel=(true|false))$' \
+            release-build/source-identity.txt
+          grep -Eq \
+            '^(candidate_workflow=.github/workflows/release-candidate.yml|release_workflow=.github/workflows/release.yml)$' \
             release-build/source-identity.txt
           cmp release-source/packaging/install.sh release-build/install.sh
           bash -n release-build/install.sh
