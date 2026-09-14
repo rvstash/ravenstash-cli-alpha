@@ -1,4 +1,5 @@
 name: promote-installer
+run-name: Promote rvs v${{ inputs.version }} · ${{ inputs.channel }}
 
 on:
   workflow_dispatch:
@@ -24,7 +25,232 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  sign-channel-manifest:
+    name: Validate release and sign channel promotion
+    runs-on: ubuntu-24.04
+    environment: apt-signing
+    permissions:
+      contents: read
+    steps:
+      - name: Check out promotion policy
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Check out exact release source
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          ref: ${{ inputs.source_sha }}
+          persist-credentials: false
+          fetch-depth: 0
+          path: release-source
+      - name: Install pinned Sigstore verifier
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6
+        with:
+          cosign-release: v3.0.6
+      - name: Install signing tools and materialize trusted keyring
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes dpkg-dev gnupg gpgv
+          packaging/repository/prepare_keyring.sh
+      - name: Restore authenticated public APT state
+        run: |
+          python3 packaging/repository/restore_public_apt.py \
+            https://releases.ravenstash.com/rvs/apt \
+            prior \
+            packaging/repository/keys/ravenstash-rvs.gpg \
+            --metadata-only
+      - name: Authenticate the published release and refuse rollback
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_SHA: ${{ inputs.source_sha }}
+          VERSION: ${{ inputs.version }}
+          CHANNEL: ${{ inputs.channel }}
+          CANDIDATE_SIGNER: https://github.com/${{ github.repository }}/.github/workflows/release-candidate.yml@refs/heads/dev
+          LEGACY_SIGNER: https://github.com/${{ github.repository }}/.github/workflows/release.yml@refs/heads/dev
+        run: |
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+([~+.-][A-Za-z0-9.-]+)?$ ]]
+          test "$(git -C release-source rev-parse HEAD)" = "$SOURCE_SHA"
+          git -C release-source merge-base --is-ancestor "$SOURCE_SHA" refs/remotes/origin/dev
+          python3 release-source/packaging/repository/channel_policy.py \
+            validate "$VERSION" "$CHANNEL"
+          test "$(sed -n 's/^version = "\([^"]*\)"/\1/p' release-source/pyproject.toml)" = "$VERSION"
+          tag="v${VERSION}"
+          test "$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json targetCommitish --jq .targetCommitish)" = "$SOURCE_SHA"
+          test "$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft)" = false
+          mkdir release-build
+          gh release download "$tag" \
+            --repo "$GITHUB_REPOSITORY" \
+            --dir release-build \
+            --pattern 'install.*' \
+            --pattern 'source-identity.txt' \
+            --pattern "rvs-v${VERSION}-checksums*"
+          if ! cosign verify-blob \
+            --bundle "release-build/rvs-v${VERSION}-checksums.sigstore.json" \
+            --certificate-identity "$CANDIDATE_SIGNER" \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+            "release-build/rvs-v${VERSION}-checksums.txt"; then
+            cosign verify-blob \
+              --bundle "release-build/rvs-v${VERSION}-checksums.sigstore.json" \
+              --certificate-identity "$LEGACY_SIGNER" \
+              --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+              "release-build/rvs-v${VERSION}-checksums.txt"
+          fi
+          gpgv \
+            --keyring packaging/repository/keys/ravenstash-rvs.gpg \
+            "release-build/rvs-v${VERSION}-checksums.txt.asc" \
+            "release-build/rvs-v${VERSION}-checksums.txt"
+          (
+            cd release-build
+            grep -E '  (install\.sh|install\.ps1|source-identity\.txt)$' \
+              "rvs-v${VERSION}-checksums.txt" \
+              | sha256sum --check --strict
+          )
+          grep -Fx "source_repository=${GITHUB_REPOSITORY}" release-build/source-identity.txt
+          grep -Fx "source_sha=${SOURCE_SHA}" release-build/source-identity.txt
+          grep -Fx "version=${VERSION}" release-build/source-identity.txt
+          grep -Fx "channel=${CHANNEL}" release-build/source-identity.txt
+          cmp release-source/packaging/install.sh release-build/install.sh
+          cmp release-source/packaging/install.ps1 release-build/install.ps1
+          current_version="$(
+            curl --proto '=https' --proto-redir '=https' --tlsv1.2 \
+              --max-redirs 0 -fsS https://ravenstash.com/install.sh \
+              | sed -n 's/^readonly release_version="\([^"]*\)"/\1/p'
+          )"
+          test -n "$current_version"
+          dpkg --compare-versions "$VERSION" ge "$current_version"
+          python3 -c \
+            'import json, pathlib, sys; data=json.loads((pathlib.Path(sys.argv[1]) / "channels.json").read_text()); assert data["channels"][sys.argv[2]]["latest"] == sys.argv[3]' \
+            prior "$CHANNEL" "$VERSION"
+      - name: Sign promoted channel manifest
+        env:
+          RVS_APT_GPG_PRIVATE_KEY: ${{ secrets.RVS_APT_GPG_PRIVATE_KEY }}
+          RVS_APT_GPG_PASSPHRASE: ${{ secrets.RVS_APT_GPG_PASSPHRASE }}
+          CHANNEL: ${{ inputs.channel }}
+        run: |
+          export GNUPGHOME="$RUNNER_TEMP/rvs-channel-promotion"
+          install -d -m 0700 "$GNUPGHOME" promoted
+          printf '%s' "$RVS_APT_GPG_PRIVATE_KEY" | gpg --batch --import
+          key_id="$(
+            gpg --batch --with-colons --list-secret-keys \
+              | awk -F: '$1 == "fpr" { print $10; exit }'
+          )"
+          test -n "$key_id"
+          test "$key_id" = "$(tr -d '[:space:]' < packaging/repository/keys/fingerprint.txt)"
+          passphrase_file="$RUNNER_TEMP/rvs-apt-passphrase"
+          printf '%s' "$RVS_APT_GPG_PASSPHRASE" > "$passphrase_file"
+          chmod 0600 "$passphrase_file"
+          python3 packaging/repository/channel_policy.py manifest \
+            prior "$CHANNEL" > promoted/channels.json
+          gpg --batch --yes --pinentry-mode loopback \
+            --passphrase-file "$passphrase_file" \
+            --local-user "$key_id" \
+            --output promoted/channels.json.gpg \
+            --detach-sign promoted/channels.json
+          gpgv \
+            --keyring packaging/repository/keys/ravenstash-rvs.gpg \
+            promoted/channels.json.gpg promoted/channels.json
+          rm -f "$passphrase_file"
+          rm -rf "$GNUPGHOME"
+      - name: Upload bounded promotion handoff
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: promoted-channel-${{ github.run_id }}
+          path: promoted/
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 1
+
+  publish-channel-manifest:
+    name: Publish promoted channel manifest
+    needs:
+      - sign-channel-manifest
+      - promote
+    runs-on: ubuntu-24.04
+    environment: apt-storage
+    permissions:
+      contents: read
+    steps:
+      - name: Check out publication policy
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+      - name: Install publication verification tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes dpkg-dev gnupg gpgv
+          packaging/repository/prepare_keyring.sh
+          aws --version
+      - name: Restore and authenticate canonical APT state
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_APT_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_APT_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          R2_ACCOUNT_ID: ${{ vars.R2_APT_ACCOUNT_ID }}
+        run: |
+          mkdir -p canonical
+          aws s3 sync \
+            "s3://ravenstash-cli-releases/rvs/apt/" canonical/ \
+            --endpoint-url "https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com" \
+            --no-progress
+          python3 packaging/repository/verify_apt.py \
+            canonical packaging/repository/keys/ravenstash-rvs.gpg
+      - name: Download and authenticate promoted manifest
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: promoted-channel-${{ github.run_id }}
+          path: promoted
+      - name: Apply and verify promoted manifest
+        run: |
+          install -m 0644 promoted/channels.json canonical/channels.json
+          install -m 0644 promoted/channels.json.gpg canonical/channels.json.gpg
+          python3 packaging/repository/verify_apt.py \
+            canonical packaging/repository/keys/ravenstash-rvs.gpg
+      - name: Publish manifest with signature last
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_APT_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_APT_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          R2_ACCOUNT_ID: ${{ vars.R2_APT_ACCOUNT_ID }}
+        run: |
+          endpoint="https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
+          destination=s3://ravenstash-cli-releases/rvs/apt
+          aws s3 cp canonical/channels.json "$destination/channels.json" \
+            --endpoint-url "$endpoint" --cache-control no-cache --only-show-errors
+          aws s3 cp canonical/channels.json.gpg "$destination/channels.json.gpg" \
+            --endpoint-url "$endpoint" --cache-control no-cache --only-show-errors
+      - name: Verify exact public channel recommendation
+        env:
+          CHANNEL: ${{ inputs.channel }}
+        run: |
+          for attempt in 1 2 3 4 5; do
+            if curl --proto '=https' --proto-redir '=https' --tlsv1.2 \
+                --max-redirs 0 -fsS \
+                https://releases.ravenstash.com/rvs/apt/channels.json \
+                --output public-channels.json \
+              && curl --proto '=https' --proto-redir '=https' --tlsv1.2 \
+                --max-redirs 0 -fsS \
+                https://releases.ravenstash.com/rvs/apt/channels.json.gpg \
+                --output public-channels.json.gpg \
+              && gpgv \
+                --keyring packaging/repository/keys/ravenstash-rvs.gpg \
+                public-channels.json.gpg public-channels.json \
+              && python3 -c \
+                'import json, pathlib, sys; assert json.loads(pathlib.Path(sys.argv[1]).read_text())["recommended"] == sys.argv[2]' \
+                public-channels.json "$CHANNEL"; then
+              exit 0
+            fi
+            if [[ "$attempt" -lt 5 ]]; then
+              sleep 5
+            fi
+          done
+          echo "::error::Public channel manifest did not converge"
+          exit 1
+
   promote:
+    name: Deploy and verify promoted installer
+    needs: sign-channel-manifest
     runs-on: ubuntu-24.04
     environment: installer-delivery
     steps:
@@ -88,17 +314,26 @@ jobs:
               --json isPrerelease --jq .isPrerelease
           )" = false
 
+          gh release view "$tag" \
+            --repo "$GITHUB_REPOSITORY" \
+            --json assets \
+            --jq '.assets[].name' \
+            | sort > release-assets.txt
           mkdir release-build
           gh release download "$tag" \
             --repo "$GITHUB_REPOSITORY" \
-            --dir release-build
+            --dir release-build \
+            --pattern 'install.*' \
+            --pattern 'source-identity.txt' \
+            --pattern "rvs-v${VERSION}-checksums*"
 
       - name: Authenticate the exact published installer
         env:
           SOURCE_SHA: ${{ inputs.source_sha }}
           VERSION: ${{ inputs.version }}
           CHANNEL: ${{ inputs.channel }}
-          SIGNER_IDENTITY: https://github.com/${{ github.repository }}/.github/workflows/release.yml@refs/heads/dev
+          CANDIDATE_SIGNER: https://github.com/${{ github.repository }}/.github/workflows/release-candidate.yml@refs/heads/dev
+          LEGACY_SIGNER: https://github.com/${{ github.repository }}/.github/workflows/release.yml@refs/heads/dev
         run: |
           awk '
             NF != 2 || $1 !~ /^[0-9a-f]{64}$/ || $2 ~ /(^|\/)\.\.?(\/|$)/ || $2 ~ /\// { exit 1 }
@@ -111,29 +346,36 @@ jobs:
             "rvs-v${VERSION}-checksums.txt.asc" \
             >> checksummed-assets.txt
           sort checksummed-assets.txt > expected-assets.txt
-          find release-build -maxdepth 1 -type f -printf '%f\n' \
-            | sort > actual-assets.txt
-          cmp expected-assets.txt actual-assets.txt
+          cmp expected-assets.txt release-assets.txt
 
-          cosign verify-blob \
+          if ! cosign verify-blob \
             --bundle "release-build/rvs-v${VERSION}-checksums.sigstore.json" \
-            --certificate-identity "$SIGNER_IDENTITY" \
+            --certificate-identity "$CANDIDATE_SIGNER" \
             --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-            "release-build/rvs-v${VERSION}-checksums.txt"
+            "release-build/rvs-v${VERSION}-checksums.txt"; then
+            cosign verify-blob \
+              --bundle "release-build/rvs-v${VERSION}-checksums.sigstore.json" \
+              --certificate-identity "$LEGACY_SIGNER" \
+              --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+              "release-build/rvs-v${VERSION}-checksums.txt"
+          fi
           gpgv \
             --keyring packaging/repository/keys/ravenstash-rvs.gpg \
             "release-build/rvs-v${VERSION}-checksums.txt.asc" \
             "release-build/rvs-v${VERSION}-checksums.txt"
           (
             cd release-build
-            sha256sum --check --strict "rvs-v${VERSION}-checksums.txt"
+            grep -E '  (install\.sh|install\.ps1|source-identity\.txt)$' \
+              "rvs-v${VERSION}-checksums.txt" \
+              | sha256sum --check --strict
           )
           grep -Fx "source_repository=${GITHUB_REPOSITORY}" \
             release-build/source-identity.txt
           grep -Fx "source_sha=${SOURCE_SHA}" release-build/source-identity.txt
           grep -Fx "version=${VERSION}" release-build/source-identity.txt
           grep -Fx "channel=${CHANNEL}" release-build/source-identity.txt
-          grep -Eq '^promote_channel=(true|false)$' \
+          grep -Eq \
+            '^(candidate_run_id=[0-9]+|promote_channel=(true|false))$' \
             release-build/source-identity.txt
           cmp release-source/packaging/install.sh release-build/install.sh
           bash -n release-build/install.sh
@@ -210,3 +452,24 @@ jobs:
           done
           echo "::error::Live installer did not converge to the promoted bytes and headers"
           exit 1
+
+  cleanup-artifacts:
+    name: Remove successful promotion handoff
+    needs: publish-channel-manifest
+    runs-on: ubuntu-24.04
+    permissions:
+      actions: write
+      contents: read
+    steps:
+      - name: Delete temporary promotion artifacts
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api --paginate \
+            "/repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/artifacts?per_page=100" \
+            --jq '.artifacts[].id' \
+            | while read -r artifact_id; do
+                gh api --method DELETE \
+                  "/repos/${GITHUB_REPOSITORY}/actions/artifacts/${artifact_id}"
+              done

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import shlex
 import shutil
 import subprocess
 import tempfile
@@ -91,7 +92,6 @@ def _exercise_multarch_append(root: Path) -> None:
     common_env = base_env | {
         "RVS_APT_GPG_KEY_ID": fingerprint,
         "RVS_APT_GPG_FINGERPRINT": fingerprint,
-        "RVS_APT_PROMOTE_CHANNEL": "0",
     }
     bootstrap = root / "bootstrap"
     bootstrap.mkdir()
@@ -101,31 +101,33 @@ def _exercise_multarch_append(root: Path) -> None:
         [
             str(APPEND),
             str(bootstrap),
-            str(_build_deb(root, "0.3.1", "amd64")),
             str(v03),
             str(keyring),
+            str(_build_deb(root, "0.3.1", "amd64")),
         ],
         env=common_env | {"RVS_APT_CHANNEL": "v0.3"},
     )
+    v03_inrelease = (v03 / "dists/v0.3/InRelease").read_bytes()
     amd64 = root / "amd64"
     _run(
         [
             str(APPEND),
             str(v03),
-            str(_build_deb(root, "0.12.1", "amd64")),
             str(amd64),
             str(keyring),
+            str(_build_deb(root, "0.12.1", "amd64")),
         ],
         env=common_env | {"RVS_APT_CHANNEL": "v0.12"},
     )
+    assert (amd64 / "dists/v0.3/InRelease").read_bytes() == v03_inrelease
     multarch = root / "multarch"
     _run(
         [
             str(APPEND),
             str(amd64),
-            str(_build_deb(root, "0.12.1", "arm64")),
             str(multarch),
             str(keyring),
+            str(_build_deb(root, "0.12.1", "arm64")),
         ],
         env=common_env | {"RVS_APT_CHANNEL": "v0.12"},
     )
@@ -144,6 +146,83 @@ def _exercise_multarch_append(root: Path) -> None:
     )
 
 
+def _exercise_single_pass_multarch_append(root: Path) -> None:
+    real_apt_ftparchive = shutil.which("apt-ftparchive")
+    assert real_apt_ftparchive is not None
+    counter = root / "apt-ftparchive-packages.count"
+    wrapper_directory = root / "bin"
+    wrapper_directory.mkdir()
+    wrapper = wrapper_directory / "apt-ftparchive"
+    wrapper.write_text(
+        "#!/bin/sh\n"
+        'for argument in "$@"; do\n'
+        '  if [ "$argument" = packages ]; then printf x >> "$APT_COUNTER"; fi\n'
+        "done\n"
+        f'exec {shlex.quote(real_apt_ftparchive)} "$@"\n',
+        encoding="utf-8",
+    )
+    wrapper.chmod(0o755)
+    gpg_home = root / "gnupg"
+    gpg_home.mkdir(mode=0o700)
+    base_env = os.environ | {
+        "APT_COUNTER": str(counter),
+        "GNUPGHOME": str(gpg_home),
+        "PATH": f"{wrapper_directory}{os.pathsep}{os.environ['PATH']}",
+    }
+    _run(
+        [
+            "gpg",
+            "--batch",
+            "--passphrase",
+            "",
+            "--quick-generate-key",
+            "RVS Repository Test <test@example.com>",
+            "rsa2048",
+            "sign",
+            "0",
+        ],
+        env=base_env,
+    )
+    listing = _run(["gpg", "--batch", "--with-colons", "--list-secret-keys"], env=base_env)
+    fingerprint = next(
+        line.split(":")[9] for line in listing.splitlines() if line.startswith("fpr:")
+    )
+    keyring = root / "rvs.gpg"
+    with keyring.open("wb") as stream:
+        subprocess.run(
+            ["gpg", "--batch", "--export", fingerprint],
+            check=True,
+            stdout=stream,
+            env=base_env,
+        )
+
+    bootstrap = root / "bootstrap"
+    bootstrap.mkdir()
+    (bootstrap / "BOOTSTRAP").touch()
+    repository = root / "repository"
+    _run(
+        [
+            str(APPEND),
+            str(bootstrap),
+            str(repository),
+            str(keyring),
+            str(_build_deb(root, "0.13.0", "amd64")),
+            str(_build_deb(root, "0.13.0", "arm64")),
+        ],
+        env=base_env
+        | {
+            "RVS_APT_GPG_KEY_ID": fingerprint,
+            "RVS_APT_GPG_FINGERPRINT": fingerprint,
+            "RVS_APT_CHANNEL": "v0.13",
+        },
+    )
+    _run(["python3", str(VERIFY), str(repository), str(keyring)])
+    for architecture in ("amd64", "arm64"):
+        packages = repository / f"dists/v0.13/main/binary-{architecture}/Packages"
+        assert f"Architecture: {architecture}" in packages.read_text()
+    assert counter.read_text() == "x"
+
+
 class AppendMultiarchTests(unittest.TestCase):
     @unittest.skipIf(
         any(shutil.which(command) is None for command in ("apt-ftparchive", "dpkg-deb", "gpg")),
@@ -152,6 +231,14 @@ class AppendMultiarchTests(unittest.TestCase):
     def test_new_architecture_keeps_older_channel_indexes_valid(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             _exercise_multarch_append(Path(directory))
+
+    @unittest.skipIf(
+        any(shutil.which(command) is None for command in ("apt-ftparchive", "dpkg-deb", "gpg")),
+        "APT repository tooling is unavailable",
+    )
+    def test_both_architectures_are_appended_in_one_generation_pass(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            _exercise_single_pass_multarch_append(Path(directory))
 
 
 if __name__ == "__main__":

@@ -3,17 +3,19 @@ set -euo pipefail
 umask 077
 
 readonly prior_repository="${1:?prior repository path is required}"
-readonly deb="${2:?Debian package path is required}"
-readonly output_repository="${3:?output repository path is required}"
-readonly trusted_keyring="${4:?trusted public keyring is required}"
+readonly output_repository="${2:?output repository path is required}"
+readonly trusted_keyring="${3:?trusted public keyring is required}"
+shift 3
+debs=("$@")
+test "${#debs[@]}" -gt 0
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 readonly script_dir
 
 : "${RVS_APT_GPG_KEY_ID:?RVS_APT_GPG_KEY_ID is required}"
 : "${RVS_APT_GPG_FINGERPRINT:?RVS_APT_GPG_FINGERPRINT is required}"
 : "${RVS_APT_CHANNEL:?RVS_APT_CHANNEL is required}"
-readonly promote_channel="${RVS_APT_PROMOTE_CHANNEL:-0}"
-[[ "$promote_channel" == "0" || "$promote_channel" == "1" ]]
+readonly refresh_all="${RVS_APT_REFRESH_ALL:-0}"
+[[ "$refresh_all" == "0" || "$refresh_all" == "1" ]]
 
 for command in apt-ftparchive date dpkg-deb find gpg gzip python3 sha256sum; do
   command -v "$command" >/dev/null 2>&1 || {
@@ -22,8 +24,15 @@ for command in apt-ftparchive date dpkg-deb find gpg gzip python3 sha256sum; do
   }
 done
 
+previous_architectures=()
 if compgen -G "$prior_repository/dists/*/InRelease" >/dev/null; then
   python3 "$script_dir/verify_apt.py" "$prior_repository" "$trusted_keyring"
+  mapfile -t previous_architectures < <(
+    find "$prior_repository/pool" -type f -name '*.deb' -print0 \
+      | xargs -0 -r -n1 dpkg-deb --field 2>/dev/null \
+      | awk '$1 == "Architecture:" { print $2 }' \
+      | sort -u
+  )
   mkdir -p "$output_repository"
   cp -a "$prior_repository/." "$output_repository/"
 else
@@ -31,35 +40,46 @@ else
   mkdir -p "$output_repository"
 fi
 
-package_name="$(dpkg-deb --field "$deb" Package)"
-version="$(dpkg-deb --field "$deb" Version)"
-architecture="$(dpkg-deb --field "$deb" Architecture)"
-test "$package_name" = "rvs"
-[[ "$architecture" == "amd64" || "$architecture" == "arm64" ]]
-python3 "$script_dir/channel_policy.py" validate "$version" "$RVS_APT_CHANNEL"
-
-deb_digest="$(sha256sum "$deb" | awk '{print $1}')"
 pool="$output_repository/pool/main/r/rvs"
-target="$pool/rvs_${version}_${architecture}_${deb_digest:0:16}.deb"
 mkdir -p "$pool"
-mapfile -t same_version < <(
-  find "$pool" -maxdepth 1 -type f -name "rvs_${version}_${architecture}_*.deb" -print
-)
-for existing in "${same_version[@]}"; do
-  if [[ "$existing" != "$target" ]]; then
-    echo "error: version $version already exists with a different digest" >&2
-    exit 1
+declare -A submitted_architectures=()
+submitted_version=""
+for deb in "${debs[@]}"; do
+  package_name="$(dpkg-deb --field "$deb" Package)"
+  version="$(dpkg-deb --field "$deb" Version)"
+  architecture="$(dpkg-deb --field "$deb" Architecture)"
+  test "$package_name" = "rvs"
+  [[ "$architecture" == "amd64" || "$architecture" == "arm64" ]]
+  if [[ -n "$submitted_version" ]]; then
+    test "$version" = "$submitted_version"
+  else
+    submitted_version="$version"
+  fi
+  test -z "${submitted_architectures[$architecture]:-}"
+  submitted_architectures["$architecture"]=1
+  python3 "$script_dir/channel_policy.py" validate "$version" "$RVS_APT_CHANNEL"
+
+  deb_digest="$(sha256sum "$deb" | awk '{print $1}')"
+  target="$pool/rvs_${version}_${architecture}_${deb_digest:0:16}.deb"
+  mapfile -t same_version < <(
+    find "$pool" -maxdepth 1 -type f -name "rvs_${version}_${architecture}_*.deb" -print
+  )
+  for existing in "${same_version[@]}"; do
+    if [[ "$existing" != "$target" ]]; then
+      echo "error: version $version already exists with a different digest" >&2
+      exit 1
+    fi
+  done
+  if [[ -e "$target" ]]; then
+    test "$(sha256sum "$target" | awk '{print $1}')" = "$deb_digest"
+  else
+    install -m 0644 "$deb" "$target"
   fi
 done
-if [[ -e "$target" ]]; then
-  test "$(sha256sum "$target" | awk '{print $1}')" = "$deb_digest"
-else
-  install -m 0644 "$deb" "$target"
-fi
 
 mapfile -t architectures < <(
   find "$output_repository/pool" -type f -name '*.deb' -print0 \
-    | xargs -0 -n1 dpkg-deb --field 2>/dev/null \
+    | xargs -0 -r -n1 dpkg-deb --field 2>/dev/null \
     | awk '$1 == "Architecture:" { print $2 }' \
     | sort -u
 )
@@ -82,6 +102,20 @@ if [[ "$RVS_APT_CHANNEL" == "v0.3" || -n "${distribution_set[stable]:-}" ]]; the
 fi
 mapfile -t distributions < <(printf '%s\n' "${!distribution_set[@]}" | sort)
 
+declare -A distributions_to_update=()
+distributions_to_update["$RVS_APT_CHANNEL"]=1
+if [[ "$RVS_APT_CHANNEL" == "v0.3" ]]; then
+  distributions_to_update[stable]=1
+fi
+if [[ "$refresh_all" == "1" || "${previous_architectures[*]}" != "${architectures[*]}" ]]; then
+  for distribution in "${distributions[@]}"; do
+    distributions_to_update["$distribution"]=1
+  done
+fi
+mapfile -t updated_distributions < <(
+  printf '%s\n' "${!distributions_to_update[@]}" | sort
+)
+
 actual_fingerprint="$(
   gpg --batch --with-colons --fingerprint "$RVS_APT_GPG_KEY_ID" \
     | awk -F: '$1 == "fpr" { print $10; exit }'
@@ -94,20 +128,22 @@ if [[ -n "${RVS_APT_GPG_PASSPHRASE_FILE:-}" ]]; then
 fi
 
 valid_until="$(date --utc --date='+7 days' --rfc-email)"
-for distribution in "${distributions[@]}"; do
+all_packages="$output_repository/all-packages.generated"
+(cd "$output_repository" && apt-ftparchive \
+  -o APT::FTPArchive::AlwaysStat=true packages pool) > "$all_packages"
+for distribution in "${updated_distributions[@]}"; do
   compatibility_channel="$(
     python3 "$script_dir/channel_policy.py" compatibility-channel "$distribution"
   )"
   for indexed_architecture in "${architectures[@]}"; do
     binary="$output_repository/dists/$distribution/main/binary-${indexed_architecture}"
     mkdir -p "$binary"
-    # apt-ftparchive's -a option infers architecture from conventional Debian
-    # filenames. Our append-only pool includes a digest suffix, so generate all
-    # stanzas and apply architecture policy from the package metadata instead.
-    (cd "$output_repository" && apt-ftparchive \
-      -o APT::FTPArchive::AlwaysStat=true packages pool) \
-      | python3 "$script_dir/channel_policy.py" filter \
+    # The digest-bearing pool filenames prevent apt-ftparchive's architecture
+    # inference. Enumerate the pool once, then reuse that authenticated inventory
+    # for every channel/architecture filter instead of rescanning it repeatedly.
+    python3 "$script_dir/channel_policy.py" filter \
         "$compatibility_channel" --architecture "$indexed_architecture" \
+        < "$all_packages" \
       > "$binary/Packages"
     # A newly supported architecture legitimately has an empty index in older
     # compatibility channels. The repository verifier still requires every
@@ -152,13 +188,11 @@ for distribution in "${distributions[@]}"; do
     --output "$output_repository/dists/$distribution/Release.gpg" \
     --detach-sign "$output_repository/dists/$distribution/Release"
 done
+rm -f "$all_packages"
 recommended="$(
   python3 "$script_dir/channel_policy.py" existing-recommended \
     "$output_repository" "$RVS_APT_CHANNEL"
 )"
-if [[ "$promote_channel" == "1" ]]; then
-  recommended="$RVS_APT_CHANNEL"
-fi
 python3 "$script_dir/channel_policy.py" manifest \
   "$output_repository" "$recommended" > "$output_repository/channels.json"
 gpg "${gpg_arguments[@]}" \

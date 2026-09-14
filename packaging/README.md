@@ -75,15 +75,19 @@ key can be used by setting `RVS_APT_GPG_PASSPHRASE_FILE` to a mode-`0600` file.
 The generated repository includes the binary public key
 `dist/apt/ravenstash-rvs.gpg`.
 
-Production publishing is owned by this repository. The release workflow
+Production publishing is owned by this repository. A candidate workflow builds
+eight isolated native targets in parallel, rejects filename collisions during
+assembly, and attests one immutable inventory. The publication workflow consumes
+that exact candidate by run ID; it does not rebuild release artifacts. It
 authenticates the prior `InRelease`, every metadata digest, every listed package
 digest, and the absence of unlisted pool objects before a separate signing job
-sees the tree. A different job uploads immutable pool/by-hash objects first and
-enumerates every signed architecture when publishing mutable indexes, with
-`InRelease` last. If an interrupted older publish omitted an architecture's
-indexes, the storage-side restore may reconstruct only bytes that exactly match
-the already-authenticated `InRelease` SHA-256 inventory; any mismatch remains a
-hard failure. A twice-weekly split-credential workflow refreshes the
+sees the tree. Both Debian architectures are appended before one index-generation
+and signing pass. A different job batches immutable pool/by-hash objects first,
+then mutable indexes and releases, with `InRelease` and channel discovery last.
+If an interrupted older publish omitted an architecture's indexes, the
+storage-side restore may reconstruct only bytes that exactly match the
+already-authenticated `InRelease` SHA-256 inventory; any mismatch remains a hard
+failure. A twice-weekly split-credential workflow refreshes the
 seven-day `Valid-Until`, leaving at least three days between scheduled runs.
 The refresh restores the read-only public tree under the signing environment,
 passes only bounded signed metadata between jobs, and restores the canonical
@@ -117,15 +121,15 @@ Windows Authenticode are deferred while these platforms use command-line
 distribution. The protected APT signer authenticates the APT repository and POSIX
 portable inventory. The build includes the installer in the
 checksummed and attested release artifacts. After the APT repository and GitHub
-release pass their publication gates, the release workflow embeds the exact
-attested bytes in a dedicated
+release pass their publication gates, the separate promotion workflow embeds the
+exact attested bytes in a dedicated
 Cloudflare Worker at `https://ravenstash.com/install.sh` and
 `https://ravenstash.com/install.ps1`. The Worker does not
 fetch executable shell code from R2, and the frontend website repository
-contains no installer implementation. The dedicated installer-promotion
-workflow may use a newer reviewed Worker delivery policy, while it separately
-checks out the immutable release source and deploys only installer bytes that
-match that release's signed inventory.
+contains no installer implementation. The promotion workflow separately checks
+out the immutable release source, refuses installer rollback, deploys only bytes
+that match the release's signed inventory, verifies the live routes, and
+publishes the newly signed recommended-channel manifest last.
 
 Source CI builds on native Linux amd64/arm64, macOS Intel/Apple Silicon, and
 Windows x64/ARM64 runners. Alpine musl builds run on both native architectures.

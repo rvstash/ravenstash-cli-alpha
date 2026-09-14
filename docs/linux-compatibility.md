@@ -16,9 +16,10 @@ artifacts for the following targets:
 The compatibility workflow tests source and frozen executables on native Linux,
 macOS, and Windows runners. Alpine artifacts are built and executed in native-architecture
 musl containers. CI builds and executes the Nix package natively for all four
-Linux/macOS architecture pairs. The release workflow repeats native builds from
-one exact source commit, assembles one checksum inventory, and creates keyless
-Sigstore provenance for that complete inventory.
+Linux/macOS architecture pairs. The release-candidate workflow builds isolated
+native artifacts from one exact source commit, assembles one collision-free
+checksum inventory, and creates keyless Sigstore provenance for that complete
+inventory. Publication consumes that candidate without rebuilding it.
 
 Passing compatibility CI establishes that the source and candidate bundles
 run on the target hosts. Public support begins only when the exact release artifacts

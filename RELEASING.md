@@ -43,19 +43,27 @@ not gate a release by holding a publisher token.
 2. Run the local checks documented in `AGENTS.md` plus the pinned Ubuntu 20.04
    package build. Confirm `platform-ci` passes on the exact release commit for
    native Linux, macOS, and Windows runners, both Alpine architectures, and Nix.
-3. Dispatch `.github/workflows/release.yml` from `dev` with the exact 40-character
-   commit SHA, exact version, and policy-derived channel. Leave `publish_release`
-   and `promote_channel` disabled to exercise the complete native build and
-   attestation graph without publishing. Enable `publish_release` only for an
-   approved immutable release, and enable `promote_channel` only when new
-   installations should select that channel.
-4. The workflow proves the commit is on `dev`; builds Linux glibc, Linux musl,
-   macOS, and Windows artifacts for amd64/arm64; smoke-tests the frozen bundles;
-   and attests the complete inventory. It restores and verifies the
-   entire signed APT tree, publishes `InRelease` last, installs both Debian
-   architectures, optionally deploys the exact attested installer bytes, and
-   publishes the GitHub release against the source commit.
-5. Run the private real-environment smoke workflow for QA and staging. Run the
+3. Dispatch `.github/workflows/release-candidate.yml` from `dev` with the exact
+   40-character commit SHA, exact version, and policy-derived channel. Its eight
+   explicitly named target jobs build in parallel and upload only target-specific
+   files. Assembly refuses missing or duplicate filenames, creates one checksum
+   inventory, and keylessly attests one immutable candidate artifact.
+4. Record the successful candidate run ID. After that exact candidate passes the
+   required source, platform, certification, release-policy, and real-environment
+   gates, dispatch `.github/workflows/release.yml` from `dev` with the candidate
+   run ID and the same SHA, version, and channel. Publication authenticates the
+   candidate and prior APT state, appends both Debian architectures in one signing
+   pass, publishes ordered batched APT phases, verifies amd64 and arm64 in
+   parallel, and publishes the GitHub release. A successful publication deletes
+   its consumed candidate; failed runs retain their short-lived handoffs for
+   diagnosis and retry. Publication refuses any pre-existing tag or release,
+   including a partial draft; inspect and resolve such a draft explicitly before
+   retrying instead of allowing automation to overwrite it.
+5. When the published channel should become the new-install default, separately
+   dispatch `.github/workflows/promote-installer.yml`. Promotion authenticates
+   the immutable release, refuses rollback, deploys and verifies the exact
+   installer bytes, then publishes the signed recommended-channel manifest last.
+6. Run the private real-environment smoke workflow for QA and staging. Run the
    production target only by explicit human dispatch.
 
 Do not call a target publicly supported from compatibility CI alone. Before the

@@ -63,9 +63,9 @@ jobs:
           RVS_APT_GPG_FINGERPRINT="$(tr -d '[:space:]' < packaging/repository/keys/fingerprint.txt)" \
           RVS_APT_GPG_PASSPHRASE_FILE="$passphrase_file" \
           RVS_APT_CHANNEL="$channel" \
-          RVS_APT_PROMOTE_CHANNEL=0 \
+          RVS_APT_REFRESH_ALL=1 \
             packaging/repository/append_and_sign_apt.sh \
-              prior "$package" signed packaging/repository/keys/ravenstash-rvs.gpg
+              prior signed packaging/repository/keys/ravenstash-rvs.gpg "$package"
           rm -f "$passphrase_file"
           rm -rf "$GNUPGHOME"
       - name: Create bounded signed metadata handoff

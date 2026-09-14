@@ -118,6 +118,16 @@ class RestorePublicAptTests(unittest.TestCase):
             self.assertEqual(requested.count(arm64_package_path), 1)
             verify.assert_called_once_with(destination, keyring)
 
+            requested.clear()
+            verify.reset_mock()
+            metadata = root / "metadata"
+            restore_public_repository(metadata, keyring, fetch, include_packages=False)
+            self.assertFalse((metadata / amd64_package_path).exists())
+            self.assertFalse((metadata / arm64_package_path).exists())
+            self.assertNotIn(amd64_package_path, requested)
+            self.assertNotIn(arm64_package_path, requested)
+            verify.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()

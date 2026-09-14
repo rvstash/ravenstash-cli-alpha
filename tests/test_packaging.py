@@ -67,25 +67,184 @@ def test_apt_repository_script_exports_installable_public_key() -> None:
     assert '"${APT_REPO_DIR}/ravenstash-rvs.gpg"' in script
 
 
-def test_arm64_public_apt_gate_materializes_its_local_keyring() -> None:
+def test_parallel_public_apt_gates_materialize_their_local_keyring() -> None:
     workflow = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
-    arm64_gate = workflow.split("  verify-apt-arm64:\n", 1)[1].split("\n  deploy-installer:", 1)[0]
+    apt_gate = workflow.split("  verify-apt:\n", 1)[1].split("\n  publish-github-release:", 1)[0]
 
     prepare = "run: packaging/repository/prepare_keyring.sh"
     keyring_mount = (
         "packaging/repository/keys/ravenstash-rvs.gpg:/usr/share/keyrings/ravenstash-rvs.gpg:ro"
     )
-    assert prepare in arm64_gate
-    assert keyring_mount in arm64_gate
-    assert arm64_gate.index(prepare) < arm64_gate.index(keyring_mount)
+    assert "runner: ubuntu-24.04-arm" in apt_gate
+    assert prepare in apt_gate
+    assert keyring_mount in apt_gate
+    assert apt_gate.index(prepare) < apt_gate.index(keyring_mount)
 
 
-def test_apt_publisher_discovers_every_signed_architecture() -> None:
+def test_apt_publisher_batches_architectures_without_weakening_activation_order() -> None:
     publisher = (ROOT / "packaging/repository/publish_apt.sh").read_text(encoding="utf-8")
 
-    assert "-name 'binary-*'" in publisher
-    assert "main/${architecture_directory}/by-hash/" in publisher
-    assert 'relative="main/${architecture_directory}/${index}"' in publisher
+    assert '--include "*/by-hash/SHA256/*"' in publisher
+    assert '--include "*/Packages"' in publisher
+    assert '--include "*/InRelease"' in publisher
+    assert publisher.index('--include "*/by-hash/SHA256/*"') < publisher.index(
+        '--include "*/Packages"'
+    )
+    assert publisher.index('--include "*/Packages"') < publisher.index('--include "*/InRelease"')
+    assert publisher.index('--include "*/InRelease"') < publisher.index(
+        '"$repository/channels.json"'
+    )
+
+
+def test_apt_publisher_uses_constant_number_of_storage_calls(tmp_path: Path) -> None:
+    repository = tmp_path / "repository"
+    for channel in ("stable", "v0.3", "v0.13"):
+        (repository / "dists" / channel).mkdir(parents=True)
+    (repository / "pool").mkdir()
+    calls = tmp_path / "aws-calls"
+    binary = tmp_path / "bin"
+    binary.mkdir()
+    aws = binary / "aws"
+    aws.write_text('#!/bin/sh\nprintf "%s\\n" "$*" >> "$AWS_CALLS"\n', encoding="utf-8")
+    aws.chmod(0o755)
+
+    subprocess.run(
+        [
+            str(ROOT / "packaging/repository/publish_apt.sh"),
+            str(repository),
+            "https://r2.example.test",
+            "test-bucket",
+        ],
+        check=True,
+        env=os.environ
+        | {
+            "AWS_CALLS": str(calls),
+            "PATH": f"{binary}{os.pathsep}{os.environ['PATH']}",
+        },
+    )
+
+    assert len(calls.read_text(encoding="utf-8").splitlines()) == 8
+
+
+def test_release_candidate_keeps_target_handoffs_isolated() -> None:
+    candidate_path = ROOT / ".github/workflows/release-candidate.yml"
+    candidate = candidate_path.read_text(encoding="utf-8")
+    jobs = yaml.safe_load(candidate)["jobs"]
+    build_jobs = {name: job for name, job in jobs.items() if "uses" in job}
+    artifact_names = [
+        Path(path).name
+        for job in build_jobs.values()
+        for path in job["with"]["artifact_paths"].splitlines()
+    ]
+
+    assert "merge-multiple: true" not in candidate
+    assert "Download isolated target handoffs" in candidate
+    assert 'test "${#matches[@]}" = 1' in candidate
+    assert len(build_jobs) == 8
+    assert {job["needs"] for job in build_jobs.values()} == {"validate"}
+    assert len(artifact_names) == len(set(artifact_names)) == 10
+    assert set(jobs["assemble"]["needs"]) == set(build_jobs)
+
+
+def test_publication_graph_parallelizes_safe_jobs_and_serializes_mutations() -> None:
+    publication = yaml.safe_load(
+        (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
+    )
+    jobs = publication["jobs"]
+
+    assert "needs" not in jobs["validate-candidate"]
+    assert "needs" not in jobs["restore-apt"]
+    assert set(jobs["sign"]["needs"]) == {"validate-candidate", "restore-apt"}
+    assert jobs["publish-apt"]["needs"] == "sign"
+    assert jobs["verify-apt"]["needs"] == "publish-apt"
+    assert jobs["verify-apt"]["strategy"]["fail-fast"] is False
+    assert len(jobs["verify-apt"]["strategy"]["matrix"]["include"]) == 2
+    assert jobs["publish-github-release"]["needs"] == "verify-apt"
+
+
+def test_publication_consumes_candidate_and_appends_architectures_once() -> None:
+    publication = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
+    append = "packaging/repository/append_and_sign_apt.sh"
+
+    assert "run-id: ${{ inputs.candidate_run_id }}" in publication
+    assert publication.count(append) == 1
+    assert '"build/rvs_${VERSION}_amd64.deb"' in publication
+    assert '"build/rvs_${VERSION}_arm64.deb"' in publication
+    assert "  build:" not in publication
+    assert "RVS_APT_PROMOTE_CHANNEL" not in publication
+
+
+def test_successful_publication_is_not_failed_by_best_effort_cleanup() -> None:
+    candidate = (ROOT / ".github/workflows/release-candidate.yml").read_text(encoding="utf-8")
+    publication = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
+    promotion = (ROOT / ".github/workflows/promote-installer.yml").read_text(encoding="utf-8")
+
+    assert "Delete only target-specific artifacts\n        continue-on-error: true" in candidate
+    assert (
+        "Delete current-run handoffs and consumed candidate\n        continue-on-error: true"
+        in publication
+    )
+    assert "Delete temporary promotion artifacts\n        continue-on-error: true" in promotion
+
+
+def test_publication_refuses_to_replace_an_existing_tag_or_release() -> None:
+    publication = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
+
+    release_slot = "packaging/scripts/assert-github-release-slot-empty.sh"
+    assert publication.count(release_slot) == 2
+    assert "gh release upload" not in publication
+    assert "--clobber" not in publication
+
+
+@pytest.mark.parametrize(
+    ("mode", "expected_returncode"),
+    (("empty", 0), ("tag", 1), ("release", 1), ("api-error", 1)),
+)
+def test_release_slot_check_fails_closed(
+    tmp_path: Path, mode: str, expected_returncode: int
+) -> None:
+    binary = tmp_path / "bin"
+    binary.mkdir()
+    gh = binary / "gh"
+    gh.write_text(
+        "#!/bin/sh\n"
+        'case "$GH_MODE:$*" in\n'
+        "  api-error:*) exit 1 ;;\n"
+        "  tag:*matching-refs*) printf '%s\\n' refs/tags/v0.13.2 ;;\n"
+        "  release:*releases*) printf '%s\\n' 1234 ;;\n"
+        "esac\n",
+        encoding="utf-8",
+    )
+    gh.chmod(0o755)
+
+    result = subprocess.run(
+        [
+            str(ROOT / "packaging/scripts/assert-github-release-slot-empty.sh"),
+            "rvstash/ravenstash-cli-alpha",
+            "v0.13.2",
+        ],
+        check=False,
+        env=os.environ
+        | {
+            "GH_MODE": mode,
+            "PATH": f"{binary}{os.pathsep}{os.environ['PATH']}",
+        },
+    )
+
+    assert result.returncode == expected_returncode
+
+
+def test_channel_recommendation_activates_after_installer_verification() -> None:
+    promotion = yaml.safe_load(
+        (ROOT / ".github/workflows/promote-installer.yml").read_text(encoding="utf-8")
+    )
+    jobs = promotion["jobs"]
+
+    assert jobs["promote"]["needs"] == "sign-channel-manifest"
+    assert set(jobs["publish-channel-manifest"]["needs"]) == {
+        "sign-channel-manifest",
+        "promote",
+    }
 
 
 def test_installer_worker_binds_both_public_routes() -> None:

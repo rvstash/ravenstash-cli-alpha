@@ -14,7 +14,7 @@ from collections.abc import Callable
 from pathlib import Path, PurePosixPath
 
 from channel_policy import LEGACY_ALIASES, normalize_channel, stanza_fields, stanzas
-from verify_apt import fail, relative, release_entries, verify, verify_signature
+from verify_apt import digest, fail, relative, release_entries, verify, verify_signature
 
 
 Fetcher = Callable[[str, Path], None]
@@ -91,6 +91,8 @@ def restore_public_repository(
     destination: Path,
     trusted_keyring: Path,
     fetch: Fetcher,
+    *,
+    include_packages: bool = True,
 ) -> None:
     if destination.exists() and any(destination.iterdir()):
         fail(f"restore destination is not empty: {destination}")
@@ -120,11 +122,20 @@ def restore_public_repository(
             fail(f"InRelease and Release disagree for {distribution}")
 
         entries = release_entries(authenticated_release.decode("utf-8"))
-        for index, (digest, _size) in entries.items():
+        for index, (expected_digest, expected_size) in entries.items():
             index_path = prefix / index
-            fetch(index_path.as_posix(), destination.joinpath(*index_path.parts))
-            by_hash = index_path.parent / "by-hash" / "SHA256" / digest
-            fetch(by_hash.as_posix(), destination.joinpath(*by_hash.parts))
+            index_target = destination.joinpath(*index_path.parts)
+            fetch(index_path.as_posix(), index_target)
+            if (
+                index_target.stat().st_size != expected_size
+                or digest(index_target) != expected_digest
+            ):
+                fail(f"public APT index does not match signed Release: {index_path}")
+            by_hash = index_path.parent / "by-hash" / "SHA256" / expected_digest
+            by_hash_target = destination.joinpath(*by_hash.parts)
+            fetch(by_hash.as_posix(), by_hash_target)
+            if by_hash_target.read_bytes() != index_target.read_bytes():
+                fail(f"public APT by-hash index mismatch: {index_path}")
 
         package_indexes = {
             index
@@ -144,10 +155,12 @@ def restore_public_repository(
             fail(f"public APT distribution contains no rvs packages: {distribution}")
         packages_to_fetch.update(distribution_packages)
 
-    for package in sorted(packages_to_fetch):
-        fetch(package.as_posix(), destination.joinpath(*package.parts))
+    if include_packages:
+        for package in sorted(packages_to_fetch):
+            fetch(package.as_posix(), destination.joinpath(*package.parts))
     shutil.copyfile(trusted_keyring, destination / "ravenstash-rvs.gpg")
-    verify(destination, trusted_keyring)
+    if include_packages:
+        verify(destination, trusted_keyring)
 
 
 def main() -> None:
@@ -155,12 +168,22 @@ def main() -> None:
     parser.add_argument("base_url")
     parser.add_argument("destination", type=Path)
     parser.add_argument("trusted_keyring", type=Path)
+    parser.add_argument(
+        "--metadata-only",
+        action="store_true",
+        help="authenticate signed indexes without downloading referenced packages",
+    )
     arguments = parser.parse_args()
     try:
         fetch = public_fetcher(arguments.base_url)
     except ValueError as exc:
         raise SystemExit(f"error: {exc}") from exc
-    restore_public_repository(arguments.destination, arguments.trusted_keyring, fetch)
+    restore_public_repository(
+        arguments.destination,
+        arguments.trusted_keyring,
+        fetch,
+        include_packages=not arguments.metadata_only,
+    )
     print("Authenticated public APT repository restored.")
 
 
