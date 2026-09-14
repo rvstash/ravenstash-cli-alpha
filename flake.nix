@@ -51,6 +51,10 @@
               old.dependencies;
             doCheck = false;
           });
+          pytestHttpxExact = py.pytest-httpx.overridePythonAttrs (_old: {
+            propagatedBuildInputs = [ httpxExact ];
+            doCheck = false;
+          });
           rvs = py.buildPythonApplication {
             pname = "ravenstash-cli";
             version = (builtins.fromTOML (builtins.readFile ./pyproject.toml)).project.version;
@@ -74,7 +78,7 @@
               py.typer
             ];
             pythonImportsCheck = [ "rvs" ];
-            nativeCheckInputs = [ py.pytestCheckHook py.pytest-httpx ];
+            nativeCheckInputs = [ py.pytestCheckHook pytestHttpxExact ];
             # The vault round-trip forks a long-lived Unix-socket agent. Nix's
             # isolated build sandbox cannot host that session process; native
             # Linux CI continues to exercise the test.
