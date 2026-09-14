@@ -17,6 +17,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 from rvs import config as cfg_mod
+from rvs import interactive
 from rvs.auth import commands as auth_cmd
 from rvs.auth import credentials as auth_mod
 from rvs.auth import device as login_mod
@@ -200,12 +201,12 @@ def test_profile_use_sets_default_profile(monkeypatch, tmp_path: Path) -> None:
 @pytest.mark.parametrize(
     ("sequence", "expected"),
     [
-        ("\x1b[A", auth_cmd._KEY_UP),
-        ("\x1b[B", auth_cmd._KEY_DOWN),
-        ("\x1bOA", auth_cmd._KEY_UP),
-        ("\x1bOB", auth_cmd._KEY_DOWN),
-        ("\x1b[1;5A", auth_cmd._KEY_UP),
-        ("\x1b[1;5B", auth_cmd._KEY_DOWN),
+        ("\x1b[A", interactive.KEY_UP),
+        ("\x1b[B", interactive.KEY_DOWN),
+        ("\x1bOA", interactive.KEY_UP),
+        ("\x1bOB", interactive.KEY_DOWN),
+        ("\x1b[1;5A", interactive.KEY_UP),
+        ("\x1b[1;5B", interactive.KEY_DOWN),
     ],
 )
 def test_auth_switch_reads_arrow_key_sequences(
@@ -222,11 +223,11 @@ def test_auth_switch_reads_arrow_key_sequences(
     ) -> tuple[list[Any], list[Any], list[Any]]:
         return (readers if fake_stdin.has_pending else [], [], [])
 
-    monkeypatch.setattr(auth_cmd.sys, "platform", "linux")
-    monkeypatch.setattr(auth_cmd.sys, "stdin", fake_stdin)
+    monkeypatch.setattr(interactive.sys, "platform", "linux")
+    monkeypatch.setattr(interactive.sys, "stdin", fake_stdin)
     monkeypatch.setattr(select_mod, "select", fake_select)
 
-    assert auth_cmd._read_selector_key() == expected
+    assert interactive._read_selector_key() == expected
 
 
 def test_auth_switch_reads_arrow_key_sequences_from_unbuffered_fd(monkeypatch) -> None:
@@ -247,12 +248,12 @@ def test_auth_switch_reads_arrow_key_sequences_from_unbuffered_fd(monkeypatch) -
         assert readers == [0]
         return (readers if pending else [], [], [])
 
-    monkeypatch.setattr(auth_cmd.sys, "platform", "linux")
-    monkeypatch.setattr(auth_cmd.sys, "stdin", _FakeFdStdin())
-    monkeypatch.setattr(auth_cmd.os, "read", fake_os_read)
+    monkeypatch.setattr(interactive.sys, "platform", "linux")
+    monkeypatch.setattr(interactive.sys, "stdin", _FakeFdStdin())
+    monkeypatch.setattr(interactive.os, "read", fake_os_read)
     monkeypatch.setattr(select_mod, "select", fake_select)
 
-    assert auth_cmd._read_selector_key() == auth_cmd._KEY_DOWN
+    assert interactive._read_selector_key() == interactive.KEY_DOWN
 
 
 def test_auth_logout_uses_current_profile(monkeypatch, tmp_path: Path) -> None:

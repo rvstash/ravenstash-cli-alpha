@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import json
 from typing import TYPE_CHECKING, Any
 
 import pytest
 from rvs import config as cfg_mod
+from rvs import output
 from rvs.artifacts import commands as artifacts_cmd
 from typer.testing import CliRunner
 
@@ -87,6 +89,7 @@ def _repository_entry(name: str = "repo") -> dict[str, Any]:
         "account": {
             "account_ref": "ac_23456789",
             "account_label": "Test account",
+            "account_handle": "test-account",
             "account_type": "organization",
             "organization_role": "owner",
         },
@@ -104,6 +107,7 @@ def _repository_entry(name: str = "repo") -> dict[str, Any]:
 
 
 def _isolate_config(monkeypatch, tmp_path: Path, content: str | None = None) -> None:
+    output.set_json(False)
     config_dir = tmp_path / ".rvs"
     config_dir.mkdir()
     config_file = config_dir / "config.toml"
@@ -188,6 +192,14 @@ def test_artifacts_repo_list_filters_by_kind_and_uses_profile_customer(
         )
     ]
     assert "repo-pypi" in result.output
+    assert "Account" in result.output
+    assert "test-account" in result.output
+    assert "Test account" not in result.output
+    assert "test-account/repo-pypi" in result.output
+    assert "Permanent reference" in result.output
+    assert "in_abcdefgh/ar_xyzabcde" in result.output
+    assert "Namespace" not in result.output
+    assert "Repository ID" not in result.output
 
 
 def test_artifacts_repo_list_omits_unset_query_filters(
@@ -195,13 +207,46 @@ def test_artifacts_repo_list_omits_unset_query_filters(
     tmp_path: Path,
 ) -> None:
     _isolate_config(monkeypatch, tmp_path)
-    fake = _FakeApiClient([[]])
+    fake = _FakeApiClient([[], [_repository_entry()["account"]]])
     _use_fake_client(monkeypatch, fake)
 
     result = runner.invoke(artifacts_cmd.app, ["repo", "list"])
 
     assert result.exit_code == 0
-    assert fake.calls == [("GET", "/repositories", {"account_ref": "ac_23456789"})]
+    assert fake.calls == [
+        ("GET", "/repositories", {"account_ref": "ac_23456789"}),
+        ("GET", "/accounts", None),
+    ]
+    assert "Account" in result.output
+    assert "test-account" in result.output
+    assert "No repositories found" in result.output
+
+
+def test_artifacts_repo_list_preserves_json_shape_and_uses_account_handle(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    _isolate_config(monkeypatch, tmp_path)
+    fake = _FakeApiClient([[_repository_entry("repo-pypi")]])
+    _use_fake_client(monkeypatch, fake)
+
+    output.set_json(True)
+    try:
+        result = runner.invoke(artifacts_cmd.app, ["repo", "list"])
+    finally:
+        output.set_json(False)
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["items"] == [
+        {
+            "account": "test-account",
+            "namespace": "test-account",
+            "repository": "repo-pypi",
+            "repository_id": "in_abcdefgh/ar_xyzabcde",
+            "formats": "pypi, npm, maven",
+        }
+    ]
 
 
 def test_artifacts_repo_create_can_set_default_repo(monkeypatch, tmp_path: Path) -> None:
@@ -392,6 +437,11 @@ def test_artifacts_repo_show_renders_repository_details(monkeypatch, tmp_path: P
         )
     ]
     assert "repo-pypi" in result.output
+    assert "test-account/repo-pypi" in result.output
+    assert "Test account" not in result.output
+    assert "Permanent reference" in result.output
+    assert "in_abcdefgh/ar_xyzabcde" in result.output
+    assert "Repository ID" not in result.output
     assert "Packages" in result.output
     assert "7" in result.output
     assert "Versions" in result.output

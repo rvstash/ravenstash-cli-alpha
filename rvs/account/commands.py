@@ -5,10 +5,12 @@ from __future__ import annotations
 import os
 
 import typer
+from rich.markup import escape
 
 from .. import config as cfg_mod
 from .. import output
 from ..client import ApiClient, ApiError
+from ..interactive import select_index
 
 
 app = typer.Typer(
@@ -34,6 +36,13 @@ def accounts(profile: str | None = None) -> list[dict]:
     return [item for item in payload if isinstance(item, dict)]
 
 
+def _public_handle(account: dict) -> str:
+    handle = account.get("account_handle")
+    if not isinstance(handle, str) or not handle.strip():
+        output.fatal("Ravenstash returned an account without a public handle.")
+    return handle.strip()
+
+
 def resolve_account(selector: str, profile: str | None = None) -> dict:
     items = accounts(profile)
     value = selector.strip()
@@ -41,37 +50,29 @@ def resolve_account(selector: str, profile: str | None = None) -> dict:
         output.fatal("Account name cannot be empty.")
 
     lowered = value.casefold()
+    handle_selector = value[4:] if lowered.startswith("org:") else value
+    handle_selector_folded = handle_selector.casefold()
     handle_matches = [
         item
         for item in items
         if isinstance(item.get("account_handle"), str)
-        and item["account_handle"].casefold() == lowered
+        and item["account_handle"].casefold() == handle_selector_folded
+        and (not lowered.startswith("org:") or item.get("account_type") == "organization")
     ]
     if handle_matches:
         matches = handle_matches
     elif lowered == "personal":
         matches = [item for item in items if item.get("account_type") == "personal"]
     else:
-        label = value[4:] if lowered.startswith("org:") else value
-        label_folded = label.casefold()
-        matches = [
-            item
-            for item in items
-            if value
-            in {
-                item.get("account_ref"),
-            }
-            or (
-                isinstance(item.get("account_label"), str)
-                and item["account_label"].casefold() == label_folded
-                and (not lowered.startswith("org:") or item.get("account_type") == "organization")
-            )
-        ]
+        matches = [item for item in items if value == item.get("account_ref")]
     if not matches:
         output.fatal(f"Account '{selector}' was not found for this profile.")
     if len(matches) > 1:
         refs = ", ".join(str(item.get("account_ref")) for item in matches)
-        output.fatal(f"More than one account matches '{selector}'. Use one of these IDs: {refs}")
+        output.fatal(
+            f"More than one account matches '{selector}'. "
+            f"Use one of these account references: {refs}"
+        )
     selected = matches[0]
     cfg_mod.cache_account(
         profile=_profile_name(profile),
@@ -114,7 +115,7 @@ def ensure_active_account(
         items = accounts(profile_name)
         personal = [item for item in items if item.get("account_type") == "personal"]
         if len(personal) != 1:
-            output.fatal("No account is selected. Run `rvs account use USERNAME_OR_HANDLE`.")
+            output.fatal("No account is selected. Run `rvs account switch`.")
         customer = personal[0]
     return profile_name, cfg_mod.cache_account(
         profile=profile_name,
@@ -141,10 +142,7 @@ def account_list(
     rows = []
     for item in accounts(profile_name):
         account_ref = str(item.get("account_ref", ""))
-        account_type = str(item.get("account_type", ""))
-        label = item.get("account_handle") or (
-            "personal" if account_type == "personal" else f"org:{item.get('account_label')}"
-        )
+        label = _public_handle(item)
         rows.append(
             [
                 f"{label} (active)" if account_ref == active_id else label,
@@ -175,9 +173,70 @@ def account_current(
     )
 
 
-def _use_account(account: str, profile: str | None) -> None:
+def _render_account_selector(
+    items: list[dict],
+    selected_index: int,
+    active_account_ref: str | None,
+) -> str:
+    lines = [
+        "[bold]Select Ravenstash account[/]",
+        "[dim]Use up/down and ENTER to confirm.[/]",
+        "",
+    ]
+    for index, item in enumerate(items):
+        handle = escape(_public_handle(item))
+        account_ref = str(item.get("account_ref", ""))
+        account_type = item.get("account_type")
+        role = str(item.get("organization_role") or "")
+        kind = "Personal" if account_type == "personal" else "Organization"
+        detail = f"{kind} · {role}" if role else kind
+        active = " [dim](active)[/]" if account_ref == active_account_ref else ""
+        pointer = ">" if index == selected_index else " "
+        label = f"[bold]{handle}[/]" if index == selected_index else handle
+        lines.append(f"[cyan]{pointer}[/] {label} [dim]{escape(detail)}[/]{active}")
+    return "\n".join(lines)
+
+
+def _select_account_interactive(profile_name: str) -> dict:
+    items = accounts(profile_name)
+    if not items:
+        output.fatal("No accounts are available for this profile.")
+    items.sort(
+        key=lambda item: (
+            item.get("account_type") != "personal",
+            _public_handle(item).casefold(),
+        )
+    )
+    active_account_ref = cfg_mod.current_customer_id(profile_name)
+    initial_index = next(
+        (
+            index
+            for index, item in enumerate(items)
+            if item.get("account_ref") == active_account_ref
+        ),
+        0,
+    )
+    selected_index = select_index(
+        item_count=len(items),
+        initial_index=initial_index,
+        render=lambda index: _render_account_selector(items, index, active_account_ref),
+        unavailable_message=(
+            "Cannot open account selector. Use `rvs account switch USERNAME_OR_HANDLE`."
+        ),
+    )
+    return items[selected_index]
+
+
+def _switch_account(account: str | None, profile: str | None) -> None:
     profile_name = _profile_name(profile)
-    selected = resolve_account(account, profile_name)
+    try:
+        selected = (
+            resolve_account(account, profile_name)
+            if account is not None
+            else _select_account_interactive(profile_name)
+        )
+    except KeyboardInterrupt:
+        output.fatal("Account selection cancelled.")
     scope = cfg_mod.account_selection_write_scope()
     saved = cfg_mod.set_active_account(profile=profile_name, customer=selected)
     output.success(f"Account '{display_name(saved)}' selected for {scope}.")
@@ -187,12 +246,25 @@ def _use_account(account: str, profile: str | None) -> None:
         )
 
 
-@app.command("use")
-def account_use(
-    account: str = typer.Argument(
-        ..., help="Ravenstash username, organization handle, or account ID."
+@app.command("switch")
+def account_switch(
+    account: str | None = typer.Argument(
+        None,
+        help="Public username or organization handle. Omit to choose interactively.",
     ),
     profile: str | None = typer.Option(None, "--profile", "-p"),
 ) -> None:
-    """Choose an account in this shell or in the selected local profile."""
-    _use_account(account, profile)
+    """Switch to a personal account or organization."""
+    _switch_account(account, profile)
+
+
+@app.command("use", hidden=True)
+def account_use(
+    account: str = typer.Argument(
+        ..., help="Ravenstash username, organization handle, or account reference."
+    ),
+    profile: str | None = typer.Option(None, "--profile", "-p"),
+) -> None:
+    """Deprecated alias for `rvs account switch`."""
+    output.warn("`rvs account use` is deprecated; use `rvs account switch`.")
+    _switch_account(account, profile)

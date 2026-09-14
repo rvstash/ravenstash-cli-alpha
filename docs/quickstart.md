@@ -20,16 +20,15 @@ List the accounts you can use:
 rvs account list
 ```
 
-Choose one by its public name:
+Choose one interactively:
 
 ```bash
-rvs account use Avery
-rvs account use AcmeHQ
+rvs account switch
 ```
 
-Use your Ravenstash username for your personal account. Use the public handle
-shown on an organization's Ravenstash page for an organization. You only need
-to run one of these commands.
+Use up/down and Enter to select a personal account or organization. You can
+also switch directly with `rvs account switch HANDLE`, using your Ravenstash
+username or an organization's public handle.
 
 ## 3. Choose a repository
 

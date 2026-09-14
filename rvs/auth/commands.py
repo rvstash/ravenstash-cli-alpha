@@ -4,24 +4,18 @@ from __future__ import annotations
 
 import os
 import sys
-from contextlib import contextmanager
-from typing import TYPE_CHECKING
 
 import typer
 from click import Choice
-from rich.live import Live
 from rich.markup import escape
 
 from .. import auth as auth_mod
 from .. import config as cfg_mod
 from .. import output
 from ..client import ApiClient, ApiError
+from ..interactive import select_index
 from . import stores
 from .device import perform_device_login
-
-
-if TYPE_CHECKING:
-    from collections.abc import Iterator
 
 
 app = typer.Typer(
@@ -41,12 +35,6 @@ storage_app = typer.Typer(
 )
 app.add_typer(storage_app, name="storage")
 
-_KEY_UP = "up"
-_KEY_DOWN = "down"
-_KEY_ENTER = "enter"
-_KEY_CTRL_C = "ctrl-c"
-_ESCAPE_SEQUENCE_TIMEOUT_SECONDS = 0.25
-_ESCAPE_SEQUENCE_MAX_CHARS = 8
 _DEDICATED_STORE_LABEL = "Ravenstash encrypted vault"
 _DEDICATED_STORE_PROMPT = "Install a dedicated credential store for rvs?"
 
@@ -91,112 +79,6 @@ def _repository_status_fields(
     return fields
 
 
-@contextmanager
-def _raw_terminal() -> Iterator[None]:
-    if sys.platform == "win32":
-        yield
-        return
-
-    try:
-        import termios
-        import tty
-    except ImportError:
-        yield
-        return
-
-    try:
-        fd = sys.stdin.fileno()
-        old_settings = termios.tcgetattr(fd)
-        tty.setcbreak(fd)
-    except OSError, termios.error:
-        yield
-        return
-
-    try:
-        yield
-    finally:
-        termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
-
-
-def _read_selector_key() -> str:
-    if sys.platform == "win32":
-        import msvcrt
-
-        key = msvcrt.getwch()
-        if key in {"\x00", "\xe0"}:
-            code = msvcrt.getwch()
-            if code == "H":
-                return _KEY_UP
-            if code == "P":
-                return _KEY_DOWN
-        if key in {"\n", "\r"}:
-            return _KEY_ENTER
-        if key == "\x03":
-            return _KEY_CTRL_C
-        return key
-
-    key = _read_stdin_char()
-    if key == "\x03":
-        return _KEY_CTRL_C
-    if key in {"\n", "\r"}:
-        return _KEY_ENTER
-    if key == "\x1b":
-        return _selector_key_from_escape_sequence(_read_escape_sequence(key))
-    return key
-
-
-def _read_escape_sequence(first_char: str) -> str:
-    import select
-
-    sequence = first_char
-    while len(sequence) < _ESCAPE_SEQUENCE_MAX_CHARS:
-        if not select.select([_stdin_selector()], [], [], _ESCAPE_SEQUENCE_TIMEOUT_SECONDS)[0]:
-            break
-        char = _read_stdin_char()
-        if not char:
-            break
-        sequence += char
-        if sequence == "\x1bO":
-            continue
-        if char.isalpha() or char == "~":
-            break
-    return sequence
-
-
-def _stdin_fileno() -> int | None:
-    try:
-        return sys.stdin.fileno()
-    except AttributeError, OSError:
-        return None
-
-
-def _stdin_selector() -> int | object:
-    fd = _stdin_fileno()
-    return fd if fd is not None else sys.stdin
-
-
-def _read_stdin_char() -> str:
-    fd = _stdin_fileno()
-    if fd is None:
-        return sys.stdin.read(1)
-    try:
-        return os.read(fd, 1).decode("utf-8", errors="ignore")
-    except OSError:
-        return sys.stdin.read(1)
-
-
-def _selector_key_from_escape_sequence(sequence: str) -> str:
-    if sequence in {"\x1b[A", "\x1bOA"}:
-        return _KEY_UP
-    if sequence in {"\x1b[B", "\x1bOB"}:
-        return _KEY_DOWN
-    if sequence.startswith("\x1b[") and sequence.endswith("A"):
-        return _KEY_UP
-    if sequence.startswith("\x1b[") and sequence.endswith("B"):
-        return _KEY_DOWN
-    return sequence
-
-
 def _render_profile_selector(
     profiles: list[str],
     selected_index: int,
@@ -219,32 +101,15 @@ def _select_profile_interactive(cfg: cfg_mod.RvsConfig) -> str:
     profiles = list(cfg.profiles)
     if not profiles:
         output.fatal("No profiles configured. Run `rvs auth login` first.")
-    if not sys.stdin.isatty() or not output.console.is_terminal:
-        output.fatal("Cannot open profile selector. Use `rvs profile use <name>`.")
-
     active_profile = _current_profile_name(cfg)
-    selected_index = profiles.index(active_profile) if active_profile in profiles else 0
-
-    with (
-        _raw_terminal(),
-        Live(
-            _render_profile_selector(profiles, selected_index, active_profile),
-            console=output.console,
-            refresh_per_second=10,
-            transient=True,
-        ) as live,
-    ):
-        while True:
-            key = _read_selector_key()
-            if key == _KEY_CTRL_C:
-                raise KeyboardInterrupt
-            if key == _KEY_UP:
-                selected_index = (selected_index - 1) % len(profiles)
-            elif key == _KEY_DOWN:
-                selected_index = (selected_index + 1) % len(profiles)
-            elif key == _KEY_ENTER:
-                return profiles[selected_index]
-            live.update(_render_profile_selector(profiles, selected_index, active_profile))
+    initial_index = profiles.index(active_profile) if active_profile in profiles else 0
+    selected_index = select_index(
+        item_count=len(profiles),
+        initial_index=initial_index,
+        render=lambda index: _render_profile_selector(profiles, index, active_profile),
+        unavailable_message="Cannot open profile selector. Use `rvs profile use <name>`.",
+    )
+    return profiles[selected_index]
 
 
 def _warn_env_profile_override() -> None:
