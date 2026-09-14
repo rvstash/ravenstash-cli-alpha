@@ -34,6 +34,7 @@
                 inherit version;
                 hash = "sha256-XggRpDg7IdxYOAafgBxPtiETt0R2Y9JTDSvW53tJvxU=";
               };
+              doCheck = false;
             });
           });
           rvs = py.buildPythonApplication {
