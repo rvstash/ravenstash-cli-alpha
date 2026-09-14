@@ -358,6 +358,8 @@ jobs:
             "s3://ravenstash-cli-releases/rvs/apt/" prior/ \
             --endpoint-url "https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com" \
             --no-progress
+          python3 packaging/repository/recover_missing_apt_indexes.py \
+            prior packaging/repository/keys/ravenstash-rvs.gpg
           python3 packaging/repository/verify_apt.py \
             prior packaging/repository/keys/ravenstash-rvs.gpg
 

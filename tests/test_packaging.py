@@ -80,6 +80,14 @@ def test_arm64_public_apt_gate_materializes_its_local_keyring() -> None:
     assert arm64_gate.index(prepare) < arm64_gate.index(keyring_mount)
 
 
+def test_apt_publisher_discovers_every_signed_architecture() -> None:
+    publisher = (ROOT / "packaging/repository/publish_apt.sh").read_text(encoding="utf-8")
+
+    assert "-name 'binary-*'" in publisher
+    assert "main/${architecture_directory}/by-hash/" in publisher
+    assert 'relative="main/${architecture_directory}/${index}"' in publisher
+
+
 def test_debian_package_installs_node_signature_verifier() -> None:
     manifest = (ROOT / "packaging" / "scripts" / "build-deb.sh").read_text(encoding="utf-8")
 

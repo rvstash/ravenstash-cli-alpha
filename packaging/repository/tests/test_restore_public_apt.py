@@ -33,6 +33,9 @@ class RestorePublicAptTests(unittest.TestCase):
         with self.assertRaises(SystemExit):
             package_paths(packages)
 
+    def test_package_paths_accepts_an_empty_legacy_architecture_index(self) -> None:
+        self.assertEqual(package_paths(""), set())
+
     @patch("restore_public_apt.time.sleep")
     @patch("restore_public_apt.urllib.request.urlopen")
     def test_public_fetch_retries_a_transient_failure(self, urlopen, sleep) -> None:
@@ -50,12 +53,21 @@ class RestorePublicAptTests(unittest.TestCase):
         verify_signature,
         verify,
     ) -> None:
-        package_path = "pool/main/r/rvs/rvs_0.3.2_amd64_test.deb"
-        packages = (
-            f"Package: rvs\nVersion: 0.3.2\nArchitecture: amd64\nFilename: {package_path}\n"
+        amd64_package_path = "pool/main/r/rvs/rvs_0.3.2_amd64_test.deb"
+        arm64_package_path = "pool/main/r/rvs/rvs_0.3.2_arm64_test.deb"
+        amd64_packages = (
+            f"Package: rvs\nVersion: 0.3.2\nArchitecture: amd64\nFilename: {amd64_package_path}\n"
         ).encode()
-        digest = hashlib.sha256(packages).hexdigest()
-        release = (f"SHA256:\n {digest} {len(packages)} main/binary-amd64/Packages\n").encode()
+        arm64_packages = (
+            f"Package: rvs\nVersion: 0.3.2\nArchitecture: arm64\nFilename: {arm64_package_path}\n"
+        ).encode()
+        amd64_digest = hashlib.sha256(amd64_packages).hexdigest()
+        arm64_digest = hashlib.sha256(arm64_packages).hexdigest()
+        release = (
+            "SHA256:\n"
+            f" {amd64_digest} {len(amd64_packages)} main/binary-amd64/Packages\n"
+            f" {arm64_digest} {len(arm64_packages)} main/binary-arm64/Packages\n"
+        ).encode()
         manifest = json.dumps(
             {
                 "channels": {"v0.3": {}},
@@ -66,15 +78,18 @@ class RestorePublicAptTests(unittest.TestCase):
         files = {
             "channels.json": manifest,
             "channels.json.gpg": b"manifest signature",
-            package_path: b"deb",
+            amd64_package_path: b"amd64 deb",
+            arm64_package_path: b"arm64 deb",
         }
         for distribution in ("stable", "v0.3"):
             prefix = f"dists/{distribution}"
             files[f"{prefix}/InRelease"] = b"inrelease"
             files[f"{prefix}/Release"] = release
             files[f"{prefix}/Release.gpg"] = b"release signature"
-            files[f"{prefix}/main/binary-amd64/Packages"] = packages
-            files[f"{prefix}/main/binary-amd64/by-hash/SHA256/{digest}"] = packages
+            files[f"{prefix}/main/binary-amd64/Packages"] = amd64_packages
+            files[f"{prefix}/main/binary-amd64/by-hash/SHA256/{amd64_digest}"] = amd64_packages
+            files[f"{prefix}/main/binary-arm64/Packages"] = arm64_packages
+            files[f"{prefix}/main/binary-arm64/by-hash/SHA256/{arm64_digest}"] = arm64_packages
 
         def authenticate(_keyring, signature, content=None):
             if signature.name == "channels.json.gpg":
@@ -96,9 +111,11 @@ class RestorePublicAptTests(unittest.TestCase):
             destination = root / "repository"
             restore_public_repository(destination, keyring, fetch)
 
-            self.assertEqual((destination / package_path).read_bytes(), b"deb")
+            self.assertEqual((destination / amd64_package_path).read_bytes(), b"amd64 deb")
+            self.assertEqual((destination / arm64_package_path).read_bytes(), b"arm64 deb")
             self.assertEqual((destination / "ravenstash-rvs.gpg").read_bytes(), b"trusted key")
-            self.assertEqual(requested.count(package_path), 1)
+            self.assertEqual(requested.count(amd64_package_path), 1)
+            self.assertEqual(requested.count(arm64_package_path), 1)
             verify.assert_called_once_with(destination, keyring)
 
 

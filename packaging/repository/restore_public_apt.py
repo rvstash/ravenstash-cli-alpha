@@ -84,8 +84,6 @@ def package_paths(packages: str) -> set[PurePosixPath]:
         if path.suffix != ".deb":
             fail(f"public APT package is not a Debian archive: {path}")
         paths.add(path)
-    if not paths:
-        fail("public APT Packages contains no rvs packages")
     return paths
 
 
@@ -128,8 +126,23 @@ def restore_public_repository(
             by_hash = index_path.parent / "by-hash" / "SHA256" / digest
             fetch(by_hash.as_posix(), destination.joinpath(*by_hash.parts))
 
-        packages = destination.joinpath(*prefix.parts, "main", "binary-amd64", "Packages")
-        packages_to_fetch.update(package_paths(packages.read_text(encoding="utf-8")))
+        package_indexes = {
+            index
+            for index in entries
+            if len(index.parts) == 3
+            and index.parts[0] == "main"
+            and index.parts[1].startswith("binary-")
+            and index.parts[2] == "Packages"
+        }
+        if not package_indexes:
+            fail(f"public APT Release has no package indexes: {distribution}")
+        distribution_packages: set[PurePosixPath] = set()
+        for index in package_indexes:
+            packages = destination.joinpath(*prefix.parts, *index.parts)
+            distribution_packages.update(package_paths(packages.read_text(encoding="utf-8")))
+        if not distribution_packages:
+            fail(f"public APT distribution contains no rvs packages: {distribution}")
+        packages_to_fetch.update(distribution_packages)
 
     for package in sorted(packages_to_fetch):
         fetch(package.as_posix(), destination.joinpath(*package.parts))

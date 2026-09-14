@@ -10,6 +10,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
 APPEND = ROOT / "packaging/repository/append_and_sign_apt.sh"
+RECOVER = ROOT / "packaging/repository/recover_missing_apt_indexes.py"
+VERIFY = ROOT / "packaging/repository/verify_apt.py"
 
 
 def _run(command: list[str], *, env: dict[str, str] | None = None) -> str:
@@ -129,6 +131,14 @@ def _exercise_multarch_append(root: Path) -> None:
     )
 
     assert (multarch / "dists/v0.3/main/binary-arm64/Packages").read_text() == ""
+    assert (
+        "Architecture: arm64" in (multarch / "dists/v0.12/main/binary-arm64/Packages").read_text()
+    )
+
+    for binary in (multarch / "dists").glob("*/main/binary-arm64"):
+        shutil.rmtree(binary)
+    _run(["python3", str(RECOVER), str(multarch), str(keyring)])
+    _run(["python3", str(VERIFY), str(multarch), str(keyring)])
     assert (
         "Architecture: arm64" in (multarch / "dists/v0.12/main/binary-arm64/Packages").read_text()
     )

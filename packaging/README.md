@@ -79,7 +79,11 @@ Production publishing is owned by this repository. The release workflow
 authenticates the prior `InRelease`, every metadata digest, every listed package
 digest, and the absence of unlisted pool objects before a separate signing job
 sees the tree. A different job uploads immutable pool/by-hash objects first and
-`InRelease` last. A twice-weekly split-credential workflow refreshes the
+enumerates every signed architecture when publishing mutable indexes, with
+`InRelease` last. If an interrupted older publish omitted an architecture's
+indexes, the storage-side restore may reconstruct only bytes that exactly match
+the already-authenticated `InRelease` SHA-256 inventory; any mismatch remains a
+hard failure. A twice-weekly split-credential workflow refreshes the
 seven-day `Valid-Until`, leaving at least three days between scheduled runs.
 The refresh restores the read-only public tree under the signing environment,
 passes only bounded signed metadata between jobs, and restores the canonical

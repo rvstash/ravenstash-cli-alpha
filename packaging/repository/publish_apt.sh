@@ -17,12 +17,20 @@ aws s3 sync "$repository/pool/" "${destination}/pool/" \
   --cache-control "public,max-age=31536000,immutable" \
   --no-progress
 for distribution in "${distributions[@]}"; do
-  aws s3 sync \
-    "$repository/dists/$distribution/main/binary-amd64/by-hash/" \
-    "${destination}/dists/$distribution/main/binary-amd64/by-hash/" \
-    --endpoint-url "$endpoint" \
-    --cache-control "public,max-age=31536000,immutable" \
-    --no-progress
+  mapfile -t binary_directories < <(
+    find "$repository/dists/$distribution/main" \
+      -mindepth 1 -maxdepth 1 -type d -name 'binary-*' -print | sort
+  )
+  test "${#binary_directories[@]}" -gt 0
+  for binary_directory in "${binary_directories[@]}"; do
+    architecture_directory="${binary_directory##*/}"
+    aws s3 sync \
+      "$binary_directory/by-hash/" \
+      "${destination}/dists/$distribution/main/${architecture_directory}/by-hash/" \
+      --endpoint-url "$endpoint" \
+      --cache-control "public,max-age=31536000,immutable" \
+      --no-progress
+  done
 done
 
 # Mutable indexes follow. Each signed distribution becomes active only when its
@@ -32,11 +40,23 @@ aws s3 cp "$repository/ravenstash-rvs.gpg" "${destination}/ravenstash-rvs.gpg" \
   --cache-control "no-cache" \
   --only-show-errors
 for distribution in "${distributions[@]}"; do
-  for relative in \
-    main/binary-amd64/Packages \
-    main/binary-amd64/Packages.gz \
-    Release \
-    Release.gpg; do
+  mapfile -t binary_directories < <(
+    find "$repository/dists/$distribution/main" \
+      -mindepth 1 -maxdepth 1 -type d -name 'binary-*' -print | sort
+  )
+  for binary_directory in "${binary_directories[@]}"; do
+    architecture_directory="${binary_directory##*/}"
+    for index in Packages Packages.gz; do
+      relative="main/${architecture_directory}/${index}"
+      aws s3 cp \
+        "$repository/dists/$distribution/$relative" \
+        "${destination}/dists/$distribution/$relative" \
+        --endpoint-url "$endpoint" \
+        --cache-control "no-cache" \
+        --only-show-errors
+    done
+  done
+  for relative in Release Release.gpg; do
     aws s3 cp \
       "$repository/dists/$distribution/$relative" \
       "${destination}/dists/$distribution/$relative" \
