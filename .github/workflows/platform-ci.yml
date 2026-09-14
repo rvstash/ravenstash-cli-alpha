@@ -3,9 +3,9 @@ run-name: Platform CI · ${{ github.event_name }} · ${{ github.ref_name }} · $
 
 on:
   push:
-    branches: [main, "release/**"]
+    branches: [dev, main, "release/**"] # dev is temporary during the default-branch rename.
   pull_request:
-    branches: [main, "release/**"]
+    branches: [dev, main, "release/**"] # dev is temporary during the default-branch rename.
     types: [opened, synchronize, reopened, ready_for_review]
   workflow_dispatch:
 
