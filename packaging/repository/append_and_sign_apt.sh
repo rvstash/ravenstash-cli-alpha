@@ -104,7 +104,9 @@ for distribution in "${distributions[@]}"; do
     (cd "$output_repository" && apt-ftparchive -a "$indexed_architecture" packages pool) \
       | python3 "$script_dir/channel_policy.py" filter "$compatibility_channel" \
       > "$binary/Packages"
-    test -s "$binary/Packages"
+    # A newly supported architecture legitimately has an empty index in older
+    # compatibility channels. The repository verifier still requires every
+    # distribution to list at least one package across its declared indexes.
     gzip -9n < "$binary/Packages" > "$binary/Packages.gz"
     for index in Packages Packages.gz; do
       index_digest="$(sha256sum "$binary/$index" | awk '{print $1}')"
