@@ -21,15 +21,21 @@ not created for every APT package or patch release.
    not run the expensive suites.
 4. Resolve review conversations and wait for `Source CI gate`,
    `Platform CI gate`, and `Release policy gate`.
-5. Rebase onto the target when required, then use GitHub's **Rebase and merge**.
+5. After approval and successful required gates, a maintainer uses one of the
+   two allowed linear landing modes: one verified squash commit, or a local
+   `git merge --ff-only <topic-branch>` followed by a target-branch push.
 
-Merge commits and squash merges are disabled. Do not merge the target branch
-into a feature branch. GitHub deletes merged feature branches automatically.
+Fast-forwarding preserves the reviewed commit object IDs and signatures. A
+squash intentionally replaces the PR commits with one new commit, which must be
+signed or otherwise verified under the repository's protection rules. Do not
+use GitHub's **Rebase and merge**, create a merge commit, or force-push a
+protected branch. If the target advanced, either squash or have the contributor
+update and re-sign the branch before a fast-forward landing.
 
-Direct pushes to `main` and `release/*` are forbidden by project policy.
-Administrators retain a bypass solely for time-critical emergencies. A human
-who uses it must document why, run the same checks, and follow up with a pull
-request or incident record. Automated contributors must never use that bypass.
+Pull requests are preferred because they provide review and required CI. While
+this is the alpha repository, maintainers and automated contributors may push a
+direct linear update to `main` or `release/*` when explicitly authorized. The
+same required checks must pass for the exact resulting protected-branch commit.
 
 ## When CI runs
 
@@ -37,7 +43,7 @@ request or incident record. Automated contributors must never use that bypass.
 - Opening, reopening, updating, or marking ready a non-draft pull request to
   `main` or `release/*` runs Source CI, Platform CI, and Release policy in
   parallel. A new commit cancels superseded runs for that pull request.
-- A merge or emergency push to `main` or `release/*` reruns those gates for the
+- A squash or fast-forward push to `main` or `release/*` reruns those gates for the
   exact protected-branch commit. Release automation accepts only an exact SHA
   that passed all required gates.
 - Platform certification is manual and scheduled. Release candidates and

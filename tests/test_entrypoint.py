@@ -50,11 +50,12 @@ def test_invalid_config_is_reported_without_a_traceback(tmp_path: Path) -> None:
         env=os.environ | {"RVS_HOME": str(tmp_path)},
     )
 
+    stderr = " ".join(result.stderr.split())
     assert result.returncode == 1
     assert result.stdout == ""
-    assert "config version 999 requires a newer rvs release" in result.stderr
-    assert "rvs profile delete --all" in result.stderr
-    assert "Traceback" not in result.stderr
+    assert "config version 999 requires a newer rvs release" in stderr
+    assert "rvs profile delete --all" in stderr
+    assert "Traceback" not in stderr
 
 
 def test_malformed_config_is_reported_without_a_traceback(tmp_path: Path) -> None:

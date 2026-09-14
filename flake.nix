@@ -11,7 +11,31 @@
       packages = forAllSystems (system:
         let
           pkgs = import nixpkgs { inherit system; };
-          py = pkgs.python314Packages;
+          py = pkgs.python314Packages.overrideScope (_final: previous: {
+            cryptography = previous.cryptography.overridePythonAttrs (_old: rec {
+              version = "50.0.1";
+              src = pkgs.fetchPypi {
+                pname = "cryptography";
+                inherit version;
+                hash = "sha256-Xdm9ocErQWL2/1aO614P+VbCjRRAbodc/opjotQU/yA=";
+              };
+              cargoDeps = pkgs.rustPlatform.fetchCargoVendor {
+                pname = "cryptography";
+                inherit version src;
+                hash = pkgs.lib.fakeHash;
+              };
+              patches = [ ];
+              doCheck = false;
+            });
+            idna = previous.idna.overridePythonAttrs (_old: rec {
+              version = "3.19";
+              src = pkgs.fetchPypi {
+                pname = "idna";
+                inherit version;
+                hash = "sha256-XggRpDg7IdxYOAafgBxPtiETt0R2Y9JTDSvW53tJvxU=";
+              };
+            });
+          });
           rvs = py.buildPythonApplication {
             pname = "ravenstash-cli";
             version = (builtins.fromTOML (builtins.readFile ./pyproject.toml)).project.version;

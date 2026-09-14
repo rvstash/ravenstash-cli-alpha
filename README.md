@@ -130,8 +130,9 @@ rvs runtime list
 ## Contributing
 
 All changes go through a short-lived branch and a pull request to `main` or a
-supported maintenance branch. Pull requests are rebased and merged without a
-merge commit. See [CONTRIBUTING.md](CONTRIBUTING.md) for the checks, branch
+supported maintenance branch. Pull requests are landed as one verified squash
+commit or by locally fast-forwarding the protected branch. See
+[CONTRIBUTING.md](CONTRIBUTING.md) for the checks, branch
 model, and release lifecycle, and [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) for
 community expectations.
 

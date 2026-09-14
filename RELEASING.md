@@ -24,9 +24,11 @@ holds source while a suite holds immutable signed packages. Patch releases are
 tags, not long-lived branches. Delete a maintenance branch only after that line
 is no longer supported; its APT objects and tags remain immutable.
 
-Backport a fix with a new pull request targeting the maintenance branch. Use a
-cherry-pick followed by a rebase as needed; never merge `main` into a maintenance
-branch and never create a merge commit.
+Backport a fix with a new pull request targeting the maintenance branch. A
+maintainer lands it as one verified squash commit or locally with
+`git merge --ff-only`, then pushes the maintenance branch. Never merge `main`
+into a maintenance branch, use GitHub's rebase operation, create a merge commit,
+or force-push a protected branch.
 
 ## Trust boundaries
 
@@ -47,7 +49,9 @@ passphrases, deployment tokens, and revocation material must never be committed.
 2. On a short-lived branch, update `pyproject.toml`, `uv.lock`, both installer
    version/channel constants, and release notes. Keep this as a dedicated final
    version commit.
-3. Open a pull request and rebase-merge it after all required gates pass.
+3. Normally open a pull request and wait for all required gates. Land it as one
+   verified squash commit or by fast-forwarding the local owning branch with
+   `git merge --ff-only`, then push that branch.
 4. Run Platform certification manually on the exact protected-branch SHA if it
    has not already passed there.
 
