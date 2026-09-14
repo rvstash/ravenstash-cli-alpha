@@ -12,49 +12,6 @@
         let
           pkgs = import nixpkgs { inherit system; };
           py = pkgs.python314Packages;
-          cryptographyExact = py.cryptography.overridePythonAttrs (_old: rec {
-            version = "50.0.1";
-            src = pkgs.fetchPypi {
-              pname = "cryptography";
-              inherit version;
-              hash = "sha256-Xdm9ocErQWL2/1aO614P+VbCjRRAbodc/opjotQU/yA=";
-            };
-            cargoDeps = pkgs.rustPlatform.fetchCargoVendor {
-              pname = "cryptography";
-              inherit version src;
-              hash = "sha256-aGokDcpVxfSolwEUOcEyP/8nrrLuRXC3YyrTT+Dv36I=";
-            };
-            patches = [ ];
-            doCheck = false;
-          });
-          idnaExact = py.idna.overridePythonAttrs (_old: rec {
-            version = "3.19";
-            src = pkgs.fetchPypi {
-              pname = "idna";
-              inherit version;
-              hash = "sha256-XggRpDg7IdxYOAafgBxPtiETt0R2Y9JTDSvW53tJvxU=";
-            };
-            doCheck = false;
-          });
-          anyioExact = py.anyio.overridePythonAttrs (old: {
-            dependencies = map
-              (dependency: if dependency.pname == "idna" then idnaExact else dependency)
-              old.dependencies;
-            doCheck = false;
-          });
-          httpxExact = py.httpx.overridePythonAttrs (old: {
-            dependencies = map
-              (dependency:
-                if dependency.pname == "anyio" then anyioExact
-                else if dependency.pname == "idna" then idnaExact
-                else dependency)
-              old.dependencies;
-            doCheck = false;
-          });
-          pytestHttpxExact = py.pytest-httpx.overridePythonAttrs (_old: {
-            propagatedBuildInputs = [ httpxExact ];
-            doCheck = false;
-          });
           rvs = py.buildPythonApplication {
             pname = "ravenstash-cli";
             version = (builtins.fromTOML (builtins.readFile ./pyproject.toml)).project.version;
@@ -68,9 +25,8 @@
             pyproject = true;
             build-system = [ py.setuptools ];
             dependencies = [
-              cryptographyExact
-              httpxExact
-              idnaExact
+              py.cryptography
+              py.httpx
               py.keyring
               py.pyyaml
               py.rich
@@ -78,7 +34,7 @@
               py.typer
             ];
             pythonImportsCheck = [ "rvs" ];
-            nativeCheckInputs = [ py.pytestCheckHook pytestHttpxExact ];
+            nativeCheckInputs = [ py.pytestCheckHook py.pytest-httpx ];
             # The vault round-trip forks a long-lived Unix-socket agent. Nix's
             # isolated build sandbox cannot host that session process; native
             # Linux CI continues to exercise the test.

@@ -15,8 +15,8 @@ dependencies = [
     "rich>=13.0",
     "tomli-w>=1.0",
     "keyring>=25.0",
-    "cryptography==50.0.1; sys_platform != 'win32'",
-    "idna==3.19",
+    "cryptography==48.0.0; sys_platform != 'win32'",
+    "idna==3.15",
     "pyyaml>=6.0",
 ]
 classifiers = [
