@@ -69,14 +69,11 @@ def test_apt_repository_script_exports_installable_public_key() -> None:
 
 def test_arm64_public_apt_gate_materializes_its_local_keyring() -> None:
     workflow = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
-    arm64_gate = workflow.split("  verify-apt-arm64:\n", 1)[1].split(
-        "\n  deploy-installer:", 1
-    )[0]
+    arm64_gate = workflow.split("  verify-apt-arm64:\n", 1)[1].split("\n  deploy-installer:", 1)[0]
 
     prepare = "run: packaging/repository/prepare_keyring.sh"
     keyring_mount = (
-        'packaging/repository/keys/ravenstash-rvs.gpg:'
-        '/usr/share/keyrings/ravenstash-rvs.gpg:ro'
+        "packaging/repository/keys/ravenstash-rvs.gpg:/usr/share/keyrings/ravenstash-rvs.gpg:ro"
     )
     assert prepare in arm64_gate
     assert keyring_mount in arm64_gate
