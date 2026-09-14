@@ -115,6 +115,35 @@ refresh_expires_at = "2099-01-02T00:00:00+00:00"
     assert profile.refresh_expires_at is None
 
 
+def test_delete_token_from_all_stores_ignores_unavailable_store_os_errors(monkeypatch) -> None:
+    deleted: list[tuple[str, str]] = []
+
+    def system_delete(service: str, profile: str) -> None:
+        assert service == "rvs"
+        deleted.append(("keyring", profile))
+
+    def pass_delete(profile: str) -> None:
+        deleted.append(("pass", profile))
+
+    def vault_delete(profile: str) -> None:
+        deleted.append(("vault", profile))
+        raise OSError("vault socket is unavailable")
+
+    def plaintext_delete(profile: str) -> None:
+        deleted.append(("plaintext", profile))
+
+    monkeypatch.setattr(auth_mod.stores, "system_delete", system_delete)
+    monkeypatch.setattr(auth_mod.stores, "pass_delete", pass_delete)
+    monkeypatch.setattr(auth_mod.stores, "vault_delete", vault_delete)
+    monkeypatch.setattr(auth_mod.stores, "plaintext_delete", plaintext_delete)
+
+    auth_mod.delete_token_from_all_stores("obsolete")
+
+    assert ("keyring", "obsolete") in deleted
+    assert ("vault", "obsolete") in deleted
+    assert ("plaintext", "obsolete:refresh") in deleted
+
+
 def test_get_refresh_token_returns_none_when_keyring_unavailable(
     monkeypatch, tmp_path: Path
 ) -> None:

@@ -249,7 +249,7 @@ def _store_delete(name: str, account: str, *, strict: bool = False) -> None:
             stores.vault_delete(account)
         else:
             stores.plaintext_delete(account)
-    except stores.StoreError as exc:
+    except (OSError, stores.StoreError) as exc:
         if strict:
             raise RuntimeError(str(exc)) from exc
         return

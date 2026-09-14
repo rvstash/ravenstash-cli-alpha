@@ -260,8 +260,16 @@ def update(
 
     current_channel = _current_channel()
     if not _upgrade_available(installed, candidate):
-        suffix = f" on release series {current_channel}" if current_channel else ""
-        output.success(f"rvs {installed} is current{suffix}.")
+        if current_channel:
+            output.success(
+                f"Installed: rvs {installed}. Latest in release series "
+                f"{current_channel}: rvs {candidate}. You are up to date."
+            )
+        else:
+            output.success(
+                f"Installed: rvs {installed}. Latest available: rvs {candidate}. "
+                "You are up to date."
+            )
         _announce_new_channel(current_channel)
         return
 

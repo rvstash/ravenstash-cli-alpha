@@ -28,6 +28,21 @@ def test_update_reports_new_apt_candidate(monkeypatch: Any) -> None:
     assert "rvs update --apply" in result.output
 
 
+def test_update_reports_installed_and_latest_versions_when_current(monkeypatch: Any) -> None:
+    monkeypatch.setattr(update_mod, "_apt_versions", lambda: ("0.13.2", "0.13.2"))
+    monkeypatch.setattr(update_mod, "_upgrade_available", lambda installed, candidate: False)
+    monkeypatch.setattr(update_mod, "_current_channel", lambda: "v0.13")
+    monkeypatch.setattr(update_mod, "_announce_new_channel", lambda channel: None)
+
+    result = runner.invoke(app, ["update"])
+    output = " ".join(result.output.split())
+
+    assert result.exit_code == 0
+    assert "Installed: rvs 0.13.2" in output
+    assert "Latest in release series v0.13: rvs 0.13.2" in output
+    assert "You are up to date" in output
+
+
 def test_update_does_not_self_replace_non_apt_install(monkeypatch: Any) -> None:
     monkeypatch.setattr(update_mod, "_apt_versions", lambda: (None, None))
     monkeypatch.setattr(update_mod, "_cli_version", lambda: "0.3.0")
