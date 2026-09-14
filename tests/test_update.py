@@ -90,6 +90,7 @@ def test_upgrade_changes_channel_only_after_authenticated_manifest(
 ) -> None:
     versions = iter((("0.3.4", "0.3.4"), ("0.3.4", "0.4.0")))
     monkeypatch.setattr(update_mod, "_apt_versions", lambda: next(versions))
+    monkeypatch.setattr(update_mod, "_upgrade_available", lambda installed, candidate: True)
     monkeypatch.setattr(update_mod, "_current_channel", lambda: "v0.3")
     monkeypatch.setattr(
         update_mod,
@@ -141,6 +142,7 @@ def test_upgrade_restores_source_when_target_candidate_is_wrong(
     previous_source = update_mod._source_for_channel("v0.3")
     versions = iter((("0.3.4", "0.3.4"), ("0.3.4", "1.0.0")))
     monkeypatch.setattr(update_mod, "_apt_versions", lambda: next(versions))
+    monkeypatch.setattr(update_mod, "_upgrade_available", lambda installed, candidate: True)
     monkeypatch.setattr(update_mod, "_current_channel", lambda: "v0.3")
     monkeypatch.setattr(
         update_mod,
@@ -168,6 +170,7 @@ def test_upgrade_restores_source_when_target_candidate_is_wrong(
 
 def test_update_to_only_previews_and_never_changes_apt_source(monkeypatch):
     monkeypatch.setattr(update_mod, "_apt_versions", lambda: ("0.3.4", "0.3.4"))
+    monkeypatch.setattr(update_mod, "_upgrade_available", lambda installed, candidate: True)
     monkeypatch.setattr(update_mod, "_current_channel", lambda: "v0.3")
     monkeypatch.setattr(
         update_mod,
@@ -208,6 +211,7 @@ def test_update_to_current_series_still_applies_available_update(monkeypatch, tm
     apt_get.touch()
     monkeypatch.setattr(update_mod, "_APT_GET", apt_get)
     monkeypatch.setattr(update_mod, "_apt_versions", lambda: ("0.4.0", "0.4.1"))
+    monkeypatch.setattr(update_mod, "_upgrade_available", lambda installed, candidate: True)
     monkeypatch.setattr(update_mod, "_current_channel", lambda: "v0.4")
     calls = []
     monkeypatch.setattr(
@@ -220,6 +224,7 @@ def test_update_to_current_series_still_applies_available_update(monkeypatch, tm
 
 def test_update_to_rejects_package_downgrade_before_source_change(monkeypatch):
     monkeypatch.setattr(update_mod, "_apt_versions", lambda: ("0.5.0", "0.3.4"))
+    monkeypatch.setattr(update_mod, "_upgrade_available", lambda installed, candidate: False)
     monkeypatch.setattr(update_mod, "_current_channel", lambda: "v0.3")
     monkeypatch.setattr(
         update_mod,
@@ -237,6 +242,7 @@ def test_update_to_rejects_package_downgrade_before_source_change(monkeypatch):
 def test_update_to_restores_source_if_installed_package_changes(monkeypatch, tmp_path):
     versions = iter((("0.3.4", "0.3.4"), ("0.5.0", "0.4.0")))
     monkeypatch.setattr(update_mod, "_apt_versions", lambda: next(versions))
+    monkeypatch.setattr(update_mod, "_upgrade_available", lambda installed, candidate: True)
     monkeypatch.setattr(update_mod, "_current_channel", lambda: "v0.3")
     monkeypatch.setattr(
         update_mod,
