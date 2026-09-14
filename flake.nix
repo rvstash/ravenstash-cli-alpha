@@ -36,6 +36,21 @@
             };
             doCheck = false;
           });
+          anyioExact = py.anyio.overridePythonAttrs (old: {
+            dependencies = map
+              (dependency: if dependency.pname == "idna" then idnaExact else dependency)
+              old.dependencies;
+            doCheck = false;
+          });
+          httpxExact = py.httpx.overridePythonAttrs (old: {
+            dependencies = map
+              (dependency:
+                if dependency.pname == "anyio" then anyioExact
+                else if dependency.pname == "idna" then idnaExact
+                else dependency)
+              old.dependencies;
+            doCheck = false;
+          });
           rvs = py.buildPythonApplication {
             pname = "ravenstash-cli";
             version = (builtins.fromTOML (builtins.readFile ./pyproject.toml)).project.version;
@@ -50,7 +65,7 @@
             build-system = [ py.setuptools ];
             dependencies = [
               cryptographyExact
-              py.httpx
+              httpxExact
               idnaExact
               py.keyring
               py.pyyaml
