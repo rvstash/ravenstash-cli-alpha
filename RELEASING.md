@@ -1,95 +1,107 @@
 # Releasing `rvs`
 
-This repository owns all reviewable source, packaging, signing policy, APT
-publication policy, installer delivery code, and GitHub release automation.
-The repository remains private during the alpha. The first public beta will be
-created as a new `rvstash/ravenstash-cli` repository with one reviewed, clean
-initial commit rather than this repository's Git history.
+This repository builds every platform artifact in one manually dispatched
+release workflow. Stable releases and release candidates share validation,
+parallel builds, assembly, attestations, and signing. Only stable releases
+publish to APT.
+
+## Release lines
+
+`main` is the next development line. When two minor lines need independent
+fixes, create a protected maintenance branch for each supported line:
+
+```text
+main                    next development line
+release/v0.13           maintained 0.13.x source
+release/v0.14           maintained 0.14.x source
+release/v1.0            maintained 1.0.x source
+release/v1.1            maintained 1.1.x source
+```
+
+The matching APT suites are `v0.13`, `v0.14`, `v1.0`, and `v1.1`. Git branches
+and APT suites deliberately use the same compatibility identifier, but a branch
+holds source while a suite holds immutable signed packages. Patch releases are
+tags, not long-lived branches. Delete a maintenance branch only after that line
+is no longer supported; its APT objects and tags remain immutable.
+
+Backport a fix with a new pull request targeting the maintenance branch. Use a
+cherry-pick followed by a rebase as needed; never merge `main` into a maintenance
+branch and never create a merge commit.
 
 ## Trust boundaries
 
-The release jobs use three GitHub environments:
+Publishing credentials exist only in protected GitHub environments:
 
 | Environment | Credential scope |
 | --- | --- |
-| `apt-signing` | APT private key and passphrase only |
-| `apt-storage` | Bucket-scoped R2 write key and account ID only |
-| `installer-delivery` | Cloudflare Worker deploy token and account ID only |
+| `apt-signing` | APT/release inventory signing key |
+| `apt-storage` | APT object-storage writer |
+| `installer-delivery` | Installer deployment only |
 
-All secret values originate in the production Infisical path
-`/secret-syncs/github/cli-releases`. The offline GPG revocation certificate
-stays in Infisical and is never copied into GitHub. The committed public key and
-fingerprint are public trust anchors, not credentials.
+The committed public key and fingerprint are public trust anchors. Private keys,
+passphrases, deployment tokens, and revocation material must never be committed.
 
-The private Ravenstash QA repository owns QA, staging, and production smoke
-tests and tokens. It has no release credentials. A future GitHub App may
-report an integration result back to this repository, but integration tests do
-not gate a release by holding a publisher token.
+## Prepare an exact source commit
 
-## Compatibility policy
+1. Choose `main` or the owning `release/vMAJOR.MINOR` branch.
+2. On a short-lived branch, update `pyproject.toml`, `uv.lock`, both installer
+   version/channel constants, and release notes. Keep this as a dedicated final
+   version commit.
+3. Open a pull request and rebase-merge it after all required gates pass.
+4. Run Platform certification manually on the exact protected-branch SHA if it
+   has not already passed there.
 
-- Before 1.0, each minor line has its own APT channel: `0.4.x` uses `v0.4`.
-- Starting at 1.0, each major line has its own channel: `1.x` uses `v1`.
-- Patch upgrades stay automatic within the installed channel.
-- Crossing a compatibility boundary is explicit through `rvs upgrade --to`.
-- A release version and every APT object are immutable. Fixes receive a new
-  patch version; the repository is never reset or rewritten.
+Do not create a tag manually. The workflow refuses to overwrite an existing tag,
+draft, prerelease, release, or APT version.
 
-## Alpha release procedure
+## Signed release candidate
 
-1. Update `pyproject.toml`, `uv.lock`, `packaging/install.sh`,
-   `packaging/install.ps1`, release notes, and any compatibility documentation
-   in one reviewed commit on `dev`.
-2. Run the local checks documented in `AGENTS.md` plus the pinned Ubuntu 20.04
-   package build. Confirm `platform-ci` passes on the exact release commit for
-   native Linux, macOS, and Windows runners, both Alpine architectures, and Nix.
-3. After the exact source passes the required source, platform, certification,
-   release-policy, and applicable real-environment gates, dispatch
-   `.github/workflows/release.yml` from `dev` with its 40-character commit SHA,
-   exact version, and policy-derived channel. One visible workflow run validates
-   the release identity and confirms each required gate succeeded on that SHA,
-   builds eight explicitly named targets in parallel, rejects
-   missing or duplicate filenames during assembly, and keylessly attests the
-   immutable inventory. In that same run, APT restore runs alongside the target
-   builds; publication then authenticates the inventory and prior APT state,
-   appends both Debian architectures in one signing pass, publishes ordered
-   batched APT phases, verifies amd64 and arm64 in parallel, and publishes the
-   GitHub release. A successful run deletes its temporary handoffs; failed runs
-   retain them briefly for diagnosis. The workflow refuses any pre-existing tag
-   or release, including a partial draft; inspect and resolve such a draft
-   explicitly before retrying instead of allowing automation to overwrite it.
-4. When the published channel should become the new-install default, separately
-   dispatch `.github/workflows/promote-installer.yml`. Promotion authenticates
-   the immutable release, refuses rollback, deploys and verifies the exact
-   installer bytes, then publishes the signed recommended-channel manifest last.
-5. Run the private real-environment smoke workflow for QA and staging. Run the
-   production target only by explicit human dispatch.
+Use a PEP 440 version such as `0.14.0rc1`. Dispatch `release.yml` from `main`
+with `kind=candidate`, the exact source branch, SHA, version, and matching
+`vMAJOR.MINOR` channel. The workflow:
 
-Do not call a target publicly supported from compatibility CI alone. Before the
-first public release, retain evidence that the exact release artifacts were
-installed and exercised on clean systems, including real macOS Keychain and
-Windows Credential Manager sessions, WSL2, managed runtime downloads, and
-representative native package-tool wrappers. Nix must be built and exercised on
-each architecture/OS pair claimed by the release. Apple notarization and Windows
-Authenticode are deferred, so the command-line installation documentation must
-say so explicitly.
-Deploy and verify both `https://ravenstash.com/install.sh` and
-`https://ravenstash.com/install.ps1` before publishing website copy that directs
-users on those platforms to the new release.
+- validates all gates for that exact SHA;
+- builds the eight release targets in parallel;
+- assembles and attests one collision-free inventory;
+- signs the checksum inventory with the release OpenPGP key; and
+- publishes an immutable GitHub prerelease.
 
-The twice-weekly `refresh-apt-metadata` workflow renews the signed seven-day
-`Valid-Until` without changing package contents or compatibility channels.
+It does not restore, modify, or publish APT repository state. On a supported
+Debian-family installation, preview and install it with:
 
-## Clean public import
+```bash
+rvs update --candidate 0.14.0rc1
+rvs update --candidate 0.14.0rc1 --apply
+```
 
-Before creating `rvstash/ravenstash-cli`, export only the reviewed working tree.
-Do not mirror, fork, or push alpha refs. Exclude local caches, generated files,
-private integration configuration, and every secret. Search the complete tree
-for credentials and internal-only endpoints, run dependency and secret scans,
-then create one MIT-licensed initial commit in the empty public repository.
+The CLI downloads the architecture-specific `.deb` and signed inventory,
+verifies the signature, checksum, package name, version, and architecture, then
+asks before installing. The package uses Debian version `0.14.0~rc1`, ensuring
+the later stable `0.14.0` sorts as an upgrade. Other platform bundles remain
+available on the GitHub prerelease page.
 
-Recreate the three publishing GitHub environments from Infisical, configure
-branch and environment protections, enable release immutability, and test a
-non-promoted release before switching the installer and APT provenance identity
-to the new repository. Historical alpha releases remain in the private alpha
-repository; the public repository begins with the first beta release.
+The candidate command must first ship in a stable CLI version; until then, the
+first candidate using this process requires the normal signed manual download.
+
+## Stable release
+
+Use an exact `X.Y.Z` version. Dispatch `release.yml` from `main` with
+`kind=stable`, the owning source branch and SHA, and its `vMAJOR.MINOR` channel.
+In the same visible workflow run, APT restore runs alongside the platform builds.
+After assembly, the workflow signs once, publishes APT in ordered phases,
+verifies amd64 and arm64 in parallel, and publishes the GitHub release.
+
+When that stable release should become the default for new installations,
+separately dispatch `promote-installer.yml` with the same source identity.
+Promotion accepts stable releases only, refuses rollback, deploys the exact
+signed installer bytes, and publishes the signed recommended-series manifest.
+
+The scheduled `refresh-apt-metadata` workflow renews expiring APT metadata
+without changing packages, tags, channels, or installer recommendations.
+
+## Failure handling
+
+Failed workflows retain short-lived handoff artifacts for diagnosis. Successful
+runs remove them. Never repair a partial release by overwriting published bytes;
+delete only an unpublished draft after inspection, or issue a new patch/RC
+version as appropriate.

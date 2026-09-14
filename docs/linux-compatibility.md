@@ -1,8 +1,8 @@
 # Platform compatibility policy
 
 Ravenstash treats platform support as an installation, runtime, credential-storage,
-update, and native-client contract. The first public release is gated on native
-artifacts for the following targets:
+update, and native-client contract. Binary support is gated on native artifacts
+for the following targets:
 
 | Operating system | Architectures | Artifact and install path |
 | --- | --- | --- |
@@ -32,10 +32,9 @@ Ubuntu 22.04, 24.04, and 26.04; Debian 12 and 13; Fedora 43 and 44; Rocky Linux 
 9; AlmaLinux 10; Amazon Linux 2023; openSUSE Leap 15.6 and 16.0; and Arch Linux.
 Debian packages are published for both amd64 and arm64 in the same signed channel.
 
-During private alpha, set `RVS_GITHUB_TOKEN` to a read-only token for the private
-source repository before running either installer. The token is passed to GitHub's
-release API without being placed in a child process argument. The public repository
-uses the same artifact names and installers without that variable.
+`RVS_GITHUB_TOKEN` is optional and can raise GitHub API limits for installer
+downloads. It is passed in an HTTP authorization header and is never placed in a
+child process argument.
 
 ## Credential storage
 
@@ -79,8 +78,8 @@ that predate relevant protocol controls, maintained upstream lines, or security 
 
 ## Update boundaries
 
-APT channels retain the existing compatibility policy: pre-1.0 minor lines and
-post-1.0 major lines update independently. Portable, Homebrew, WinGet, and Nix releases
+Every APT minor line is an independent compatibility series. Portable, Homebrew,
+WinGet, and Nix releases
 must use the same channel identity and never move a user across it without an explicit
 upgrade. Until their package-manager manifests are published, portable users update by
 rerunning the same signed installer for their selected channel.
@@ -88,7 +87,7 @@ rerunning the same signed installer for their selected channel.
 ## Additional platforms
 
 FreeBSD, OpenBSD, NetBSD, Linux armv7, and Linux RISC-V remain source-compatible
-evaluation targets rather than first-release binary promises. Promoting one requires a
+evaluation targets rather than supported binary promises. Promoting one requires a
 native, repeatable builder, secure credential-store behavior, signed installation and
 updates, and the same packaged native-client certification. PyInstaller does not test
 those BSD targets upstream, so a successful one-off build is insufficient.

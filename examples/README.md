@@ -1,6 +1,6 @@
 # rvs Examples
 
-These projects are small package examples for trying the current alpha `rvs`
+These projects are small package examples for trying the current `rvs`
 surface. They are ordinary Python, npm, and Maven projects; `rvs` runs their
 native tools with temporary access to a selected Ravenstash repository.
 

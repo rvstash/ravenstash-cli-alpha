@@ -23,7 +23,7 @@ PyInstaller version from `uv.lock`.
 
 ## Local build
 
-From `packages/rvs/`:
+From the repository root:
 
 ```bash
 packaging/scripts/build-pyinstaller.sh
@@ -59,7 +59,7 @@ is unavailable on Windows; Windows credentials use Credential Manager instead.
 ## APT repository
 
 After building the `.deb`, generate static APT repository metadata. The channel
-is derived from the package version (`0.3.x` -> `v0.3`, `1.x` -> `v1`) and an
+is derived from the package version (`0.13.x` -> `v0.13`, `1.1.x` -> `v1.1`) and an
 explicit override must match that policy:
 
 ```bash
@@ -93,11 +93,10 @@ passes only bounded signed metadata between jobs, and restores the canonical
 tree again under the storage environment. It does not consume GitHub Actions
 artifact storage.
 
-APT suites are compatibility boundaries, not rolling maturity labels. Before
-`1.0`, every minor series has its own suite (`v0.3`, `v0.4`); from `1.0` onward,
-every major series has one (`v1`, `v2`). Routine APT upgrades never cross that
-boundary. The legacy `stable` suite remains a permanent alias for `v0.3` so the
-initial alpha install cannot later roll into an incompatible release.
+APT suites are compatibility boundaries, not rolling maturity labels. Every
+minor series has its own suite (`v0.13`, `v0.14`, `v1.0`, `v1.1`). Routine APT
+upgrades never cross that boundary. The legacy `stable` suite remains a permanent
+alias for `v0.3` so old installations cannot roll into an incompatible release.
 
 Published suites contain separate `amd64` and `arm64` indexes. Immutable pool
 filenames carry a digest suffix, so index generation filters the package's
@@ -153,8 +152,8 @@ values:
 | secret | `CLOUDFLARE_API_TOKEN` | Worker-only deployment token |
 | variable | `CLOUDFLARE_ACCOUNT_ID` | Cloudflare account ID |
 
-The secret values must originate in Ravenstash's production Infisical project;
-do not commit them or create independent unmanaged copies. The R2 bucket must
+Secret values are configured only in the protected GitHub environments; do not
+commit them or create independent unmanaged copies. The R2 bucket must
 be publicly readable through `releases.ravenstash.com` while its S3 write API
 remains private. Connecting that custom domain and provisioning the
 bucket-scoped token are infrastructure prerequisites, not responsibilities of
@@ -163,13 +162,10 @@ this source repository.
 The `apt-signing`, `apt-storage`, and `installer-delivery` environments keep
 their credentials separated. Releases are manual exact-SHA dispatches represented
 by one end-to-end workflow run. The built-in token creates a draft against that
-source commit, populates it once, and publishes it. The Ravenstash QA repository has no publishing
-credentials and cannot sign, upload, or deploy releases.
+source commit, populates it once, and publishes it.
 
 The committed public key is an identity pin, not a secret. The private key,
-passphrase, R2 credentials, Worker token, and revocation certificate remain in
-the production Infisical project. The revocation certificate is deliberately
-not copied into GitHub.
+passphrase, R2 credentials, Worker token, and revocation certificate are never
+committed. The revocation certificate is deliberately not copied into GitHub.
 
-See [`RELEASING.md`](../RELEASING.md) for the release and clean-public-import
-procedure.
+See [`RELEASING.md`](../RELEASING.md) for the release procedure.

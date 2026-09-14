@@ -1,6 +1,6 @@
 # rvs-demo-java
 
-Minimal Maven project for testing the alpha `rvs` package repository commands.
+Minimal Maven project for testing the `rvs` package repository commands.
 
 ## Local Work
 
@@ -12,7 +12,7 @@ mvn package
 java -jar target/rvs-demo-java-0.1.0.jar info com.fasterxml.jackson.core:jackson-databind
 ```
 
-Maven itself is not managed by `rvs runtime` in the current alpha. Install it
+Maven itself is not managed by `rvs runtime`. Install it
 system-wide or through your preferred local toolchain manager.
 
 ## Ravenstash Package Repository

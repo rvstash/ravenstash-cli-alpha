@@ -1,69 +1,63 @@
 # AGENTS.md
 
-Operational guidance for the `rvs` CLI package.
+This file is the complete operating guide for automated contributors to the
+public `rvs` repository. Do not rely on instructions from a parent checkout or
+from private Ravenstash repositories.
 
-## Agent workflow
+## Repository scope
 
-- For cross-repository, product-policy, release, or production work, first read
-  `../../AGENTS.md` and the authoritative documents it identifies.
-- Reviews and investigations are read-only. For implementation, complete the
-  authorized local change and run the smallest relevant verification.
-- Never commit or push directly to `dev`. Create a short-lived branch and use a
-  pull request; treat authorization to commit or push as authorization for that
-  branch workflow unless the human explicitly directs an emergency bypass.
-- Do not commit, push, release, publish, or mutate a real environment unless the
-  user explicitly requests it. Report changed files and verification results.
+`rvs` is the Ravenstash command-line client. Application code lives in `rvs/`,
+tests in `tests/`, user documentation in `docs/`, examples in `examples/`, and
+release/install tooling in `packaging/` and `.github/workflows/`.
 
-## What this repository is
+Keep user identity, the local profile, the acting account, and the selected
+artifact target distinct. Keep secrets in the established credential stores;
+non-secret profile metadata belongs in `~/.rvs/config.toml`. Native install and
+publish flows should continue to delegate to their native tools. Keep the
+control-plane URL separate from package download and upload URLs.
 
-- Ravenstash developer CLI for authentication, named local profiles, acting-account
-  and artifact-target context, local runtime management, artifact repositories, and
-  future developer-product areas.
-- The CLI manages Ravenstash credentials, including refresh-backed expiring
-  device-login credentials, and delegates install flows to native toolchains
-  where appropriate.
-- CLI code lives under `rvs/`, organized by command area: `auth/`, `account/`,
-  `context/`, `runtime/`, `artifacts/`, `native/`, and `oci/`.
+## Contribution workflow
 
-## Working rules
+- Never commit or push directly to `main` or `release/vMAJOR.MINOR`. This rule
+  applies even though repository administrators retain a human-only emergency
+  bypass.
+- Create a short-lived branch, open a pull request, and use a rebase merge.
+  Merge commits and squash merges are not part of this repository's workflow.
+- Target `main` for normal development. Target the applicable
+  `release/vMAJOR.MINOR` branch only for a supported-line backport or hotfix.
+- Keep commits reviewable and self-contained. Rebase the branch when it is
+  behind its target; do not merge the target branch into it.
+- Preserve unrelated changes in a dirty worktree.
+- Do not commit, push, open or merge a pull request, tag, publish, release,
+  deploy, or otherwise mutate an external environment unless the user
+  explicitly requests that action.
 
-- Keep the authenticated user, named local profile, acting account, and artifact
-  target distinct. A profile is local CLI configuration, not the Ravenstash user.
-- Keep user credentials in the established credential-store flow: access tokens
-  and profile-scoped device refresh tokens live in the selected keyring, `pass`,
-  vault, or explicitly acknowledged plaintext store, while non-secret profile,
-  account, and target metadata lives in `~/.rvs/config.toml`.
-- Preserve native-toolchain delegation for install flows unless the task explicitly changes that contract.
-- Keep registry-specific protocol logic in `rvs/artifacts/registries/{pypi,npm,maven}.py`.
-- Keep the DevAPI control plane, package download, and package upload URLs
-  distinct in profile metadata; never derive registry routes from the DevAPI
-  URL. The CLI must never call Central directly.
-- Internal environment redirection may use one profile-scoped DevAPI URL and,
-  for DNS families shaped as `{service}.{domain}`, one repository-domain suffix.
-  When that suffix is configured, derive every PyPI, npm, Maven, mirror, push,
-  and OCI host from it; otherwise retain the exact endpoints discovered from
-  DevAPI. A suffix equal to or ending in `localhost` uses the literal
-  `localhost` host and distinguishes services through the discovered ports and
-  paths. Do not add per-format environment overrides.
+## Implementation rules
+
 - Keep command modules thin and route shared behavior through common helpers.
-- Do not hardcode local, dev, or staging Ravenstash endpoints. Support them
-  through user config, process environment variables, or ignored env files such
-  as `.rvs.env` and `~/.rvs/profiles.env`.
-- Keep packaging, APT publication policy, the installer Worker, and release
-  workflows reviewable in this repository. Secret values belong only in the
-  documented GitHub environments and originate in production Infisical.
+- Keep registry-specific protocol behavior in the applicable `rvs/artifacts/`
+  or `rvs/native/` module; do not mix it into unrelated command groups.
+- Do not hardcode development or staging endpoints. Support alternate
+  environments through user configuration or process environment variables.
 - Never add destructive APT reset behavior. Published versions and repository
-  objects are append-only; corrections use a new patch version.
-- Keep real-environment integration tests and their tokens in the Ravenstash QA
-  repository. It must not receive signing, storage-write,
-  or installer-deployment credentials.
+  objects are append-only; corrections receive a new patch version.
+- Release candidates use PEP 440 `X.Y.ZrcN` versions and GitHub prereleases.
+  They must not be added to stable APT suites.
+- A release bump is a dedicated final commit containing the version, matching
+  lockfile and installer updates, and release notes.
 
 ## Verification
 
-Run from `packages/rvs/` after code changes:
+Run from the repository root:
 
 ```bash
 .venv/bin/pytest
-.venv/bin/ruff check rvs tests
+.venv/bin/ruff format --check rvs tests packaging/repository packaging/scripts
+.venv/bin/ruff check rvs tests packaging/repository packaging/scripts
 .venv/bin/pyright
 ```
+
+For workflow or packaging changes, also run actionlint, shellcheck, the
+`packaging/repository` unit tests, and the installer Worker tests when those
+tools are available. Report files changed, checks run and their results, and
+any relevant check that could not be run.

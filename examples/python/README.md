@@ -1,6 +1,6 @@
 # rvs-demo-python
 
-Minimal Python project for testing the alpha `rvs` package repository commands.
+Minimal Python project for testing the `rvs` package repository commands.
 
 ## Local Work
 
