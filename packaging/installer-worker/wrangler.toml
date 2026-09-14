@@ -5,5 +5,6 @@ workers_dev = false
 preview_urls = false
 
 routes = [
-  { pattern = "https://ravenstash.com/install.sh*", zone_id = "8abdea8ce6cdf580e975775a7d8aabd3" }
+  { pattern = "https://ravenstash.com/install.sh*", zone_id = "8abdea8ce6cdf580e975775a7d8aabd3" },
+  { pattern = "https://ravenstash.com/install.ps1*", zone_id = "8abdea8ce6cdf580e975775a7d8aabd3" }
 ]

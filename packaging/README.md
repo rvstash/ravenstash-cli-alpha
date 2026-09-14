@@ -122,7 +122,10 @@ attested bytes in a dedicated
 Cloudflare Worker at `https://ravenstash.com/install.sh` and
 `https://ravenstash.com/install.ps1`. The Worker does not
 fetch executable shell code from R2, and the frontend website repository
-contains no installer implementation.
+contains no installer implementation. The dedicated installer-promotion
+workflow may use a newer reviewed Worker delivery policy, while it separately
+checks out the immutable release source and deploys only installer bytes that
+match that release's signed inventory.
 
 Source CI builds on native Linux amd64/arm64, macOS Intel/Apple Silicon, and
 Windows x64/ARM64 runners. Alpine musl builds run on both native architectures.

@@ -88,6 +88,13 @@ def test_apt_publisher_discovers_every_signed_architecture() -> None:
     assert 'relative="main/${architecture_directory}/${index}"' in publisher
 
 
+def test_installer_worker_binds_both_public_routes() -> None:
+    configuration = (ROOT / "packaging/installer-worker/wrangler.toml").read_text(encoding="utf-8")
+
+    assert 'pattern = "https://ravenstash.com/install.sh*"' in configuration
+    assert 'pattern = "https://ravenstash.com/install.ps1*"' in configuration
+
+
 def test_debian_package_installs_node_signature_verifier() -> None:
     manifest = (ROOT / "packaging" / "scripts" / "build-deb.sh").read_text(encoding="utf-8")
 

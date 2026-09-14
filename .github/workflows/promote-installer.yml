@@ -28,12 +28,19 @@ jobs:
     runs-on: ubuntu-24.04
     environment: installer-delivery
     steps:
+      - name: Check out installer delivery policy
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
       - name: Check out exact release source
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
           ref: ${{ inputs.source_sha }}
           persist-credentials: false
           fetch-depth: 0
+          path: release-source
 
       - name: Set up Node.js
         uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
@@ -57,12 +64,15 @@ jobs:
         run: |
           [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
           [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+([~+.-][A-Za-z0-9.-]+)?$ ]]
-          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
-          git merge-base --is-ancestor "$SOURCE_SHA" refs/remotes/origin/dev
-          python3 packaging/repository/channel_policy.py validate "$VERSION" "$CHANNEL"
-          test "$(sed -n 's/^version = "\([^"]*\)"/\1/p' pyproject.toml)" = "$VERSION"
-          grep -Fx "readonly release_version=\"${VERSION}\"" packaging/install.sh
-          grep -Fx "readonly compatibility_channel=\"${CHANNEL}\"" packaging/install.sh
+          test "$(git -C release-source rev-parse HEAD)" = "$SOURCE_SHA"
+          git -C release-source merge-base --is-ancestor "$SOURCE_SHA" refs/remotes/origin/dev
+          python3 release-source/packaging/repository/channel_policy.py \
+            validate "$VERSION" "$CHANNEL"
+          test "$(sed -n 's/^version = "\([^"]*\)"/\1/p' release-source/pyproject.toml)" = "$VERSION"
+          grep -Fx "readonly release_version=\"${VERSION}\"" \
+            release-source/packaging/install.sh
+          grep -Fx "readonly compatibility_channel=\"${CHANNEL}\"" \
+            release-source/packaging/install.sh
 
           tag="v${VERSION}"
           test "$(
@@ -125,9 +135,9 @@ jobs:
           grep -Fx "channel=${CHANNEL}" release-build/source-identity.txt
           grep -Eq '^promote_channel=(true|false)$' \
             release-build/source-identity.txt
-          cmp packaging/install.sh release-build/install.sh
+          cmp release-source/packaging/install.sh release-build/install.sh
           bash -n release-build/install.sh
-          cmp packaging/install.ps1 release-build/install.ps1
+          cmp release-source/packaging/install.ps1 release-build/install.ps1
 
       - name: Refuse an installer rollback
         env:
