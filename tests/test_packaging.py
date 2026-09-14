@@ -67,6 +67,22 @@ def test_apt_repository_script_exports_installable_public_key() -> None:
     assert '"${APT_REPO_DIR}/ravenstash-rvs.gpg"' in script
 
 
+def test_arm64_public_apt_gate_materializes_its_local_keyring() -> None:
+    workflow = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
+    arm64_gate = workflow.split("  verify-apt-arm64:\n", 1)[1].split(
+        "\n  deploy-installer:", 1
+    )[0]
+
+    prepare = "run: packaging/repository/prepare_keyring.sh"
+    keyring_mount = (
+        'packaging/repository/keys/ravenstash-rvs.gpg:'
+        '/usr/share/keyrings/ravenstash-rvs.gpg:ro'
+    )
+    assert prepare in arm64_gate
+    assert keyring_mount in arm64_gate
+    assert arm64_gate.index(prepare) < arm64_gate.index(keyring_mount)
+
+
 def test_debian_package_installs_node_signature_verifier() -> None:
     manifest = (ROOT / "packaging" / "scripts" / "build-deb.sh").read_text(encoding="utf-8")
 

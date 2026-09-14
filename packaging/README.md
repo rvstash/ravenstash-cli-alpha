@@ -92,6 +92,12 @@ every major series has one (`v1`, `v2`). Routine APT upgrades never cross that
 boundary. The legacy `stable` suite remains a permanent alias for `v0.3` so the
 initial alpha install cannot later roll into an incompatible release.
 
+Published suites contain separate `amd64` and `arm64` indexes. Immutable pool
+filenames carry a digest suffix, so index generation filters the package's
+declared architecture from its metadata instead of relying on Debian filename
+conventions. A newly added architecture may have an empty index in an older
+compatibility suite, while every suite must retain at least one valid package.
+
 The POSIX user-facing installer source is `packaging/install.sh`; the Windows
 source is `packaging/install.ps1`. On a Debian-family system the shell installer
 verifies the expected signing-key fingerprint,

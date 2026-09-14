@@ -594,6 +594,8 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
           persist-credentials: false
+      - name: Materialize and pin trusted keyring
+        run: packaging/repository/prepare_keyring.sh
       - name: Verify public ARM64 package installation
         env:
           EXPECTED_VERSION: ${{ inputs.version }}
