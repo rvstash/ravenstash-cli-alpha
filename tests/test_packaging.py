@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import shutil
 import subprocess
 import sys
 import tarfile
@@ -323,7 +324,7 @@ def test_debian_package_installs_node_signature_verifier() -> None:
     assert '"$STAGING/usr/bin/docker-credential-rvs"' in manifest
 
 
-@pytest.mark.skipif(os.name == "nt", reason="Debian version helper is POSIX-only")
+@pytest.mark.skipif(shutil.which("dpkg") is None, reason="dpkg is unavailable")
 def test_release_candidate_uses_debian_prerelease_ordering() -> None:
     helper = ROOT / "packaging/scripts/common.sh"
     converted = subprocess.run(
