@@ -31,7 +31,7 @@ def _isolate_config(monkeypatch, tmp_path: Path, content: str = "") -> None:
     monkeypatch.setattr(cfg_mod, "CONFIG_FILE", config_file)
 
 
-def test_root_help_exposes_clean_alpha_command_surface() -> None:
+def test_root_help_exposes_clean_public_command_surface() -> None:
     result = runner.invoke(app, ["--help"])
 
     assert result.exit_code == 0

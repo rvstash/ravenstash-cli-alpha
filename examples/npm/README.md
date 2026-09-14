@@ -1,6 +1,6 @@
 # rvs-demo-npm
 
-Minimal Node.js project for testing the alpha `rvs` package repository commands.
+Minimal Node.js project for testing the `rvs` package repository commands.
 
 ## Local Work
 

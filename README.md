@@ -15,9 +15,9 @@ curl -fsSL https://ravenstash.com/install.sh | bash
 rvs --version
 ```
 
-The currently published alpha installer supports Linux amd64. Native Linux
-arm64, Alpine, macOS, Windows, Nix, and WSL2 artifacts are gated on the first
-public release certification described in the compatibility policy.
+Release artifacts are built for Linux amd64/arm64 (glibc and musl), macOS Intel
+and Apple Silicon, Windows x64/ARM64, and Nix. See the compatibility policy for
+the support status of each installation path.
 
 For supported systems and upgrade instructions, see the
 [CLI overview](https://docs.ravenstash.com/cli/overview/).
@@ -97,6 +97,8 @@ repository. Native logins may share a host credential store; the templates use
 separate temporary OCI configs. A logout against a shared store can affect other tools.
 
 `rvs update --to SERIES` previews a newer release series. Only `--apply` installs it.
+To test a signed prerelease on a Debian-family installation, use
+`rvs update --candidate X.Y.ZrcN`; add `--apply` after reviewing it.
 
 ## Profiles and runtimes
 
@@ -120,13 +122,18 @@ rvs runtime list
 
 - [Quickstart](docs/quickstart.md)
 - [Command reference](docs/command-reference.md)
+- [Changelog](CHANGELOG.md)
+- [Security policy](SECURITY.md)
+- [Support](SUPPORT.md)
 - [Public Ravenstash documentation](https://docs.ravenstash.com/cli/overview/)
 
 ## Contributing
 
-All changes go through a short-lived branch and a pull request to `dev`; direct
-pushes to `dev` are not part of the repository workflow. See
-[CONTRIBUTING.md](CONTRIBUTING.md) for the checks, merge, and release lifecycle.
+All changes go through a short-lived branch and a pull request to `main` or a
+supported maintenance branch. Pull requests are rebased and merged without a
+merge commit. See [CONTRIBUTING.md](CONTRIBUTING.md) for the checks, branch
+model, and release lifecycle, and [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) for
+community expectations.
 
 Run the repository checks from this directory:
 
