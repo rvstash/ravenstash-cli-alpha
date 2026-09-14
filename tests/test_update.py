@@ -120,7 +120,7 @@ def test_candidate_apply_installs_verified_local_package(monkeypatch: Any, tmp_p
     assert result.exit_code == 0, result.output
     assert len(calls) == 1
     assert calls[0][:3] == [str(apt_get), "install", "--yes"]
-    assert calls[0][3].endswith("/rvs_0.14.0rc1_amd64.deb")
+    assert Path(calls[0][3]).name == "rvs_0.14.0rc1_amd64.deb"
 
 
 def test_candidate_rejects_stable_version_and_series_option(monkeypatch: Any) -> None:
