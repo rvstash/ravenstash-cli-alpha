@@ -79,30 +79,38 @@ jobs:
       - name: Build and smoke-test native bundle
         if: inputs.kind == 'portable'
         shell: bash
+        env:
+          TARGET: ${{ inputs.target }}
+          VERSION: ${{ inputs.version }}
         run: |
           uv sync --frozen --python 3.14 --group release
           uv run python packaging/scripts/build_portable.py
-          bundle="$(find build/release -mindepth 1 -maxdepth 1 -type d -name 'rvs-v*' -print -quit)"
-          test -n "$bundle"
+          bundle="build/release/rvs-v${VERSION}-${TARGET}"
+          test -d "$bundle"
           uv run python packaging/scripts/smoke_portable.py "$bundle"
 
       - name: Build and smoke-test musl bundle
         if: inputs.kind == 'musl'
         shell: bash
+        env:
+          TARGET: ${{ inputs.target }}
+          VERSION: ${{ inputs.version }}
         run: |
           docker run --rm \
+            --env TARGET \
+            --env VERSION \
             --volume "$PWD:/workspace" \
             --workdir /workspace \
             python@sha256:c6ead215bfd31f1e433d968853b7a769989117115b728874824e6c0a27cb96fc \
             /bin/sh -euc '
-              apk add --no-cache binutils build-base libffi-dev
+              apk add --no-cache bash binutils build-base libffi-dev
               pip install --no-cache-dir uv==0.11.24
               export UV_PROJECT_ENVIRONMENT=/tmp/rvs-musl-venv
               uv sync --frozen --python 3.14 --group release
               uv run pytest
               uv run python packaging/scripts/build_portable.py
-              bundle="$(find build/release -mindepth 1 -maxdepth 1 -type d -name "rvs-v*" -print -quit)"
-              test -n "$bundle"
+              bundle="build/release/rvs-v${VERSION}-${TARGET}"
+              test -d "$bundle"
               uv run python packaging/scripts/smoke_portable.py "$bundle"
             '
 
