@@ -124,6 +124,10 @@ rvs runtime list
 
 ## Contributing
 
+All changes go through a short-lived branch and a pull request to `dev`; direct
+pushes to `dev` are not part of the repository workflow. See
+[CONTRIBUTING.md](CONTRIBUTING.md) for the checks, merge, and release lifecycle.
+
 Run the repository checks from this directory:
 
 ```bash

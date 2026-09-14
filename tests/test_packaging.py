@@ -164,6 +164,31 @@ def test_top_level_workflow_run_names_are_distinct_and_purpose_first() -> None:
         assert workflow["run-name"].startswith(prefix)
 
 
+def test_protected_branch_has_stable_aggregate_ci_gates() -> None:
+    source_jobs = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8"))[
+        "jobs"
+    ]
+    platform_jobs = yaml.safe_load(
+        (ROOT / ".github/workflows/platform-ci.yml").read_text(encoding="utf-8")
+    )["jobs"]
+    policy_jobs = yaml.safe_load(
+        (ROOT / ".github/workflows/release-policy-ci.yml").read_text(encoding="utf-8")
+    )["jobs"]
+
+    source_gate = source_jobs["source-ci-gate"]
+    assert source_gate["name"] == "Source CI gate"
+    assert set(source_gate["needs"]) == {
+        "verify-python-314",
+        "ubuntu-2004-package-compatibility",
+        "linux-glibc-portable-compatibility",
+    }
+
+    platform_gate = platform_jobs["platform-ci-gate"]
+    assert platform_gate["name"] == "Platform CI gate"
+    assert set(platform_gate["needs"]) == {"source", "alpine", "nix"}
+    assert policy_jobs["validate"]["name"] == "Release policy gate"
+
+
 def test_publication_graph_parallelizes_safe_jobs_and_serializes_mutations() -> None:
     publication = yaml.safe_load(
         (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
