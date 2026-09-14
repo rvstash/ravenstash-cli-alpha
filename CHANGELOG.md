@@ -19,7 +19,8 @@ All notable user-facing changes to `rvs` are recorded here. The format follows
   `release/vMAJOR.MINOR` branches and matching APT suites.
 - CI runs for ready pull requests and protected-branch commits, not ordinary
   feature-branch pushes.
-- Pull requests use rebase merges exclusively.
+- Pull requests use one verified squash commit or a local fast-forward landing;
+  merge commits and GitHub rebase merges are excluded.
 - The project and its release artifacts are now licensed under Apache-2.0.
 - Runtime dependencies pin `cryptography` and `idna` to their reviewed exact
   versions.

@@ -18,15 +18,19 @@ control-plane URL separate from package download and upload URLs.
 
 ## Contribution workflow
 
-- Never commit or push directly to `main` or `release/vMAJOR.MINOR`. This rule
-  applies even though repository administrators retain a human-only emergency
-  bypass.
-- Create a short-lived branch, open a pull request, and use a rebase merge.
-  Merge commits and squash merges are not part of this repository's workflow.
+- Prefer a short-lived branch and pull request for normal work. After approval
+  and successful required gates, use exactly one of two linear landing modes:
+  create one verified squash commit, or locally run `git merge --ff-only` and
+  push the protected branch. The fast-forward mode preserves the reviewed
+  commit object IDs and signatures; squashing intentionally replaces them.
+- Do not use GitHub's **Rebase and merge** or create merge commits. Never
+  force-push a protected branch. On this alpha repository, an explicitly
+  authorized maintainer or agent may also push a direct linear update.
 - Target `main` for normal development. Target the applicable
   `release/vMAJOR.MINOR` branch only for a supported-line backport or hotfix.
-- Keep commits reviewable and self-contained. Rebase the branch when it is
-  behind its target; do not merge the target branch into it.
+- Keep commits reviewable and self-contained. If a branch cannot fast-forward,
+  either use the allowed squash mode or have the contributor update and re-sign
+  the branch; GitHub's rebase operation is not an allowed landing mode.
 - Preserve unrelated changes in a dirty worktree.
 - Do not commit, push, open or merge a pull request, tag, publish, release,
   deploy, or otherwise mutate an external environment unless the user
