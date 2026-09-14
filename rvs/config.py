@@ -56,6 +56,7 @@ import os
 import re
 import tempfile
 import tomllib
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from ipaddress import ip_address
 from pathlib import Path
@@ -79,7 +80,10 @@ SESSIONS_DIR_NAME = "sessions"
 
 DEFAULT_API_URL = "https://api.ravenstash.com"
 DEFAULT_REPOSITORY_DOMAIN = "rvsta.sh"
+BASE_CONFIG_VERSION = 5
 CURRENT_CONFIG_VERSION = 5
+ConfigMigration = Callable[[dict], None]
+_CONFIG_MIGRATIONS: dict[int, ConfigMigration] = {}
 _UNIQUE_ID_FRAGMENT = r"[23456789abcdefghijkmnpqrstuvwxyz]{8}"
 _ACCOUNT_REF_RE = re.compile(rf"^ac_{_UNIQUE_ID_FRAGMENT}$")
 _INTERNAL_NAMESPACE_REF_RE = re.compile(rf"^in_{_UNIQUE_ID_FRAGMENT}$")
@@ -720,18 +724,43 @@ def _load_raw() -> dict:
         return tomllib.load(f)
 
 
-def _validate_config_version(raw: dict) -> None:
-    """Accept only the current public-reference config format."""
+def _migrate_raw_config(raw: dict) -> bool:
+    """Apply registered migrations from the v5 public-format baseline."""
     if not raw:
         raw["config_version"] = CURRENT_CONFIG_VERSION
-        return
+        return False
     version = raw.get("config_version")
     if isinstance(version, bool) or not isinstance(version, int):
         raise ValueError("config_version must be an integer")
-    if version != CURRENT_CONFIG_VERSION:
+    if version < BASE_CONFIG_VERSION:
         raise ValueError(
-            f"config version {version} is unsupported; reconfigure with this rvs release"
+            f"config version {version} predates the supported v{BASE_CONFIG_VERSION} baseline; "
+            "reconfigure with this rvs release"
         )
+    if version > CURRENT_CONFIG_VERSION:
+        raise ValueError(
+            f"config version {version} requires a newer rvs release "
+            f"(this release supports version {CURRENT_CONFIG_VERSION})"
+        )
+
+    changed = False
+    while version < CURRENT_CONFIG_VERSION:
+        migration = _CONFIG_MIGRATIONS.get(version)
+        if migration is None:
+            raise RuntimeError(f"rvs has no config migration from version {version}")
+        migration(raw)
+        next_version = raw.get("config_version")
+        if (
+            isinstance(next_version, bool)
+            or not isinstance(next_version, int)
+            or next_version != version + 1
+        ):
+            raise RuntimeError(
+                f"config migration from version {version} did not produce version {version + 1}"
+            )
+        version = next_version
+        changed = True
+    return changed
 
 
 def _validate_repository_target_identity(
@@ -850,6 +879,27 @@ def _write_raw(raw: dict) -> None:
             temporary_path.unlink(missing_ok=True)
 
 
+def _backup_pre_migration_config(version: int) -> None:
+    """Create one owner-only backup before replacing an older config."""
+    backup_path = CONFIG_FILE.with_name(f"config.v{version}.toml.bak")
+    try:
+        descriptor = os.open(
+            backup_path,
+            os.O_WRONLY | os.O_CREAT | os.O_EXCL,
+            0o600,
+        )
+    except FileExistsError:
+        return
+    try:
+        with os.fdopen(descriptor, "wb") as backup:
+            backup.write(CONFIG_FILE.read_bytes())
+            backup.flush()
+            os.fsync(backup.fileno())
+    except Exception:
+        backup_path.unlink(missing_ok=True)
+        raise
+
+
 def stored_profile_api_url(profile_name: str) -> str | None:
     """Return a profile's persisted DevAPI URL without environment overrides."""
     load()
@@ -867,8 +917,10 @@ def stored_profile_api_url(profile_name: str) -> str | None:
 
 
 def load() -> RvsConfig:
+    config_exists = CONFIG_FILE.exists()
     raw = _load_raw()
-    _validate_config_version(raw)
+    original_version = raw.get("config_version")
+    migrated = _migrate_raw_config(raw)
     _validate_raw_config(raw)
     cfg = RvsConfig(
         default_profile=raw.get("default_profile", "default"),
@@ -910,6 +962,11 @@ def load() -> RvsConfig:
             },
         )
 
+    if migrated and config_exists:
+        if not isinstance(original_version, int) or isinstance(original_version, bool):
+            raise RuntimeError("validated config migration lost its original version")
+        _backup_pre_migration_config(original_version)
+        _write_raw(raw)
     return cfg
 
 

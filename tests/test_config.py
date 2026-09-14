@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import stat
+import tomllib
 from typing import TYPE_CHECKING
 
 import pytest
@@ -227,19 +228,84 @@ registry_base_url = "https://images.example.test"
     assert endpoints.oci_registry_base_url == "https://images.example.test"
 
 
-def test_load_rejects_non_current_config_without_rewriting_it(
+@pytest.mark.parametrize(
+    ("version", "message"),
+    [
+        (4, "predates the supported v5 baseline"),
+        (999, "requires a newer rvs release"),
+    ],
+)
+def test_load_rejects_versions_outside_the_supported_migration_range(
+    monkeypatch,
+    tmp_path: Path,
+    version: int,
+    message: str,
+) -> None:
+    config_dir, config_file = _point_config(monkeypatch, tmp_path)
+    config_dir.mkdir()
+    original = f'config_version = {version}\ndefault_profile = "default"\n'
+    config_file.write_text(original, encoding="utf-8")
+
+    with pytest.raises(ValueError, match=message):
+        cfg_mod.load()
+
+    assert config_file.read_text(encoding="utf-8") == original
+
+
+def test_registered_future_migration_is_validated_backed_up_and_persisted(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
     config_dir, config_file = _point_config(monkeypatch, tmp_path)
     config_dir.mkdir()
-    original = 'config_version = 999\ndefault_profile = "default"\n'
+    original = 'config_version = 5\ndefault_profile = "default"\n'
+    config_file.write_text(original, encoding="utf-8")
+    original_inode = config_file.stat().st_ino
+
+    def migrate_v5_to_v6(raw: dict) -> None:
+        raw["future_setting"] = "migrated"
+        raw["config_version"] = 6
+
+    monkeypatch.setattr(cfg_mod, "CURRENT_CONFIG_VERSION", 6)
+    monkeypatch.setitem(cfg_mod._CONFIG_MIGRATIONS, 5, migrate_v5_to_v6)
+
+    loaded = cfg_mod.load()
+
+    assert loaded.default_profile == "default"
+    migrated = tomllib.loads(config_file.read_text(encoding="utf-8"))
+    assert migrated == {
+        "config_version": 6,
+        "default_profile": "default",
+        "future_setting": "migrated",
+    }
+    assert config_file.stat().st_ino != original_inode
+    backup = config_dir / "config.v5.toml.bak"
+    assert backup.read_text(encoding="utf-8") == original
+    if os.name != "nt":
+        assert stat.S_IMODE(backup.stat().st_mode) == 0o600
+
+
+def test_failed_future_migration_does_not_touch_the_source(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    config_dir, config_file = _point_config(monkeypatch, tmp_path)
+    config_dir.mkdir()
+    original = 'config_version = 5\ndefault_profile = "default"\n'
     config_file.write_text(original, encoding="utf-8")
 
-    with pytest.raises(ValueError, match="unsupported; reconfigure"):
+    def migrate_v5_to_invalid_v6(raw: dict) -> None:
+        raw["config_version"] = 6
+        raw["profiles"] = "invalid"
+
+    monkeypatch.setattr(cfg_mod, "CURRENT_CONFIG_VERSION", 6)
+    monkeypatch.setitem(cfg_mod._CONFIG_MIGRATIONS, 5, migrate_v5_to_invalid_v6)
+
+    with pytest.raises(ValueError, match="profiles must be a table"):
         cfg_mod.load()
 
     assert config_file.read_text(encoding="utf-8") == original
+    assert not (config_dir / "config.v5.toml.bak").exists()
 
 
 def test_repository_domain_rejects_urls_and_ports(monkeypatch, tmp_path: Path) -> None:
