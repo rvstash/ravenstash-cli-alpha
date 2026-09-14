@@ -8,6 +8,9 @@ Operational guidance for the `rvs` CLI package.
   `../../AGENTS.md` and the authoritative documents it identifies.
 - Reviews and investigations are read-only. For implementation, complete the
   authorized local change and run the smallest relevant verification.
+- Never commit or push directly to `dev`. Create a short-lived branch and use a
+  pull request; treat authorization to commit or push as authorization for that
+  branch workflow unless the human explicitly directs an emergency bypass.
 - Do not commit, push, release, publish, or mutate a real environment unless the
   user explicitly requests it. Report changed files and verification results.
 

@@ -145,3 +145,22 @@ jobs:
           nix build ".#packages.${{ matrix.system }}.default" --no-write-lock-file
           ./result/bin/rvs --version
           ./result/bin/rvs --help >/dev/null
+
+  platform-ci-gate:
+    name: Platform CI gate
+    if: ${{ always() }}
+    needs:
+      - source
+      - alpine
+      - nix
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Require every platform check
+        env:
+          SOURCE_RESULT: ${{ needs.source.result }}
+          ALPINE_RESULT: ${{ needs.alpine.result }}
+          NIX_RESULT: ${{ needs.nix.result }}
+        run: |
+          test "$SOURCE_RESULT" = success
+          test "$ALPINE_RESULT" = success
+          test "$NIX_RESULT" = success

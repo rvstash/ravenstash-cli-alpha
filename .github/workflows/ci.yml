@@ -138,3 +138,22 @@ jobs:
             --volume "$PWD/packaging/scripts/smoke-portable-bundle.sh:/smoke.sh:ro" \
             "${{ matrix.image }}" \
             /bin/bash /smoke.sh --bundle /bundle
+
+  source-ci-gate:
+    name: Source CI gate
+    if: ${{ always() }}
+    needs:
+      - verify-python-314
+      - ubuntu-2004-package-compatibility
+      - linux-glibc-portable-compatibility
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Require every source check
+        env:
+          PYTHON_RESULT: ${{ needs.verify-python-314.result }}
+          UBUNTU_2004_RESULT: ${{ needs.ubuntu-2004-package-compatibility.result }}
+          PORTABLE_RESULT: ${{ needs.linux-glibc-portable-compatibility.result }}
+        run: |
+          test "$PYTHON_RESULT" = success
+          test "$UBUNTU_2004_RESULT" = success
+          test "$PORTABLE_RESULT" = success
