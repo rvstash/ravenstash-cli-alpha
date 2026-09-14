@@ -146,6 +146,24 @@ def test_release_keeps_target_handoffs_isolated() -> None:
     assert set(jobs["assemble"]["needs"]) == set(build_jobs)
 
 
+def test_top_level_workflow_run_names_are_distinct_and_purpose_first() -> None:
+    expected_prefixes = {
+        "ci.yml": "Source CI ·",
+        "platform-ci.yml": "Platform CI ·",
+        "platform-certification.yml": "Platform certification ·",
+        "promote-installer.yml": "Promote rvs ",
+        "refresh-apt.yml": "Refresh APT metadata ·",
+        "release-policy-ci.yml": "Release policy ·",
+        "release.yml": "Release rvs ",
+    }
+
+    for filename, prefix in expected_prefixes.items():
+        workflow = yaml.safe_load(
+            (ROOT / ".github/workflows" / filename).read_text(encoding="utf-8")
+        )
+        assert workflow["run-name"].startswith(prefix)
+
+
 def test_publication_graph_parallelizes_safe_jobs_and_serializes_mutations() -> None:
     publication = yaml.safe_load(
         (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")

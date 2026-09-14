@@ -1,4 +1,5 @@
 name: refresh-apt-metadata
+run-name: Refresh APT metadata · ${{ github.event_name }} · ${{ github.ref_name }} · ${{ github.sha }}
 
 on:
   schedule:
