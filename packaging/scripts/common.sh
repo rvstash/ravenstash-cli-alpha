@@ -22,6 +22,20 @@ with Path("pyproject.toml").open("rb") as f:
 PY
 }
 
+rvs_debian_version() {
+  local version="${1:-$(rvs_version)}"
+  if [[ "$version" =~ ^([0-9]+\.[0-9]+\.[0-9]+)rc([0-9]+)$ ]]; then
+    printf '%s~rc%s\n' "${BASH_REMATCH[1]}" "${BASH_REMATCH[2]}"
+    return
+  fi
+  if [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    printf '%s\n' "$version"
+    return
+  fi
+  echo "error: unsupported rvs release version '$version'" >&2
+  return 2
+}
+
 rvs_arch() {
   case "$(uname -m)" in
     x86_64|amd64) echo "amd64" ;;

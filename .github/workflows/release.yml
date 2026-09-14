@@ -1,19 +1,31 @@
 name: release
-run-name: Release rvs v${{ inputs.version }} · ${{ inputs.channel }} · ${{ inputs.source_sha }}
+run-name: ${{ inputs.kind == 'candidate' && 'Candidate' || 'Release' }} rvs v${{ inputs.version }} · ${{ inputs.source_branch }} · ${{ inputs.source_sha }}
 
 on:
   workflow_dispatch:
     inputs:
       source_sha:
-        description: Exact 40-character source commit from the dev branch
+        description: Exact 40-character source commit from the selected protected branch
         type: string
         required: true
-      version:
-        description: Exact semantic version without v prefix
+      source_branch:
+        description: Protected source branch (main or release/vMAJOR.MINOR)
         type: string
+        required: true
+        default: main
+      version:
+        description: Stable X.Y.Z or candidate X.Y.ZrcN version, without v prefix
+        type: string
+        required: true
+      kind:
+        description: Publish a stable release or a signed GitHub prerelease candidate
+        type: choice
+        options:
+          - candidate
+          - stable
         required: true
       channel:
-        description: Exact compatibility channel (v0.Y before 1.0, vMAJOR afterwards)
+        description: Exact vMAJOR.MINOR compatibility series
         type: string
         required: true
 
@@ -44,14 +56,24 @@ jobs:
           SOURCE_SHA: ${{ inputs.source_sha }}
           VERSION: ${{ inputs.version }}
           CHANNEL: ${{ inputs.channel }}
+          KIND: ${{ inputs.kind }}
+          SOURCE_BRANCH: ${{ inputs.source_branch }}
         run: |
-          test "$GITHUB_REF" = refs/heads/dev
+          test "$GITHUB_REF" = refs/heads/main
           [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
-          [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+([~+.-][A-Za-z0-9.-]+)?$ ]]
-          test "$GITHUB_SHA" = "$SOURCE_SHA"
+          [[ "$SOURCE_BRANCH" =~ ^(main|release/v[0-9]+\.[0-9]+)$ ]]
+          if [[ "$KIND" == stable ]]; then
+            [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          else
+            test "$KIND" = candidate
+            [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+rc[1-9][0-9]*$ ]]
+          fi
           test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
-          git merge-base --is-ancestor "$SOURCE_SHA" refs/remotes/origin/dev
+          git merge-base --is-ancestor "$SOURCE_SHA" "refs/remotes/origin/${SOURCE_BRANCH}"
           python3 packaging/repository/channel_policy.py validate "$VERSION" "$CHANNEL"
+          if [[ "$SOURCE_BRANCH" == release/* ]]; then
+            test "$SOURCE_BRANCH" = "release/${CHANNEL}"
+          fi
           test "$(sed -n 's/^version = "\([^"]*\)"/\1/p' pyproject.toml)" = "$VERSION"
           grep -Fx "readonly release_version=\"${VERSION}\"" packaging/install.sh
           grep -Fx "readonly compatibility_channel=\"${CHANNEL}\"" packaging/install.sh
@@ -228,6 +250,8 @@ jobs:
           SOURCE_SHA: ${{ inputs.source_sha }}
           VERSION: ${{ inputs.version }}
           CHANNEL: ${{ inputs.channel }}
+          KIND: ${{ inputs.kind }}
+          SOURCE_BRANCH: ${{ inputs.source_branch }}
         run: |
           install -d build/release
           expected=(
@@ -257,6 +281,8 @@ jobs:
             "source_sha=${SOURCE_SHA}" \
             "version=${VERSION}" \
             "channel=${CHANNEL}" \
+            "release_kind=${KIND}" \
+            "source_branch=${SOURCE_BRANCH}" \
             "release_run_id=${GITHUB_RUN_ID}" \
             "release_workflow=.github/workflows/release.yml" \
             > build/release/source-identity.txt
@@ -279,6 +305,8 @@ jobs:
             echo "- Source: \`${{ inputs.source_sha }}\`"
             echo "- Version: \`${VERSION}\`"
             echo "- Channel: \`${{ inputs.channel }}\`"
+            echo "- Kind: \`${{ inputs.kind }}\`"
+            echo "- Source branch: \`${{ inputs.source_branch }}\`"
             echo
             echo '```text'
             sed 's/^/  /' "build/release/rvs-v${VERSION}-checksums.txt"
@@ -296,6 +324,7 @@ jobs:
   restore-apt:
     name: Restore authenticated APT state
     needs: validate
+    if: inputs.kind == 'stable'
     runs-on: ubuntu-24.04
     environment: apt-storage
     steps:
@@ -336,10 +365,11 @@ jobs:
           retention-days: 1
 
   sign:
-    name: Sign APT delta and portable inventory
+    name: Sign release inventory${{ inputs.kind == 'stable' && ' and APT state' || '' }}
     needs:
       - assemble
       - restore-apt
+    if: ${{ always() && needs.assemble.result == 'success' && (inputs.kind == 'candidate' || needs.restore-apt.result == 'success') }}
     runs-on: ubuntu-24.04
     environment: apt-signing
     permissions:
@@ -366,6 +396,7 @@ jobs:
           name: rvs-release-${{ inputs.source_sha }}
           path: build
       - name: Download authenticated prior state
+        if: inputs.kind == 'stable'
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
           name: authenticated-prior-apt-${{ github.run_id }}
@@ -375,8 +406,10 @@ jobs:
           VERSION: ${{ inputs.version }}
           SOURCE_SHA: ${{ inputs.source_sha }}
           CHANNEL: ${{ inputs.channel }}
+          KIND: ${{ inputs.kind }}
+          SOURCE_BRANCH: ${{ inputs.source_branch }}
           RELEASE_RUN_ID: ${{ github.run_id }}
-          SIGNER_IDENTITY: https://github.com/${{ github.repository }}/.github/workflows/release.yml@refs/heads/dev
+          SIGNER_IDENTITY: https://github.com/${{ github.repository }}/.github/workflows/release.yml@refs/heads/main
         run: |
           cosign verify-blob \
             --bundle "build/rvs-v${VERSION}-checksums.sigstore.json" \
@@ -391,19 +424,24 @@ jobs:
           grep -Fx "source_sha=${SOURCE_SHA}" build/source-identity.txt
           grep -Fx "version=${VERSION}" build/source-identity.txt
           grep -Fx "channel=${CHANNEL}" build/source-identity.txt
+          grep -Fx "release_kind=${KIND}" build/source-identity.txt
+          grep -Fx "source_branch=${SOURCE_BRANCH}" build/source-identity.txt
           grep -Fx "release_run_id=${RELEASE_RUN_ID}" build/source-identity.txt
           grep -Fx "release_workflow=.github/workflows/release.yml" \
             build/source-identity.txt
           test "$(find build -maxdepth 1 -type f -name "rvs_${VERSION}_amd64.deb" | wc -l)" = 1
           test "$(find build -maxdepth 1 -type f -name "rvs_${VERSION}_arm64.deb" | wc -l)" = 1
-          python3 packaging/repository/verify_apt.py \
-            prior packaging/repository/keys/ravenstash-rvs.gpg
-      - name: Append both architectures and sign once
+          if [[ "$KIND" == stable ]]; then
+            python3 packaging/repository/verify_apt.py \
+              prior packaging/repository/keys/ravenstash-rvs.gpg
+          fi
+      - name: Sign portable inventory and stable APT state
         env:
           RVS_APT_GPG_PRIVATE_KEY: ${{ secrets.RVS_APT_GPG_PRIVATE_KEY }}
           RVS_APT_GPG_PASSPHRASE: ${{ secrets.RVS_APT_GPG_PASSPHRASE }}
           VERSION: ${{ inputs.version }}
           CHANNEL: ${{ inputs.channel }}
+          KIND: ${{ inputs.kind }}
         run: |
           export GNUPGHOME="$RUNNER_TEMP/rvs-apt-signing"
           install -d -m 0700 "$GNUPGHOME"
@@ -416,14 +454,16 @@ jobs:
           passphrase_file="$RUNNER_TEMP/rvs-apt-passphrase"
           printf '%s' "$RVS_APT_GPG_PASSPHRASE" > "$passphrase_file"
           chmod 0600 "$passphrase_file"
-          RVS_APT_GPG_KEY_ID="$key_id" \
-          RVS_APT_GPG_FINGERPRINT="$(tr -d '[:space:]' < packaging/repository/keys/fingerprint.txt)" \
-          RVS_APT_GPG_PASSPHRASE_FILE="$passphrase_file" \
-          RVS_APT_CHANNEL="$CHANNEL" \
-            packaging/repository/append_and_sign_apt.sh \
-              prior signed packaging/repository/keys/ravenstash-rvs.gpg \
-              "build/rvs_${VERSION}_amd64.deb" \
-              "build/rvs_${VERSION}_arm64.deb"
+          if [[ "$KIND" == stable ]]; then
+            RVS_APT_GPG_KEY_ID="$key_id" \
+            RVS_APT_GPG_FINGERPRINT="$(tr -d '[:space:]' < packaging/repository/keys/fingerprint.txt)" \
+            RVS_APT_GPG_PASSPHRASE_FILE="$passphrase_file" \
+            RVS_APT_CHANNEL="$CHANNEL" \
+              packaging/repository/append_and_sign_apt.sh \
+                prior signed packaging/repository/keys/ravenstash-rvs.gpg \
+                "build/rvs_${VERSION}_amd64.deb" \
+                "build/rvs_${VERSION}_arm64.deb"
+          fi
           install -d -m 0755 portable
           install -m 0644 \
             "build/rvs-v${VERSION}-checksums.txt" \
@@ -441,6 +481,7 @@ jobs:
           rm -f "$passphrase_file"
           rm -rf "$GNUPGHOME"
       - name: Upload signed APT handoff
+        if: inputs.kind == 'stable'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: signed-apt-${{ github.run_id }}
@@ -460,6 +501,7 @@ jobs:
   publish-apt:
     name: Publish signed APT state
     needs: sign
+    if: inputs.kind == 'stable'
     runs-on: ubuntu-24.04
     environment: apt-storage
     permissions:
@@ -500,6 +542,7 @@ jobs:
   verify-apt:
     name: Verify APT · ${{ matrix.architecture }}
     needs: publish-apt
+    if: inputs.kind == 'stable'
     strategy:
       fail-fast: false
       matrix:
@@ -548,8 +591,11 @@ jobs:
             '
 
   publish-github-release:
-    name: Publish immutable GitHub release
-    needs: verify-apt
+    name: Publish immutable GitHub ${{ inputs.kind == 'candidate' && 'prerelease' || 'release' }}
+    needs:
+      - sign
+      - verify-apt
+    if: ${{ always() && needs.sign.result == 'success' && (inputs.kind == 'candidate' || needs.verify-apt.result == 'success') }}
     runs-on: ubuntu-24.04
     permissions:
       actions: read
@@ -575,16 +621,22 @@ jobs:
           SOURCE_SHA: ${{ inputs.source_sha }}
           VERSION: ${{ inputs.version }}
           CHANNEL: ${{ inputs.channel }}
+          KIND: ${{ inputs.kind }}
         run: |
           tag="v${VERSION}"
           packaging/scripts/assert-github-release-slot-empty.sh \
             "$GITHUB_REPOSITORY" "$tag"
+          prerelease=()
+          if [[ "$KIND" == candidate ]]; then
+            prerelease=(--prerelease)
+          fi
           gh release create "$tag" \
             --repo "$GITHUB_REPOSITORY" \
             --target "$SOURCE_SHA" \
             --draft \
+            "${prerelease[@]}" \
             --title "$tag" \
-            --notes "Ravenstash CLI alpha ${tag} on ${CHANNEL}; exact source ${GITHUB_REPOSITORY}@${SOURCE_SHA}." \
+            --notes "Ravenstash CLI ${KIND} ${tag} on ${CHANNEL}; exact source ${GITHUB_REPOSITORY}@${SOURCE_SHA}." \
             build/*
           gh release edit "$tag" \
             --repo "$GITHUB_REPOSITORY" \

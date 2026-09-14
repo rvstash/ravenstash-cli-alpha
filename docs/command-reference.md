@@ -145,6 +145,8 @@ content type.
 | `rvs update` | Checks for a CLI update. |
 | `rvs update --apply` | Installs an update in the current release series. |
 | `rvs update --to SERIES --apply` | Moves to a newer release series after confirmation. |
+| `rvs update --candidate X.Y.ZrcN` | Verifies and previews a signed GitHub release candidate. |
+| `rvs update --candidate X.Y.ZrcN --apply` | Installs the verified candidate package. |
 
 See the [public CLI documentation](https://docs.ravenstash.com/cli/overview/) for
 task-focused guides and examples.
@@ -180,7 +182,11 @@ Custom mirror creation is available in the webapp. Existing custom mirrors remai
 available to CLI listing, selection, age changes, deletion, and upstream attachment.
 
 `rvs update --to SERIES` previews the selected newer release series without changing
-the active APT source. Add `--apply` to install. `--yes/-y` requires `--apply`.
+the active APT source. Add `--apply` to install. On Debian-family systems,
+`rvs update --candidate X.Y.ZrcN` downloads and verifies a signed GitHub
+prerelease without changing the configured APT series; add `--apply` to install
+it. `--candidate` and `--to` are mutually exclusive. `--yes/-y` requires
+`--apply`.
 
 Multi-format options accept comma-separated values, repeated flags, or both:
 

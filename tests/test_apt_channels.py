@@ -15,9 +15,9 @@ from rvs.apt_channels import (
         ("0.3.0", "v0.3"),
         ("0.3.9~rc.1", "v0.3"),
         ("0.4.0", "v0.4"),
-        ("1.0.0", "v1"),
-        ("1.12.3", "v1"),
-        ("2.0.0", "v2"),
+        ("1.0.0", "v1.0"),
+        ("1.12.3", "v1.12"),
+        ("2.0.0", "v2.0"),
     ),
 )
 def test_channel_for_version(version: str, channel: str) -> None:
@@ -32,4 +32,4 @@ def test_invalid_channels_are_rejected(value: str) -> None:
 
 
 def test_channel_order_crosses_pre_one_and_stable_boundaries() -> None:
-    assert channel_order("v0.3") < channel_order("0.4") < channel_order("v1")
+    assert channel_order("v0.3") < channel_order("0.4") < channel_order("v1.0")

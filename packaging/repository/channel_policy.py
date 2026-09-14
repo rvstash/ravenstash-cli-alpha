@@ -12,8 +12,10 @@ from pathlib import Path
 from typing import Any
 
 
-CHANNEL_PATTERN = re.compile(r"^v(?:(0)\.([0-9]+)|([1-9][0-9]*))$")
-VERSION_PATTERN = re.compile(r"^([0-9]+)\.([0-9]+)\.([0-9]+)(?:[~+.-][A-Za-z0-9.-]+)?$")
+CHANNEL_PATTERN = re.compile(r"^v([0-9]+)\.([0-9]+)$")
+VERSION_PATTERN = re.compile(
+    r"^([0-9]+)\.([0-9]+)\.([0-9]+)(?:rc[1-9][0-9]*|[~+.-][A-Za-z0-9.-]+)?$"
+)
 LEGACY_ALIASES = {"stable": "v0.3"}
 
 
@@ -22,7 +24,7 @@ def channel_for_version(version: str) -> str:
     if match is None:
         raise ValueError(f"unsupported rvs version: {version}")
     major, minor, _patch = (int(value) for value in match.groups()[:3])
-    return f"v0.{minor}" if major == 0 else f"v{major}"
+    return f"v{major}.{minor}"
 
 
 def normalize_channel(value: str) -> str:

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import platform
@@ -22,6 +23,7 @@ from .apt_channels import channel_order, normalize_channel, version_matches_chan
 _APT_CACHE = Path("/usr/bin/apt-cache")
 _APT_GET = Path("/usr/bin/apt-get")
 _DPKG_QUERY = Path("/usr/bin/dpkg-query")
+_DPKG_DEB = Path("/usr/bin/dpkg-deb")
 _GPGV = Path("/usr/bin/gpgv")
 _INSTALL = Path("/usr/bin/install")
 _SUDO = Path("/usr/bin/sudo")
@@ -30,7 +32,11 @@ _APT_KEYRING = Path("/etc/apt/keyrings/ravenstash-rvs.gpg")
 _REPOSITORY_URL = "https://releases.ravenstash.com/rvs/apt"
 _CHANNELS_URL = f"{_REPOSITORY_URL}/channels.json"
 _CHANNELS_SIGNATURE_URL = f"{_CHANNELS_URL}.gpg"
+_GITHUB_REPOSITORY = "rvstash/ravenstash-cli"
+_GITHUB_API = f"https://api.github.com/repos/{_GITHUB_REPOSITORY}"
+_RELEASE_DOWNLOAD_ROOT = f"https://github.com/{_GITHUB_REPOSITORY}/releases/download"
 _LEGACY_CHANNEL = "v0.3"
+_CANDIDATE_PATTERN = re.compile(r"^(?P<base>[0-9]+\.[0-9]+\.[0-9]+)rc(?P<number>[1-9][0-9]*)$")
 _SOURCE_PATTERN = re.compile(
     r"^deb \[arch=(?:amd64|arm64) signed-by=/etc/apt/keyrings/ravenstash-rvs\.gpg\] "
     r"https://releases\.ravenstash\.com/rvs/apt (?P<channel>stable|v[0-9.]+) main$"
@@ -225,9 +231,139 @@ def _restore_source(source: str) -> None:
         _run_visible([str(_APT_GET), "update"])
 
 
+def _candidate_debian_version(candidate: str) -> str:
+    match = _CANDIDATE_PATTERN.fullmatch(candidate)
+    if match is None:
+        output.fatal("Candidate versions must look like 0.14.0rc1.")
+    return f"{match.group('base')}~rc{match.group('number')}"
+
+
+def _candidate_architecture() -> str:
+    architecture = {
+        "x86_64": "amd64",
+        "amd64": "amd64",
+        "aarch64": "arm64",
+        "arm64": "arm64",
+    }.get(platform.machine().lower())
+    if architecture is None:
+        output.fatal("Candidate packages are available only for Linux amd64 and arm64.")
+    return architecture
+
+
+def _download_candidate(candidate: str, destination: Path) -> Path:
+    architecture = _candidate_architecture()
+    tag = f"v{candidate}"
+    deb_name = f"rvs_{candidate}_{architecture}.deb"
+    checksums_name = f"rvs-v{candidate}-checksums.txt"
+    signature_name = f"{checksums_name}.asc"
+    wanted = {deb_name, checksums_name, signature_name}
+    try:
+        with httpx.Client(
+            timeout=60.0,
+            headers={"Accept": "application/vnd.github+json"},
+            follow_redirects=False,
+        ) as client:
+            response = client.get(f"{_GITHUB_API}/releases/tags/{tag}")
+            response.raise_for_status()
+            release = response.json()
+            if (
+                release.get("tag_name") != tag
+                or release.get("draft") is not False
+                or release.get("prerelease") is not True
+            ):
+                output.fatal(f"GitHub release {tag} is not a published release candidate.")
+            raw_assets = release.get("assets")
+            if not isinstance(raw_assets, list):
+                output.fatal(f"GitHub release {tag} has invalid asset metadata.")
+            assets: dict[str, str] = {}
+            for asset in raw_assets:
+                if not isinstance(asset, dict):
+                    continue
+                name = asset.get("name")
+                url = asset.get("browser_download_url")
+                if isinstance(name, str) and isinstance(url, str):
+                    assets[name] = url
+            if not wanted.issubset(assets):
+                output.fatal(f"GitHub release {tag} is missing signed candidate assets.")
+            for name in wanted:
+                url = assets[name]
+                expected = f"{_RELEASE_DOWNLOAD_ROOT}/{tag}/{name}"
+                if url != expected:
+                    output.fatal(f"GitHub release {tag} contains an unexpected asset URL.")
+                asset_response = client.get(url, follow_redirects=True)
+                asset_response.raise_for_status()
+                (destination / name).write_bytes(asset_response.content)
+    except OSError, ValueError, httpx.HTTPError:
+        output.fatal(f"Could not download release candidate {tag} from GitHub.")
+
+    checksums_path = destination / checksums_name
+    signature_path = destination / signature_name
+    deb_path = destination / deb_name
+    verified = _run(
+        [
+            str(_GPGV),
+            f"--keyring={_APT_KEYRING}",
+            str(signature_path),
+            str(checksums_path),
+        ]
+    )
+    if verified.returncode != 0:
+        output.fatal("The candidate checksum signature is invalid.")
+    expected_hash: str | None = None
+    for line in checksums_path.read_text(encoding="utf-8").splitlines():
+        digest, separator, name = line.partition("  ")
+        if name == deb_name and separator and re.fullmatch(r"[0-9a-f]{64}", digest):
+            if expected_hash is not None:
+                output.fatal("The candidate checksum inventory contains duplicate entries.")
+            expected_hash = digest
+    if expected_hash is None:
+        output.fatal("The candidate package is absent from the signed checksum inventory.")
+    if hashlib.sha256(deb_path.read_bytes()).hexdigest() != expected_hash:
+        output.fatal("The candidate package checksum does not match the signed inventory.")
+
+    metadata = _run([str(_DPKG_DEB), "-f", str(deb_path), "Package", "Version", "Architecture"])
+    expected_metadata = ["rvs", _candidate_debian_version(candidate), architecture]
+    if metadata.returncode != 0 or metadata.stdout.splitlines() != expected_metadata:
+        output.fatal("The candidate package metadata does not match the requested release.")
+    return deb_path
+
+
+def _update_candidate(candidate: str, *, apply: bool, yes: bool) -> None:
+    debian_version = _candidate_debian_version(candidate)
+    installed, _apt_candidate = _apt_versions()
+    if installed is None:
+        output.fatal("Release candidates can only update an existing rvs APT installation.")
+    if not _APT_KEYRING.is_file() or not _GPGV.is_file() or not _DPKG_DEB.is_file():
+        output.fatal("Candidate verification requires the installed Ravenstash APT trust tools.")
+    if not _upgrade_available(installed, debian_version):
+        output.fatal(f"Release candidate {candidate} is not newer than installed rvs {installed}.")
+
+    with tempfile.TemporaryDirectory(prefix="rvs-candidate-") as directory:
+        package = _download_candidate(candidate, Path(directory))
+        output.info(
+            f"Verified signed release candidate rvs {candidate} "
+            f"(Debian version {debian_version}; installed: {installed})."
+        )
+        if not apply:
+            output.info(f"Install it with: rvs update --candidate {candidate} --apply")
+            return
+        if not _APT_GET.is_file():
+            output.fatal("Cannot update because /usr/bin/apt-get is unavailable.")
+        if not yes:
+            typer.confirm(f"Install signed rvs release candidate {candidate}?", abort=True)
+        if _run_visible([str(_APT_GET), "install", "--yes", str(package)]).returncode != 0:
+            output.fatal("APT could not install the rvs release candidate.")
+    output.success(f"Updated rvs to release candidate {candidate}.")
+
+
 def update(
     to: str | None = typer.Option(
         None, "--to", help="Preview a newer release series; install with --apply."
+    ),
+    candidate: str | None = typer.Option(
+        None,
+        "--candidate",
+        help="Verify a signed GitHub release candidate; install with --apply.",
     ),
     apply: bool = typer.Option(
         False,
@@ -244,6 +380,11 @@ def update(
     """Check for a Ravenstash CLI update, or install it with --apply."""
     if yes and not apply:
         output.fatal("--yes requires --apply.")
+    if candidate is not None and to is not None:
+        output.fatal("--candidate and --to cannot be used together.")
+    if candidate is not None:
+        _update_candidate(candidate, apply=apply, yes=yes)
+        return
     if to is not None:
         _update_series(to, apply=apply, yes=yes)
         return
@@ -313,7 +454,7 @@ def _update_series(to: str, *, apply: bool, yes: bool) -> None:
     if installed is None or current is None:
         output.fatal("rvs is not managed by a recognized Ravenstash APT source.")
     if target == current:
-        update(to=None, apply=apply, yes=yes)
+        update(to=None, candidate=None, apply=apply, yes=yes)
         return
     if channel_order(target) <= channel_order(current):
         output.fatal("Release-series downgrades are not supported automatically.")

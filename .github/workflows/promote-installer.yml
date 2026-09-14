@@ -8,6 +8,11 @@ on:
         description: Exact 40-character source commit of the published release
         type: string
         required: true
+      source_branch:
+        description: Protected branch containing the release source
+        type: string
+        required: true
+        default: main
       version:
         description: Exact published semantic version without v prefix
         type: string
@@ -66,19 +71,25 @@ jobs:
           SOURCE_SHA: ${{ inputs.source_sha }}
           VERSION: ${{ inputs.version }}
           CHANNEL: ${{ inputs.channel }}
-          CURRENT_RELEASE_SIGNER: https://github.com/${{ github.repository }}/.github/workflows/release.yml@refs/heads/dev
-          LEGACY_CANDIDATE_SIGNER: https://github.com/${{ github.repository }}/.github/workflows/release-candidate.yml@refs/heads/dev
+          SOURCE_BRANCH: ${{ inputs.source_branch }}
+          # Keep historical identities so already-published releases remain promotable.
+          CURRENT_RELEASE_SIGNER: https://github.com/${{ github.repository }}/.github/workflows/release.yml@refs/heads/main
+          LEGACY_RELEASE_SIGNER: https://github.com/rvstash/ravenstash-cli-alpha/.github/workflows/release.yml@refs/heads/dev
+          LEGACY_CANDIDATE_SIGNER: https://github.com/rvstash/ravenstash-cli-alpha/.github/workflows/release-candidate.yml@refs/heads/dev
         run: |
           [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
-          [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+([~+.-][A-Za-z0-9.-]+)?$ ]]
+          [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          [[ "$SOURCE_BRANCH" =~ ^(main|release/v[0-9]+\.[0-9]+)$ ]]
           test "$(git -C release-source rev-parse HEAD)" = "$SOURCE_SHA"
-          git -C release-source merge-base --is-ancestor "$SOURCE_SHA" refs/remotes/origin/dev
+          git -C release-source merge-base --is-ancestor \
+            "$SOURCE_SHA" "refs/remotes/origin/${SOURCE_BRANCH}"
           python3 release-source/packaging/repository/channel_policy.py \
             validate "$VERSION" "$CHANNEL"
           test "$(sed -n 's/^version = "\([^"]*\)"/\1/p' release-source/pyproject.toml)" = "$VERSION"
           tag="v${VERSION}"
           test "$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json targetCommitish --jq .targetCommitish)" = "$SOURCE_SHA"
           test "$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft)" = false
+          test "$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isPrerelease --jq .isPrerelease)" = false
           mkdir release-build
           gh release download "$tag" \
             --repo "$GITHUB_REPOSITORY" \
@@ -86,17 +97,21 @@ jobs:
             --pattern 'install.*' \
             --pattern 'source-identity.txt' \
             --pattern "rvs-v${VERSION}-checksums*"
-          if ! cosign verify-blob \
-            --bundle "release-build/rvs-v${VERSION}-checksums.sigstore.json" \
-            --certificate-identity "$CURRENT_RELEASE_SIGNER" \
-            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-            "release-build/rvs-v${VERSION}-checksums.txt"; then
-            cosign verify-blob \
+          verified=false
+          for identity in \
+            "$CURRENT_RELEASE_SIGNER" \
+            "$LEGACY_RELEASE_SIGNER" \
+            "$LEGACY_CANDIDATE_SIGNER"; do
+            if cosign verify-blob \
               --bundle "release-build/rvs-v${VERSION}-checksums.sigstore.json" \
-              --certificate-identity "$LEGACY_CANDIDATE_SIGNER" \
+              --certificate-identity "$identity" \
               --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-              "release-build/rvs-v${VERSION}-checksums.txt"
-          fi
+              "release-build/rvs-v${VERSION}-checksums.txt"; then
+              verified=true
+              break
+            fi
+          done
+          test "$verified" = true
           gpgv \
             --keyring packaging/repository/keys/ravenstash-rvs.gpg \
             "release-build/rvs-v${VERSION}-checksums.txt.asc" \
@@ -107,7 +122,8 @@ jobs:
               "rvs-v${VERSION}-checksums.txt" \
               | sha256sum --check --strict
           )
-          grep -Fx "source_repository=${GITHUB_REPOSITORY}" release-build/source-identity.txt
+          grep -Eq "^source_repository=(${GITHUB_REPOSITORY}|rvstash/ravenstash-cli-alpha)$" \
+            release-build/source-identity.txt
           grep -Fx "source_sha=${SOURCE_SHA}" release-build/source-identity.txt
           grep -Fx "version=${VERSION}" release-build/source-identity.txt
           grep -Fx "channel=${CHANNEL}" release-build/source-identity.txt
@@ -287,11 +303,14 @@ jobs:
           SOURCE_SHA: ${{ inputs.source_sha }}
           VERSION: ${{ inputs.version }}
           CHANNEL: ${{ inputs.channel }}
+          SOURCE_BRANCH: ${{ inputs.source_branch }}
         run: |
           [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
-          [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+([~+.-][A-Za-z0-9.-]+)?$ ]]
+          [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          [[ "$SOURCE_BRANCH" =~ ^(main|release/v[0-9]+\.[0-9]+)$ ]]
           test "$(git -C release-source rev-parse HEAD)" = "$SOURCE_SHA"
-          git -C release-source merge-base --is-ancestor "$SOURCE_SHA" refs/remotes/origin/dev
+          git -C release-source merge-base --is-ancestor \
+            "$SOURCE_SHA" "refs/remotes/origin/${SOURCE_BRANCH}"
           python3 release-source/packaging/repository/channel_policy.py \
             validate "$VERSION" "$CHANNEL"
           test "$(sed -n 's/^version = "\([^"]*\)"/\1/p' release-source/pyproject.toml)" = "$VERSION"
@@ -332,8 +351,10 @@ jobs:
           SOURCE_SHA: ${{ inputs.source_sha }}
           VERSION: ${{ inputs.version }}
           CHANNEL: ${{ inputs.channel }}
-          CURRENT_RELEASE_SIGNER: https://github.com/${{ github.repository }}/.github/workflows/release.yml@refs/heads/dev
-          LEGACY_CANDIDATE_SIGNER: https://github.com/${{ github.repository }}/.github/workflows/release-candidate.yml@refs/heads/dev
+          # Keep historical identities so already-published releases remain promotable.
+          CURRENT_RELEASE_SIGNER: https://github.com/${{ github.repository }}/.github/workflows/release.yml@refs/heads/main
+          LEGACY_RELEASE_SIGNER: https://github.com/rvstash/ravenstash-cli-alpha/.github/workflows/release.yml@refs/heads/dev
+          LEGACY_CANDIDATE_SIGNER: https://github.com/rvstash/ravenstash-cli-alpha/.github/workflows/release-candidate.yml@refs/heads/dev
         run: |
           awk '
             NF != 2 || $1 !~ /^[0-9a-f]{64}$/ || $2 ~ /(^|\/)\.\.?(\/|$)/ || $2 ~ /\// { exit 1 }
@@ -348,17 +369,21 @@ jobs:
           sort checksummed-assets.txt > expected-assets.txt
           cmp expected-assets.txt release-assets.txt
 
-          if ! cosign verify-blob \
-            --bundle "release-build/rvs-v${VERSION}-checksums.sigstore.json" \
-            --certificate-identity "$CURRENT_RELEASE_SIGNER" \
-            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-            "release-build/rvs-v${VERSION}-checksums.txt"; then
-            cosign verify-blob \
+          verified=false
+          for identity in \
+            "$CURRENT_RELEASE_SIGNER" \
+            "$LEGACY_RELEASE_SIGNER" \
+            "$LEGACY_CANDIDATE_SIGNER"; do
+            if cosign verify-blob \
               --bundle "release-build/rvs-v${VERSION}-checksums.sigstore.json" \
-              --certificate-identity "$LEGACY_CANDIDATE_SIGNER" \
+              --certificate-identity "$identity" \
               --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-              "release-build/rvs-v${VERSION}-checksums.txt"
-          fi
+              "release-build/rvs-v${VERSION}-checksums.txt"; then
+              verified=true
+              break
+            fi
+          done
+          test "$verified" = true
           gpgv \
             --keyring packaging/repository/keys/ravenstash-rvs.gpg \
             "release-build/rvs-v${VERSION}-checksums.txt.asc" \
@@ -369,7 +394,7 @@ jobs:
               "rvs-v${VERSION}-checksums.txt" \
               | sha256sum --check --strict
           )
-          grep -Fx "source_repository=${GITHUB_REPOSITORY}" \
+          grep -Eq "^source_repository=(${GITHUB_REPOSITORY}|rvstash/ravenstash-cli-alpha)$" \
             release-build/source-identity.txt
           grep -Fx "source_sha=${SOURCE_SHA}" release-build/source-identity.txt
           grep -Fx "version=${VERSION}" release-build/source-identity.txt

@@ -4,7 +4,7 @@ set -euo pipefail
 export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:${PATH:-}"
 
 readonly repository_url="https://releases.ravenstash.com/rvs/apt"
-readonly github_release_url="https://github.com/rvstash/ravenstash-cli-alpha/releases/download"
+readonly github_release_url="https://github.com/rvstash/ravenstash-cli/releases/download"
 readonly release_version="0.13.4"
 readonly compatibility_channel="v0.13"
 readonly signing_key_url="${repository_url}/ravenstash-rvs.gpg"
@@ -104,7 +104,7 @@ download_release_asset() {
   local release_api asset_api auth_header
   auth_header="${destination}.github-auth"
   (umask 077; printf 'Authorization: Bearer %s\n' "$RVS_GITHUB_TOKEN" > "$auth_header")
-  release_api="https://api.github.com/repos/rvstash/ravenstash-cli-alpha/releases/tags/v${release_version}"
+  release_api="https://api.github.com/repos/rvstash/ravenstash-cli/releases/tags/v${release_version}"
   asset_api="$(
     curl --proto '=https' --proto-redir '=https' --tlsv1.2 -fsSL \
       -H "@${auth_header}" \
@@ -117,7 +117,7 @@ download_release_asset() {
           index($0, expected) { print url; exit }
         '
   )"
-  [[ "$asset_api" == https://api.github.com/repos/rvstash/ravenstash-cli-alpha/releases/assets/* ]] \
+  [[ "$asset_api" == https://api.github.com/repos/rvstash/ravenstash-cli/releases/assets/* ]] \
     || fail "private release does not contain ${asset_name}"
   curl --proto '=https' --proto-redir '=https' --tlsv1.2 -fsSL \
     -H "@${auth_header}" \
@@ -411,7 +411,7 @@ if [[ "$(uname -s)" == "Linux" && -r /etc/os-release ]]; then
   source /etc/os-release
 fi
 if [[ "${ID:-}" == "nixos" ]]; then
-  fail "install rvs on NixOS with: nix profile install github:rvstash/ravenstash-cli-alpha/v${release_version}"
+  fail "install rvs on NixOS with: nix profile install github:rvstash/ravenstash-cli/v${release_version}"
 fi
 
 temporary_directory="$(mktemp -d)"
