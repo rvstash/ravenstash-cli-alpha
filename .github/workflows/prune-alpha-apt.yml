@@ -118,8 +118,8 @@ jobs:
           python3 packaging/repository/prune_apt_repository.py \
             pruned --minimum v0.12 --plan storage-plan.json
           cmp storage-plan.json handoff/prune-plan.json
-          cp handoff/channels.json pruned/channels.json
-          cp handoff/channels.json.gpg pruned/channels.json.gpg
+          cp handoff/pruned/channels.json pruned/channels.json
+          cp handoff/pruned/channels.json.gpg pruned/channels.json.gpg
           python3 packaging/repository/verify_apt.py \
             pruned packaging/repository/keys/ravenstash-rvs.gpg
       - name: Retain a one-day emergency backup
@@ -139,9 +139,9 @@ jobs:
         run: |
           endpoint="https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
           destination="s3://ravenstash-cli-releases/rvs/apt"
-          aws s3 cp handoff/channels.json "${destination}/channels.json" \
+          aws s3 cp handoff/pruned/channels.json "${destination}/channels.json" \
             --endpoint-url "$endpoint" --cache-control no-cache --only-show-errors
-          aws s3 cp handoff/channels.json.gpg "${destination}/channels.json.gpg" \
+          aws s3 cp handoff/pruned/channels.json.gpg "${destination}/channels.json.gpg" \
             --endpoint-url "$endpoint" --cache-control no-cache --only-show-errors
           while IFS= read -r distribution; do
             [[ "$distribution" == "stable" || "$distribution" =~ ^v0\.([3-9]|10|11)$ ]]
