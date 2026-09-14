@@ -96,6 +96,7 @@ def test_apt_publisher_batches_architectures_without_weakening_activation_order(
     )
 
 
+@pytest.mark.skipif(os.name == "nt", reason="APT publication tooling is POSIX-only")
 def test_apt_publisher_uses_constant_number_of_storage_calls(tmp_path: Path) -> None:
     repository = tmp_path / "repository"
     for channel in ("stable", "v0.3", "v0.13"):
@@ -200,6 +201,7 @@ def test_publication_refuses_to_replace_an_existing_tag_or_release() -> None:
     ("mode", "expected_returncode"),
     (("empty", 0), ("tag", 1), ("release", 1), ("api-error", 1)),
 )
+@pytest.mark.skipif(os.name == "nt", reason="release-slot tooling is POSIX-only")
 def test_release_slot_check_fails_closed(
     tmp_path: Path, mode: str, expected_returncode: int
 ) -> None:
@@ -232,6 +234,15 @@ def test_release_slot_check_fails_closed(
     )
 
     assert result.returncode == expected_returncode
+
+
+def test_platform_ci_uses_exact_bundles_and_supplies_musl_bash() -> None:
+    platform = (ROOT / ".github/workflows/platform-ci.yml").read_text(encoding="utf-8")
+
+    assert "apk add --no-cache bash binutils build-base libffi-dev" in platform
+    assert 'bundle="build/release/rvs-v${version}-${TARGET}"' in platform
+    assert "find build/release" not in platform
+    assert platform.count('test -d "$bundle"') == 2
 
 
 def test_channel_recommendation_activates_after_installer_verification() -> None:

@@ -22,16 +22,22 @@ jobs:
         include:
           - name: Linux x64
             runner: ubuntu-24.04
+            target: linux-amd64
           - name: Linux ARM64
             runner: ubuntu-24.04-arm
+            target: linux-arm64
           - name: macOS Apple Silicon
             runner: macos-14
+            target: macos-arm64
           - name: macOS Intel
             runner: macos-15-intel
+            target: macos-amd64
           - name: Windows x64
             runner: windows-2022
+            target: windows-amd64
           - name: Windows ARM64
             runner: windows-11-arm
+            target: windows-arm64
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
@@ -51,9 +57,13 @@ jobs:
           uv run pyright
       - name: Build and smoke-test native bundle
         shell: bash
+        env:
+          TARGET: ${{ matrix.target }}
         run: |
           uv run python packaging/scripts/build_portable.py
-          bundle="$(find build/release -mindepth 1 -maxdepth 1 -type d -name 'rvs-v*' -print -quit)"
+          version="$(sed -n 's/^version = "\([^"]*\)"/\1/p' pyproject.toml)"
+          bundle="build/release/rvs-v${version}-${TARGET}"
+          test -d "$bundle"
           uv run python packaging/scripts/smoke_portable.py "$bundle"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
@@ -79,19 +89,24 @@ jobs:
         with:
           persist-credentials: false
       - name: Build and smoke-test musl bundle
+        env:
+          TARGET: linux-musl-${{ matrix.arch }}
         run: |
           docker run --rm \
+            --env TARGET \
             --volume "$PWD:/workspace" \
             --workdir /workspace \
             python@sha256:c6ead215bfd31f1e433d968853b7a769989117115b728874824e6c0a27cb96fc \
             /bin/sh -euc '
-              apk add --no-cache binutils build-base libffi-dev
+              apk add --no-cache bash binutils build-base libffi-dev
               pip install --no-cache-dir uv==0.11.24
               export UV_PROJECT_ENVIRONMENT=/tmp/rvs-musl-venv
               uv sync --frozen --python 3.14 --group release
               uv run pytest
               uv run python packaging/scripts/build_portable.py
-              bundle="$(find build/release -mindepth 1 -maxdepth 1 -type d -name "rvs-v*" -print -quit)"
+              version="$(sed -n "s/^version = \"\([^\"]*\)\"/\1/p" pyproject.toml)"
+              bundle="build/release/rvs-v${version}-${TARGET}"
+              test -d "$bundle"
               uv run python packaging/scripts/smoke_portable.py "$bundle"
             '
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a

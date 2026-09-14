@@ -38,7 +38,13 @@
             # The vault round-trip forks a long-lived Unix-socket agent. Nix's
             # isolated build sandbox cannot host that session process; native
             # Linux CI continues to exercise the test.
-            disabledTests = [ "test_encrypted_vault_round_trip_and_lock" ];
+            disabledTests = [
+              "test_encrypted_vault_round_trip_and_lock"
+              # Release-infrastructure scripts require an FHS shell and are
+              # exercised by source and release-policy CI, not the Nix package.
+              "test_apt_publisher_uses_constant_number_of_storage_calls"
+              "test_release_slot_check_fails_closed"
+            ];
           };
         in {
           default = rvs;
