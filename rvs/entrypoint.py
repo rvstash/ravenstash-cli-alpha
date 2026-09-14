@@ -29,8 +29,14 @@ def main() -> None:
         return
 
     from .cli import app
+    from .config import ConfigError
 
-    app()
+    try:
+        app()
+    except ConfigError as exc:
+        from . import output
+
+        output.fatal(f"{exc}. Run `rvs profile delete --all` to reset the local configuration.")
 
 
 if __name__ == "__main__":

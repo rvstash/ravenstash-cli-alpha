@@ -56,9 +56,42 @@ def test_postinstall_reports_rocm_rvs_and_ravenstash_alias(
     assert "'ravenstash' command" in result.stdout
 
 
-def test_release_metadata_uses_mit_license() -> None:
-    assert (ROOT / "LICENSE").read_text(encoding="utf-8").startswith("MIT License\n")
-    assert 'license = "MIT"' in (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+def test_release_metadata_uses_apache_license() -> None:
+    license_text = (ROOT / "LICENSE").read_text(encoding="utf-8")
+    notice_text = (ROOT / "NOTICE").read_text(encoding="utf-8")
+    project_text = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+
+    assert "Apache License\n                           Version 2.0" in license_text
+    assert "Copyright 2026 Ravenstash" in notice_text
+    assert 'license = "Apache-2.0"' in project_text
+
+
+def test_release_artifacts_include_license_and_notice() -> None:
+    shell_builds = [
+        (ROOT / "packaging/scripts/build-tarball.sh").read_text(encoding="utf-8"),
+        (ROOT / "packaging/scripts/build-deb.sh").read_text(encoding="utf-8"),
+    ]
+    portable_build = (ROOT / "packaging/scripts/build_portable.py").read_text(encoding="utf-8")
+
+    for build in shell_builds:
+        assert "cp LICENSE" in build
+        assert "cp NOTICE" in build
+    assert 'ROOT / "LICENSE"' in portable_build
+    assert 'ROOT / "NOTICE"' in portable_build
+
+
+def test_portable_bundle_includes_runtime_dependency_license_metadata() -> None:
+    spec = (ROOT / "packaging/pyinstaller/rvs.spec").read_text(encoding="utf-8")
+
+    assert '"cryptography"' in spec
+    assert '"idna"' in spec
+    assert "datas += _metadata(distribution)" in spec
+
+
+def test_runtime_sbom_does_not_emit_an_unknown_project_requirement() -> None:
+    build = (ROOT / "packaging/scripts/build-release-artifacts.sh").read_text(encoding="utf-8")
+
+    assert "--no-emit-project" in build
 
 
 def test_apt_repository_script_exports_installable_public_key() -> None:
@@ -425,6 +458,11 @@ def test_package_manager_manifests_cover_both_desktop_architectures(tmp_path: Pa
         )
         assert installer is not None
         installer_text = installer.read().decode()
+        locale = package.extractfile(
+            "package-manifests/winget/Ravenstash.rvs.v0.12.locale.en-US.yaml"
+        )
+        assert locale is not None
+        locale_text = locale.read().decode()
         for name in names:
             if name.endswith(".yaml"):
                 manifest = package.extractfile(name)
@@ -436,5 +474,6 @@ def test_package_manager_manifests_cover_both_desktop_architectures(tmp_path: Pa
     assert "package-manifests/homebrew/rvs@0.12.rb" in names
     assert "Architecture: x64" in installer_text
     assert "Architecture: arm64" in installer_text
+    assert "License: Apache-2.0" in locale_text
     assert "ravenstash-cli-alpha/releases/download/v0.12.0" in installer_text
     assert 'arch arm: "arm64", intel: "amd64"' in cask_text

@@ -22,6 +22,7 @@ uv export \
   --frozen \
   --no-dev \
   --no-group release \
+  --no-emit-project \
   --format requirements-txt \
   --output-file build/release/runtime-requirements.txt
 cyclonedx-py requirements \

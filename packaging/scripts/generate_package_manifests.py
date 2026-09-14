@@ -85,7 +85,7 @@ PackageVersion: {version}
 PackageLocale: en-US
 Publisher: Ravenstash
 PackageName: Ravenstash CLI
-License: MIT
+License: Apache-2.0
 ShortDescription: Ravenstash developer CLI
 PackageUrl: https://ravenstash.com
 ManifestType: defaultLocale

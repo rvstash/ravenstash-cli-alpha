@@ -143,7 +143,7 @@ Run the repository checks from this directory:
 .venv/bin/pyright
 ```
 
-`rvs` is licensed under the [MIT License](LICENSE).
+`rvs` is licensed under the [Apache License 2.0](LICENSE).
 
 Multi-format options accept comma-separated values, repeated flags, or both:
 

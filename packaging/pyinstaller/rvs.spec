@@ -24,8 +24,40 @@ def _submodules(package: str) -> list[str]:
         return []
 
 
+RUNTIME_DISTRIBUTIONS = (
+    "annotated-doc",
+    "anyio",
+    "certifi",
+    "cffi",
+    "click",
+    "colorama",
+    "cryptography",
+    "h11",
+    "httpcore",
+    "httpx",
+    "idna",
+    "jaraco.classes",
+    "jaraco.context",
+    "jaraco.functools",
+    "jeepney",
+    "keyring",
+    "markdown-it-py",
+    "mdurl",
+    "more-itertools",
+    "pycparser",
+    "Pygments",
+    "pywin32-ctypes",
+    "PyYAML",
+    "ravenstash-cli",
+    "rich",
+    "SecretStorage",
+    "shellingham",
+    "tomli-w",
+    "typer",
+)
+
 datas = []
-for distribution in ("ravenstash-cli", "typer", "click", "rich", "httpx", "keyring"):
+for distribution in RUNTIME_DISTRIBUTIONS:
     datas += _metadata(distribution)
 
 hiddenimports = []

@@ -2,6 +2,10 @@
 
 Thank you for helping improve the Ravenstash CLI.
 
+Unless explicitly stated otherwise, contributions intentionally submitted for
+inclusion in this repository are licensed under the Apache License 2.0, the same
+license as the project, without additional terms or conditions.
+
 ## Branches and pull requests
 
 Normal development targets `main`. A maintained compatibility line has a

@@ -84,6 +84,12 @@ BASE_CONFIG_VERSION = 5
 CURRENT_CONFIG_VERSION = 5
 ConfigMigration = Callable[[dict], None]
 _CONFIG_MIGRATIONS: dict[int, ConfigMigration] = {}
+
+
+class ConfigError(ValueError):
+    """A user-actionable failure while reading the local configuration."""
+
+
 _UNIQUE_ID_FRAGMENT = r"[23456789abcdefghijkmnpqrstuvwxyz]{8}"
 _ACCOUNT_REF_RE = re.compile(rf"^ac_{_UNIQUE_ID_FRAGMENT}$")
 _INTERNAL_NAMESPACE_REF_RE = re.compile(rf"^in_{_UNIQUE_ID_FRAGMENT}$")
@@ -916,7 +922,7 @@ def stored_profile_api_url(profile_name: str) -> str | None:
     return validate_service_url(value, label=f"{profile_name} stored API URL")
 
 
-def load() -> RvsConfig:
+def _load_validated() -> RvsConfig:
     config_exists = CONFIG_FILE.exists()
     raw = _load_raw()
     original_version = raw.get("config_version")
@@ -968,6 +974,16 @@ def load() -> RvsConfig:
         _backup_pre_migration_config(original_version)
         _write_raw(raw)
     return cfg
+
+
+def load() -> RvsConfig:
+    """Load configuration and identify failures that users can repair locally."""
+    try:
+        return _load_validated()
+    except ConfigError:
+        raise
+    except (OSError, tomllib.TOMLDecodeError, ValueError) as exc:
+        raise ConfigError(f"could not read {CONFIG_FILE}: {exc}") from exc
 
 
 def save(cfg: RvsConfig) -> None:

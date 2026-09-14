@@ -7,7 +7,7 @@ name = "ravenstash-cli"
 version = "0.13.4"
 description = "Ravenstash developer CLI"
 readme = "README.md"
-license = "MIT"
+license = "Apache-2.0"
 requires-python = ">=3.14"
 dependencies = [
     "typer>=0.12",
@@ -15,7 +15,8 @@ dependencies = [
     "rich>=13.0",
     "tomli-w>=1.0",
     "keyring>=25.0",
-    "cryptography>=44.0; sys_platform != 'win32'",
+    "cryptography==50.0.1; sys_platform != 'win32'",
+    "idna==3.19",
     "pyyaml>=6.0",
 ]
 classifiers = [
