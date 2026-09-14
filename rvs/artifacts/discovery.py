@@ -94,7 +94,7 @@ def discover(
         else cfg.current_customer_id(profile_name)
     )
     if not customer_id:
-        raise ValueError("No account is selected. Run rvs account use USERNAME_OR_HANDLE.")
+        raise ValueError("No account is selected. Run rvs account switch.")
     if target is None:
         saved = cfg.selected_artifact_target(profile_name, customer_id)
         if saved is None:

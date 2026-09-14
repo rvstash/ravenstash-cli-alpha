@@ -189,7 +189,7 @@ def test_account_and_official_cache_selection_are_visible_and_clearable(
     )
     monkeypatch.setattr(ApiClient, "from_profile", staticmethod(lambda profile=None: fake))
 
-    switched = runner.invoke(app, ["account", "use", "org:acme"])
+    switched = runner.invoke(app, ["account", "switch", "org:acme"])
     selected = runner.invoke(app, ["art", "select", "mirror:pypiorg"])
 
     assert switched.exit_code == 0, switched.output
@@ -210,7 +210,7 @@ def test_handle_selection_preserves_customer_id_and_canonical_case(monkeypatch, 
     other = {**customer("other-id", "acmeHQ"), "account_handle": "other-hq"}
     fake = FakeApi([owner, other], [])
     monkeypatch.setattr(ApiClient, "from_profile", staticmethod(lambda profile=None: fake))
-    selected = runner.invoke(app, ["account", "use", "ACMEHQ"])
+    selected = runner.invoke(app, ["account", "switch", "ACMEHQ"])
     assert selected.exit_code == 0, selected.output
     assert "acmeHQ" in selected.output
     assert cfg_mod.current_customer_id("alice") == "acme-id"
@@ -279,11 +279,13 @@ def test_two_login_profiles_keep_separate_actor_state_for_the_same_org(
     )
     monkeypatch.setattr(ApiClient, "from_profile", staticmethod(lambda profile=None: fake))
 
-    assert runner.invoke(app, ["account", "use", "org:acme", "--profile", "alice"]).exit_code == 0
+    assert (
+        runner.invoke(app, ["account", "switch", "org:acme", "--profile", "alice"]).exit_code == 0
+    )
     assert (
         runner.invoke(app, ["art", "select", "mirror:pypiorg", "--profile", "alice"]).exit_code == 0
     )
-    assert runner.invoke(app, ["account", "use", "org:acme", "--profile", "bob"]).exit_code == 0
+    assert runner.invoke(app, ["account", "switch", "org:acme", "--profile", "bob"]).exit_code == 0
 
     assert cfg_mod.selected_artifact_target("alice", "acme") is not None
     assert cfg_mod.selected_artifact_target("bob", "acme") is None
@@ -311,7 +313,7 @@ def test_account_switch_is_local_to_an_integrated_shell(monkeypatch, tmp_path: P
     monkeypatch.setattr(ApiClient, "from_profile", staticmethod(lambda profile=None: fake))
     monkeypatch.setenv("RVS_SESSION_ID", "terminal-a")
 
-    switched = runner.invoke(app, ["account", "use", "org:acme"])
+    switched = runner.invoke(app, ["account", "switch", "org:acme"])
 
     assert switched.exit_code == 0, switched.output
     assert cfg_mod.current_customer_id("alice") == "acme"

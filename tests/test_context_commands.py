@@ -146,7 +146,7 @@ def test_profile_current_owns_non_secret_endpoint_output(monkeypatch, tmp_path: 
     assert "Authenticated" not in result.output
 
 
-def test_account_use_warns_when_environment_still_overrides_selection(
+def test_account_switch_warns_when_environment_still_overrides_selection(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
@@ -164,7 +164,7 @@ def test_account_use_warns_when_environment_still_overrides_selection(
                             "account_ref": "acme",
                             "account_handle": "acme",
                             "account_type": "organization",
-                            "account_label": "acme",
+                            "account_label": "Acme Incorporated",
                             "organization_role": "admin",
                             "authority_revision": 2,
                         }
@@ -179,7 +179,7 @@ def test_account_use_warns_when_environment_still_overrides_selection(
         staticmethod(lambda profile=None: _Client()),
     )
 
-    result = runner.invoke(app, ["account", "use", "org:acme"])
+    result = runner.invoke(app, ["account", "switch", "acme"])
 
     assert result.exit_code == 0, result.output
     assert "Account 'acme' selected for persisted profile" in result.output
@@ -188,16 +188,110 @@ def test_account_use_warns_when_environment_still_overrides_selection(
     assert cfg_mod.current_customer_id("work") == "forced-customer"
 
 
-def test_removed_profile_and_account_aliases_are_rejected(
+def test_account_switch_without_selector_opens_account_picker(monkeypatch, tmp_path: Path) -> None:
+    _isolate_config(monkeypatch, tmp_path)
+    account_items = [
+        {
+            "account_ref": "acme",
+            "account_handle": "acme",
+            "account_type": "organization",
+            "account_label": "Acme Incorporated",
+            "organization_role": "admin",
+            "authority_revision": 2,
+        },
+        {
+            "account_ref": "personal-user",
+            "account_handle": "avery",
+            "account_type": "personal",
+            "account_label": "Avery Example",
+            "organization_role": "owner",
+            "authority_revision": 1,
+        },
+    ]
+
+    class _Client:
+        @staticmethod
+        def get(path: str) -> _Response:
+            assert path == "/accounts"
+            return _Response({"items": account_items, "next_cursor": None})
+
+    selector: dict[str, Any] = {}
+
+    def select_index(**kwargs: Any) -> int:
+        selector.update(kwargs)
+        return 1
+
+    monkeypatch.setattr(
+        account_cmd.ApiClient,
+        "from_profile",
+        staticmethod(lambda profile=None: _Client()),
+    )
+    monkeypatch.setattr(account_cmd, "select_index", select_index)
+
+    result = runner.invoke(app, ["account", "switch"])
+
+    assert result.exit_code == 0, result.output
+    assert selector["initial_index"] == 0
+    rendered = selector["render"](1)
+    assert "avery" in rendered
+    assert "Personal · owner" in rendered
+    assert "acme" in rendered
+    assert "Organization · admin" in rendered
+    assert "Avery Example" not in rendered
+    assert "Acme Incorporated" not in rendered
+    assert "(active)" in rendered
+    assert "Account 'acme' selected for persisted profile" in result.output
+    assert cfg_mod.load().profiles["work"].active_customer_id == "acme"
+
+
+def test_account_use_remains_a_hidden_deprecated_alias(monkeypatch, tmp_path: Path) -> None:
+    _isolate_config(monkeypatch, tmp_path)
+
+    class _Client:
+        @staticmethod
+        def get(path: str) -> _Response:
+            assert path == "/accounts"
+            return _Response(
+                {
+                    "items": [
+                        {
+                            "account_ref": "acme",
+                            "account_handle": "acme",
+                            "account_type": "organization",
+                            "account_label": "Acme Incorporated",
+                            "organization_role": "admin",
+                            "authority_revision": 2,
+                        }
+                    ]
+                }
+            )
+
+    monkeypatch.setattr(
+        account_cmd.ApiClient,
+        "from_profile",
+        staticmethod(lambda profile=None: _Client()),
+    )
+
+    result = runner.invoke(app, ["account", "use", "acme"])
+
+    assert result.exit_code == 0, result.output
+    assert "deprecated" in result.stderr
+    assert cfg_mod.load().profiles["work"].active_customer_id == "acme"
+
+    help_result = runner.invoke(app, ["account", "--help"])
+    assert help_result.exit_code == 0
+    assert "switch" in help_result.output
+    assert not any(line.strip().startswith("│ use ") for line in help_result.output.splitlines())
+
+
+def test_removed_profile_aliases_are_rejected(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
     _isolate_config(monkeypatch, tmp_path)
 
     profile_result = runner.invoke(app, ["auth", "profile", "switch", "work"])
-    account_result = runner.invoke(app, ["account", "switch", "personal"])
     top_level_profile_result = runner.invoke(app, ["profile", "switch", "work"])
 
     assert profile_result.exit_code == 2
-    assert account_result.exit_code == 2
     assert top_level_profile_result.exit_code == 2

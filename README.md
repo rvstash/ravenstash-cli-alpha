@@ -29,13 +29,13 @@ Sign in, choose an account, and choose a repository:
 ```bash
 rvs auth login
 rvs account list
-rvs account use AcmeHQ
+rvs account switch
 rvs art select platform/packages
 ```
 
-Use your Ravenstash username for a personal account. Use an organization's
-public handle for an organization. Names are matched without regard to letter
-case.
+Use the interactive picker, or pass a Ravenstash username or organization
+handle directly with `rvs account switch HANDLE`. Handles are matched without
+regard to letter case.
 
 Then run the package tool you already use:
 

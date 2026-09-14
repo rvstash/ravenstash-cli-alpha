@@ -69,8 +69,8 @@ def test_context_commands_are_separated_from_auth_help() -> None:
     assert "use" in profile_result.output
     assert "switch" not in profile_result.output
     assert account_result.exit_code == 0
-    assert "use" in account_result.output
-    assert "switch" not in account_result.output
+    assert "switch" in account_result.output
+    assert not any(line.strip().startswith("│ use ") for line in account_result.output.splitlines())
 
 
 def test_root_without_args_shows_help() -> None:

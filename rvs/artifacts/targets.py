@@ -197,7 +197,7 @@ def resolve_target(
         if spec.target_type == "repository":
             effective_customer_id = customer_id or cfg_mod.current_customer_id(profile_name)
             if effective_customer_id is None:
-                output.fatal("No account is selected. Run `rvs account use USERNAME_OR_HANDLE`.")
+                output.fatal("No account is selected. Run `rvs account switch`.")
             entry = resolve_repository_entry(
                 client, spec.selector, effective_customer_id, registry_kind
             )

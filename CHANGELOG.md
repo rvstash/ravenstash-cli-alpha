@@ -12,6 +12,8 @@ All notable user-facing changes to `rvs` are recorded here. The format follows
   `rvs update --candidate X.Y.ZrcN [--apply]`.
 - Public governance, contribution, security, support, issue, and pull-request
   guidance.
+- Interactive `rvs account switch` selection for personal accounts and
+  organizations.
 
 ### Changed
 
@@ -24,6 +26,10 @@ All notable user-facing changes to `rvs` are recorded here. The format follows
 - The project and its release artifacts are now licensed under Apache-2.0.
 - Runtime dependencies pin `cryptography` and `idna` to their reviewed exact
   versions.
+- `rvs account switch HANDLE` is now the canonical direct account-selection
+  command; the former `account use` form remains as a hidden deprecated alias.
+- Account selection and listings use public handles rather than mutable display
+  names.
 
 ### Fixed
 

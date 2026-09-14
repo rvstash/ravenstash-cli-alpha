@@ -85,7 +85,7 @@ def _customer_id(profile: str | None, explicit_customer_id: str | None = None) -
     profile_name, _ = _profile(profile)
     customer_id = cfg_mod.current_customer_id(profile_name)
     if not customer_id:
-        output.fatal("No account is selected. Run `rvs account use USERNAME_OR_HANDLE`.")
+        output.fatal("No account is selected. Run `rvs account switch`.")
     return customer_id
 
 
@@ -257,6 +257,31 @@ def _repo_ref_from_response(repo: dict, fallback_repository_name: str) -> str:
     return _repository_name_from_response(repo, fallback_repository_name)
 
 
+def _public_account_handle(account: dict) -> str:
+    handle = account.get("account_handle")
+    if not isinstance(handle, str) or not handle.strip():
+        output.fatal("Ravenstash returned an account without a public handle.")
+    return handle.strip()
+
+
+def _selected_account_handle(
+    profile: str | None,
+    account_ref: str,
+    entries: list[dict],
+) -> str:
+    for entry in entries:
+        account = entry.get("account")
+        if isinstance(account, dict) and account.get("account_ref") == account_ref:
+            handle = account.get("account_handle")
+            if isinstance(handle, str) and handle.strip():
+                return handle
+
+    profile_name, selected = ensure_active_account(profile, account_ref)
+    if selected.customer_handle:
+        return selected.customer_handle
+    return _public_account_handle(resolve_account(account_ref, profile_name))
+
+
 def _root_package_options() -> dict[str, str | None]:
     context = click.get_current_context(silent=True)
     if context is None:
@@ -333,10 +358,11 @@ def repo_list(
     if kind:
         _require_kind(kind)
     client = _client(profile)
+    selected_account_ref = _customer_id(profile, customer_id)
     params = {
         key: value
         for key, value in {
-            "account_ref": _customer_id(profile, customer_id),
+            "account_ref": selected_account_ref,
             "format": kind,
         }.items()
         if value is not None
@@ -351,17 +377,42 @@ def repo_list(
 
     entries = data if isinstance(data, list) else data.get("items", [])
     items = [entry["repository"] for entry in entries]
+
+    if output.is_json():
+        account_handle = (
+            _selected_account_handle(profile, selected_account_ref, entries) if items else ""
+        )
+        output.table(
+            ["Account", "Namespace", "Repository", "Permanent reference", "Formats"],
+            [
+                [
+                    account_handle,
+                    entry["repository"]["namespace_name"],
+                    _repository_name_from_response(item),
+                    (f"{item['namespace_unique_ref']}/{item['repository_unique_ref']}"),
+                    ", ".join(
+                        detail["format"]
+                        for detail in item.get("formats", [])
+                        if isinstance(detail, dict) and isinstance(detail.get("format"), str)
+                    ),
+                ]
+                for entry, item in zip(entries, items, strict=True)
+            ],
+            json_keys=["account", "namespace", "repository", "repository_id", "formats"],
+        )
+        return
+
+    account_handle = _selected_account_handle(profile, selected_account_ref, entries)
+    output.kv({"Account": account_handle})
     if not items:
         output.info("No repositories found.")
         return
 
     output.table(
-        ["Account", "Namespace", "Repository", "Repository ID", "Formats"],
+        ["Repository", "Permanent reference", "Formats"],
         [
             [
-                entry["account"]["account_label"],
-                entry["repository"]["namespace_name"],
-                _repository_name_from_response(item),
+                f"{item['namespace_name']}/{_repository_name_from_response(item)}",
                 (f"{item['namespace_unique_ref']}/{item['repository_unique_ref']}"),
                 ", ".join(
                     detail["format"]
@@ -369,9 +420,8 @@ def repo_list(
                     if isinstance(detail, dict) and isinstance(detail.get("format"), str)
                 ),
             ]
-            for entry, item in zip(entries, items, strict=True)
+            for item in items
         ],
-        json_keys=["account", "namespace", "repository", "repository_id", "formats"],
     )
 
 
@@ -469,42 +519,68 @@ def repo_show(
     except ApiError as exc:
         output.fatal(str(exc))
 
+    account_handle = _public_account_handle(entry["account"])
+    repository_name = _repository_name_from_response(item, repo)
+    permanent_reference = f"{item['namespace_unique_ref']}/{item['repository_unique_ref']}"
+    formats = ", ".join(
+        detail["format"]
+        for detail in item.get("formats", [])
+        if isinstance(detail, dict) and isinstance(detail.get("format"), str)
+    )
+    packages = str(item.get("aggregate_package_count", item.get("package_count", "0")))
+    versions = str(item.get("aggregate_version_count", item.get("version_count", "0")))
+    oci_paths = str(item.get("aggregate_oci_repository_count", "0"))
+    manifests = str(item.get("aggregate_manifest_count", "0"))
+    storage_bytes = str(item.get("aggregate_storage_bytes", item.get("storage_bytes", "0")))
+    created = str(item.get("created_at", ""))
+    if output.is_json():
+        output.kv(
+            {
+                "Name": repository_name,
+                "Account": account_handle,
+                "Namespace": item["namespace_name"],
+                "Namespace reference": item["namespace_unique_ref"],
+                "Repository reference": item["repository_unique_ref"],
+                "Formats": formats,
+                "Packages": packages,
+                "Versions": versions,
+                "OCI paths": oci_paths,
+                "Manifests": manifests,
+                "Storage bytes": storage_bytes,
+                "Created": created,
+            },
+            title=f"Repository {repo}",
+            json_keys=[
+                "name",
+                "account",
+                "namespace",
+                "namespace_id",
+                "repository_id",
+                "formats",
+                "packages",
+                "versions",
+                "oci_paths",
+                "manifests",
+                "storage_bytes",
+                "created",
+            ],
+        )
+        return
+
     output.kv(
         {
-            "Name": _repository_name_from_response(item, repo),
-            "Account": entry["account"]["account_label"],
-            "Namespace": item["namespace_name"],
-            "Namespace ID": item["namespace_unique_ref"],
-            "Repository ID": item["repository_unique_ref"],
-            "Formats": ", ".join(
-                detail["format"]
-                for detail in item.get("formats", [])
-                if isinstance(detail, dict) and isinstance(detail.get("format"), str)
-            ),
-            "Packages": str(item.get("aggregate_package_count", item.get("package_count", "0"))),
-            "Versions": str(item.get("aggregate_version_count", item.get("version_count", "0"))),
-            "OCI paths": str(item.get("aggregate_oci_repository_count", "0")),
-            "Manifests": str(item.get("aggregate_manifest_count", "0")),
-            "Storage bytes": str(
-                item.get("aggregate_storage_bytes", item.get("storage_bytes", "0"))
-            ),
-            "Created": str(item.get("created_at", "")),
+            "Repository": f"{item['namespace_name']}/{repository_name}",
+            "Account": account_handle,
+            "Permanent reference": permanent_reference,
+            "Formats": formats,
+            "Packages": packages,
+            "Versions": versions,
+            "OCI paths": oci_paths,
+            "Manifests": manifests,
+            "Storage bytes": storage_bytes,
+            "Created": created,
         },
-        title=f"Repository {repo}",
-        json_keys=[
-            "name",
-            "account",
-            "namespace",
-            "namespace_id",
-            "repository_id",
-            "formats",
-            "packages",
-            "versions",
-            "oci_paths",
-            "manifests",
-            "storage_bytes",
-            "created",
-        ],
+        title=f"Repository {item['namespace_name']}/{repository_name}",
     )
 
 
