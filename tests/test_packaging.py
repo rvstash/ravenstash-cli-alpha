@@ -97,9 +97,11 @@ def test_debian_package_installs_node_signature_verifier() -> None:
 
 def test_frozen_bundle_dispatches_docker_credential_helper() -> None:
     entrypoint = (ROOT / "packaging" / "pyinstaller" / "entrypoint.py").read_text(encoding="utf-8")
+    shared_entrypoint = (ROOT / "rvs" / "entrypoint.py").read_text(encoding="utf-8")
     build = (ROOT / "packaging" / "scripts" / "build-pyinstaller.sh").read_text(encoding="utf-8")
 
-    assert 'Path(sys.argv[0]).stem == "docker-credential-rvs"' in entrypoint
+    assert "from rvs.entrypoint import main" in entrypoint
+    assert 'Path(sys.argv[0]).stem == "docker-credential-rvs"' in shared_entrypoint
     assert "dist/pyinstaller/rvs/docker-credential-rvs" in build
 
 

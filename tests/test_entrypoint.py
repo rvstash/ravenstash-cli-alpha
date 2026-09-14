@@ -1,0 +1,33 @@
+from __future__ import annotations
+
+import subprocess
+import sys
+
+from rvs.entrypoint import _version_requested
+
+
+def test_only_standalone_version_flags_take_the_fast_path() -> None:
+    assert _version_requested(["--version"])
+    assert _version_requested(["-V"])
+    assert not _version_requested([])
+    assert not _version_requested(["--json", "--version"])
+    assert not _version_requested(["pip", "--version"])
+
+
+def test_version_fast_path_does_not_import_cli() -> None:
+    code = """
+import sys
+sys.argv = ["rvs", "--version"]
+from rvs.entrypoint import main
+main()
+assert "rvs.cli" not in sys.modules
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.startswith("Ravenstash CLI ")

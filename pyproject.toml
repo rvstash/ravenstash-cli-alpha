@@ -32,8 +32,8 @@ Repository = "https://github.com/rvstash/ravenstash-cli-alpha"
 Issues = "https://github.com/rvstash/ravenstash-cli-alpha/issues"
 
 [project.scripts]
-rvs = "rvs.cli:app"
-ravenstash = "rvs.cli:app"
+rvs = "rvs.entrypoint:main"
+ravenstash = "rvs.entrypoint:main"
 docker-credential-rvs = "rvs.oci.credential_helper:main"
 
 [dependency-groups]

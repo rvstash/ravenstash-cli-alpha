@@ -45,7 +45,7 @@ def test_api_client_refreshes_and_retries_once(monkeypatch) -> None:
         httpx.Response(200, json={"ok": True}),
     ]
 
-    monkeypatch.setattr("rvs.client.httpx.Client", _FakeHttpClient)
+    monkeypatch.setattr(httpx, "Client", _FakeHttpClient)
     monkeypatch.setattr(
         auth_mod,
         "refresh_expiring_credential",
@@ -73,7 +73,7 @@ def test_api_client_retries_idempotent_get_transport_failures(monkeypatch) -> No
         httpx.Response(200, json={"ok": True}),
     ]
 
-    monkeypatch.setattr("rvs.client.httpx.Client", _FakeHttpClient)
+    monkeypatch.setattr(httpx, "Client", _FakeHttpClient)
     monkeypatch.setattr("rvs.client.time.sleep", lambda _seconds: None)
 
     response = ApiClient("https://api.ravenstash.com", "access").get("/repositories/resolve")
@@ -87,7 +87,7 @@ def test_api_client_does_not_retry_post_transport_failures(monkeypatch) -> None:
     request = httpx.Request("POST", "https://api.ravenstash.com/package-credentials")
     _FakeHttpClient.responses = [httpx.ReadTimeout("timed out", request=request)]
 
-    monkeypatch.setattr("rvs.client.httpx.Client", _FakeHttpClient)
+    monkeypatch.setattr(httpx, "Client", _FakeHttpClient)
 
     with pytest.raises(httpx.ReadTimeout):
         ApiClient("https://api.ravenstash.com", "access").post(
@@ -105,7 +105,7 @@ def test_api_client_without_profile_does_not_refresh(monkeypatch) -> None:
     ]
     refresh_calls: list[str] = []
 
-    monkeypatch.setattr("rvs.client.httpx.Client", _FakeHttpClient)
+    monkeypatch.setattr(httpx, "Client", _FakeHttpClient)
     monkeypatch.setattr(
         auth_mod,
         "refresh_expiring_credential",
@@ -228,7 +228,7 @@ pkg_api_url = "https://app.example/api"
     _FakeHttpClient.requests = []
     _FakeHttpClient.responses = [httpx.Response(401, json={"detail": "rejected"})]
     refresh_calls: list[str] = []
-    monkeypatch.setattr("rvs.client.httpx.Client", _FakeHttpClient)
+    monkeypatch.setattr(httpx, "Client", _FakeHttpClient)
     monkeypatch.setattr(
         auth_mod,
         "refresh_expiring_credential",
@@ -251,7 +251,7 @@ def test_api_client_request_methods_pass_paths_payloads_and_params(monkeypatch) 
         httpx.Response(200, json={"updated": True}),
         httpx.Response(204),
     ]
-    monkeypatch.setattr("rvs.client.httpx.Client", _FakeHttpClient)
+    monkeypatch.setattr(httpx, "Client", _FakeHttpClient)
     client = ApiClient("https://api.example/", "token")
 
     client.get("/items", params={"customer_id": "cus_123"})
@@ -285,7 +285,7 @@ def test_api_client_rejects_a_different_reported_contract(monkeypatch) -> None:
             json={"items": []},
         )
     ]
-    monkeypatch.setattr("rvs.client.httpx.Client", _FakeHttpClient)
+    monkeypatch.setattr(httpx, "Client", _FakeHttpClient)
 
     with pytest.raises(ApiError, match="expects 'v0'") as exc_info:
         ApiClient("https://api.example", "token").get("/repositories")
@@ -296,7 +296,7 @@ def test_api_client_rejects_a_different_reported_contract(monkeypatch) -> None:
 def test_api_client_error_uses_json_detail(monkeypatch) -> None:
     _FakeHttpClient.requests = []
     _FakeHttpClient.responses = [httpx.Response(403, json={"detail": "forbidden"})]
-    monkeypatch.setattr("rvs.client.httpx.Client", _FakeHttpClient)
+    monkeypatch.setattr(httpx, "Client", _FakeHttpClient)
 
     with pytest.raises(ApiError) as exc_info:
         ApiClient("https://api.example", "token").get("/private")

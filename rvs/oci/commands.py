@@ -2,10 +2,15 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import typer
 
 from .. import output
-from . import runner
+
+
+if TYPE_CHECKING:
+    from . import runner
 
 
 PASSTHROUGH_CONTEXT = {
@@ -22,6 +27,8 @@ def _options(
     customer_id: str | None,
     yes: bool = False,
 ) -> runner.OciOptions:
+    from . import runner
+
     return runner.OciOptions(
         yes=yes,
         profile=profile,
@@ -40,6 +47,8 @@ def _run(
     customer_id: str | None,
     yes: bool = False,
 ) -> None:
+    from . import runner
+
     if any(arg == "--rvs-repo" or arg.startswith("--rvs-repo=") for arg in ctx.args):
         output.fatal("Unknown option '--rvs-repo'. Use --rvs-target.")
     if any(arg.split("=", 1)[0].startswith("--rvs-") for arg in ctx.args):

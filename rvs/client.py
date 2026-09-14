@@ -18,14 +18,14 @@ from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
 from typing import TYPE_CHECKING, Any
 
-import httpx
-
 from . import auth as auth_mod
 from . import config as cfg_mod
 from .devapi import ApiVersionMismatchError, api_url, validate_api_version
 
 
 if TYPE_CHECKING:
+    import httpx
+
     from .config import ProfileConfig
 
 
@@ -176,6 +176,8 @@ class ApiClient:
     def _request(
         self, method: str, path: str, *, retry: bool = True, **kwargs: Any
     ) -> httpx.Response:
+        import httpx
+
         transport_attempts = 3 if method.upper() == "GET" else 1
         for attempt in range(transport_attempts):
             try:
@@ -202,6 +204,8 @@ class ApiClient:
 
     def issue_native(self, path: str, payload: dict) -> httpx.Response:
         """Bounded retries only for temporary issuance, never arbitrary mutations."""
+        import httpx
+
         if path not in {"/package-credentials", "/remote-package-credentials"}:
             raise ValueError("Native issuance requires a known credential endpoint")
         deadline = time.monotonic() + 30

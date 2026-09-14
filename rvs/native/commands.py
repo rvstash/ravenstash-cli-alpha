@@ -2,10 +2,15 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import typer
 
 from .. import output
-from . import runner
+
+
+if TYPE_CHECKING:
+    from . import runner
 
 
 PASSTHROUGH_CONTEXT = {
@@ -26,6 +31,8 @@ def _options(
     native_config: str,
     yes: bool = False,
 ) -> runner.NativeOptions:
+    from . import runner
+
     return runner.NativeOptions(
         yes=yes,
         profile=profile,
@@ -37,6 +44,8 @@ def _options(
 
 
 def _run(tool: runner.NativeTool, ctx: typer.Context, options: runner.NativeOptions) -> None:
+    from . import runner
+
     if any(arg == "--rvs-repo" or arg.startswith("--rvs-repo=") for arg in ctx.args):
         output.fatal("Unknown option '--rvs-repo'. Use --rvs-target.")
     runner.run(tool, list(ctx.args), options)
