@@ -101,8 +101,13 @@ for distribution in "${distributions[@]}"; do
   for indexed_architecture in "${architectures[@]}"; do
     binary="$output_repository/dists/$distribution/main/binary-${indexed_architecture}"
     mkdir -p "$binary"
-    (cd "$output_repository" && apt-ftparchive -a "$indexed_architecture" packages pool) \
-      | python3 "$script_dir/channel_policy.py" filter "$compatibility_channel" \
+    # apt-ftparchive's -a option infers architecture from conventional Debian
+    # filenames. Our append-only pool includes a digest suffix, so generate all
+    # stanzas and apply architecture policy from the package metadata instead.
+    (cd "$output_repository" && apt-ftparchive \
+      -o APT::FTPArchive::AlwaysStat=true packages pool) \
+      | python3 "$script_dir/channel_policy.py" filter \
+        "$compatibility_channel" --architecture "$indexed_architecture" \
       > "$binary/Packages"
     # A newly supported architecture legitimately has an empty index in older
     # compatibility channels. The repository verifier still requires every

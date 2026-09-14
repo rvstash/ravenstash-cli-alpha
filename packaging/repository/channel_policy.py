@@ -60,12 +60,15 @@ def stanza_fields(stanza: str) -> dict[str, str]:
     return result
 
 
-def filter_packages(text: str, channel: str) -> str:
+def filter_packages(text: str, channel: str, architecture: str | None = None) -> str:
     normalized = normalize_channel(channel)
     selected: list[str] = []
     for stanza in stanzas(text):
-        version = stanza_fields(stanza).get("Version", "")
-        if version_matches_channel(version, normalized):
+        fields = stanza_fields(stanza)
+        version = fields.get("Version", "")
+        if version_matches_channel(version, normalized) and (
+            architecture is None or fields.get("Architecture") == architecture
+        ):
             selected.append(stanza)
     return "\n\n".join(selected) + ("\n" if selected else "")
 
@@ -138,6 +141,7 @@ def main() -> None:
     validate_parser.add_argument("channel")
     filter_parser = subparsers.add_parser("filter")
     filter_parser.add_argument("channel")
+    filter_parser.add_argument("--architecture", choices=("amd64", "arm64"))
     manifest_parser = subparsers.add_parser("manifest")
     manifest_parser.add_argument("repository", type=Path)
     manifest_parser.add_argument("recommended")
@@ -158,7 +162,9 @@ def main() -> None:
                     f"version {arguments.version} does not belong to channel {channel}"
                 )
         elif arguments.command == "filter":
-            sys.stdout.write(filter_packages(sys.stdin.read(), arguments.channel))
+            sys.stdout.write(
+                filter_packages(sys.stdin.read(), arguments.channel, arguments.architecture)
+            )
         elif arguments.command == "manifest":
             print(
                 json.dumps(

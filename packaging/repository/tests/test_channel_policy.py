@@ -38,6 +38,15 @@ class ChannelPolicyTests(unittest.TestCase):
         self.assertIn("Version: 0.3.1", selected)
         self.assertNotIn("Version: 0.4.0", selected)
 
+    def test_filter_packages_excludes_other_architectures(self) -> None:
+        packages = (
+            "Package: rvs\nVersion: 0.12.1\nArchitecture: amd64\n\n"
+            "Package: rvs\nVersion: 0.12.1\nArchitecture: arm64\n"
+        )
+        selected = filter_packages(packages, "v0.12", "arm64")
+        self.assertNotIn("Architecture: amd64", selected)
+        self.assertIn("Architecture: arm64", selected)
+
     def test_invalid_channel_is_rejected(self) -> None:
         with self.assertRaises(ValueError):
             normalize_channel("stable")

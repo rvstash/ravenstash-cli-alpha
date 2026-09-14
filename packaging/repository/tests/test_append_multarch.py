@@ -13,13 +13,19 @@ APPEND = ROOT / "packaging/repository/append_and_sign_apt.sh"
 
 
 def _run(command: list[str], *, env: dict[str, str] | None = None) -> str:
-    return subprocess.run(
+    result = subprocess.run(
         command,
-        check=True,
+        check=False,
         capture_output=True,
         text=True,
         env=env,
-    ).stdout
+    )
+    if result.returncode != 0:
+        pytest.fail(
+            f"command failed ({result.returncode}): {' '.join(command)}\n"
+            f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
+        )
+    return result.stdout
 
 
 def _build_deb(root: Path, version: str, architecture: str) -> Path:
@@ -32,6 +38,8 @@ def _build_deb(root: Path, version: str, architecture: str) -> Path:
                 "Package: rvs",
                 f"Version: {version}",
                 f"Architecture: {architecture}",
+                "Section: utils",
+                "Priority: optional",
                 "Maintainer: Ravenstash Test <test@example.com>",
                 "Description: repository test package",
                 "",
