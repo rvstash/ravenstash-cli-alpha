@@ -6,7 +6,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$ReleaseVersion = "0.13.2"
+$ReleaseVersion = "0.13.3"
 $CompatibilityChannel = "v0.13"
 $Repository = "rvstash/ravenstash-cli-alpha"
 $ReleaseBase = "https://github.com/$Repository/releases/download/v$ReleaseVersion"

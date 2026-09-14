@@ -5,7 +5,7 @@ export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:${PATH
 
 readonly repository_url="https://releases.ravenstash.com/rvs/apt"
 readonly github_release_url="https://github.com/rvstash/ravenstash-cli-alpha/releases/download"
-readonly release_version="0.13.2"
+readonly release_version="0.13.3"
 readonly compatibility_channel="v0.13"
 readonly signing_key_url="${repository_url}/ravenstash-rvs.gpg"
 readonly signing_key_fingerprint="3B7C20FC370D1A7C813DF3A2E9679F951AD8BAA0"
