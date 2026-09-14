@@ -4,12 +4,10 @@ run-name: Source CI · ${{ github.event_name }} · ${{ github.ref_name }} · ${{
 on:
   push:
     branches:
-      - dev # Removed immediately after the default branch is renamed to main.
       - main
       - release/**
   pull_request:
     branches:
-      - dev # Removed immediately after the default branch is renamed to main.
       - main
       - release/**
     types: [opened, synchronize, reopened, ready_for_review]
