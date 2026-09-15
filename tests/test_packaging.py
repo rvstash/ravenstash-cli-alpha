@@ -331,6 +331,34 @@ def test_release_slot_check_fails_closed(
     assert result.returncode == expected_returncode
 
 
+@pytest.mark.skipif(os.name == "nt", reason="release-slot tooling is POSIX-only")
+def test_release_slot_check_accepts_candidate_tag(tmp_path: Path) -> None:
+    binary = tmp_path / "bin"
+    binary.mkdir()
+    gh = binary / "gh"
+    gh.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    gh.chmod(0o755)
+
+    result = subprocess.run(
+        [
+            str(ROOT / "packaging/scripts/assert-github-release-slot-empty.sh"),
+            "rvstash/ravenstash-cli-alpha",
+            "v0.13.5rc1",
+        ],
+        check=False,
+        env=os.environ | {"PATH": f"{binary}{os.pathsep}{os.environ['PATH']}"},
+    )
+
+    assert result.returncode == 0
+
+
+def test_ci_only_tracks_canonical_release_branches() -> None:
+    workflow = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+
+    assert workflow.count('branches: [main, "release/v*.*"]') == 2
+    assert 'branches: [main, "release/**"]' not in workflow
+
+
 def test_reusable_builder_uses_exact_bundles_and_supplies_musl_bash() -> None:
     builder = (ROOT / ".github/workflows/_build-release-target.yml").read_text(encoding="utf-8")
 
