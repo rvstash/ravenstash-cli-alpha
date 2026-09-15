@@ -87,6 +87,7 @@ Print instructions without changing files or creating credentials:
 ```bash
 rvs art native config pip
 rvs art native config oras
+# Prints both read and publish endpoints when the target is a repository.
 rvs art endpoint --format npm
 rvs art reference backend:latest --format oci
 ```

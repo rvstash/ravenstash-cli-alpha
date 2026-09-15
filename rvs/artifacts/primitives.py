@@ -25,23 +25,35 @@ native_app = typer.Typer(
 def endpoint(
     target: str | None = typer.Option(None, "--target", "-t"),
     kind: str | None = typer.Option(None, "--format", "-f"),
-    access: Literal["read", "publish"] = typer.Option("read", "--access"),
+    access: Literal["read", "publish"] | None = typer.Option(None, "--access"),
     account: str | None = typer.Option(None, "--account"),
     profile: str | None = typer.Option(None, "--profile", "-p"),
 ) -> None:
-    """Print one native endpoint without credentials."""
+    """Print native read and publish endpoints without credentials."""
     try:
         with contextlib.redirect_stdout(sys.stderr):
             found = discover(target, profile, account, kind)
             selected = found.select_format(kind)
-            address = found.endpoint(selected, access)
+            selected_access = access or "read"
+            address = found.endpoint(selected, selected_access)
         result = {
             "target": found.target.display_selector,
             "format": selected,
-            "access": access,
+            "access": selected_access,
             "endpoint": address,
         }
-        click.echo(json.dumps(result) if output.is_json() else address)
+        publish_address = None
+        if access is None and found.target.target_type == "repository":
+            publish_address = found.endpoint(selected, "publish")
+            result["publish_endpoint"] = publish_address
+        if output.is_json():
+            click.echo(json.dumps(result))
+        elif access is not None:
+            click.echo(address)
+        else:
+            click.echo(f"Read: {address}")
+            if publish_address is not None:
+                click.echo(f"Publish: {publish_address}")
     except (ApiError, httpx.HTTPError, ValueError, KeyError, TypeError) as exc:
         output.fatal(str(exc))
 

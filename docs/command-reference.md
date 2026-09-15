@@ -154,9 +154,11 @@ task-focused guides and examples.
 
 ## Native addresses and setup
 
-`rvs art endpoint --format FORMAT [--access read|publish]` prints one address.
-For OCI this is the login host; other formats return the complete native URL.
-Read is the default. `rvs art reference [PATH[:TAG]|PATH@DIGEST] --format oci`
+`rvs art endpoint --format FORMAT` prints labeled read and publish addresses for
+repositories, or only the read address for a mirror. Add `--access read` or
+`--access publish` to print one raw address for scripts. For OCI the address is
+the login host; other formats return the complete native URL.
+`rvs art reference [PATH[:TAG]|PATH@DIGEST] --format oci`
 prints a readable repository-qualified reference without adding a tag.
 Both commands use read-only discovery and work with leaf `--target/-t`, `--account`,
 and `--profile/-p` options.

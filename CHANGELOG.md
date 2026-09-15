@@ -6,6 +6,11 @@ All notable user-facing changes to `rvs` are recorded here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- `rvs art endpoint` now shows both read and publish endpoints for repositories;
+  `--access` retains single-value output for scripts.
+
 ## [0.13.6] - 2026-09-15
 
 ### Changed
@@ -14,7 +19,6 @@ All notable user-facing changes to `rvs` are recorded here. The format follows
   pinned; the HTTP client is migrated from HTTPX to HTTPX2.
 - Nix builds now consume the committed `uv.lock`, keeping their Python
   dependency graph aligned with portable and native CI builds.
-
 ### Fixed
 
 - Candidate installation now reads Debian package identity with an explicit

@@ -159,16 +159,44 @@ def test_reference_is_one_value_without_implicit_tag(found, operand):
     )
 
 
-def test_endpoint_requires_one_format_and_root_json_only(found):
+def test_endpoint_prints_read_and_publish_addresses_by_default(found):
     assert runner.invoke(app, ["art", "endpoint"]).exit_code == 1
+    result = runner.invoke(app, ["art", "endpoint", "--format", "pypi"])
+    assert result.exit_code == 0, result.output
+    assert result.stdout == (
+        "Read: https://pypi.rvsta.sh/in_abcdefgh/ar_abcdefgh/simple/\n"
+        "Publish: https://push.pypi.rvsta.sh/in_abcdefgh/ar_abcdefgh/\n"
+    )
+
+
+def test_endpoint_json_adds_publish_address_and_access_selects_one_raw_value(found):
     result = runner.invoke(app, ["--json", "art", "endpoint", "--format", "oci"])
     assert json.loads(result.stdout) == {
         "target": "space/packages",
         "format": "oci",
         "access": "read",
         "endpoint": "oci.rvsta.sh",
+        "publish_endpoint": "oci.rvsta.sh",
     }
+    result = runner.invoke(app, ["art", "endpoint", "--format", "pypi", "--access", "publish"])
+    assert result.exit_code == 0, result.output
+    assert result.stdout == "https://push.pypi.rvsta.sh/in_abcdefgh/ar_abcdefgh/\n"
     assert runner.invoke(app, ["art", "endpoint", "--json"]).exit_code == 2
+
+
+def test_endpoint_omits_publish_address_for_read_only_mirror(found):
+    found.target.target_type = "official_cache"
+    object.__setattr__(found, "formats", ("pypi",))
+
+    result = runner.invoke(app, ["--json", "art", "endpoint", "--format", "pypi"])
+
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.stdout) == {
+        "target": "space/packages",
+        "format": "pypi",
+        "access": "read",
+        "endpoint": "https://mirror.pypi.rvsta.sh/in_abcdefgh/ar_abcdefgh/simple/",
+    }
 
 
 @pytest.mark.parametrize("values", [[""], ["pypi,"], ["all"], ["Pypi"], ["rpm"]])
