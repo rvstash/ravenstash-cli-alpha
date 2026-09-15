@@ -13,7 +13,7 @@ import zipfile
 from dataclasses import dataclass
 from pathlib import Path
 
-import httpx
+import httpx2 as httpx
 
 from .. import output
 from ..paths import rvs_home

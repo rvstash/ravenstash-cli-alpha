@@ -8,7 +8,7 @@ import sys
 from typing import Literal
 
 import click
-import httpx
+import httpx2 as httpx
 import typer
 
 from .. import output

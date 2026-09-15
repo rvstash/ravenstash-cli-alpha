@@ -84,7 +84,12 @@ def test_portable_bundle_includes_runtime_dependency_license_metadata() -> None:
     spec = (ROOT / "packaging/pyinstaller/rvs.spec").read_text(encoding="utf-8")
 
     assert '"cryptography"' in spec
+    assert '"httpcore2"' in spec
+    assert '"httpx2"' in spec
     assert '"idna"' in spec
+    assert '"truststore"' in spec
+    assert '"httpcore"' not in spec
+    assert '"httpx"' not in spec
     assert "datas += _metadata(distribution)" in spec
 
 

@@ -258,8 +258,8 @@ def test_extract_can_normalize_macos_jdk_home(tmp_path: Path) -> None:
     assert (destination / "bin/java").read_bytes() == b"java"
 
 
-def test_download_rejects_checksum_mismatch(httpx_mock, tmp_path: Path) -> None:
-    httpx_mock.add_response(
+def test_download_rejects_checksum_mismatch(httpx2_mock, tmp_path: Path) -> None:
+    httpx2_mock.add_response(
         url="https://releases.example.test/runtime.tar.gz",
         content=b"archive",
     )
@@ -275,9 +275,9 @@ def test_download_rejects_checksum_mismatch(httpx_mock, tmp_path: Path) -> None:
     assert not destination.exists()
 
 
-def test_download_accepts_matching_checksum(httpx_mock, tmp_path: Path) -> None:
+def test_download_accepts_matching_checksum(httpx2_mock, tmp_path: Path) -> None:
     content = b"archive"
-    httpx_mock.add_response(
+    httpx2_mock.add_response(
         url="https://releases.example.test/runtime.tar.gz",
         content=content,
     )
@@ -292,9 +292,9 @@ def test_download_accepts_matching_checksum(httpx_mock, tmp_path: Path) -> None:
     assert destination.read_bytes() == content
 
 
-def test_temurin_metadata_uses_supported_latest_assets_endpoint(httpx_mock) -> None:
+def test_temurin_metadata_uses_supported_latest_assets_endpoint(httpx2_mock) -> None:
     url = "https://api.adoptium.net/v3/assets/latest/21/hotspot"
-    httpx_mock.add_response(
+    httpx2_mock.add_response(
         url=(
             f"{url}?architecture=aarch64&image_type=jdk&jvm_impl=hotspot&os=windows&vendor=eclipse"
         ),

@@ -25,7 +25,7 @@ from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from typing import IO, TYPE_CHECKING, Any
 
-import httpx
+import httpx2 as httpx
 
 from ..devapi import (
     ApiVersionMismatchError,

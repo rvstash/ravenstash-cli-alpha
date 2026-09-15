@@ -9,7 +9,7 @@ from typing import Literal
 from urllib.parse import quote
 
 import click
-import httpx
+import httpx2 as httpx
 import typer
 
 from .. import output

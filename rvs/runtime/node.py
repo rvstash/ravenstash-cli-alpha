@@ -14,7 +14,7 @@ import tempfile
 from pathlib import Path, PureWindowsPath
 from typing import Any
 
-import httpx
+import httpx2 as httpx
 
 from .. import output
 from ._install import (

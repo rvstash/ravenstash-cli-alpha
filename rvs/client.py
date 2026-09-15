@@ -1,4 +1,4 @@
-"""httpx-based Ravenstash DevAPI client.
+"""HTTPX2-based Ravenstash DevAPI client.
 
 All requests go through this module so that auth headers, base URL, and error
 handling are consistent everywhere.
@@ -24,7 +24,7 @@ from .devapi import ApiVersionMismatchError, api_url, validate_api_version
 
 
 if TYPE_CHECKING:
-    import httpx
+    import httpx2 as httpx
 
     from .config import ProfileConfig
 
@@ -191,7 +191,7 @@ class ApiClient:
     def _request(
         self, method: str, path: str, *, retry: bool = True, **kwargs: Any
     ) -> httpx.Response:
-        import httpx
+        import httpx2 as httpx
 
         transport_attempts = 3 if method.upper() == "GET" else 1
         with httpx.Client(timeout=self._timeout) as hx:
@@ -232,7 +232,7 @@ class ApiClient:
 
     def issue_native(self, path: str, payload: dict) -> httpx.Response:
         """Bounded retries only for temporary issuance, never arbitrary mutations."""
-        import httpx
+        import httpx2 as httpx
 
         if path not in {"/package-credentials", "/remote-package-credentials"}:
             raise ValueError("Native issuance requires a known credential endpoint")

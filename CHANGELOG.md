@@ -31,6 +31,10 @@ All notable user-facing changes to `rvs` are recorded here. The format follows
 - The project and its release artifacts are now licensed under Apache-2.0.
 - Runtime dependencies pin `cryptography` and `idna` to their reviewed exact
   versions.
+- Runtime, development, and release dependencies are upgraded and exactly
+  pinned; the HTTP client is migrated from HTTPX to HTTPX2.
+- Nix builds now consume the committed `uv.lock`, keeping their Python
+  dependency graph aligned with portable and native CI builds.
 - `rvs account switch HANDLE` is now the canonical direct account-selection
   command; the former `account use` form remains as a hidden deprecated alias.
 - Account selection and listings use public handles rather than mutable display

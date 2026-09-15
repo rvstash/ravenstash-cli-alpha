@@ -13,7 +13,7 @@ from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import Any
 
-import httpx
+import httpx2 as httpx
 import typer
 
 from . import output

@@ -185,7 +185,7 @@ def test_upstream_commands_call_the_public_positional_argument_format() -> None:
 
     assert result.exit_code == 0
     help_output = unstyle(result.output)
-    assert "REPOSITORY FORMAT" in help_output
+    assert "{repository} {FORMAT}" in help_output
     assert " KIND" not in help_output
 
 

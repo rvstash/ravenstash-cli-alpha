@@ -69,8 +69,9 @@ def test_malformed_config_is_reported_without_a_traceback(tmp_path: Path) -> Non
         env=os.environ | {"RVS_HOME": str(tmp_path)},
     )
 
+    stderr = " ".join(result.stderr.split())
     assert result.returncode == 1
     assert result.stdout == ""
-    assert "could not read" in result.stderr
-    assert "rvs profile delete --all" in result.stderr
-    assert "Traceback" not in result.stderr
+    assert "could not read" in stderr
+    assert "rvs profile delete --all" in stderr
+    assert "Traceback" not in stderr

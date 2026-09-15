@@ -1,7 +1,7 @@
 from types import SimpleNamespace
 from unittest.mock import Mock
 
-import httpx
+import httpx2 as httpx
 import pytest
 from rvs import output
 from rvs.artifacts import auth_commands

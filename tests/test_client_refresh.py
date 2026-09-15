@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, ClassVar
 
-import httpx
+import httpx2 as httpx
 import pytest
 from rvs import auth as auth_mod
 from rvs import config as cfg_mod

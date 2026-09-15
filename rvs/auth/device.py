@@ -9,7 +9,7 @@ import time
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-import httpx
+import httpx2 as httpx
 from rich.live import Live
 
 from .. import auth as auth_mod

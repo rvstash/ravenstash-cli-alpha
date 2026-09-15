@@ -14,6 +14,7 @@ from . import output
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator
+    from typing import TextIO
 
 
 KEY_UP = "up"
@@ -103,7 +104,7 @@ def _stdin_fileno() -> int | None:
         return None
 
 
-def _stdin_selector() -> int | object:
+def _stdin_selector() -> int | TextIO:
     fd = _stdin_fileno()
     return fd if fd is not None else sys.stdin
 

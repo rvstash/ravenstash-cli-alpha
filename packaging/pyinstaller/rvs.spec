@@ -27,14 +27,13 @@ def _submodules(package: str) -> list[str]:
 RUNTIME_DISTRIBUTIONS = (
     "annotated-doc",
     "anyio",
-    "certifi",
     "cffi",
     "click",
     "colorama",
     "cryptography",
     "h11",
-    "httpcore",
-    "httpx",
+    "httpcore2",
+    "httpx2",
     "idna",
     "jaraco.classes",
     "jaraco.context",
@@ -53,6 +52,7 @@ RUNTIME_DISTRIBUTIONS = (
     "SecretStorage",
     "shellingham",
     "tomli-w",
+    "truststore",
     "typer",
 )
 
