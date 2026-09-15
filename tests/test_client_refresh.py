@@ -13,9 +13,10 @@ from rvs.devapi import api_path
 class _FakeHttpClient:
     responses: ClassVar[list[httpx.Response | Exception]] = []
     requests: ClassVar[list[tuple[str, str, dict[str, str], dict[str, Any]]]] = []
+    instances: ClassVar[list[_FakeHttpClient]] = []
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
-        pass
+        self.instances.append(self)
 
     def __enter__(self) -> _FakeHttpClient:
         return self
@@ -39,6 +40,7 @@ class _FakeHttpClient:
 
 
 def test_api_client_refreshes_and_retries_once(monkeypatch) -> None:
+    _FakeHttpClient.instances = []
     _FakeHttpClient.requests = []
     _FakeHttpClient.responses = [
         httpx.Response(401, json={"detail": "expired"}),
@@ -63,6 +65,34 @@ def test_api_client_refreshes_and_retries_once(monkeypatch) -> None:
         "Bearer old-access",
         "Bearer new-access",
     ]
+    assert len(_FakeHttpClient.instances) == 1
+
+
+def test_api_client_preemptive_refresh_reuses_request_connection(monkeypatch) -> None:
+    _FakeHttpClient.instances = []
+    _FakeHttpClient.requests = []
+    _FakeHttpClient.responses = [httpx.Response(200, json={"ok": True})]
+    refresh_clients: list[object] = []
+
+    monkeypatch.setattr(httpx, "Client", _FakeHttpClient)
+
+    def refresh(profile: str, **kwargs: Any) -> str | None:
+        assert profile == "default"
+        refresh_clients.append(kwargs["http_client"])
+        return "new-access"
+
+    monkeypatch.setattr(auth_mod, "refresh_expiring_credential", refresh)
+
+    response = ApiClient(
+        "https://api.ravenstash.com",
+        "old-access",
+        profile="default",
+        refresh_before_request=True,
+    ).get("/accounts")
+
+    assert response.json() == {"ok": True}
+    assert refresh_clients == _FakeHttpClient.instances
+    assert _FakeHttpClient.requests[0][2]["Authorization"] == "Bearer new-access"
 
 
 def test_api_client_retries_idempotent_get_transport_failures(monkeypatch) -> None:
