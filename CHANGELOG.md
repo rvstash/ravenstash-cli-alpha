@@ -14,13 +14,16 @@ All notable user-facing changes to `rvs` are recorded here. The format follows
   guidance.
 - Interactive `rvs account switch` selection for personal accounts and
   organizations.
+- Expiring, unsigned test builds for installing an exact commit without
+  publishing a release candidate.
 
 ### Changed
 
 - Normal development now targets `main`; supported maintenance lines use
   `release/vMAJOR.MINOR` branches and matching APT suites.
-- CI runs for ready pull requests and protected-branch commits, not ordinary
-  feature-branch pushes.
+- Ready pull requests and protected-branch commits use one path-aware CI run
+  with parallel affected checks and one aggregate gate; ordinary feature-branch
+  pushes remain quiet.
 - Pull requests use one verified squash commit or a local fast-forward landing;
   merge commits and GitHub rebase merges are excluded.
 - The project and its release artifacts are now licensed under Apache-2.0.

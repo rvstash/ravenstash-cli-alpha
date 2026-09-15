@@ -182,13 +182,12 @@ def test_release_keeps_target_handoffs_isolated() -> None:
 
 def test_top_level_workflow_run_names_are_distinct_and_purpose_first() -> None:
     expected_prefixes = {
-        "ci.yml": "Source CI ·",
-        "platform-ci.yml": "Platform CI ·",
+        "ci.yml": "CI ·",
         "platform-certification.yml": "Platform certification ·",
         "promote-installer.yml": "Promote rvs ",
         "refresh-apt.yml": "Refresh APT metadata ·",
-        "release-policy-ci.yml": "Release policy ·",
         "release.yml": "${{ inputs.kind == 'candidate'",
+        "test-build.yml": "Test build ·",
     }
 
     for filename, prefix in expected_prefixes.items():
@@ -199,28 +198,22 @@ def test_top_level_workflow_run_names_are_distinct_and_purpose_first() -> None:
 
 
 def test_protected_branch_has_stable_aggregate_ci_gates() -> None:
-    source_jobs = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8"))[
-        "jobs"
-    ]
-    platform_jobs = yaml.safe_load(
-        (ROOT / ".github/workflows/platform-ci.yml").read_text(encoding="utf-8")
-    )["jobs"]
-    policy_jobs = yaml.safe_load(
-        (ROOT / ".github/workflows/release-policy-ci.yml").read_text(encoding="utf-8")
-    )["jobs"]
-
-    source_gate = source_jobs["source-ci-gate"]
-    assert source_gate["name"] == "Source CI gate"
-    assert set(source_gate["needs"]) == {
-        "verify-python-314",
-        "ubuntu-2004-package-compatibility",
-        "linux-glibc-portable-compatibility",
+    jobs = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8"))["jobs"]
+    gate = jobs["gate"]
+    assert gate["name"] == "CI gate"
+    assert set(gate["needs"]) == {
+        "changes",
+        "quality",
+        "platform-tests",
+        "package-smoke",
+        "release-policy",
+        "nix",
     }
-
-    platform_gate = platform_jobs["platform-ci-gate"]
-    assert platform_gate["name"] == "Platform CI gate"
-    assert set(platform_gate["needs"]) == {"source", "alpine", "nix"}
-    assert policy_jobs["validate"]["name"] == "Release policy gate"
+    assert jobs["quality"]["needs"] == "changes"
+    assert jobs["platform-tests"]["needs"] == "changes"
+    assert jobs["package-smoke"]["needs"] == "changes"
+    assert jobs["release-policy"]["needs"] == "changes"
+    assert jobs["nix"]["needs"] == "changes"
 
 
 def test_publication_graph_parallelizes_safe_jobs_and_serializes_mutations() -> None:
@@ -251,18 +244,35 @@ def test_release_builds_once_and_appends_architectures_once() -> None:
     assert "refs/remotes/origin/${SOURCE_BRANCH}" in publication
     assert "inputs.kind == 'candidate'" in publication
     assert "--prerelease" in publication
-    for gate in (
-        "ci.yml",
-        "platform-ci.yml",
-        "platform-certification.yml",
-        "release-policy-ci.yml",
-    ):
+    for gate in ("ci.yml", "platform-certification.yml"):
         assert gate in publication
+    assert "platform-ci.yml" not in publication
+    assert "release-policy-ci.yml" not in publication
     assert "rvs-release-${{ inputs.source_sha }}" in publication
     assert publication.count(append) == 1
     assert '"build/rvs_${VERSION}_amd64.deb"' in publication
     assert '"build/rvs_${VERSION}_arm64.deb"' in publication
     assert "RVS_APT_PROMOTE_CHANNEL" not in publication
+
+
+def test_test_build_is_expiring_unsigned_and_never_publishes() -> None:
+    workflow = yaml.safe_load(
+        (ROOT / ".github/workflows/test-build.yml").read_text(encoding="utf-8")
+    )
+    jobs = workflow["jobs"]
+    build_jobs = {name: job for name, job in jobs.items() if "uses" in job}
+
+    assert len(build_jobs) == 8
+    assert {job["needs"] for job in build_jobs.values()} == {"prepare"}
+    assert all(job["with"]["artifact_prefix"] == "rvs-test-target" for job in build_jobs.values())
+    assert all("version_override" in job["with"] for job in build_jobs.values())
+    assert jobs["assemble"]["steps"][-2]["with"]["retention-days"] == 7
+    workflow_text = (ROOT / ".github/workflows/test-build.yml").read_text(encoding="utf-8")
+    assert "workflow_dispatch" in workflow_text
+    assert "contents: write" not in workflow_text
+    assert "gh release" not in workflow_text
+    assert "publish_apt" not in workflow_text
+    assert "cosign" not in workflow_text
 
 
 def test_successful_publication_is_not_failed_by_best_effort_cleanup() -> None:
@@ -321,13 +331,14 @@ def test_release_slot_check_fails_closed(
     assert result.returncode == expected_returncode
 
 
-def test_platform_ci_uses_exact_bundles_and_supplies_musl_bash() -> None:
-    platform = (ROOT / ".github/workflows/platform-ci.yml").read_text(encoding="utf-8")
+def test_reusable_builder_uses_exact_bundles_and_supplies_musl_bash() -> None:
+    builder = (ROOT / ".github/workflows/_build-release-target.yml").read_text(encoding="utf-8")
 
-    assert "apk add --no-cache bash binutils build-base libffi-dev" in platform
-    assert 'bundle="build/release/rvs-v${version}-${TARGET}"' in platform
-    assert "find build/release" not in platform
-    assert platform.count('test -d "$bundle"') == 2
+    assert "apk add --no-cache bash binutils build-base libffi-dev" in builder
+    assert 'bundle="build/release/rvs-v${VERSION}-${TARGET}"' in builder
+    assert "find build/release" not in builder
+    assert builder.count('test -d "$bundle"') == 2
+    assert "prepare_test_build.py apply" in builder
 
 
 def test_channel_recommendation_activates_after_installer_verification() -> None:

@@ -19,8 +19,7 @@ not created for every APT package or patch release.
    relevant maintenance branch for an intentional backport.
 3. Mark the pull request ready when it should enter CI. Draft pull requests do
    not run the expensive suites.
-4. Resolve review conversations and wait for `Source CI gate`,
-   `Platform CI gate`, and `Release policy gate`.
+4. Resolve review conversations and wait for the aggregate `CI gate`.
 5. After approval and successful required gates, a maintainer uses one of the
    two allowed linear landing modes: one verified squash commit, or a local
    `git merge --ff-only <topic-branch>` followed by a target-branch push.
@@ -41,11 +40,15 @@ same required checks must pass for the exact resulting protected-branch commit.
 
 - A push to a feature branch with no pull request runs no repository CI.
 - Opening, reopening, updating, or marking ready a non-draft pull request to
-  `main` or `release/*` runs Source CI, Platform CI, and Release policy in
-  parallel. A new commit cancels superseded runs for that pull request.
-- A squash or fast-forward push to `main` or `release/*` reruns those gates for the
-  exact protected-branch commit. Release automation accepts only an exact SHA
-  that passed all required gates.
+  `main` or `release/*` starts one CI run. A selector fans out only the checks
+  affected by the changed paths; independent jobs run in parallel and converge
+  on the stable `CI gate`. A new commit cancels the superseded run.
+- A squash or fast-forward push to `main` or `release/*` reruns that path-aware
+  CI for the exact protected-branch commit. It does not build every release
+  target and never publishes anything. Release automation accepts only an exact
+  SHA that passed the aggregate gate.
+- A manual CI dispatch deliberately runs every check. Use it when a path-limited
+  run is insufficient for investigation; it is not a release operation.
 - Platform certification is manual and scheduled. Release candidates and
   stable releases require a successful certification run for their exact SHA.
 

@@ -129,15 +129,15 @@ out the immutable release source, refuses installer rollback, deploys only bytes
 that match the release's signed inventory, verifies the live routes, and
 publishes the newly signed recommended-channel manifest last.
 
-Source CI builds on native Linux amd64/arm64, macOS Intel/Apple Silicon, and
-Windows x64/ARM64 runners. Alpine musl builds run on both native architectures.
-The glibc 2.28 compatibility build also exercises the
-same frozen archive in pinned Ubuntu 22.04/24.04, Debian 12/13, Fedora, Rocky
-Linux 8/9, Amazon Linux 2023, and openSUSE Leap containers. Each headless smoke
-test verifies normal startup, both aliases, `RVS_TOKEN` authentication, and the
-expected no-provider diagnostic without creating a plaintext store. Desktop
-keyring behavior is covered separately by provider and disposable round-trip
-tests because containers do not supply a real graphical D-Bus session.
+Path-aware CI runs source tests on native Linux ARM64, macOS Intel/Apple Silicon,
+and Windows x64/ARM64 in parallel, with quality checks and an Ubuntu 20.04
+package smoke test on Linux amd64. The manual/scheduled platform certification
+owns release-grade Alpine, Nix, glibc distribution, runtime-download, and desktop
+credential-store coverage. Each headless smoke test verifies normal startup,
+both aliases, `RVS_TOKEN` authentication, and the expected no-provider diagnostic
+without creating a plaintext store. Desktop keyring behavior is covered
+separately by provider and disposable round-trip tests because containers do not
+supply a real graphical D-Bus session.
 
 Only protected GitHub environments in this repository define these Actions
 values:

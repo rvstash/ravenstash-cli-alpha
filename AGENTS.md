@@ -47,6 +47,8 @@ control-plane URL separate from package download and upload URLs.
   objects are append-only; corrections receive a new patch version.
 - Release candidates use PEP 440 `X.Y.ZrcN` versions and GitHub prereleases.
   They must not be added to stable APT suites.
+- Test builds use `X.Y.Z.dev<RUN_ID>+g<SHA8>`, remain unsigned seven-day GitHub
+  Actions artifacts, and must never create tags, releases, or APT state.
 - A release bump is a dedicated final commit containing the version, matching
   lockfile and installer updates, and release notes.
 

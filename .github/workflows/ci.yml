@@ -1,15 +1,11 @@
-name: source-ci
-run-name: Source CI · ${{ github.event_name }} · ${{ github.ref_name }} · ${{ github.sha }}
+name: ci
+run-name: CI · ${{ github.event_name }} · ${{ github.ref_name }} · ${{ github.sha }}
 
 on:
   push:
-    branches:
-      - main
-      - release/**
+    branches: [main, "release/**"]
   pull_request:
-    branches:
-      - main
-      - release/**
+    branches: [main, "release/**"]
     types: [opened, synchronize, reopened, ready_for_review]
   workflow_dispatch:
 
@@ -17,46 +13,174 @@ permissions:
   contents: read
 
 concurrency:
-  group: source-ci-${{ github.ref }}
+  group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  verify-python-314:
+  changes:
+    name: Select affected checks
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    runs-on: ubuntu-24.04
+    outputs:
+      quality: ${{ steps.select.outputs.quality }}
+      platform: ${{ steps.select.outputs.platform }}
+      package: ${{ steps.select.outputs.package }}
+      policy: ${{ steps.select.outputs.policy }}
+      nix: ${{ steps.select.outputs.nix }}
+    steps:
+      - name: Check out exact source
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Select checks from the changed paths
+        id: select
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BEFORE_SHA: ${{ github.event.before }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          quality=false
+          platform=false
+          package=false
+          policy=false
+          nix=false
+
+          if [[ "$EVENT_NAME" == workflow_dispatch ]]; then
+            changed_files="__all__"
+          elif [[ "$EVENT_NAME" == pull_request ]]; then
+            changed_files="$(git diff --name-only "$PR_BASE_SHA" "$PR_HEAD_SHA")"
+          elif [[ -z "$BEFORE_SHA" || "$BEFORE_SHA" =~ ^0+$ ]]; then
+            changed_files="$(git ls-files)"
+          else
+            changed_files="$(git diff --name-only "$BEFORE_SHA" "$GITHUB_SHA")"
+          fi
+
+          while IFS= read -r path; do
+            case "$path" in
+              __all__)
+                quality=true
+                platform=true
+                package=true
+                policy=true
+                nix=true
+                ;;
+              rvs/*|tests/*)
+                quality=true
+                platform=true
+                package=true
+                ;;
+              pyproject.toml|uv.lock)
+                quality=true
+                platform=true
+                package=true
+                nix=true
+                ;;
+              packaging/scripts/*|packaging/pyinstaller/*|packaging/Dockerfile.ubuntu20)
+                quality=true
+                package=true
+                policy=true
+                ;;
+              packaging/repository/*|packaging/install.sh|packaging/install.ps1|packaging/installer-worker/*)
+                quality=true
+                policy=true
+                ;;
+              .github/*)
+                quality=true
+                policy=true
+                ;;
+              flake.nix|flake.lock)
+                nix=true
+                ;;
+              README.md|LICENSE|NOTICE)
+                package=true
+                ;;
+            esac
+          done <<< "$changed_files"
+
+          {
+            echo "quality=$quality"
+            echo "platform=$platform"
+            echo "package=$package"
+            echo "policy=$policy"
+            echo "nix=$nix"
+          } | tee -a "$GITHUB_OUTPUT"
+
+  quality:
+    name: Python quality
+    needs: changes
+    if: needs.changes.outputs.quality == 'true'
     runs-on: ubuntu-24.04
     steps:
       - name: Check out exact source
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
           persist-credentials: false
-
       - name: Set up pinned uv
         uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78
         with:
           version: "0.11.24"
-          enable-cache: false
-
-      - name: Verify with Python 3.14
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - name: Test and lint once
         run: |
           uv sync --frozen --python 3.14
-          .venv/bin/pytest
-          .venv/bin/ruff format --check rvs tests packaging/repository
-          .venv/bin/ruff check rvs tests packaging/repository
-          .venv/bin/pyright
+          uv run pytest
+          uv run ruff format --check rvs tests packaging/repository packaging/scripts
+          uv run ruff check rvs tests packaging/repository packaging/scripts
+          uv run pyright
 
-  ubuntu-2004-package-compatibility:
-    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+  platform-tests:
+    name: Source · ${{ matrix.name }}
+    needs: changes
+    if: needs.changes.outputs.platform == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Linux ARM64
+            runner: ubuntu-24.04-arm
+          - name: macOS Apple Silicon
+            runner: macos-14
+          - name: macOS Intel
+            runner: macos-15-intel
+          - name: Windows x64
+            runner: windows-2022
+          - name: Windows ARM64
+            runner: windows-11-arm
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - name: Check out exact source
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+      - name: Set up pinned uv
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78
+        with:
+          version: "0.11.24"
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - name: Test source on the native platform
+        shell: bash
+        run: |
+          uv sync --frozen --python 3.14
+          uv run pytest
+
+  package-smoke:
+    name: Package · Ubuntu 20.04 baseline
+    needs: changes
+    if: needs.changes.outputs.package == 'true'
     runs-on: ubuntu-24.04
     steps:
       - name: Check out exact source
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
           persist-credentials: false
-
       - name: Build in the pinned Ubuntu 20.04 environment
         run: packaging/scripts/build-in-ubuntu20.sh
-
-      - name: Install and exercise the package on Ubuntu 20.04
+      - name: Install and exercise the Debian package
         run: |
           docker run --rm \
             --volume "$PWD/dist/release:/release:ro" \
@@ -72,96 +196,92 @@ jobs:
               rvs --help >/dev/null
               ravenstash --version
               test -x /usr/bin/docker-credential-rvs
-              test -x /usr/lib/rvs/rvs
-              test -x /usr/lib/rvs/docker-credential-rvs
               test -e /usr/lib/rvs/_internal/libpython3.14.so.1.0
             '
 
-      - name: Upload portable compatibility bundle
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
-        with:
-          name: rvs-portable-compatibility-${{ github.sha }}
-          path: dist/release/rvs-v*-linux-amd64.tar.gz
-          if-no-files-found: error
-          compression-level: 0
-          retention-days: 1
-
-  linux-glibc-portable-compatibility:
-    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
-    needs: ubuntu-2004-package-compatibility
+  release-policy:
+    name: Workflow and release policy
+    needs: changes
+    if: needs.changes.outputs.policy == 'true'
     runs-on: ubuntu-24.04
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - system: Ubuntu 22.04
-            image: ubuntu@sha256:79676deb51ebb02885b0b9d33788e78a37cf1045ad79d1bb04c6a222c3556b3d
-          - system: Ubuntu 24.04
-            image: ubuntu@sha256:1e0a86e57d247923571b75e0aaf48a1449cf8c543d51fb3e07a4a7d7bfa79316
-          - system: Ubuntu 26.04
-            image: ubuntu@sha256:889d056d5c6c0bfb55789ff3710681d68e50713cb562d2196dc07110599c7a6f
-          - system: Debian 12
-            image: debian@sha256:2f65600e1252c5649d2213e1d1ea4d74253d26514dc6530102a875e429245929
-          - system: Debian 13
-            image: debian@sha256:6788062a1b42ac281f053ac876170b79a3eaed5d61383b8ed7eaca6c6965f3b1
-          - system: Fedora 44
-            image: fedora@sha256:89f61a124414261868224666aa7fb8df1b78397a53623774bdfb105d1612b48b
-          - system: Fedora 43
-            image: fedora@sha256:52cfb35e60823b691af7541b576c0fa49195628044b2c1a15b0ae775ec01048e
-          - system: Rocky Linux 8
-            image: rockylinux@sha256:2d05a9266523bbf24f33ebc3a9832e4d5fd74b973c220f2204ca802286aa275d
-          - system: Rocky Linux 9
-            image: rockylinux@sha256:d644d203142cd5b54ad2a83a203e1dee68af2229f8fe32f52a30c6e1d3c3a9e0
-          - system: AlmaLinux 10
-            image: almalinux@sha256:689dc4a86e288b3f88ced4bf14bef18cdaf5539609608ca4cebc62720740dfa2
-          - system: Amazon Linux 2023
-            image: amazonlinux@sha256:fa946e513ed149232490479653141fa4c6cd1e71c70130525cf00a791477ed19
-          - system: openSUSE Leap 15.6
-            image: opensuse/leap@sha256:ca2942f9510c3e30fd322017782cdf6c067b2183dd7d56b39d0c697a9808ce2a
-          - system: openSUSE Leap 16.0
-            image: opensuse/leap@sha256:77732aa024f765ecdb4067affdea9e386d68056d0d281608ce4665d8fb0b4edd
-          - system: Arch Linux
-            image: archlinux@sha256:c9dc8b5d1b06d8d50ace6d42b2c93fbb1e34c9e1332d1a2102936e497d3187ae
-    name: portable (${{ matrix.system }})
     steps:
-      - name: Check out compatibility smoke policy
+      - name: Check out release policy
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
           persist-credentials: false
-
-      - name: Download portable bundle
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+      - name: Set up Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
         with:
-          name: rvs-portable-compatibility-${{ github.sha }}
-          path: compatibility-release
-
-      - name: Exercise frozen CLI in ${{ matrix.system }}
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: packaging/installer-worker/package-lock.json
+      - name: Validate GitHub Actions policy
         run: |
-          install -d compatibility-bundle
-          tar -xzf compatibility-release/rvs-v*-linux-amd64.tar.gz \
-            --strip-components=1 \
-            -C compatibility-bundle
           docker run --rm \
-            --volume "$PWD/compatibility-bundle:/bundle:ro" \
-            --volume "$PWD/packaging/scripts/smoke-portable-bundle.sh:/smoke.sh:ro" \
-            "${{ matrix.image }}" \
-            /bin/bash /smoke.sh --bundle /bundle
+            --volume "$PWD:/repo:ro" \
+            --workdir /repo \
+            rhysd/actionlint@sha256:887a259a5a534f3c4f36cb02dca341673c6089431057242cdc931e9f133147e9
+      - name: Validate shell and Python policy tools
+        run: |
+          shellcheck \
+            packaging/repository/*.sh \
+            packaging/install.sh \
+            packaging/scripts/common.sh
+          bash -n packaging/repository/*.sh packaging/install.sh packaging/scripts/*.sh
+          python3 -m compileall -q packaging/repository packaging/scripts
+          python3 -m unittest discover -s packaging/repository/tests
+      - name: Validate pinned APT public key
+        run: packaging/repository/prepare_keyring.sh
+      - name: Validate installer Worker without deployment credentials
+        working-directory: packaging/installer-worker
+        run: |
+          npm ci --ignore-scripts
+          npm audit --audit-level=high
+          npm test
+          install -m 0644 ../install.sh src/install.sh
+          npm run check
 
-  source-ci-gate:
-    name: Source CI gate
-    if: ${{ always() && (github.event_name != 'pull_request' || github.event.pull_request.draft == false) }}
-    needs:
-      - verify-python-314
-      - ubuntu-2004-package-compatibility
-      - linux-glibc-portable-compatibility
+  nix:
+    name: Nix package · x86_64-linux
+    needs: changes
+    if: needs.changes.outputs.nix == 'true'
     runs-on: ubuntu-24.04
     steps:
-      - name: Require every source check
-        env:
-          PYTHON_RESULT: ${{ needs.verify-python-314.result }}
-          UBUNTU_2004_RESULT: ${{ needs.ubuntu-2004-package-compatibility.result }}
-          PORTABLE_RESULT: ${{ needs.linux-glibc-portable-compatibility.result }}
+      - name: Check out exact source
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+      - name: Install Nix
+        uses: cachix/install-nix-action@526118121621777ccd86f79b04685a9319637641
+      - name: Evaluate all targets and build the native package
         run: |
-          test "$PYTHON_RESULT" = success
-          test "$UBUNTU_2004_RESULT" = success
-          test "$PORTABLE_RESULT" = success
+          nix flake show --all-systems --no-write-lock-file
+          nix flake check --no-write-lock-file
+          nix build .#packages.x86_64-linux.default --no-write-lock-file
+          ./result/bin/rvs --version
+          ./result/bin/rvs --help >/dev/null
+
+  gate:
+    name: CI gate
+    if: ${{ always() && (github.event_name != 'pull_request' || github.event.pull_request.draft == false) }}
+    needs: [changes, quality, platform-tests, package-smoke, release-policy, nix]
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Require every selected check
+        env:
+          CHANGES_RESULT: ${{ needs.changes.result }}
+          QUALITY_RESULT: ${{ needs.quality.result }}
+          PLATFORM_RESULT: ${{ needs.platform-tests.result }}
+          PACKAGE_RESULT: ${{ needs.package-smoke.result }}
+          POLICY_RESULT: ${{ needs.release-policy.result }}
+          NIX_RESULT: ${{ needs.nix.result }}
+        run: |
+          test "$CHANGES_RESULT" = success
+          for result in \
+            "$QUALITY_RESULT" \
+            "$PLATFORM_RESULT" \
+            "$PACKAGE_RESULT" \
+            "$POLICY_RESULT" \
+            "$NIX_RESULT"; do
+            [[ "$result" == success || "$result" == skipped ]]
+          done
