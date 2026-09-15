@@ -3,7 +3,8 @@
 This repository builds every platform artifact in one manually dispatched
 release workflow. Stable releases and release candidates share validation,
 parallel builds, assembly, attestations, and signing. Only stable releases
-publish to APT.
+publish to APT. A separate manual test-build workflow produces expiring,
+unsigned artifacts without creating a public release.
 
 ## Release lines
 
@@ -57,6 +58,38 @@ passphrases, deployment tokens, and revocation material must never be committed.
 
 Do not create a tag manually. The workflow refuses to overwrite an existing tag,
 draft, prerelease, release, or APT version.
+
+## Expiring test build
+
+Use a test build when maintainers need an installable binary from an exact
+commit without publishing a public release candidate. Dispatch `test-build.yml`
+from `main` with:
+
+- the exact 40-character source commit, which may be on a feature branch;
+- the intended next stable `X.Y.Z` version; and
+- one target for a quick test, or `all` for the eight release targets.
+
+The workflow definition always comes from trusted `main`, checks out the chosen
+commit as data, and derives a unique version such as
+`0.14.0.dev12345+g01234567`. Its Debian equivalent is
+`0.14.0~dev12345+g01234567`, which sorts before both `0.14.0~rc1` and `0.14.0`.
+It builds selected targets in parallel and creates one GitHub Actions artifact
+retained for seven days. The run summary contains the exact `gh run download`
+command.
+
+For example, after downloading a Linux glibc artifact:
+
+```bash
+sha256sum --check rvs-v0.14.0.dev12345+g01234567-checksums.txt
+sudo apt install ./rvs_0.14.0.dev12345+g01234567_amd64.deb
+rvs --version
+```
+
+GitHub requires repository access to download the artifact. Test builds are
+deliberately unsigned and are not tags, GitHub releases, release candidates, or
+APT publications. `rvs update` cannot discover them; install the downloaded
+package or portable bundle directly and replace it with a signed candidate or
+stable release after testing.
 
 ## Signed release candidate
 

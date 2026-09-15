@@ -28,6 +28,18 @@ on:
         type: boolean
         required: false
         default: false
+      version_override:
+        type: string
+        required: false
+        default: ""
+      artifact_prefix:
+        type: string
+        required: false
+        default: rvs-target
+      retention_days:
+        type: number
+        required: false
+        default: 1
 
 permissions:
   contents: read
@@ -37,11 +49,21 @@ jobs:
     name: ${{ inputs.target }}
     runs-on: ${{ inputs.runner }}
     steps:
-      - name: Check out exact release source
+      - name: Check out exact source
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
           ref: ${{ inputs.source_sha }}
           persist-credentials: false
+
+      - name: Apply ephemeral test-build version
+        if: inputs.version_override != ''
+        shell: bash
+        env:
+          VERSION_OVERRIDE: ${{ inputs.version_override }}
+        run: |
+          python_command=python3
+          command -v "$python_command" >/dev/null 2>&1 || python_command=python
+          "$python_command" packaging/scripts/prepare_test_build.py apply "$VERSION_OVERRIDE"
 
       - name: Set up pinned uv
         if: inputs.kind == 'portable'
@@ -117,18 +139,18 @@ jobs:
       - name: Upload target-specific handoff
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
-          name: rvs-target-${{ inputs.target }}-${{ inputs.source_sha }}
+          name: ${{ inputs.artifact_prefix }}-${{ inputs.target }}-${{ inputs.source_sha }}
           path: ${{ inputs.artifact_paths }}
           if-no-files-found: error
           compression-level: 0
-          retention-days: 1
+          retention-days: ${{ inputs.retention_days }}
 
       - name: Upload canonical release metadata handoff
         if: inputs.include_metadata
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
-          name: rvs-target-metadata-${{ inputs.source_sha }}
+          name: ${{ inputs.artifact_prefix }}-metadata-${{ inputs.source_sha }}
           path: dist/release/rvs-v${{ inputs.version }}-sbom.cdx.json
           if-no-files-found: error
           compression-level: 0
-          retention-days: 1
+          retention-days: ${{ inputs.retention_days }}
