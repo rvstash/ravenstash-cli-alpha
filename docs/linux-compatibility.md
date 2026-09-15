@@ -13,13 +13,15 @@ for the following targets:
 | NixOS and Nix on Linux/macOS | x86_64, aarch64 | flake package |
 | WSL2 | x86_64, aarch64 | matching Linux path |
 
-The compatibility workflow tests source and frozen executables on native Linux,
-macOS, and Windows runners. Alpine artifacts are built and executed in native-architecture
-musl containers. CI builds and executes the Nix package natively for all four
-Linux/macOS architecture pairs. One release workflow builds isolated native
-artifacts from one exact source commit, assembles one collision-free checksum
-inventory, creates keyless Sigstore provenance for that complete inventory, and
-publishes those same bytes without rebuilding them.
+Path-aware CI tests source on native Linux, macOS, and Windows runners and builds
+one Ubuntu 20.04 baseline package when runtime or packaging inputs change. Nix
+checks run only when Nix or dependency inputs change. The scheduled or manual
+platform-certification workflow owns the exhaustive runtime matrix. One release
+workflow builds isolated native artifacts from one exact source commit, assembles
+one collision-free checksum inventory, creates keyless Sigstore provenance for
+that complete inventory, and publishes those same bytes without rebuilding them.
+Maintainers can also build selected targets from an exact commit as an unsigned,
+seven-day Actions artifact without publishing.
 
 Passing compatibility CI establishes that the source and release bundles
 run on the target hosts. Public support begins only when the exact release artifacts

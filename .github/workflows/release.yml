@@ -88,9 +88,7 @@ jobs:
         run: |
           workflows=(
             ci.yml
-            platform-ci.yml
             platform-certification.yml
-            release-policy-ci.yml
           )
           {
             echo "## Required release gates"
