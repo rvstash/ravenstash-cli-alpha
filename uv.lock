@@ -794,7 +794,7 @@ wheels = [
 
 [[package]]
 name = "ravenstash-cli"
-version = "0.13.6rc1"
+version = "0.13.6rc2"
 source = { editable = "." }
 dependencies = [
     { name = "click" },
