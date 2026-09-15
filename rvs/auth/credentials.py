@@ -413,7 +413,10 @@ def revoke_device_refresh_token(api_url: str, refresh_token: str) -> bool:
 
 
 def refresh_expiring_credential(
-    profile: str, *, stale_access_token: str | None = None
+    profile: str,
+    *,
+    stale_access_token: str | None = None,
+    http_client: httpx.Client | None = None,
 ) -> str | None:
     """Refresh an expired expiring device credential for *profile*."""
     from .. import config as cfg_mod
@@ -457,18 +460,27 @@ def refresh_expiring_credential(
         except OSError:
             logger.info("Cannot persist refresh operation for profile %s", profile)
             return None
+        request = {
+            "operation_id": operation_id,
+            "refresh_token": refresh_token,
+            "platform": _device_platform(),
+        }
         try:
-            with httpx.Client(timeout=15.0) as client:
-                response = client.post(
+            if http_client is None:
+                with httpx.Client(timeout=15.0) as client:
+                    response = client.post(
+                        devapi_url(p.api_url, "/auth/device/refresh"),
+                        headers={"User-Agent": _rvs_user_agent()},
+                        json=request,
+                    )
+            else:
+                response = http_client.post(
                     devapi_url(p.api_url, "/auth/device/refresh"),
                     headers={"User-Agent": _rvs_user_agent()},
-                    json={
-                        "operation_id": operation_id,
-                        "refresh_token": refresh_token,
-                        "platform": _device_platform(),
-                    },
+                    json=request,
+                    timeout=15.0,
                 )
-                validate_api_version(response)
+            validate_api_version(response)
         except httpx.HTTPError, ApiVersionMismatchError:
             logger.info("Device credential refresh failed for profile %s", profile)
             return None
@@ -525,11 +537,12 @@ def refresh_expiring_credential(
 # ── Public API ────────────────────────────────────────────────────────────────
 
 
-def get_token(profile: str) -> str | None:
+def get_token(profile: str, *, refresh: bool = True) -> str | None:
     """Return the effective credential for *profile*.
 
     RVS_TOKEN always wins and is intended for PAT/M2M automation. Local stored
-    credentials are short-lived CLI JWTs from the device login flow.
+    credentials are short-lived CLI JWTs from the device login flow. Callers may
+    defer refresh so it can share their resource-request connection.
     """
     if "RVS_TOKEN" in os.environ:
         try:
@@ -540,15 +553,22 @@ def get_token(profile: str) -> str | None:
             output.fatal(
                 "RVS_TOKEN must contain a current rvs_ust, rvs_uot, or rvs_oat automation credential. Clear it to use your stored login session."
             )
-    if _stored_profile_expired(profile):
+    expired = _stored_profile_expired(profile)
+    if expired and refresh:
         return refresh_expiring_credential(profile)
     store = selected_credential_store(profile)
     if store is not None:
         token = _store_get(store, profile)
         if token:
             return token
-        return refresh_expiring_credential(profile)
+        if refresh:
+            return refresh_expiring_credential(profile)
     return None
+
+
+def credential_needs_refresh(profile: str) -> bool:
+    """Return whether a stored expiring credential should refresh before use."""
+    return "RVS_TOKEN" not in os.environ and _stored_profile_expired(profile)
 
 
 def token_source(profile: str) -> str | None:

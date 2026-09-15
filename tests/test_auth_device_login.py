@@ -123,6 +123,24 @@ def test_rvs_token_prevents_expiring_refresh_attempt(monkeypatch) -> None:
     assert refreshed == []
 
 
+def test_expired_stored_token_can_be_loaded_without_refresh(monkeypatch) -> None:
+    refreshed: list[str] = []
+
+    monkeypatch.delenv("RVS_TOKEN", raising=False)
+    monkeypatch.setattr(auth_mod, "_stored_profile_expired", lambda profile: True)
+    monkeypatch.setattr(auth_mod, "selected_credential_store", lambda profile: "keyring")
+    monkeypatch.setattr(auth_mod, "_store_get", lambda store, profile: "expired-access")
+    monkeypatch.setattr(
+        auth_mod,
+        "refresh_expiring_credential",
+        lambda profile: refreshed.append(profile) or "refreshed-token",
+    )
+
+    assert auth_mod.get_token("default", refresh=False) == "expired-access"
+    assert auth_mod.credential_needs_refresh("default") is True
+    assert refreshed == []
+
+
 def test_config_token_is_ignored(monkeypatch, tmp_path: Path) -> None:
     config_dir = tmp_path / ".rvs"
     config_file = config_dir / "config.toml"
@@ -387,6 +405,7 @@ class _FakeClient:
         *,
         headers: dict[str, str] | None = None,
         json: dict[str, Any] | None = None,
+        timeout: float | None = None,
     ) -> _FakeResponse:
         self.requests.append((url, json, headers))
         return self.responses.pop(0)
@@ -730,7 +749,8 @@ def test_refresh_expiring_credential_rotates_tokens(
     monkeypatch.setattr(auth_mod, "_device_platform", lambda: "linux")
     monkeypatch.setattr(auth_mod, "_kr_set", lambda profile, token: stored.append((profile, token)))
 
-    assert auth_mod.refresh_expiring_credential("default") == "new-jwt"
+    shared_client = _FakeClient()
+    assert auth_mod.refresh_expiring_credential("default", http_client=shared_client) == "new-jwt"
     assert stored == [
         ("default:refresh", "new-refresh"),
         ("default", "new-jwt"),
