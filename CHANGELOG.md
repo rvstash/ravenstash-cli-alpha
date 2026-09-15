@@ -6,6 +6,17 @@ All notable user-facing changes to `rvs` are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.13.6] - 2026-09-15
+
+### Changed
+
+- Runtime, development, and release dependencies are upgraded and exactly
+  pinned; the HTTP client is migrated from HTTPX to HTTPX2.
+- Nix builds now consume the committed `uv.lock`, keeping their Python
+  dependency graph aligned with portable and native CI builds.
+
+Detailed release notes: [RVS 0.13.6](docs/releases/0.13.6.md).
+
 ## [0.13.5] - 2026-09-15
 
 ### Added
@@ -31,10 +42,6 @@ All notable user-facing changes to `rvs` are recorded here. The format follows
 - The project and its release artifacts are now licensed under Apache-2.0.
 - Runtime dependencies pin `cryptography` and `idna` to their reviewed exact
   versions.
-- Runtime, development, and release dependencies are upgraded and exactly
-  pinned; the HTTP client is migrated from HTTPX to HTTPX2.
-- Nix builds now consume the committed `uv.lock`, keeping their Python
-  dependency graph aligned with portable and native CI builds.
 - `rvs account switch HANDLE` is now the canonical direct account-selection
   command; the former `account use` form remains as a hidden deprecated alias.
 - Account selection and listings use public handles rather than mutable display
@@ -64,6 +71,7 @@ Detailed release notes: [RVS 0.13.4](docs/releases/0.13.4.md).
 
 Detailed notes for every earlier release are in [docs/releases](docs/releases/).
 
-[Unreleased]: https://github.com/rvstash/ravenstash-cli-alpha/compare/v0.13.5...HEAD
+[Unreleased]: https://github.com/rvstash/ravenstash-cli-alpha/compare/v0.13.6...HEAD
+[0.13.6]: https://github.com/rvstash/ravenstash-cli-alpha/compare/v0.13.5...v0.13.6
 [0.13.5]: https://github.com/rvstash/ravenstash-cli-alpha/compare/v0.13.4...v0.13.5
 [0.13.4]: https://github.com/rvstash/ravenstash-cli-alpha/releases/tag/v0.13.4
