@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ravenstash-cli"
-version = "0.13.4"
+version = "0.13.5rc1"
 description = "Ravenstash developer CLI"
 readme = "README.md"
 license = "Apache-2.0"

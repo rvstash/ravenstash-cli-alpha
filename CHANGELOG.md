@@ -6,6 +6,8 @@ All notable user-facing changes to `rvs` are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.13.5] - 2026-09-15
+
 ### Added
 
 - Signed GitHub release candidates installable on Debian-family systems with
@@ -58,5 +60,6 @@ Detailed release notes: [RVS 0.13.4](docs/releases/0.13.4.md).
 
 Detailed notes for every earlier release are in [docs/releases](docs/releases/).
 
-[Unreleased]: https://github.com/rvstash/ravenstash-cli-alpha/compare/v0.13.4...HEAD
+[Unreleased]: https://github.com/rvstash/ravenstash-cli-alpha/compare/v0.13.5...HEAD
+[0.13.5]: https://github.com/rvstash/ravenstash-cli-alpha/compare/v0.13.4...v0.13.5
 [0.13.4]: https://github.com/rvstash/ravenstash-cli-alpha/releases/tag/v0.13.4
