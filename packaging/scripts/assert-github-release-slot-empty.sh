@@ -7,7 +7,7 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/common.sh"
 readonly repository="${1:?GitHub owner/repository is required}"
 readonly tag="${2:?release tag is required}"
 [[ "$repository" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]]
-[[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([~+.-][A-Za-z0-9.-]+)?$ ]]
+[[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(rc[1-9][0-9]*)?$ ]]
 require_cmd gh
 
 scratch="$(mktemp -d)"
