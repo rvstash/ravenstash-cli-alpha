@@ -20,30 +20,35 @@ not created for every APT package or patch release.
 3. Mark the pull request ready when it should enter CI. Draft pull requests do
    not run the expensive suites.
 4. Resolve review conversations and wait for the aggregate `CI gate`.
-5. After approval and successful required gates, a maintainer uses one of the
-   two allowed linear landing modes: one verified squash commit, or a local
-   `git merge --ff-only <topic-branch>` followed by a target-branch push.
+5. After approval and successful required gates, a maintainer normally uses
+   GitHub's **Rebase and merge**. **Squash and merge** is also available when a
+   pull request's intermediate history should intentionally become one commit.
+   Maintainers may locally fast-forward a reviewed branch when preserving its
+   exact commit objects or signatures is required.
+6. GitHub automatically deletes the remote head branch after the pull request
+   lands. If a local fast-forward does not trigger that cleanup, the maintainer
+   deletes the short-lived remote branch explicitly.
 
-Fast-forwarding preserves the reviewed commit object IDs and signatures. A
-squash intentionally replaces the PR commits with one new commit, which must be
-signed or otherwise verified under the repository's protection rules. Do not
-use GitHub's **Rebase and merge**, create a merge commit, or force-push a
-protected branch. If the target advanced, either squash or have the contributor
-update and re-sign the branch before a fast-forward landing.
+All three landing modes keep history linear. Rebase preserves the complete
+reviewed commit sequence with new object IDs; squash replaces it with one new
+commit; fast-forward preserves the original object IDs and signatures. Merge
+commits are disabled. Rebase the topic branch when its target advances, and do
+not force-push a protected branch as part of normal development.
 
-Pull requests are preferred because they provide review and required CI. While
-this is the alpha repository, maintainers and automated contributors may push a
-direct linear update to `main` or `release/*` when explicitly authorized. The
+Do not push directly to `main` or `release/vMAJOR.MINOR`, even when an
+administrator bypass technically permits it. That bypass is reserved for an
+explicitly authorized emergency recovery or branch-maintenance operation. The
 same required checks must pass for the exact resulting protected-branch commit.
 
 ## When CI runs
 
 - A push to a feature branch with no pull request runs no repository CI.
 - Opening, reopening, updating, or marking ready a non-draft pull request to
-  `main` or `release/*` starts one CI run. A selector fans out only the checks
+  `main` or `release/vMAJOR.MINOR` starts one CI run. A selector fans out only the checks
   affected by the changed paths; independent jobs run in parallel and converge
   on the stable `CI gate`. A new commit cancels the superseded run.
-- A squash or fast-forward push to `main` or `release/*` reruns that path-aware
+- A rebase, squash, or fast-forward landing on `main` or
+  `release/vMAJOR.MINOR` reruns that path-aware
   CI for the exact protected-branch commit. It does not build every release
   target and never publishes anything. Release automation accepts only an exact
   SHA that passed the aggregate gate.

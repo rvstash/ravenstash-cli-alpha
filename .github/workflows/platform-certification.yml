@@ -1,5 +1,5 @@
 name: platform-certification
-run-name: Platform certification · ${{ github.event_name }} · ${{ github.ref_name }} · ${{ github.sha }}
+run-name: ${{ github.event_name == 'schedule' && 'Platform certification · Weekly' || format('Platform certification · {0}', github.ref_name) }}
 
 on:
   workflow_dispatch:

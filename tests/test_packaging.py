@@ -182,10 +182,10 @@ def test_release_keeps_target_handoffs_isolated() -> None:
 
 def test_top_level_workflow_run_names_are_distinct_and_purpose_first() -> None:
     expected_prefixes = {
-        "ci.yml": "CI ·",
-        "platform-certification.yml": "Platform certification ·",
+        "ci.yml": "${{ github.event_name == 'pull_request'",
+        "platform-certification.yml": "${{ github.event_name == 'schedule'",
         "promote-installer.yml": "Promote rvs ",
-        "refresh-apt.yml": "Refresh APT metadata ·",
+        "refresh-apt.yml": "${{ github.event_name == 'schedule'",
         "release.yml": "${{ inputs.kind == 'candidate'",
         "test-build.yml": "Test build ·",
     }
@@ -195,6 +195,8 @@ def test_top_level_workflow_run_names_are_distinct_and_purpose_first() -> None:
             (ROOT / ".github/workflows" / filename).read_text(encoding="utf-8")
         )
         assert workflow["run-name"].startswith(prefix)
+        assert "github.sha" not in workflow["run-name"]
+        assert "inputs.source_sha" not in workflow["run-name"]
 
 
 def test_protected_branch_has_stable_aggregate_ci_gates() -> None:

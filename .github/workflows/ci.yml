@@ -1,5 +1,5 @@
 name: ci
-run-name: CI · ${{ github.event_name }} · ${{ github.ref_name }} · ${{ github.sha }}
+run-name: "${{ github.event_name == 'pull_request' && format('CI · PR #{0} · {1}', github.event.pull_request.number, github.event.pull_request.title) || github.event_name == 'workflow_dispatch' && format('CI · Manual · {0}', github.ref_name) || format('CI · Push · {0}', github.ref_name) }}"
 
 on:
   push:

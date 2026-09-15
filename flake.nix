@@ -44,6 +44,7 @@
               # exercised by source and release-policy CI, not the Nix package.
               "test_apt_publisher_uses_constant_number_of_storage_calls"
               "test_release_slot_check_fails_closed"
+              "test_release_slot_check_accepts_candidate_tag"
             ];
           };
         in {

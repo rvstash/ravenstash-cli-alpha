@@ -1,5 +1,5 @@
 name: test-build
-run-name: Test build · v${{ inputs.base_version }}.dev · ${{ inputs.target }} · ${{ inputs.source_sha }}
+run-name: Test build · v${{ inputs.base_version }}.dev · ${{ inputs.target }}
 
 on:
   workflow_dispatch:

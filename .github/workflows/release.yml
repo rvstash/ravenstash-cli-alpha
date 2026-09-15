@@ -1,5 +1,5 @@
 name: release
-run-name: ${{ inputs.kind == 'candidate' && 'Candidate' || 'Release' }} rvs v${{ inputs.version }} · ${{ inputs.source_branch }} · ${{ inputs.source_sha }}
+run-name: ${{ inputs.kind == 'candidate' && 'Candidate' || 'Release' }} rvs v${{ inputs.version }} · ${{ inputs.source_branch }}
 
 on:
   workflow_dispatch:
