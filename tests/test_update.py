@@ -183,9 +183,12 @@ def test_candidate_download_authenticates_release_assets(monkeypatch: Any, tmp_p
     monkeypatch.setattr(update_mod.httpx, "Client", lambda **_kwargs: Client())
     monkeypatch.setattr(update_mod.platform, "machine", lambda: "x86_64")
 
+    metadata_commands: list[list[str]] = []
+
     def fake_run(command: list[str]) -> Any:
         if command[0] == str(update_mod._GPGV):
             return _completed()
+        metadata_commands.append(command)
         return _completed(stdout="rvs\n0.14.0~rc1\namd64\n")
 
     monkeypatch.setattr(update_mod, "_run", fake_run)
@@ -194,6 +197,14 @@ def test_candidate_download_authenticates_release_assets(monkeypatch: Any, tmp_p
 
     assert result == tmp_path / package_name
     assert result.read_bytes() == package
+    assert metadata_commands == [
+        [
+            str(update_mod._DPKG_DEB),
+            "--show",
+            "--showformat=${Package}\\n${Version}\\n${Architecture}\\n",
+            str(result),
+        ]
+    ]
 
 
 def test_apt_source_uses_native_arm64_architecture(monkeypatch: Any) -> None:

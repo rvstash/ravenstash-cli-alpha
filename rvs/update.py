@@ -321,7 +321,14 @@ def _download_candidate(candidate: str, destination: Path) -> Path:
     if hashlib.sha256(deb_path.read_bytes()).hexdigest() != expected_hash:
         output.fatal("The candidate package checksum does not match the signed inventory.")
 
-    metadata = _run([str(_DPKG_DEB), "-f", str(deb_path), "Package", "Version", "Architecture"])
+    metadata = _run(
+        [
+            str(_DPKG_DEB),
+            "--show",
+            "--showformat=${Package}\\n${Version}\\n${Architecture}\\n",
+            str(deb_path),
+        ]
+    )
     expected_metadata = ["rvs", _candidate_debian_version(candidate), architecture]
     if metadata.returncode != 0 or metadata.stdout.splitlines() != expected_metadata:
         output.fatal("The candidate package metadata does not match the requested release.")

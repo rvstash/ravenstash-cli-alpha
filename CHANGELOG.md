@@ -15,6 +15,11 @@ All notable user-facing changes to `rvs` are recorded here. The format follows
 - Nix builds now consume the committed `uv.lock`, keeping their Python
   dependency graph aligned with portable and native CI builds.
 
+### Fixed
+
+- Candidate installation now reads Debian package identity with an explicit
+  machine-readable format before comparing its name, version, and architecture.
+
 Detailed release notes: [RVS 0.13.6](docs/releases/0.13.6.md).
 
 ## [0.13.5] - 2026-09-15
