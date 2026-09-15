@@ -89,19 +89,29 @@ class ApiClient:
         timeout: float = 30.0,
         profile: str | None = None,
         allow_refresh: bool = True,
+        refresh_before_request: bool = False,
     ) -> None:
         self._base = api_url.rstrip("/")
         self._token = token
         self._timeout = timeout
         self._profile = profile
         self._allow_refresh = allow_refresh
+        self._refresh_before_request = refresh_before_request
 
     @classmethod
     def from_profile(cls, profile: str | None = None) -> ApiClient:
         cfg = cfg_mod.load()
         profile_name = profile or cfg_mod.current_profile_name(cfg)
         p: ProfileConfig = cfg.active_profile(profile_name)
-        token = auth_mod.get_token(profile_name)
+        refresh_before_request = auth_mod.credential_needs_refresh(profile_name)
+        token = (
+            auth_mod.get_token(profile_name, refresh=False)
+            if refresh_before_request
+            else auth_mod.get_token(profile_name)
+        )
+        if not token and refresh_before_request:
+            token = auth_mod.get_token(profile_name)
+            refresh_before_request = False
         if not token:
             from . import output
 
@@ -113,6 +123,7 @@ class ApiClient:
             token=token,  # type: ignore[arg-type]
             profile=profile_name,
             allow_refresh=auth_mod.token_source(profile_name) != "RVS_TOKEN",
+            refresh_before_request=refresh_before_request,
         )
 
     # ── internal ──────────────────────────────────────────────────────────────
@@ -164,10 +175,14 @@ class ApiClient:
         except ApiVersionMismatchError as exc:
             raise ApiError(502, str(exc)) from exc
 
-    def _refresh(self) -> bool:
+    def _refresh(self, http_client: httpx.Client) -> bool:
         if not self._profile or not self._allow_refresh:
             return False
-        token = auth_mod.refresh_expiring_credential(self._profile, stale_access_token=self._token)
+        token = auth_mod.refresh_expiring_credential(
+            self._profile,
+            stale_access_token=self._token,
+            http_client=http_client,
+        )
         if not token:
             return False
         self._token = token
@@ -179,17 +194,30 @@ class ApiClient:
         import httpx
 
         transport_attempts = 3 if method.upper() == "GET" else 1
-        for attempt in range(transport_attempts):
-            try:
-                with httpx.Client(timeout=self._timeout) as hx:
-                    resp = hx.request(method, self._url(path), headers=self._headers(), **kwargs)
-                break
-            except httpx.TransportError:
-                if attempt + 1 == transport_attempts:
-                    raise
-                time.sleep((0.25, 1.0)[attempt])
-        if resp.status_code == 401 and retry and self._refresh():
-            return self._request(method, path, retry=False, **kwargs)
+        with httpx.Client(timeout=self._timeout) as hx:
+
+            def send() -> httpx.Response:
+                for attempt in range(transport_attempts):
+                    try:
+                        return hx.request(
+                            method,
+                            self._url(path),
+                            headers=self._headers(),
+                            **kwargs,
+                        )
+                    except httpx.TransportError:
+                        if attempt + 1 == transport_attempts:
+                            raise
+                        time.sleep((0.25, 1.0)[attempt])
+                raise RuntimeError("HTTP transport attempt limit exceeded")
+
+            if self._refresh_before_request:
+                if not self._refresh(hx):
+                    raise ApiError(401, "Could not refresh the expired CLI session")
+                self._refresh_before_request = False
+            resp = send()
+            if resp.status_code == 401 and retry and self._refresh(hx):
+                resp = send()
         self._raise(resp)
         self._validate_contract(resp)
         return resp

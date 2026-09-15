@@ -5,6 +5,7 @@ from __future__ import annotations
 from .credentials import (
     EXPIRING_CREDENTIAL_TYPE,
     NoCredentialStoreError,
+    credential_needs_refresh,
     credential_store_preference,
     credential_store_statuses,
     delete_token,
@@ -28,6 +29,7 @@ from .credentials import (
 __all__ = [
     "EXPIRING_CREDENTIAL_TYPE",
     "NoCredentialStoreError",
+    "credential_needs_refresh",
     "credential_store_preference",
     "credential_store_statuses",
     "delete_token",
