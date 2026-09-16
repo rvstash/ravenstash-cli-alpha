@@ -270,7 +270,7 @@ require_glibc_228() {
   if ! libc_version="$(getconf GNU_LIBC_VERSION 2>/dev/null)"; then
     ldd_output="$(ldd --version 2>&1 || true)"
     if grep -qi musl <<<"$ldd_output"; then
-      fail "Alpine/musl needs a separate rvs build, which is not published yet; this installer will not run a glibc binary on musl"
+      fail "the glibc rvs build cannot run on musl; use the Linux musl archive"
     fi
     fail "could not identify a supported glibc runtime"
   fi
