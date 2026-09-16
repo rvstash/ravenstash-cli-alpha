@@ -335,6 +335,17 @@ def _resolved_repository_unique_ref(
 # ── repo ─────────────────────────────────────────────────────────────────────
 
 
+def _repository_access_label(entry: dict) -> str:
+    actions = set(entry.get("allowed_actions") or ())
+    if actions & {"repository.write", "repository.delete", "upstream.write", "content.delete"}:
+        return "Admin"
+    if "content.publish" in actions:
+        return "Publish"
+    if "content.read" in actions:
+        return "Read"
+    return "Unknown"
+
+
 @repo_app.command("list")
 def repo_list(
     account: str | None = typer.Option(None, "--account"),
@@ -378,7 +389,7 @@ def repo_list(
             _selected_account_handle(profile, selected_account_ref, entries) if items else ""
         )
         output.table(
-            ["Account", "Namespace", "Repository", "ID-based target", "Formats"],
+            ["Account", "Namespace", "Repository", "ID-based target", "Formats", "Access"],
             [
                 [
                     account_handle,
@@ -390,10 +401,18 @@ def repo_list(
                         for detail in item.get("formats", [])
                         if isinstance(detail, dict) and isinstance(detail.get("format"), str)
                     ),
+                    _repository_access_label(entry),
                 ]
                 for entry, item in zip(entries, items, strict=True)
             ],
-            json_keys=["account", "namespace", "repository", "id_based_target", "formats"],
+            json_keys=[
+                "account",
+                "namespace",
+                "repository",
+                "id_based_target",
+                "formats",
+                "access",
+            ],
         )
         return
 
@@ -404,7 +423,7 @@ def repo_list(
         return
 
     output.table(
-        ["Repository", "ID-based target", "Formats"],
+        ["Repository", "ID-based target", "Formats", "Access"],
         [
             [
                 f"{item['namespace_name']}/{_repository_name_from_response(item)}",
@@ -414,8 +433,9 @@ def repo_list(
                     for detail in item.get("formats", [])
                     if isinstance(detail, dict) and isinstance(detail.get("format"), str)
                 ),
+                _repository_access_label(entry),
             ]
-            for item in items
+            for entry, item in zip(entries, items, strict=True)
         ],
     )
 

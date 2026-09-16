@@ -228,6 +228,7 @@ def test_artifacts_repo_list_preserves_json_shape_and_uses_account_handle(
             "repository": "repo-pypi",
             "id_based_target": "in/ar_xyzabcde",
             "formats": "pypi, npm, maven",
+            "access": "Unknown",
         }
     ]
 
