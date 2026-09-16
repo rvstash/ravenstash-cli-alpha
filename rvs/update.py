@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 import os
 import platform
 import re
+import shutil
 import subprocess
+import sys
 import tempfile
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
@@ -18,6 +19,15 @@ import typer
 
 from . import output
 from .apt_channels import channel_order, normalize_channel, version_matches_channel
+from .installations import compatibility_channel, detect_portable_installation
+from .portable_update import (
+    UpdateError,
+    apply_portable_update,
+    download_verified_assets,
+    fetch_channel_manifest,
+    latest_for_channel,
+    newer,
+)
 
 
 _APT_CACHE = Path("/usr/bin/apt-cache")
@@ -32,9 +42,6 @@ _APT_KEYRING = Path("/etc/apt/keyrings/ravenstash-rvs.gpg")
 _REPOSITORY_URL = "https://releases.ravenstash.com/rvs/apt"
 _CHANNELS_URL = f"{_REPOSITORY_URL}/channels.json"
 _CHANNELS_SIGNATURE_URL = f"{_CHANNELS_URL}.gpg"
-_GITHUB_REPOSITORY = "rvstash/ravenstash-cli-alpha"
-_GITHUB_API = f"https://api.github.com/repos/{_GITHUB_REPOSITORY}"
-_RELEASE_DOWNLOAD_ROOT = f"https://github.com/{_GITHUB_REPOSITORY}/releases/download"
 _LEGACY_CHANNEL = "v0.3"
 _CANDIDATE_PATTERN = re.compile(r"^(?P<base>[0-9]+\.[0-9]+\.[0-9]+)rc(?P<number>[1-9][0-9]*)$")
 _SOURCE_PATTERN = re.compile(
@@ -252,74 +259,13 @@ def _candidate_architecture() -> str:
 
 def _download_candidate(candidate: str, destination: Path) -> Path:
     architecture = _candidate_architecture()
-    tag = f"v{candidate}"
     deb_name = f"rvs_{candidate}_{architecture}.deb"
-    checksums_name = f"rvs-v{candidate}-checksums.txt"
-    signature_name = f"{checksums_name}.asc"
-    wanted = {deb_name, checksums_name, signature_name}
     try:
-        with httpx.Client(
-            timeout=60.0,
-            headers={"Accept": "application/vnd.github+json"},
-            follow_redirects=False,
-        ) as client:
-            response = client.get(f"{_GITHUB_API}/releases/tags/{tag}")
-            response.raise_for_status()
-            release = response.json()
-            if (
-                release.get("tag_name") != tag
-                or release.get("draft") is not False
-                or release.get("prerelease") is not True
-            ):
-                output.fatal(f"GitHub release {tag} is not a published release candidate.")
-            raw_assets = release.get("assets")
-            if not isinstance(raw_assets, list):
-                output.fatal(f"GitHub release {tag} has invalid asset metadata.")
-            assets: dict[str, str] = {}
-            for asset in raw_assets:
-                if not isinstance(asset, dict):
-                    continue
-                name = asset.get("name")
-                url = asset.get("browser_download_url")
-                if isinstance(name, str) and isinstance(url, str):
-                    assets[name] = url
-            if not wanted.issubset(assets):
-                output.fatal(f"GitHub release {tag} is missing signed candidate assets.")
-            for name in wanted:
-                url = assets[name]
-                expected = f"{_RELEASE_DOWNLOAD_ROOT}/{tag}/{name}"
-                if url != expected:
-                    output.fatal(f"GitHub release {tag} contains an unexpected asset URL.")
-                asset_response = client.get(url, follow_redirects=True)
-                asset_response.raise_for_status()
-                (destination / name).write_bytes(asset_response.content)
-    except OSError, ValueError, httpx.HTTPError:
-        output.fatal(f"Could not download release candidate {tag} from GitHub.")
-
-    checksums_path = destination / checksums_name
-    signature_path = destination / signature_name
-    deb_path = destination / deb_name
-    verified = _run(
-        [
-            str(_GPGV),
-            f"--keyring={_APT_KEYRING}",
-            str(signature_path),
-            str(checksums_path),
+        deb_path = download_verified_assets(candidate, {deb_name}, destination, candidate=True)[
+            deb_name
         ]
-    )
-    if verified.returncode != 0:
-        output.fatal("The candidate checksum signature is invalid.")
-    expected_hash: str | None = None
-    for line in checksums_path.read_text(encoding="utf-8").splitlines():
-        digest, separator, name = line.partition("  ")
-        if name == deb_name and separator and re.fullmatch(r"[0-9a-f]{64}", digest):
-            if expected_hash is not None:
-                output.fatal("The candidate checksum inventory contains duplicate entries.")
-            expected_hash = digest
-    if expected_hash is None:
-        output.fatal("The candidate package is absent from the signed checksum inventory.")
-    if hashlib.sha256(deb_path.read_bytes()).hexdigest() != expected_hash:
-        output.fatal("The candidate package checksum does not match the signed inventory.")
+    except UpdateError as exc:
+        output.fatal(str(exc))
 
     metadata = _run(
         [
@@ -335,13 +281,17 @@ def _download_candidate(candidate: str, destination: Path) -> Path:
     return deb_path
 
 
-def _update_candidate(candidate: str, *, apply: bool, yes: bool) -> None:
+def _update_candidate(
+    candidate: str, *, apply: bool, yes: bool, installed_version: str | None = None
+) -> None:
     debian_version = _candidate_debian_version(candidate)
-    installed, _apt_candidate = _apt_versions()
+    installed = installed_version
+    if installed is None:
+        installed, _apt_candidate = _apt_versions()
     if installed is None:
         output.fatal("Release candidates can only update an existing rvs APT installation.")
-    if not _APT_KEYRING.is_file() or not _GPGV.is_file() or not _DPKG_DEB.is_file():
-        output.fatal("Candidate verification requires the installed Ravenstash APT trust tools.")
+    if not _DPKG_DEB.is_file():
+        output.fatal("Candidate verification requires /usr/bin/dpkg-deb.")
     if not _upgrade_available(installed, debian_version):
         output.fatal(f"Release candidate {candidate} is not newer than installed rvs {installed}.")
 
@@ -361,6 +311,251 @@ def _update_candidate(candidate: str, *, apply: bool, yes: bool) -> None:
         if _run_visible([str(_APT_GET), "install", "--yes", str(package)]).returncode != 0:
             output.fatal("APT could not install the rvs release candidate.")
     output.success(f"Updated rvs to release candidate {candidate}.")
+
+
+def _portable_installation():
+    try:
+        return detect_portable_installation(installed_version=_cli_version())
+    except ValueError as exc:
+        output.fatal(str(exc))
+
+
+def _portable_update(*, to: str | None, candidate: str | None, apply: bool, yes: bool) -> None:
+    installation = _portable_installation()
+    if installation is None:
+        _delegate_package_manager_update(to=to, candidate=candidate, apply=apply, yes=yes)
+        return
+    manifest: dict[str, Any] | None = None
+    if candidate is not None:
+        if _CANDIDATE_PATTERN.fullmatch(candidate) is None:
+            output.fatal("Candidate versions must look like 0.14.0rc1.")
+        target_version = candidate
+        target_channel = compatibility_channel(candidate)
+        release_label = "release candidate"
+    else:
+        try:
+            manifest = fetch_channel_manifest()
+            target_channel = normalize_channel(to) if to is not None else installation.channel
+            if to is not None and channel_order(target_channel) <= channel_order(
+                installation.channel
+            ):
+                if target_channel != installation.channel:
+                    output.fatal("Release-series downgrades are not supported automatically.")
+            target_version = latest_for_channel(manifest, target_channel)
+        except (UpdateError, ValueError) as exc:
+            output.fatal(str(exc))
+        release_label = f"release series {target_channel}"
+    if not newer(target_version, installation.version):
+        if target_version == installation.version:
+            output.success(
+                f"Installed: rvs {installation.version}. Latest in {release_label}: "
+                f"rvs {target_version}. You are up to date."
+            )
+            if manifest is not None and to is None:
+                _announce_portable_channel(manifest, installation.channel)
+            return
+        output.fatal("The requested release is not newer than the installed portable version.")
+    output.info(
+        f"rvs {target_version} is available for {installation.target} "
+        f"(installed: {installation.version}; {release_label})."
+    )
+    command = (
+        f"rvs update --candidate {target_version} --apply"
+        if candidate is not None
+        else (
+            f"rvs update --to {target_channel.removeprefix('v')} --apply"
+            if to is not None
+            else "rvs update --apply"
+        )
+    )
+    if not apply:
+        output.info(f"Install it with: {command}")
+        if manifest is not None and to is None:
+            _announce_portable_channel(manifest, installation.channel)
+        return
+    if installation.scope == "system" and os.name != "nt" and os.geteuid() != 0:
+        output.fatal(f"System-wide portable updates require root privileges. Run: sudo {command}")
+    if not yes:
+        typer.confirm(f"Install signed rvs {target_version} for {installation.target}?", abort=True)
+    try:
+        asynchronous = apply_portable_update(
+            installation, target_version, candidate=candidate is not None
+        )
+    except (OSError, UpdateError) as exc:
+        output.fatal(str(exc))
+    if asynchronous:
+        output.success(
+            f"Verified and staged rvs {target_version}. It will activate after this command exits."
+        )
+    else:
+        output.success(f"Updated rvs to {target_version}.")
+
+
+def _announce_portable_channel(manifest: dict[str, Any], current: str) -> None:
+    recommended = manifest["recommended"]
+    if channel_order(recommended) <= channel_order(current):
+        return
+    latest = manifest["channels"][recommended]["latest"]
+    output.info(
+        f"rvs {latest} is available in release series {recommended}. Review the migration "
+        f"notes, then run: rvs update --to {recommended.removeprefix('v')}"
+    )
+
+
+def _managed_method() -> str | None:
+    executable = Path(sys.executable).resolve()
+    value = str(executable).lower()
+    if "/nix/store/" in value.replace("\\", "/"):
+        return "nix"
+    if not getattr(sys, "frozen", False):
+        return None
+    if "/cellar/" in value.replace("\\", "/") or "/caskroom/" in value.replace("\\", "/"):
+        return "homebrew"
+    if os.name == "nt" and "\\microsoft\\winget\\packages\\" in value:
+        return "winget"
+    return None
+
+
+def _delegate_package_manager_update(
+    *, to: str | None, candidate: str | None, apply: bool, yes: bool
+) -> None:
+    method = _managed_method()
+    installed = _cli_version()
+    if method is None:
+        output.info(f"Ravenstash CLI {installed} is not a recognized managed installation.")
+        output.info("Install or migrate with: curl -fsSL https://ravenstash.com/install.sh | bash")
+        return
+    if candidate is not None:
+        output.fatal(f"Release candidates are not installed through {method}.")
+    try:
+        manifest = fetch_channel_manifest()
+        current = compatibility_channel(installed)
+        target = normalize_channel(to) if to is not None else current
+        if to is not None and target != current and channel_order(target) <= channel_order(current):
+            output.fatal("Release-series downgrades are not supported automatically.")
+        target_version = latest_for_channel(manifest, target)
+    except (UpdateError, ValueError) as exc:
+        output.fatal(str(exc))
+    if not newer(target_version, installed):
+        output.success(f"Installed: rvs {installed}. Latest in {target}: rvs {target_version}.")
+        if to is None:
+            _announce_portable_channel(manifest, current)
+        return
+    commands = {
+        "homebrew": ["brew", "upgrade", f"rvs@{target.removeprefix('v')}"],
+        "winget": [
+            "winget",
+            "upgrade",
+            "--exact",
+            "--id",
+            f"Ravenstash.rvs.{target}",
+        ],
+    }
+    command = commands.get(method)
+    output.info(f"rvs {target_version} is available through {method} (installed: {installed}).")
+    if not apply:
+        if method == "nix":
+            apply_command = (
+                f"rvs update --to {target.removeprefix('v')} --apply"
+                if target != current
+                else "rvs update --apply"
+            )
+            output.info(
+                f"Install it with: {apply_command} "
+                f"(replaces the pinned Nix profile with tag v{target_version})"
+            )
+        elif target != current:
+            output.info(
+                f"Install it with: rvs update --to {target.removeprefix('v')} --apply "
+                f"(replaces the {current} {method} package)"
+            )
+        else:
+            assert command is not None
+            output.info(f"Install it with: {' '.join(command)}")
+        if to is None:
+            _announce_portable_channel(manifest, current)
+        return
+    if not yes:
+        typer.confirm(f"Install rvs {target_version} through {method}?", abort=True)
+    if method == "nix":
+        _replace_nix_profile(installed, target_version)
+        return
+    if target != current:
+        _replace_managed_series(method, current, target)
+        return
+    assert command is not None
+    executable = shutil.which(command[0])
+    if executable is None:
+        output.fatal(f"Cannot update because {command[0]} is unavailable.")
+    result = subprocess.run([executable, *command[1:]], check=False)
+    if result.returncode != 0:
+        output.fatal(f"{method} could not install the rvs update.")
+    output.success(f"{method} updated the rvs package; open a new shell and run rvs --version.")
+
+
+def _replace_managed_series(method: str, current: str, target: str) -> None:
+    packages = {
+        "homebrew": (
+            f"rvs@{current.removeprefix('v')}",
+            f"rvs@{target.removeprefix('v')}",
+        ),
+        "winget": (f"Ravenstash.rvs.{current}", f"Ravenstash.rvs.{target}"),
+    }
+    old_package, new_package = packages[method]
+    executable_name = "brew" if method == "homebrew" else "winget"
+    executable = shutil.which(executable_name)
+    if executable is None:
+        output.fatal(f"Cannot update because {executable_name} is unavailable.")
+    exact = ["--exact", "--id"] if method == "winget" else []
+    removed = subprocess.run([executable, "uninstall", *exact, old_package], check=False)
+    if removed.returncode != 0:
+        output.fatal(f"{method} could not remove the existing {old_package} package.")
+    install_result = subprocess.run([executable, "install", *exact, new_package], check=False)
+    if install_result.returncode == 0:
+        output.success(
+            f"{method} moved rvs from {current} to {target}; "
+            "open a new shell and run rvs --version."
+        )
+        return
+    output.warn(f"{method} could not install {new_package}; restoring {old_package}.")
+    restored = subprocess.run([executable, "install", *exact, old_package], check=False)
+    if restored.returncode != 0:
+        restore_command = " ".join([executable_name, "install", *exact, old_package])
+        output.fatal(
+            f"{method} series migration and rollback both failed. "
+            f"Restore the package with: {restore_command}"
+        )
+    output.fatal(f"{method} could not move rvs to {target}; the {current} package was restored.")
+
+
+def _replace_nix_profile(installed: str, target: str) -> None:
+    """Replace a tag-pinned Nix profile element and restore it on failure."""
+
+    executable = shutil.which("nix")
+    if executable is None:
+        output.fatal("Cannot update because nix is unavailable.")
+    removed = subprocess.run([executable, "profile", "remove", "ravenstash-cli"], check=False)
+    if removed.returncode != 0:
+        output.fatal("Nix could not remove the existing ravenstash-cli profile element.")
+    repository = "github:rvstash/ravenstash-cli-alpha"
+    installed_result = subprocess.run(
+        [executable, "profile", "install", f"{repository}/v{target}"], check=False
+    )
+    if installed_result.returncode == 0:
+        output.success(
+            f"Nix updated the rvs profile to {target}; open a new shell and run rvs --version."
+        )
+        return
+    output.warn(f"Nix could not install rvs {target}; restoring rvs {installed}.")
+    restored = subprocess.run(
+        [executable, "profile", "install", f"{repository}/v{installed}"], check=False
+    )
+    if restored.returncode != 0:
+        output.fatal(
+            "Nix update and rollback both failed. Restore the profile with: "
+            f"nix profile install {repository}/v{installed}"
+        )
+    output.fatal(f"Nix could not install rvs {target}; rvs {installed} was restored.")
 
 
 def update(
@@ -390,15 +585,22 @@ def update(
     if candidate is not None and to is not None:
         output.fatal("--candidate and --to cannot be used together.")
     if candidate is not None:
-        _update_candidate(candidate, apply=apply, yes=yes)
+        installed, _apt_candidate = _apt_versions()
+        if installed is not None:
+            _update_candidate(candidate, apply=apply, yes=yes, installed_version=installed)
+        else:
+            _portable_update(to=None, candidate=candidate, apply=apply, yes=yes)
         return
     if to is not None:
-        _update_series(to, apply=apply, yes=yes)
+        installed, _apt_candidate = _apt_versions()
+        if installed is not None:
+            _update_series(to, apply=apply, yes=yes, installed_version=installed)
+        else:
+            _portable_update(to=to, candidate=None, apply=apply, yes=yes)
         return
     installed, candidate = _apt_versions()
     if installed is None:
-        output.info(f"Ravenstash CLI {_cli_version()} is not managed by the rvs APT package.")
-        output.info("Install or migrate with: curl -fsSL https://ravenstash.com/install.sh | bash")
+        _portable_update(to=None, candidate=None, apply=apply, yes=yes)
         return
     if candidate is None:
         output.fatal(
@@ -450,13 +652,17 @@ def update(
     output.success(f"Updated rvs to {candidate}.")
 
 
-def _update_series(to: str, *, apply: bool, yes: bool) -> None:
+def _update_series(
+    to: str, *, apply: bool, yes: bool, installed_version: str | None = None
+) -> None:
     """Move the Ravenstash CLI to a newer release series."""
     try:
         target = normalize_channel(to)
     except ValueError as exc:
         output.fatal(str(exc))
-    installed, _candidate = _apt_versions()
+    installed = installed_version
+    if installed is None:
+        installed, _candidate = _apt_versions()
     current = _current_channel()
     if installed is None or current is None:
         output.fatal("rvs is not managed by a recognized Ravenstash APT source.")

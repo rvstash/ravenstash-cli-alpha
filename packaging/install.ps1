@@ -66,14 +66,31 @@ try {
             Join-Path $env:LOCALAPPDATA "Ravenstash\rvs"
         }
     }
+    $InstallRoot = [System.IO.Path]::GetFullPath($InstallRoot)
     $bin = Join-Path $InstallRoot "bin"
+    $receiptScope = $Scope.ToLowerInvariant()
     if ((Test-Path $bin) -and -not $Repair) {
+        $legacyChannel = Join-Path $InstallRoot "channel"
+        $receipt = Join-Path $bin "rvs-install.json"
+        if (-not (Test-Path -LiteralPath $legacyChannel) -and
+            -not (Test-Path -LiteralPath $receipt)) {
+            throw "$bin is not recognized as an installer-owned rvs directory; rerun with -Repair only after inspecting it"
+        }
         $installed = & (Join-Path $bin "rvs.exe") --version 2>$null
         if ($LASTEXITCODE -eq 0 -and $installed -match $ReleaseVersion) {
             Write-Host "rvs $ReleaseVersion is already installed at $bin"
             exit 0
         }
     }
+    & (Join-Path $source "rvs.exe") _record-install `
+        --output (Join-Path $source "rvs-install.json") `
+        --scope $receiptScope `
+        --version $ReleaseVersion `
+        --channel $CompatibilityChannel `
+        --target "windows-$architecture" `
+        --install-root $InstallRoot `
+        --bin-directory $bin
+    if ($LASTEXITCODE -ne 0) { throw "Could not create the rvs installation receipt" }
     New-Item -ItemType Directory -Force -Path $InstallRoot | Out-Null
     $staged = Join-Path $InstallRoot (".staged-" + [guid]::NewGuid())
     Copy-Item -Recurse -LiteralPath $source -Destination $staged

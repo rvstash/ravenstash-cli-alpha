@@ -5,8 +5,10 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
+from rvs import portable_update as portable_update_mod
 from rvs import update as update_mod
 from rvs.cli import app
+from rvs.installations import Installation
 from typer.testing import CliRunner
 
 
@@ -44,15 +46,151 @@ def test_update_reports_installed_and_latest_versions_when_current(monkeypatch: 
     assert "You are up to date" in output
 
 
-def test_update_does_not_self_replace_non_apt_install(monkeypatch: Any) -> None:
+def test_update_does_not_self_replace_unmanaged_install(monkeypatch: Any) -> None:
     monkeypatch.setattr(update_mod, "_apt_versions", lambda: (None, None))
     monkeypatch.setattr(update_mod, "_cli_version", lambda: "0.3.0")
 
     result = runner.invoke(app, ["update"])
 
     assert result.exit_code == 0
-    assert "not managed by the rvs APT package" in result.output
+    assert "not a recognized managed installation" in result.output
     assert "install.sh" in result.output
+
+
+def _portable(tmp_path: Path) -> Installation:
+    return Installation(
+        1,
+        "portable",
+        "user",
+        "0.14.0",
+        "v0.14",
+        "linux-musl-amd64",
+        str(tmp_path / "root"),
+        str(tmp_path / "bin"),
+    )
+
+
+def test_portable_update_previews_signed_channel_release(monkeypatch: Any, tmp_path: Path) -> None:
+    monkeypatch.setattr(update_mod, "_apt_versions", lambda: (None, None))
+    monkeypatch.setattr(update_mod, "_portable_installation", lambda: _portable(tmp_path))
+    monkeypatch.setattr(
+        update_mod,
+        "fetch_channel_manifest",
+        lambda: {
+            "schema": 1,
+            "recommended": "v0.14",
+            "channels": {"v0.14": {"latest": "0.14.1", "status": "supported"}},
+        },
+    )
+
+    result = runner.invoke(app, ["update"])
+
+    assert result.exit_code == 0, result.output
+    assert "0.14.1 is available for linux-musl-amd64" in result.output
+    assert "rvs update --apply" in result.output
+
+
+def test_portable_update_applies_exact_candidate(monkeypatch: Any, tmp_path: Path) -> None:
+    calls: list[tuple[Installation, str, bool]] = []
+    monkeypatch.setattr(update_mod, "_apt_versions", lambda: (None, None))
+    monkeypatch.setattr(update_mod, "_portable_installation", lambda: _portable(tmp_path))
+    monkeypatch.setattr(
+        update_mod,
+        "apply_portable_update",
+        lambda installation, version, *, candidate: (
+            calls.append((installation, version, candidate)) or False
+        ),
+    )
+
+    result = runner.invoke(app, ["update", "--candidate", "0.14.1rc1", "--apply", "--yes"])
+
+    assert result.exit_code == 0, result.output
+    assert calls == [(_portable(tmp_path), "0.14.1rc1", True)]
+    assert "Updated rvs to 0.14.1rc1" in result.output
+
+
+def test_winget_update_uses_exact_series_identifier(monkeypatch: Any) -> None:
+    calls: list[list[str]] = []
+    monkeypatch.setattr(update_mod, "_apt_versions", lambda: (None, None))
+    monkeypatch.setattr(update_mod, "_portable_installation", lambda: None)
+    monkeypatch.setattr(update_mod, "_managed_method", lambda: "winget")
+    monkeypatch.setattr(update_mod, "_cli_version", lambda: "0.14.0")
+    monkeypatch.setattr(update_mod.shutil, "which", lambda command: command)
+    monkeypatch.setattr(
+        update_mod,
+        "fetch_channel_manifest",
+        lambda: {
+            "schema": 1,
+            "recommended": "v0.14",
+            "channels": {"v0.14": {"latest": "0.14.1", "status": "supported"}},
+        },
+    )
+    monkeypatch.setattr(
+        update_mod.subprocess,
+        "run",
+        lambda command, **_kwargs: calls.append(command) or _completed(),
+    )
+
+    result = runner.invoke(app, ["update", "--apply", "--yes"])
+
+    assert result.exit_code == 0, result.output
+    assert calls == [["winget", "upgrade", "--exact", "--id", "Ravenstash.rvs.v0.14"]]
+
+
+def test_nix_update_replaces_pinned_tag_and_rolls_back_on_failure(monkeypatch: Any) -> None:
+    calls: list[list[str]] = []
+    return_codes = iter((0, 1, 0))
+    monkeypatch.setattr(update_mod.shutil, "which", lambda command: command)
+    monkeypatch.setattr(
+        update_mod.subprocess,
+        "run",
+        lambda command, **_kwargs: calls.append(command) or _completed(next(return_codes)),
+    )
+
+    try:
+        update_mod._replace_nix_profile("0.14.0", "0.14.1")
+    except SystemExit as exc:
+        assert exc.code == 1
+    else:
+        raise AssertionError("failed Nix replacement did not exit")
+
+    repository = "github:rvstash/ravenstash-cli-alpha"
+    assert calls == [
+        ["nix", "profile", "remove", "ravenstash-cli"],
+        ["nix", "profile", "install", f"{repository}/v0.14.1"],
+        ["nix", "profile", "install", f"{repository}/v0.14.0"],
+    ]
+
+
+def test_homebrew_series_migration_replaces_versioned_cask(monkeypatch: Any) -> None:
+    calls: list[list[str]] = []
+    monkeypatch.setattr(update_mod, "_apt_versions", lambda: (None, None))
+    monkeypatch.setattr(update_mod, "_portable_installation", lambda: None)
+    monkeypatch.setattr(update_mod, "_managed_method", lambda: "homebrew")
+    monkeypatch.setattr(update_mod, "_cli_version", lambda: "0.14.3")
+    monkeypatch.setattr(update_mod.shutil, "which", lambda command: command)
+    monkeypatch.setattr(
+        update_mod,
+        "fetch_channel_manifest",
+        lambda: {
+            "schema": 1,
+            "recommended": "v0.15",
+            "channels": {"v0.15": {"latest": "0.15.0", "status": "supported"}},
+        },
+    )
+    monkeypatch.setattr(
+        update_mod.subprocess,
+        "run",
+        lambda command, **_kwargs: calls.append(command) or _completed(),
+    )
+
+    result = runner.invoke(app, ["update", "--to", "0.15", "--apply", "--yes"])
+
+    assert result.exit_code == 0, result.output
+    assert calls == [
+        ["brew", "uninstall", "rvs@0.14"],
+        ["brew", "install", "rvs@0.15"],
+    ]
 
 
 def test_candidate_version_maps_to_debian_prerelease() -> None:
@@ -60,11 +198,7 @@ def test_candidate_version_maps_to_debian_prerelease() -> None:
 
 
 def test_candidate_preview_verifies_without_installing(monkeypatch: Any, tmp_path: Path) -> None:
-    for name in ("gpgv", "dpkg-deb"):
-        (tmp_path / name).touch()
-    monkeypatch.setattr(update_mod, "_APT_KEYRING", tmp_path / "keyring")
-    update_mod._APT_KEYRING.touch()
-    monkeypatch.setattr(update_mod, "_GPGV", tmp_path / "gpgv")
+    (tmp_path / "dpkg-deb").touch()
     monkeypatch.setattr(update_mod, "_DPKG_DEB", tmp_path / "dpkg-deb")
     monkeypatch.setattr(update_mod, "_apt_versions", lambda: ("0.13.4", "0.13.4"))
     monkeypatch.setattr(update_mod, "_upgrade_available", lambda installed, candidate: True)
@@ -90,14 +224,10 @@ def test_candidate_preview_verifies_without_installing(monkeypatch: Any, tmp_pat
 
 def test_candidate_apply_installs_verified_local_package(monkeypatch: Any, tmp_path: Path) -> None:
     apt_get = tmp_path / "apt-get"
-    gpgv = tmp_path / "gpgv"
     dpkg_deb = tmp_path / "dpkg-deb"
-    keyring = tmp_path / "keyring"
-    for path in (apt_get, gpgv, dpkg_deb, keyring):
+    for path in (apt_get, dpkg_deb):
         path.touch()
     monkeypatch.setattr(update_mod, "_APT_GET", apt_get)
-    monkeypatch.setattr(update_mod, "_APT_KEYRING", keyring)
-    monkeypatch.setattr(update_mod, "_GPGV", gpgv)
     monkeypatch.setattr(update_mod, "_DPKG_DEB", dpkg_deb)
     monkeypatch.setattr(update_mod, "_apt_versions", lambda: ("0.13.4", "0.13.4"))
     monkeypatch.setattr(update_mod, "_upgrade_available", lambda installed, candidate: True)
@@ -141,7 +271,7 @@ def test_candidate_download_authenticates_release_assets(monkeypatch: Any, tmp_p
     checksum = f"{hashlib.sha256(package).hexdigest()}  {package_name}\n".encode()
     signature_name = f"{checksum_name}.asc"
     tag = f"v{candidate}"
-    root = f"{update_mod._RELEASE_DOWNLOAD_ROOT}/{tag}"
+    root = f"{portable_update_mod.RELEASE_DOWNLOAD_ROOT}/{tag}"
     payloads = {
         f"{root}/{package_name}": package,
         f"{root}/{checksum_name}": checksum,
@@ -176,18 +306,17 @@ def test_candidate_download_authenticates_release_assets(monkeypatch: Any, tmp_p
             return None
 
         def get(self, url: str, **_kwargs: Any) -> Response:
-            if url == f"{update_mod._GITHUB_API}/releases/tags/{tag}":
+            if url == f"{portable_update_mod.RELEASE_API}/releases/tags/{tag}":
                 return Response(json_data=release)
             return Response(content=payloads[url])
 
-    monkeypatch.setattr(update_mod.httpx, "Client", lambda **_kwargs: Client())
+    monkeypatch.setattr(portable_update_mod.httpx, "Client", lambda **_kwargs: Client())
+    monkeypatch.setattr(portable_update_mod, "verify_detached", lambda *_args: None)
     monkeypatch.setattr(update_mod.platform, "machine", lambda: "x86_64")
 
     metadata_commands: list[list[str]] = []
 
     def fake_run(command: list[str]) -> Any:
-        if command[0] == str(update_mod._GPGV):
-            return _completed()
         metadata_commands.append(command)
         return _completed(stdout="rvs\n0.14.0~rc1\namd64\n")
 
