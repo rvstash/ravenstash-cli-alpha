@@ -112,13 +112,16 @@ first candidate using this process requires the normal signed manual download.
 Use an exact `X.Y.Z` version. Dispatch `release.yml` from `main` with
 `kind=stable`, the owning source branch and SHA, and its `vMAJOR.MINOR` channel.
 In the same visible workflow run, APT restore runs alongside the platform builds.
-After assembly, the workflow signs once, publishes APT in ordered phases,
-verifies amd64 and arm64 in parallel, and publishes the GitHub release.
+After assembly, the workflow signs once, stages the immutable GitHub draft while
+APT publishes and verifies amd64 and arm64 in parallel, and then makes the
+GitHub release public. Portable update-policy publication runs alongside
+installer-promotion validation and signing. The workflow joins those results,
+deploys and verifies the exact signed installer bytes, and publishes the signed
+recommended-series manifest last.
 
-When that stable release should become the default for new installations,
-separately dispatch `promote-installer.yml` with the same source identity.
-Promotion accepts stable releases only, refuses rollback, deploys the exact
-signed installer bytes, and publishes the signed recommended-series manifest.
+`promote-installer.yml` remains separately dispatchable for an intentional
+verified re-promotion or recovery. Normal stable releases do not require a
+second dispatch.
 
 The scheduled `refresh-apt-metadata` workflow renews expiring APT metadata
 without changing packages, tags, channels, or installer recommendations.

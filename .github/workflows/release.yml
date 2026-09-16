@@ -585,13 +585,13 @@ jobs:
               rvs --version
             '
 
-  publish-github-release:
-    name: Publish immutable GitHub ${{ inputs.kind == 'candidate' && 'prerelease' || 'release' }}
-    needs:
-      - sign
-      - verify-apt
-    if: ${{ always() && needs.sign.result == 'success' && (inputs.kind == 'candidate' || needs.verify-apt.result == 'success') }}
+  prepare-github-release:
+    name: Prepare immutable GitHub ${{ inputs.kind == 'candidate' && 'prerelease' || 'release' }}
+    needs: sign
     runs-on: ubuntu-24.04
+    outputs:
+      release_api_url: ${{ steps.create.outputs.release_api_url }}
+      release_assets: ${{ steps.create.outputs.release_assets }}
     permissions:
       actions: read
       contents: write
@@ -610,7 +610,8 @@ jobs:
         with:
           name: signed-portable-${{ github.run_id }}
           path: build
-      - name: Create immutable-source draft, upload once, then publish
+      - name: Create immutable-source draft and record exact assets
+        id: create
         env:
           GH_TOKEN: ${{ github.token }}
           SOURCE_SHA: ${{ inputs.source_sha }}
@@ -633,64 +634,77 @@ jobs:
             --title "$tag" \
             --notes "Ravenstash CLI ${KIND} ${tag} on ${CHANNEL}; exact source ${GITHUB_REPOSITORY}@${SOURCE_SHA}." \
             build/*
-          gh release edit "$tag" \
-            --repo "$GITHUB_REPOSITORY" \
-            --draft=false
+          release_api_url="$(
+            gh release view "$tag" \
+              --repo "$GITHUB_REPOSITORY" \
+              --json apiUrl \
+              --jq .apiUrl
+          )"
+          [[ "$release_api_url" =~ ^https://api.github.com/repos/${GITHUB_REPOSITORY}/releases/[0-9]+$ ]]
+          (
+            cd build
+            for filename in *; do
+              test -f "$filename"
+              digest="$(sha256sum "$filename" | cut -d ' ' -f 1)"
+              printf '%s\tsha256:%s\n' "$filename" "$digest"
+            done
+          ) | LC_ALL=C sort > expected-release-assets.tsv
+          {
+            echo "release_api_url=${release_api_url}"
+            echo "release_assets=$(base64 -w0 expected-release-assets.tsv)"
+          } >> "$GITHUB_OUTPUT"
 
-  publish-update-manifest:
-    name: Publish signed portable update policy
-    needs: publish-github-release
-    if: inputs.kind == 'stable'
+  publish-github-release:
+    name: Publish immutable GitHub ${{ inputs.kind == 'candidate' && 'prerelease' || 'release' }}
+    needs:
+      - prepare-github-release
+      - verify-apt
+    if: ${{ always() && needs.prepare-github-release.result == 'success' && (inputs.kind == 'candidate' || needs.verify-apt.result == 'success') }}
     runs-on: ubuntu-24.04
-    environment: apt-storage
     permissions:
-      actions: read
-      contents: read
+      contents: write
     steps:
-      - name: Check out publication policy
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
-        with:
-          persist-credentials: false
-      - name: Install verification tools
-        run: |
-          sudo apt-get update
-          sudo apt-get install --yes gnupg gpgv
-          aws --version
-      - name: Materialize pinned trusted keyring
-        run: packaging/repository/prepare_keyring.sh
-      - name: Download signed release policy
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
-        with:
-          name: signed-apt-${{ github.run_id }}
-          path: signed
-      - name: Authenticate policy before exposing storage key
+      - name: Publish authenticated immutable-source draft
         env:
-          CHANNEL: ${{ inputs.channel }}
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_SHA: ${{ inputs.source_sha }}
           VERSION: ${{ inputs.version }}
+          CHANNEL: ${{ inputs.channel }}
+          KIND: ${{ inputs.kind }}
+          RELEASE_API_URL: ${{ needs.prepare-github-release.outputs.release_api_url }}
+          EXPECTED_RELEASE_ASSETS: ${{ needs.prepare-github-release.outputs.release_assets }}
         run: |
-          gpgv \
-            --keyring packaging/repository/keys/ravenstash-rvs.gpg \
-            signed/channels.json.gpg signed/channels.json
-          jq -e --arg channel "$CHANNEL" --arg version "$VERSION" \
-            '.schema == 1 and .channels[$channel].latest == $version' \
-            signed/channels.json >/dev/null
-      - name: Publish manifest with signature last
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.R2_APT_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_APT_SECRET_ACCESS_KEY }}
-          AWS_DEFAULT_REGION: auto
-          R2_ACCOUNT_ID: ${{ vars.R2_APT_ACCOUNT_ID }}
-        run: |
-          endpoint="https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
-          destination=s3://ravenstash-cli-releases/rvs
-          aws s3 cp signed/channels.json "$destination/channels.json" \
-            --endpoint-url "$endpoint" --cache-control no-cache --only-show-errors
-          aws s3 cp signed/channels.json.gpg "$destination/channels.json.gpg" \
-            --endpoint-url "$endpoint" --cache-control no-cache --only-show-errors
+          tag="v${VERSION}"
+          notes="Ravenstash CLI ${KIND} ${tag} on ${CHANNEL}; exact source ${GITHUB_REPOSITORY}@${SOURCE_SHA}."
+          prerelease=false
+          if [[ "$KIND" == candidate ]]; then
+            prerelease=true
+          fi
+          [[ "$RELEASE_API_URL" =~ ^https://api.github.com/repos/${GITHUB_REPOSITORY}/releases/[0-9]+$ ]]
+          printf '%s' "$EXPECTED_RELEASE_ASSETS" \
+            | base64 --decode > expected-release-assets.tsv
+          gh api "$RELEASE_API_URL" > release.json
+          jq -e \
+            --arg tag "$tag" \
+            --arg notes "$notes" \
+            --arg source_sha "$SOURCE_SHA" \
+            --argjson prerelease "$prerelease" \
+            '.tag_name == $tag and
+             .name == $tag and
+             .body == $notes and
+             .target_commitish == $source_sha and
+             .draft == true and
+             .prerelease == $prerelease' \
+            release.json >/dev/null
+          jq -r '.assets[] | [.name, .digest] | @tsv' release.json \
+            | LC_ALL=C sort > actual-release-assets.tsv
+          cmp expected-release-assets.tsv actual-release-assets.tsv
+          gh api --method PATCH "$RELEASE_API_URL" -F draft=false \
+            --jq 'select(.draft == false) | .html_url'
 
   promote-installer:
     name: Promote and verify public installers
-    needs: publish-update-manifest
+    needs: publish-github-release
     if: inputs.kind == 'stable'
     permissions:
       actions: write
@@ -701,19 +715,19 @@ jobs:
       source_branch: ${{ inputs.source_branch }}
       version: ${{ inputs.version }}
       channel: ${{ inputs.channel }}
+      publish_update_policy: true
+      defer_cleanup: true
     secrets: inherit
 
   cleanup-artifacts:
     name: Remove successful release handoffs
     needs:
       - publish-github-release
-      - publish-update-manifest
       - promote-installer
     if: >-
       ${{ always() && needs.publish-github-release.result == 'success' &&
           (inputs.kind == 'candidate' ||
-           (needs.publish-update-manifest.result == 'success' &&
-            needs.promote-installer.result == 'success')) }}
+           needs.promote-installer.result == 'success') }}
     runs-on: ubuntu-24.04
     permissions:
       actions: write

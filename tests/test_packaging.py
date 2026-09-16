@@ -179,14 +179,24 @@ def test_apt_publisher_uses_constant_number_of_storage_calls(tmp_path: Path) -> 
 
 
 def test_portable_update_policy_is_published_after_github_release() -> None:
-    workflow = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
-    github_release = workflow.index("  publish-github-release:")
-    update_policy = workflow.index("  publish-update-manifest:")
-    cleanup = workflow.index("  cleanup-artifacts:")
+    release = yaml.safe_load((ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8"))
+    promotion_text = (ROOT / ".github/workflows/promote-installer.yml").read_text(encoding="utf-8")
+    promotion = yaml.safe_load(promotion_text)
 
-    assert github_release < update_policy < cleanup
-    policy = workflow[update_policy:cleanup]
-    assert "needs: publish-github-release" in policy
+    release_jobs = release["jobs"]
+    promotion_jobs = promotion["jobs"]
+    assert release_jobs["promote-installer"]["needs"] == "publish-github-release"
+    assert release_jobs["promote-installer"]["with"]["publish_update_policy"] is True
+    assert "needs" not in promotion_jobs["publish-update-manifest"]
+    assert set(promotion_jobs["promote"]["needs"]) == {
+        "publish-update-manifest",
+        "sign-channel-manifest",
+    }
+    policy = promotion_text[
+        promotion_text.index("  publish-update-manifest:") : promotion_text.index(
+            "  sign-channel-manifest:"
+        )
+    ]
     assert "signed/channels.json.gpg" in policy
     assert "s3://ravenstash-cli-releases/rvs" in policy
 
@@ -265,13 +275,25 @@ def test_publication_graph_parallelizes_safe_jobs_and_serializes_mutations() -> 
     assert jobs["verify-apt"]["needs"] == "publish-apt"
     assert jobs["verify-apt"]["strategy"]["fail-fast"] is False
     assert len(jobs["verify-apt"]["strategy"]["matrix"]["include"]) == 2
-    assert set(jobs["publish-github-release"]["needs"]) == {"sign", "verify-apt"}
-    assert jobs["publish-update-manifest"]["needs"] == "publish-github-release"
-    assert jobs["promote-installer"]["needs"] == "publish-update-manifest"
+    assert jobs["prepare-github-release"]["needs"] == "sign"
+    prepare_release = jobs["prepare-github-release"]["steps"][-1]["run"]
+    assert "gh release create" in prepare_release
+    assert "--draft" in prepare_release
+    assert "expected-release-assets.tsv" in prepare_release
+    assert set(jobs["publish-github-release"]["needs"]) == {
+        "prepare-github-release",
+        "verify-apt",
+    }
+    publish_release = jobs["publish-github-release"]["steps"][0]["run"]
+    assert "gh release create" not in publish_release
+    assert "cmp expected-release-assets.tsv actual-release-assets.tsv" in publish_release
+    assert 'gh api --method PATCH "$RELEASE_API_URL" -F draft=false' in publish_release
+    assert jobs["promote-installer"]["needs"] == "publish-github-release"
     assert jobs["promote-installer"]["uses"] == "./.github/workflows/promote-installer.yml"
+    assert jobs["promote-installer"]["with"]["publish_update_policy"] is True
+    assert jobs["promote-installer"]["with"]["defer_cleanup"] is True
     assert set(jobs["cleanup-artifacts"]["needs"]) == {
         "publish-github-release",
-        "publish-update-manifest",
         "promote-installer",
     }
     assert jobs["restore-apt"]["if"] == "inputs.kind == 'stable'"
@@ -419,13 +441,19 @@ def test_channel_recommendation_activates_after_installer_verification() -> None
     )
     jobs = promotion["jobs"]
 
-    assert jobs["promote"]["needs"] == "sign-channel-manifest"
+    assert "needs" not in jobs["publish-update-manifest"]
+    assert "needs" not in jobs["sign-channel-manifest"]
+    assert set(jobs["promote"]["needs"]) == {
+        "publish-update-manifest",
+        "sign-channel-manifest",
+    }
     assert set(jobs["publish-channel-manifest"]["needs"]) == {
         "sign-channel-manifest",
         "promote",
     }
     assert promotion["concurrency"]["group"] == "rvs-installer-promotion-${{ inputs.channel }}"
     cleanup = jobs["cleanup-artifacts"]["steps"][0]["run"]
+    assert jobs["cleanup-artifacts"]["if"] == "inputs.defer_cleanup != true"
     assert "promoted-channel-${GITHUB_RUN_ID}" in cleanup
     assert ".artifacts[].id" not in cleanup
 

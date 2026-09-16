@@ -116,11 +116,12 @@ write a non-secret installation receipt used to preserve scope and target during
 OpenPGP-signed channel and checksum inventories on every portable platform.
 The channel policy is published at the distribution-neutral
 `https://releases.ravenstash.com/rvs/channels.json` path.
-Stable release automation updates the neutral path only after the corresponding
-GitHub release is public, then calls the protected installer-promotion stage to
-deploy the exact release installers and update its recommended series. The
-promotion workflow remains manually dispatchable for verified re-promotion or
-recovery without altering a release.
+After the corresponding GitHub release is public, stable release automation
+publishes the neutral update policy alongside validation and signing for the
+protected installer-promotion stage. Installer deployment waits for both,
+deploys the exact release installers, and updates the recommended series only
+after verifying the live bytes. The promotion workflow remains manually
+dispatchable for verified re-promotion or recovery without altering a release.
 Homebrew and WinGet update their versioned channel package in place, or replace
 it with rollback for an explicit series migration. Nix updates replace the
 tag-pinned `ravenstash-cli` profile element with the selected immutable release
