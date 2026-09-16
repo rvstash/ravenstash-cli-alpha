@@ -84,6 +84,7 @@ def test_portable_bundle_includes_runtime_dependency_license_metadata() -> None:
     spec = (ROOT / "packaging/pyinstaller/rvs.spec").read_text(encoding="utf-8")
 
     assert '"cryptography"' in spec
+    assert '"rvs/resources"' in spec
     assert '"httpcore2"' in spec
     assert '"httpx2"' in spec
     assert '"idna"' in spec
@@ -91,6 +92,15 @@ def test_portable_bundle_includes_runtime_dependency_license_metadata() -> None:
     assert '"httpcore"' not in spec
     assert '"httpx"' not in spec
     assert "datas += _metadata(distribution)" in spec
+
+
+def test_bundled_update_key_matches_release_signing_identity() -> None:
+    bundled = (ROOT / "rvs/resources/ravenstash-rvs.asc").read_bytes()
+    release = (ROOT / "packaging/repository/keys/ravenstash-rvs.asc").read_bytes()
+    fingerprint = (ROOT / "packaging/repository/keys/fingerprint.txt").read_text(encoding="ascii")
+
+    assert bundled == release
+    assert fingerprint.strip() == "3B7C20FC370D1A7C813DF3A2E9679F951AD8BAA0"
 
 
 def test_runtime_sbom_does_not_emit_an_unknown_project_requirement() -> None:
@@ -133,6 +143,8 @@ def test_apt_publisher_batches_architectures_without_weakening_activation_order(
     assert publisher.index('--include "*/InRelease"') < publisher.index(
         '"$repository/channels.json"'
     )
+    assert 'readonly destination="s3://${bucket}/rvs/apt"' in publisher
+    assert "update_destination" not in publisher
 
 
 @pytest.mark.skipif(os.name == "nt", reason="APT publication tooling is POSIX-only")
@@ -164,6 +176,19 @@ def test_apt_publisher_uses_constant_number_of_storage_calls(tmp_path: Path) -> 
     )
 
     assert len(calls.read_text(encoding="utf-8").splitlines()) == 8
+
+
+def test_portable_update_policy_is_published_after_github_release() -> None:
+    workflow = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
+    github_release = workflow.index("  publish-github-release:")
+    update_policy = workflow.index("  publish-update-manifest:")
+    cleanup = workflow.index("  cleanup-artifacts:")
+
+    assert github_release < update_policy < cleanup
+    policy = workflow[update_policy:cleanup]
+    assert "needs: publish-github-release" in policy
+    assert "signed/channels.json.gpg" in policy
+    assert "s3://ravenstash-cli-releases/rvs" in policy
 
 
 def test_release_keeps_target_handoffs_isolated() -> None:
@@ -463,6 +488,17 @@ def test_installer_prints_ravenstash_banner_after_success() -> None:
     assert 'print_success_banner\nsay "next: rvs auth login"' in source
 
 
+def test_portable_installers_record_atomic_update_metadata() -> None:
+    posix = INSTALLER.read_text(encoding="utf-8")
+    windows = WINDOWS_INSTALLER.read_text(encoding="utf-8")
+
+    assert "_record-install" in posix
+    assert 'ln -sfn "$release_version" "${install_root}/current"' in posix
+    assert '"${install_root}/current/rvs"' in posix
+    assert "_record-install" in windows
+    assert 'Join-Path $source "rvs-install.json"' in windows
+
+
 def test_apt_installer_redirects_managed_portable_links() -> None:
     source = INSTALLER.read_text(encoding="utf-8")
 
@@ -523,3 +559,31 @@ def test_package_manager_manifests_cover_both_desktop_architectures(tmp_path: Pa
     assert "License: Apache-2.0" in locale_text
     assert "ravenstash-cli-alpha/releases/download/v0.12.0" in installer_text
     assert 'arch arm: "arm64", intel: "amd64"' in cask_text
+
+
+def test_package_manager_manifests_keep_major_minor_channel_for_v1(tmp_path: Path) -> None:
+    release = tmp_path / "release"
+    release.mkdir()
+    for name in (
+        "rvs-v1.1.0-macos-amd64.tar.gz",
+        "rvs-v1.1.0-macos-arm64.tar.gz",
+        "rvs-v1.1.0-windows-amd64.zip",
+        "rvs-v1.1.0-windows-arm64.zip",
+    ):
+        (release / name).write_bytes(name.encode())
+
+    subprocess.run(
+        [
+            sys.executable,
+            str(ROOT / "packaging/scripts/generate_package_manifests.py"),
+            str(release),
+            "1.1.0",
+            "rvstash/ravenstash-cli-alpha",
+        ],
+        check=True,
+    )
+
+    with tarfile.open(release / "rvs-v1.1.0-package-manifests.tar.gz") as package:
+        names = package.getnames()
+    assert "package-manifests/homebrew/rvs@1.1.rb" in names
+    assert any("Ravenstash.rvs.v1.1" in name for name in names)

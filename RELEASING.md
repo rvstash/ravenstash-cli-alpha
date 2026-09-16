@@ -104,18 +104,24 @@ with `kind=candidate`, the exact source branch, SHA, version, and matching
 - publishes an immutable GitHub prerelease.
 
 It does not restore, modify, or publish APT repository state. On a supported
-Debian-family installation, preview and install it with:
+APT or portable installation, preview and install it with:
 
 ```bash
 rvs update --candidate 0.14.0rc1
 rvs update --candidate 0.14.0rc1 --apply
 ```
 
-The CLI downloads the architecture-specific `.deb` and signed inventory,
-verifies the signature, checksum, package name, version, and architecture, then
-asks before installing. The package uses Debian version `0.14.0~rc1`, ensuring
-the later stable `0.14.0` sorts as an upgrade. Other platform bundles remain
-available on the GitHub prerelease page.
+The CLI selects the architecture-specific Debian package or portable archive,
+verifies the signed inventory, checksum, version, and target, then asks before
+installing. Debian uses version `0.14.0~rc1`, ensuring the later stable `0.14.0`
+sorts as an upgrade. Portable POSIX installations switch an atomic version
+pointer; Windows stages a verified bundle and activates it after the running
+process exits.
+
+For stable releases, APT publication and verification finish before the GitHub
+release is made public. The distribution-neutral signed update manifest is
+published only after that GitHub release succeeds, so portable clients never
+discover a stable version before its native archives are available.
 
 The candidate command must first ship in a stable CLI version; until then, the
 first candidate using this process requires the normal signed manual download.

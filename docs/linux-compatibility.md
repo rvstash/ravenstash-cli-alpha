@@ -80,11 +80,22 @@ that predate relevant protocol controls, maintained upstream lines, or security 
 
 ## Update boundaries
 
-Every APT minor line is an independent compatibility series. Portable, Homebrew,
-WinGet, and Nix releases
-must use the same channel identity and never move a user across it without an explicit
-upgrade. Until their package-manager manifests are published, portable users update by
-rerunning the same signed installer for their selected channel.
+Every minor line is an independent compatibility series across APT, portable,
+Homebrew, WinGet, and Nix installations. `rvs update` stays within the recorded
+series; `rvs update --to SERIES` is required to cross that boundary. Portable
+Linux, Alpine/musl, macOS, and Windows installations authenticate the signed
+channel manifest and release checksum inventory before staging the native
+bundle. POSIX activation switches one version pointer atomically. Windows uses a
+detached helper after the running executable exits. Nix, Homebrew, and WinGet
+remain package-manager-owned, so `rvs` delegates replacement instead of writing
+into their stores. Homebrew and WinGet update in place within one series and
+replace their versioned package with rollback for an explicit `--to` migration.
+Their manifests are generated release artifacts; these package-manager paths are
+not generally available until the manifests are published in the external
+catalogs. The supported macOS and Windows installers therefore remain portable.
+For tag-pinned Nix installs, `rvs` replaces only the
+`ravenstash-cli` profile element with the selected immutable release tag and
+attempts to restore the prior tag if installation fails.
 
 ## Additional platforms
 

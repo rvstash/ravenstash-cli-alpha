@@ -236,6 +236,11 @@ jobs:
             --endpoint-url "$endpoint" --cache-control no-cache --only-show-errors
           aws s3 cp canonical/channels.json.gpg "$destination/channels.json.gpg" \
             --endpoint-url "$endpoint" --cache-control no-cache --only-show-errors
+          update_destination=s3://ravenstash-cli-releases/rvs
+          aws s3 cp canonical/channels.json "$update_destination/channels.json" \
+            --endpoint-url "$endpoint" --cache-control no-cache --only-show-errors
+          aws s3 cp canonical/channels.json.gpg "$update_destination/channels.json.gpg" \
+            --endpoint-url "$endpoint" --cache-control no-cache --only-show-errors
       - name: Verify exact public channel recommendation
         env:
           CHANNEL: ${{ inputs.channel }}
@@ -243,11 +248,11 @@ jobs:
           for attempt in 1 2 3 4 5; do
             if curl --proto '=https' --proto-redir '=https' --tlsv1.2 \
                 --max-redirs 0 -fsS \
-                https://releases.ravenstash.com/rvs/apt/channels.json \
+                https://releases.ravenstash.com/rvs/channels.json \
                 --output public-channels.json \
               && curl --proto '=https' --proto-redir '=https' --tlsv1.2 \
                 --max-redirs 0 -fsS \
-                https://releases.ravenstash.com/rvs/apt/channels.json.gpg \
+                https://releases.ravenstash.com/rvs/channels.json.gpg \
                 --output public-channels.json.gpg \
               && gpgv \
                 --keyring packaging/repository/keys/ravenstash-rvs.gpg \

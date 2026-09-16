@@ -27,7 +27,7 @@ def main() -> None:
     version: str = args.version
     repository: str = args.repository
     major, minor, _patch = version.split(".", 2)
-    channel = f"v0.{minor}" if major == "0" else f"v{major}"
+    channel = f"v{major}.{minor}"
     package_suffix = channel.removeprefix("v")
     base = f"https://github.com/{repository}/releases/download/v{version}"
     manifests = release / "package-manifests"

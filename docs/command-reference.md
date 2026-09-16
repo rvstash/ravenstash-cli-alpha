@@ -185,12 +185,22 @@ the native tool's output. Diagnostics go to stderr for these capture-friendly co
 Custom mirror creation is available in the webapp. Existing custom mirrors remain
 available to CLI listing, selection, age changes, deletion, and upstream attachment.
 
-`rvs update --to SERIES` previews the selected newer release series without changing
-the active APT source. Add `--apply` to install. On Debian-family systems,
-`rvs update --candidate X.Y.ZrcN` downloads and verifies a signed GitHub
-prerelease without changing the configured APT series; add `--apply` to install
-it. `--candidate` and `--to` are mutually exclusive. `--yes/-y` requires
-`--apply`.
+`rvs update --to SERIES` previews the selected newer release series without
+changing the active installation. Add `--apply` to install. APT installations
+delegate to APT; portable Linux, Alpine/musl, macOS, and Windows installations
+download, authenticate, stage, health-check, and atomically activate the matching
+native bundle. Nix, Homebrew, and WinGet installations delegate replacement to
+their package manager. Homebrew and WinGet upgrade their versioned package in
+place within a series; `--to` replaces the old series package and rolls back if
+the new one cannot be installed. Homebrew and WinGet detection is ready for
+their generated manifests, but those paths become generally available only when
+the manifests are accepted into their external catalogs. Because supported Nix
+installs use immutable version-tag flake references, the Nix path replaces the
+`ravenstash-cli` profile element with the exact selected tag and restores the
+installed tag if replacement fails.
+`rvs update --candidate X.Y.ZrcN` verifies a signed
+GitHub prerelease for APT or portable installation; add `--apply` to install it.
+`--candidate` and `--to` are mutually exclusive. `--yes/-y` requires `--apply`.
 
 Multi-format options accept comma-separated values, repeated flags, or both:
 

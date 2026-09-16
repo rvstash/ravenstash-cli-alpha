@@ -56,7 +56,7 @@ RUNTIME_DISTRIBUTIONS = (
     "typer",
 )
 
-datas = []
+datas = [(str(ROOT / "rvs" / "resources" / "ravenstash-rvs.asc"), "rvs/resources")]
 for distribution in RUNTIME_DISTRIBUTIONS:
     datas += _metadata(distribution)
 
@@ -84,8 +84,8 @@ a = Analysis(
     hooksconfig={},
     runtime_hooks=[],
     # The encrypted vault is unavailable on Windows, where credentials use the
-    # native Credential Manager. Avoid shipping cryptography's statically linked
-    # Rust/OpenSSL extension when no supported Windows command can use it.
+    # native Credential Manager. Release verification uses the pinned RSA key
+    # directly and does not need a system or bundled cryptography library.
     excludes=["cryptography"] if IS_WINDOWS else [],
     noarchive=False,
     optimize=0,

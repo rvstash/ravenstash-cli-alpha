@@ -6,12 +6,25 @@ All notable user-facing changes to `rvs` are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `rvs update`, `rvs update --apply`, release-series migrations, and signed
+  release candidates now support portable Linux, Alpine/musl, macOS, and
+  Windows installations. Portable updates authenticate the signed channel and
+  release inventories, stage and health-check the exact native bundle, and
+  activate it atomically while retaining the previous version for recovery.
+- Portable installers record a non-secret installation receipt so updates
+  preserve the original user or system scope, target, channel, install root,
+  and command directory.
+
 ### Changed
 
 - Repository listings and details now label `in/ar_...` as the ID-based target;
   `rvs art repo list --json` exposes it as `id_based_target`.
 - Repository target help now documents both name-based and ID-based targets, and
   remote-cache help calls `rc_...` a permanent ID.
+- `rvs update` recognizes Nix, Homebrew, and WinGet installations and delegates
+  package replacement to their owning package manager.
 
 ## [0.14.0] - 2026-09-16
 

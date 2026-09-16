@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path  # noqa: TC003 - Typer resolves command annotations at runtime.
+
 import typer
 
 from .account.commands import app as account_app
@@ -9,6 +11,7 @@ from .artifacts.commands import app as artifacts_app
 from .auth.commands import app as auth_app
 from .auth.commands import profile_app
 from .context.commands import app as context_app
+from .installations import Installation, write_receipt
 from .native import commands as native_commands
 from .oci import commands as oci_commands
 from .runtime.commands import app as runtime_app
@@ -30,6 +33,48 @@ app.add_typer(context_app, name="context")
 app.add_typer(runtime_app, name="runtime")
 app.add_typer(artifacts_app, name="art")
 app.command("update")(update)
+
+
+@app.command("_record-install", hidden=True)
+def _record_install(
+    output_path: Path = typer.Option(..., "--output"),
+    scope: str = typer.Option(..., "--scope"),
+    version: str = typer.Option(..., "--version"),
+    channel: str = typer.Option(..., "--channel"),
+    target: str = typer.Option(..., "--target"),
+    install_root: Path = typer.Option(..., "--install-root"),
+    bin_directory: Path = typer.Option(..., "--bin-directory"),
+) -> None:
+    """Write the validated, non-secret receipt used by the portable updater."""
+
+    from importlib.metadata import PackageNotFoundError
+    from importlib.metadata import version as package_version
+
+    from .installations import platform_target
+
+    try:
+        running_version = package_version("ravenstash-cli")
+    except PackageNotFoundError:
+        running_version = "dev"
+    if version != running_version:
+        raise typer.BadParameter("receipt version does not match the running rvs executable")
+    if target != platform_target():
+        raise typer.BadParameter("receipt target does not match the running rvs executable")
+    write_receipt(
+        output_path,
+        Installation(
+            schema=1,
+            method="portable",
+            scope=scope,
+            version=version,
+            channel=channel,
+            target=target,
+            install_root=str(install_root.resolve()),
+            bin_directory=str(bin_directory.resolve()),
+        ),
+    )
+
+
 app.command(
     "pip",
     context_settings=native_commands.PASSTHROUGH_CONTEXT,

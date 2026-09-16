@@ -376,24 +376,49 @@ install_portable_archive() {
   local archive_root="${extracted}/${archive_prefix}"
   [[ -x "${archive_root}/rvs" ]] || fail "the portable archive is missing its rvs launcher"
 
+  "${archive_root}/rvs" _record-install \
+    --output "${archive_root}/rvs-install.json" \
+    --scope "${RVS_INSTALL_SCOPE:-user}" \
+    --version "$release_version" \
+    --channel "$compatibility_channel" \
+    --target "${system_name}-${architecture}" \
+    --install-root "$install_root" \
+    --bin-directory "$bin_directory"
+
+  local command_name command_path
+  for command_name in rvs ravenstash docker-credential-rvs; do
+    command_path="${bin_directory}/${command_name}"
+    if [[ -e "$command_path" && ! -L "$command_path" ]]; then
+      fail "${command_path} exists and is not an installer-owned symlink"
+    fi
+  done
+
   if [[ "${RVS_INSTALL_SCOPE:-user}" == "system" ]]; then
     as_root install -d -m 0755 "$install_root" "$bin_directory"
+    if [[ -e "${install_root}/current" && ! -L "${install_root}/current" ]]; then
+      fail "${install_root}/current exists and is not an installer-owned symlink"
+    fi
     if [[ -e "$install_directory" ]]; then
       as_root rm -rf -- "$install_directory"
     fi
     as_root mv "$archive_root" "$install_directory"
-    as_root ln -sfn "${install_directory}/rvs" "${bin_directory}/rvs"
-    as_root ln -sfn "${install_directory}/ravenstash" "${bin_directory}/ravenstash"
-    as_root ln -sfn "${install_directory}/docker-credential-rvs" "${bin_directory}/docker-credential-rvs"
+    as_root ln -sfn "$release_version" "${install_root}/current"
+    as_root ln -sfn "${install_root}/current/rvs" "${bin_directory}/rvs"
+    as_root ln -sfn "${install_root}/current/ravenstash" "${bin_directory}/ravenstash"
+    as_root ln -sfn "${install_root}/current/docker-credential-rvs" "${bin_directory}/docker-credential-rvs"
   else
     install -d -m 0755 "$install_root" "$bin_directory"
+    if [[ -e "${install_root}/current" && ! -L "${install_root}/current" ]]; then
+      fail "${install_root}/current exists and is not an installer-owned symlink"
+    fi
     if [[ -e "$install_directory" ]]; then
       rm -rf -- "$install_directory"
     fi
     mv "$archive_root" "$install_directory"
-    ln -sfn "${install_directory}/rvs" "${bin_directory}/rvs"
-    ln -sfn "${install_directory}/ravenstash" "${bin_directory}/ravenstash"
-    ln -sfn "${install_directory}/docker-credential-rvs" "${bin_directory}/docker-credential-rvs"
+    ln -sfn "$release_version" "${install_root}/current"
+    ln -sfn "${install_root}/current/rvs" "${bin_directory}/rvs"
+    ln -sfn "${install_root}/current/ravenstash" "${bin_directory}/ravenstash"
+    ln -sfn "${install_root}/current/docker-credential-rvs" "${bin_directory}/docker-credential-rvs"
   fi
   "${bin_directory}/rvs" --version >/dev/null
   say "installed rvs ${release_version} in ${install_directory}"

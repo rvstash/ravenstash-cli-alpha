@@ -97,8 +97,10 @@ For tools outside the wrappers, `rvs art token mint --format oci
 repository. Native logins may share a host credential store; the templates use
 separate temporary OCI configs. A logout against a shared store can affect other tools.
 
-`rvs update --to SERIES` previews a newer release series. Only `--apply` installs it.
-To test a signed prerelease on a Debian-family installation, use
+`rvs update` previews an update in the current release series, and `--apply`
+installs it through APT, the signed portable updater, or the owning package
+manager. `rvs update --to SERIES` previews a newer release series. To test a
+signed prerelease on an APT or portable installation, use
 `rvs update --candidate X.Y.ZrcN`; add `--apply` after reviewing it.
 
 ## Profiles and runtimes

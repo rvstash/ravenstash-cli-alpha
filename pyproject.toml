@@ -54,6 +54,9 @@ release = [
 where = ["."]
 include = ["rvs*"]
 
+[tool.setuptools.package-data]
+"rvs.resources" = ["ravenstash-rvs.asc"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "--tb=short -q"

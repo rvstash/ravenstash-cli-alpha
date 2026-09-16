@@ -114,10 +114,26 @@ old release; unrelated files are preserved and reported. On Linux glibc, Linux
 musl, and macOS for amd64 or arm64 it verifies an OpenPGP-signed release inventory
 plus the archive's exact SHA-256 digest and performs a user-local install by default.
 The PowerShell installer selects Windows x64 or ARM64, verifies the release digest,
-installs per-user by default, and updates user `PATH`. Apple notarization and
-Windows Authenticode are deferred while these platforms use command-line
-distribution. The protected APT signer authenticates the APT repository and POSIX
-portable inventory. The build includes the installer in the
+installs per-user by default, and updates user `PATH`. Both portable installers
+write a non-secret installation receipt used to preserve scope and target during
+`rvs update`. The updater bundles the pinned release public key and verifies the
+OpenPGP-signed channel and checksum inventories on every portable platform.
+The channel policy is published at the distribution-neutral
+`https://releases.ravenstash.com/rvs/channels.json` path; the matching APT path
+remains a compatibility alias for older clients.
+Stable release automation updates the neutral path only after the corresponding
+GitHub release is public; installer promotion can later change its recommended
+series without altering a release.
+Homebrew and WinGet update their versioned channel package in place, or replace
+it with rollback for an explicit series migration. Nix updates replace the
+tag-pinned `ravenstash-cli` profile element with the selected immutable release
+tag and restore the prior tag when replacement fails.
+Homebrew and WinGet manifests are generated in the release bundle but are not
+generally installable until separately accepted into their external catalogs;
+the signed portable installers remain the supported macOS and Windows path.
+Apple notarization and Windows Authenticode are deferred while these platforms
+use command-line distribution. The protected APT signer authenticates the APT
+repository and portable inventories. The build includes the installer in the
 checksummed and attested release artifacts. After the APT repository and GitHub
 release pass their publication gates, the separate promotion workflow embeds the
 exact attested bytes in a dedicated
