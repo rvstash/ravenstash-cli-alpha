@@ -6,6 +6,17 @@ All notable user-facing changes to `rvs` are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.14.5] - 2026-09-16
+
+### Changed
+
+- Stable releases now stage and authenticate the exact GitHub draft while APT
+  publishes, publish portable update policy alongside installer-promotion
+  signing, and retain the existing public verification and recommendation
+  barriers while shortening the release critical path.
+
+Detailed release notes: [RVS 0.14.5](docs/releases/0.14.5.md).
+
 ## [0.14.4] - 2026-09-16
 
 ### Changed
@@ -33,6 +44,7 @@ Detailed release notes: [RVS 0.14.4](docs/releases/0.14.4.md).
 
 Detailed release notes: [RVS 0.14.3](docs/releases/0.14.3.md).
 
-[Unreleased]: https://github.com/rvstash/ravenstash-cli-alpha/compare/v0.14.4...HEAD
+[Unreleased]: https://github.com/rvstash/ravenstash-cli-alpha/compare/v0.14.5...HEAD
+[0.14.5]: https://github.com/rvstash/ravenstash-cli-alpha/compare/v0.14.4...v0.14.5
 [0.14.4]: https://github.com/rvstash/ravenstash-cli-alpha/compare/v0.14.3...v0.14.4
 [0.14.3]: https://github.com/rvstash/ravenstash-cli-alpha/releases/tag/v0.14.3
