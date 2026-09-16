@@ -479,6 +479,13 @@ def test_installer_is_owned_by_cli_packaging_and_pins_release_identity() -> None
     assert "RVS_GITHUB_TOKEN" in windows_source
 
 
+def test_installer_accepts_musl_ldd_diagnostic_exit_status() -> None:
+    source = INSTALLER.read_text(encoding="utf-8")
+
+    assert source.count('ldd_output="$(ldd --version 2>&1 || true)"') == 2
+    assert "ldd --version 2>&1 | grep -qi musl" not in source
+
+
 def test_installer_prints_ravenstash_banner_after_success() -> None:
     source = INSTALLER.read_text(encoding="utf-8")
 

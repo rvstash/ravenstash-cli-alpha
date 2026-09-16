@@ -286,7 +286,7 @@ require_glibc_228() {
 
 install_portable_archive() {
   local temporary_directory="$1"
-  local architecture
+  local architecture ldd_output
   architecture="$(portable_architecture)"
   local system_name
   case "$(uname -s)" in
@@ -295,7 +295,8 @@ install_portable_archive() {
         require_glibc_228
         system_name="linux"
       else
-        ldd --version 2>&1 | grep -qi musl \
+        ldd_output="$(ldd --version 2>&1 || true)"
+        grep -qi musl <<<"$ldd_output" \
           || fail "could not identify a supported Linux libc"
         system_name="linux-musl"
       fi

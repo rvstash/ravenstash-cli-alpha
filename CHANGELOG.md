@@ -6,6 +6,11 @@ All notable user-facing changes to `rvs` are recorded here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- The portable installer now recognizes Alpine's musl `ldd` diagnostic even
+  though `ldd --version` exits nonzero after printing valid libc details.
+
 ## [0.14.1] - 2026-09-16
 
 ### Added
