@@ -254,6 +254,7 @@ def test_candidate_apply_installs_verified_local_package(monkeypatch: Any, tmp_p
 
 
 def test_candidate_rejects_stable_version_and_series_option(monkeypatch: Any) -> None:
+    monkeypatch.setattr(update_mod, "_apt_versions", lambda: (None, None))
     invalid = runner.invoke(app, ["update", "--candidate", "0.14.0"])
     combined = runner.invoke(app, ["update", "--candidate", "0.14.0rc1", "--to", "0.14"])
 
