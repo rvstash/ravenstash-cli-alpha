@@ -123,6 +123,7 @@ jobs:
         with:
           version: "0.11.24"
           enable-cache: true
+          save-cache: ${{ github.event_name != 'pull_request' }}
           cache-dependency-glob: uv.lock
       - name: Test and lint once
         run: |
@@ -161,6 +162,7 @@ jobs:
         with:
           version: "0.11.24"
           enable-cache: true
+          save-cache: ${{ github.event_name != 'pull_request' }}
           cache-dependency-glob: uv.lock
       - name: Test source on the native platform
         shell: bash
