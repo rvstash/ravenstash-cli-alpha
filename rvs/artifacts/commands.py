@@ -383,13 +383,13 @@ def repo_list(
             _selected_account_handle(profile, selected_account_ref, entries) if items else ""
         )
         output.table(
-            ["Account", "Namespace", "Repository", "Permanent reference", "Formats"],
+            ["Account", "Namespace", "Repository", "Native route", "Formats"],
             [
                 [
                     account_handle,
                     entry["repository"]["namespace_name"],
                     _repository_name_from_response(item),
-                    (f"{item['namespace_unique_ref']}/{item['repository_unique_ref']}"),
+                    (f"in/{item['repository_unique_ref']}"),
                     ", ".join(
                         detail["format"]
                         for detail in item.get("formats", [])
@@ -398,7 +398,7 @@ def repo_list(
                 ]
                 for entry, item in zip(entries, items, strict=True)
             ],
-            json_keys=["account", "namespace", "repository", "repository_id", "formats"],
+            json_keys=["account", "namespace", "repository", "native_route", "formats"],
         )
         return
 
@@ -409,11 +409,11 @@ def repo_list(
         return
 
     output.table(
-        ["Repository", "Permanent reference", "Formats"],
+        ["Repository", "Native route", "Formats"],
         [
             [
                 f"{item['namespace_name']}/{_repository_name_from_response(item)}",
-                (f"{item['namespace_unique_ref']}/{item['repository_unique_ref']}"),
+                (f"in/{item['repository_unique_ref']}"),
                 ", ".join(
                     detail["format"]
                     for detail in item.get("formats", [])
@@ -521,7 +521,7 @@ def repo_show(
 
     account_handle = _public_account_handle(entry["account"])
     repository_name = _repository_name_from_response(item, repo)
-    permanent_reference = f"{item['namespace_unique_ref']}/{item['repository_unique_ref']}"
+    native_route = f"in/{item['repository_unique_ref']}"
     formats = ", ".join(
         detail["format"]
         for detail in item.get("formats", [])
@@ -571,7 +571,7 @@ def repo_show(
         {
             "Repository": f"{item['namespace_name']}/{repository_name}",
             "Account": account_handle,
-            "Permanent reference": permanent_reference,
+            "Native route": native_route,
             "Formats": formats,
             "Packages": packages,
             "Versions": versions,
@@ -646,7 +646,7 @@ def repo_set_default(
     profile_name = _profile_name(profile)
     entry = _resolve_repository_entry(repo, profile, kind=format)
     repository = entry["repository"]
-    stable = f"{repository['namespace_unique_ref']}/{repository['repository_unique_ref']}"
+    stable = f"in/{repository['repository_unique_ref']}"
     cfg_mod.set_registry_default_target(
         registry_kind,
         customer=entry["account"],

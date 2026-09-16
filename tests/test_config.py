@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import os
 import stat
-import tomllib
 from typing import TYPE_CHECKING
 
 import pytest
@@ -66,7 +65,7 @@ def test_load_uses_env_api_url_for_configured_profile_without_api_url(
     config_dir.mkdir()
     config_file.write_text(
         """
-config_version = 5
+config_version = 6
 default_profile = "staging"
 
 [profiles.staging]
@@ -86,7 +85,7 @@ def test_env_api_url_overrides_saved_profile_url(monkeypatch, tmp_path: Path) ->
     config_dir.mkdir()
     config_file.write_text(
         """
-config_version = 5
+config_version = 6
 [profiles.staging]
 api_url = "https://api.ravenstash.com"
 """.strip(),
@@ -160,7 +159,7 @@ def test_localhost_repository_domain_uses_literal_host_and_keeps_routes(
     config_dir.mkdir()
     config_file.write_text(
         """
-config_version = 5
+config_version = 6
 [profiles.dev.native_registries.pypi]
 read_base_url = "https://download.example.test:43101/registry/pypi"
 push_base_url = "https://upload.example.test:43102/registry/pypi"
@@ -198,7 +197,7 @@ def test_discovered_heterogeneous_host_family_is_retained_without_domain_overrid
     config_dir.mkdir()
     config_file.write_text(
         """
-config_version = 5
+config_version = 6
 [profiles.work.native_registries.pypi]
 read_base_url = "https://python-download.example.test"
 push_base_url = "https://python-upload.example.test"
@@ -231,7 +230,8 @@ registry_base_url = "https://images.example.test"
 @pytest.mark.parametrize(
     ("version", "message"),
     [
-        (4, "predates the supported v5 baseline"),
+        (4, "not supported by rvs 0.14"),
+        (5, "not supported by rvs 0.14"),
         (999, "requires a newer rvs release"),
     ],
 )
@@ -252,40 +252,7 @@ def test_load_rejects_versions_outside_the_supported_migration_range(
     assert config_file.read_text(encoding="utf-8") == original
 
 
-def test_registered_future_migration_is_validated_backed_up_and_persisted(
-    monkeypatch,
-    tmp_path: Path,
-) -> None:
-    config_dir, config_file = _point_config(monkeypatch, tmp_path)
-    config_dir.mkdir()
-    original = 'config_version = 5\ndefault_profile = "default"\n'
-    config_file.write_text(original, encoding="utf-8")
-    original_inode = config_file.stat().st_ino
-
-    def migrate_v5_to_v6(raw: dict) -> None:
-        raw["future_setting"] = "migrated"
-        raw["config_version"] = 6
-
-    monkeypatch.setattr(cfg_mod, "CURRENT_CONFIG_VERSION", 6)
-    monkeypatch.setitem(cfg_mod._CONFIG_MIGRATIONS, 5, migrate_v5_to_v6)
-
-    loaded = cfg_mod.load()
-
-    assert loaded.default_profile == "default"
-    migrated = tomllib.loads(config_file.read_text(encoding="utf-8"))
-    assert migrated == {
-        "config_version": 6,
-        "default_profile": "default",
-        "future_setting": "migrated",
-    }
-    assert config_file.stat().st_ino != original_inode
-    backup = config_dir / "config.v5.toml.bak"
-    assert backup.read_text(encoding="utf-8") == original
-    if os.name != "nt":
-        assert stat.S_IMODE(backup.stat().st_mode) == 0o600
-
-
-def test_failed_future_migration_does_not_touch_the_source(
+def test_v5_breaking_cutover_does_not_touch_or_back_up_source(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
@@ -294,14 +261,7 @@ def test_failed_future_migration_does_not_touch_the_source(
     original = 'config_version = 5\ndefault_profile = "default"\n'
     config_file.write_text(original, encoding="utf-8")
 
-    def migrate_v5_to_invalid_v6(raw: dict) -> None:
-        raw["config_version"] = 6
-        raw["profiles"] = "invalid"
-
-    monkeypatch.setattr(cfg_mod, "CURRENT_CONFIG_VERSION", 6)
-    monkeypatch.setitem(cfg_mod._CONFIG_MIGRATIONS, 5, migrate_v5_to_invalid_v6)
-
-    with pytest.raises(ValueError, match="profiles must be a table"):
+    with pytest.raises(ValueError, match=r"not supported by rvs 0\.14"):
         cfg_mod.load()
 
     assert config_file.read_text(encoding="utf-8") == original
@@ -399,8 +359,8 @@ def test_save_and_load_round_trips_profiles_and_registry_defaults(
                 expires_at="2099-01-01T00:00:00+00:00",
                 refresh_expires_at="2099-01-02T00:00:00+00:00",
                 registries={
-                    "pypi": cfg_mod.RegistryDefaults(default_repo="in_abcdefgh/ar_23456789"),
-                    "npm": cfg_mod.RegistryDefaults(default_repo="in_abcdefgh/ar_xyzabcde"),
+                    "pypi": cfg_mod.RegistryDefaults(default_repo="in/ar_23456789"),
+                    "npm": cfg_mod.RegistryDefaults(default_repo="in/ar_xyzabcde"),
                 },
             )
         },
@@ -425,8 +385,8 @@ def test_save_and_load_round_trips_profiles_and_registry_defaults(
     )
     assert loaded.profiles["work"].customer_id == "ac_abcdefgh"
     assert loaded.profiles["work"].credential_store == "pass"
-    assert loaded.registry_defaults("pypi").default_repo == "in_abcdefgh/ar_23456789"
-    assert loaded.registry_defaults("npm").default_repo == "in_abcdefgh/ar_xyzabcde"
+    assert loaded.registry_defaults("pypi").default_repo == "in/ar_23456789"
+    assert loaded.registry_defaults("npm").default_repo == "in/ar_xyzabcde"
     assert loaded.registry_defaults("maven").default_repo is None
 
 
@@ -441,7 +401,7 @@ def test_saved_target_retains_identity_when_authority_marks_it_unavailable(
                 "default": cfg_mod.ProfileConfig(
                     registries={
                         "pypi": cfg_mod.RegistryDefaults(
-                            default_repo="in_abcdefgh/ar_23456789",
+                            default_repo="in/ar_23456789",
                             repository_unique_ref="ar_23456789",
                             authority_revision=4,
                         )
@@ -454,7 +414,7 @@ def test_saved_target_retains_identity_when_authority_marks_it_unavailable(
     cfg_mod.mark_registry_default_unavailable("pypi")
     saved = cfg_mod.load().registry_defaults("pypi")
 
-    assert saved.default_repo == "in_abcdefgh/ar_23456789"
+    assert saved.default_repo == "in/ar_23456789"
     assert saved.repository_unique_ref == "ar_23456789"
     assert saved.authority_revision == 4
     assert saved.is_available is False

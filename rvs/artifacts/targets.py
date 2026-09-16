@@ -37,8 +37,9 @@ class RegistryContext:
     target: cfg_mod.ArtifactTarget
     read_base_url: str
     push_base_url: str | None
-    namespace_reference: str
+    route_coordinate: str
     repository_reference: str
+    route_realm: Literal["in"] | None
     token: str = field(repr=False)
 
 
@@ -75,12 +76,12 @@ def parse_target(value: str) -> TargetSpec:
         typed = namespace_part.startswith(("in_", "gn_", "ar_")) or repository_part.startswith(
             ("in_", "gn_", "ar_")
         )
-        if typed and not (
-            namespace_part.startswith(("in_", "gn_")) and repository_part.startswith("ar_")
-        ):
-            output.fatal("Stable repository targets require a matching typed namespace/ar_ pair.")
-        if typed:
-            namespace_realm = "global" if namespace_part.startswith("gn_") else "internal"
+        if repository_part.startswith("ar_"):
+            if namespace_part != "in":
+                output.fatal("Stable internal repository targets require in/ar_....")
+            namespace_realm = "internal"
+        elif typed:
+            output.fatal("Typed IDs cannot be used as a name-based repository target.")
     return TargetSpec(
         target_type=target_type,
         selector=selector,
@@ -108,9 +109,7 @@ def _repository_target(entry: dict) -> cfg_mod.ArtifactTarget:
     return cfg_mod.ArtifactTarget(
         target_type="repository",
         customer_id=account["account_ref"],
-        stable_selector=(
-            f"{repository['namespace_unique_ref']}/{repository['repository_unique_ref']}"
-        ),
+        stable_selector=(f"in/{repository['repository_unique_ref']}"),
         display_selector=f"{repository['namespace_name']}/{repository['repository_name']}",
         registry_kind=cast("cfg_mod.RegistryKind | None", inferred_kind),
         namespace_realm=repository["namespace_realm"],
@@ -155,7 +154,7 @@ def is_stable_repository_selector(selector: str) -> bool:
     """
     parts = selector.split("/")
     return (len(parts) == 1 and parts[0].startswith("ar_")) or (
-        len(parts) == 2 and parts[0].startswith(("in_", "gn_")) and parts[1].startswith("ar_")
+        len(parts) == 2 and parts[0] == "in" and parts[1].startswith("ar_")
     )
 
 
@@ -358,9 +357,14 @@ def registry_context(
             if not isinstance(native_path, str):
                 raise ValueError("Private repository resolution omitted its native path")
             native_parts = native_path.strip("/").split("/")
-            if len(native_parts) != 2 or not all(native_parts):
+            if (
+                credential.get("native_realm") != "in"
+                or len(native_parts) != 2
+                or native_parts != ["in", selected.repository_unique_ref]
+            ):
                 raise ValueError("Private repository resolution returned an invalid native path")
-            namespace_reference, repository_reference = native_parts
+            route_coordinate, repository_reference = native_parts
+            route_realm: Literal["in"] | None = "in"
             read_base_url = endpoints.read_base_url
             push_base_url: str | None = endpoints.push_base_url
         else:
@@ -376,7 +380,8 @@ def registry_context(
             native_parts = credential["native_path"].strip("/").split("/")
             if len(native_parts) != 2 or not all(native_parts):
                 raise ValueError("Remote cache resolution returned an invalid native path")
-            namespace_reference, repository_reference = native_parts
+            route_coordinate, repository_reference = native_parts
+            route_realm = None
             read_base_url = endpoints.mirror_base_url
             push_base_url = None
         native_token = validate_public_token(credential["access_token"], native=True)
@@ -389,7 +394,8 @@ def registry_context(
         target=selected,
         read_base_url=read_base_url,
         push_base_url=push_base_url,
-        namespace_reference=namespace_reference,
+        route_coordinate=route_coordinate,
         repository_reference=repository_reference,
+        route_realm=route_realm,
         token=native_token,
     )

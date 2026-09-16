@@ -10,7 +10,7 @@ Config file shape
 -----------------
 ::
 
-    config_version = 5
+    config_version = 6
     default_profile = "default"
 
     [profiles.default]
@@ -40,13 +40,13 @@ Config file shape
     registry_base_url = "https://oci.rvsta.sh"
 
     [profiles.default.registries.pypi]
-    default_repo = "in_abcdefgh/ar_m7nk3p4q"
+    default_repo = "in/ar_m7nk3p4q"
 
     [profiles.default.registries.npm]
-    default_repo = "in_abcdefgh/ar_n4b6v8cx"
+    default_repo = "in/ar_n4b6v8cx"
 
     [profiles.default.registries.maven]
-    default_repo = "in_abcdefgh/ar_p2q4r6st"
+    default_repo = "in/ar_p2q4r6st"
 """
 
 from __future__ import annotations
@@ -80,8 +80,8 @@ SESSIONS_DIR_NAME = "sessions"
 
 DEFAULT_API_URL = "https://api.ravenstash.com"
 DEFAULT_REPOSITORY_DOMAIN = "rvsta.sh"
-BASE_CONFIG_VERSION = 5
-CURRENT_CONFIG_VERSION = 5
+BASE_CONFIG_VERSION = 6
+CURRENT_CONFIG_VERSION = 6
 ConfigMigration = Callable[[dict], None]
 _CONFIG_MIGRATIONS: dict[int, ConfigMigration] = {}
 
@@ -731,7 +731,7 @@ def _load_raw() -> dict:
 
 
 def _migrate_raw_config(raw: dict) -> bool:
-    """Apply registered migrations from the v5 public-format baseline."""
+    """Reject pre-v0.14 configuration; this breaking release has no migration."""
     if not raw:
         raw["config_version"] = CURRENT_CONFIG_VERSION
         return False
@@ -740,8 +740,9 @@ def _migrate_raw_config(raw: dict) -> bool:
         raise ValueError("config_version must be an integer")
     if version < BASE_CONFIG_VERSION:
         raise ValueError(
-            f"config version {version} predates the supported v{BASE_CONFIG_VERSION} baseline; "
-            "reconfigure with this rvs release"
+            f"config version {version} is not supported by rvs 0.14; "
+            "run `rvs auth logout --all`, sign in again, and reselect your account "
+            "and repository target"
         )
     if version > CURRENT_CONFIG_VERSION:
         raise ValueError(
@@ -751,21 +752,7 @@ def _migrate_raw_config(raw: dict) -> bool:
 
     changed = False
     while version < CURRENT_CONFIG_VERSION:
-        migration = _CONFIG_MIGRATIONS.get(version)
-        if migration is None:
-            raise RuntimeError(f"rvs has no config migration from version {version}")
-        migration(raw)
-        next_version = raw.get("config_version")
-        if (
-            isinstance(next_version, bool)
-            or not isinstance(next_version, int)
-            or next_version != version + 1
-        ):
-            raise RuntimeError(
-                f"config migration from version {version} did not produce version {version + 1}"
-            )
-        version = next_version
-        changed = True
+        raise RuntimeError(f"rvs has no config migration from version {version}")
     return changed
 
 
@@ -792,16 +779,10 @@ def _validate_repository_target_identity(
     selector = value.get("stable_selector", value.get("default_repo"))
     if not isinstance(selector, str) or not selector:
         raise ValueError(f"missing repository selector at {path}")
-    if selector.startswith(("in_", "gn_", "ar_")):
+    if selector.split("/", 1)[-1].startswith("ar_"):
         parts = selector.split("/")
-        if (
-            len(parts) != 2
-            or expected_namespace.fullmatch(parts[0]) is None
-            or _REPOSITORY_REF_RE.fullmatch(parts[1]) is None
-        ):
+        if len(parts) != 2 or parts[0] != "in" or _REPOSITORY_REF_RE.fullmatch(parts[1]) is None:
             raise ValueError(f"invalid stable repository selector at {path}")
-        if namespace_ref is not None and namespace_ref != parts[0]:
-            raise ValueError(f"conflicting namespace identity at {path}")
         if repository_ref is not None and repository_ref != parts[1]:
             raise ValueError(f"conflicting repository identity at {path}")
     elif (
@@ -1296,7 +1277,7 @@ def set_registry_default_target(
     cfg = load()
     profile_name = profile or current_profile_name(cfg)
     profile_config = cfg.profiles.get(profile_name, _default_profile_config(profile_name))
-    stable_selector = f"{repository['namespace_unique_ref']}/{repository['repository_unique_ref']}"
+    stable_selector = f"in/{repository['repository_unique_ref']}"
     profile_config.registries[kind] = RegistryDefaults(
         default_repo=stable_selector,
         customer_id=customer["account_ref"],
@@ -1323,11 +1304,7 @@ def registry_target_expectation(
     cfg = load()
     profile_name = profile or current_profile_name(cfg)
     target = cfg.registry_defaults(kind, profile_name)
-    stable_selector = (
-        f"{target.namespace_unique_ref}/{target.repository_unique_ref}"
-        if target.namespace_unique_ref and target.repository_unique_ref
-        else None
-    )
+    stable_selector = f"in/{target.repository_unique_ref}" if target.repository_unique_ref else None
     if selector != stable_selector:
         return None
     expected = {
@@ -1373,7 +1350,7 @@ def refresh_matching_registry_targets(
     cfg = load()
     profile_name = profile or current_profile_name(cfg)
     profile_config = cfg.profiles.get(profile_name, _default_profile_config(profile_name))
-    stable_selector = f"{repository['namespace_unique_ref']}/{repository['repository_unique_ref']}"
+    stable_selector = f"in/{repository['repository_unique_ref']}"
     for kind, target in tuple(profile_config.registries.items()):
         if target.default_repo != stable_selector:
             continue

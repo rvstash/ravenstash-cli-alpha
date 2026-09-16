@@ -128,7 +128,7 @@ account_ref = "personal-{profile}"
         for profile in profiles
     )
     config_file.write_text(
-        f'config_version = 5\ndefault_profile = "{profiles[0]}"\n\n{profile_tables}\n',
+        f'config_version = 6\ndefault_profile = "{profiles[0]}"\n\n{profile_tables}\n',
         encoding="utf-8",
     )
     monkeypatch.setattr(cfg_mod, "CONFIG_DIR", config_dir)
@@ -141,13 +141,13 @@ account_ref = "personal-{profile}"
 
 def test_target_parser_keeps_private_and_mirror_namespaces_disjoint() -> None:
     bare = parse_target("acme/backend")
-    stable_internal = parse_target("in_abcdefgh/ar_abcdefgh")
-    stable_global = parse_target("gn_abcdefgh/ar_abcdefgh")
+    stable_internal = parse_target("in/ar_abcdefgh")
 
     assert bare.target_type == "repository"
     assert bare.namespace_realm is None
     assert stable_internal.namespace_realm == "internal"
-    assert stable_global.namespace_realm == "global"
+    with pytest.raises(SystemExit):
+        parse_target("gn_abcdefgh/ar_abcdefgh")
     assert parse_target("mirror:pypiorg").target_type == "official_cache"
     assert parse_target("custom-mirror:piwheels").target_type == "custom_cache"
 
@@ -399,7 +399,8 @@ class CrossAccountApi:
         return Response(
             {
                 "access_token": "rvs_sltCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCA",
-                "native_paths": {"pypi": "/engineering/packages"},
+                "native_realm": "in",
+                "native_paths": {"pypi": "/in/ar_abcdefgh"},
                 "formats": ["pypi"],
                 "token_type": "bearer",
                 "expires_in": 14400,
@@ -411,12 +412,12 @@ def test_stable_cross_account_target_reports_owner_without_switching(monkeypatch
     isolate(monkeypatch, tmp_path)
     fake = CrossAccountApi()
     monkeypatch.setattr(ApiClient, "from_profile", staticmethod(lambda profile=None: fake))
-    _, owner, target = resolve_target("in_23456789/ar_abcdefgh", profile="alice", kind="pypi")
+    _, owner, target = resolve_target("in/ar_abcdefgh", profile="alice", kind="pypi")
     assert fake.calls == [
         (
             "/repositories/resolve",
             {
-                "selector": "in_23456789/ar_abcdefgh",
+                "selector": "in/ar_abcdefgh",
                 "format": "pypi",
             },
         )
@@ -434,7 +435,7 @@ def test_cross_account_selection_stays_in_current_context_and_uses_owner_credent
     isolate(monkeypatch, tmp_path)
     fake = CrossAccountApi()
     monkeypatch.setattr(ApiClient, "from_profile", staticmethod(lambda profile=None: fake))
-    result = runner.invoke(app, ["art", "select", "in_23456789/ar_abcdefgh"])
+    result = runner.invoke(app, ["art", "select", "in/ar_abcdefgh"])
     assert result.exit_code == 0, result.output
     assert "another account" in result.output
     assert cfg_mod.current_customer_id("alice") == "personal-alice"
@@ -447,7 +448,7 @@ def test_cross_account_selection_stays_in_current_context_and_uses_owner_credent
     assert cfg_mod.current_customer_id("alice") == "personal-alice"
 
 
-@pytest.mark.parametrize("selector", ["ar_abcdefgh", "in_23456789/ar_abcdefgh"])
+@pytest.mark.parametrize("selector", ["ar_abcdefgh", "in/ar_abcdefgh"])
 def test_management_stable_reference_crosses_account_with_json_hint(
     monkeypatch, tmp_path, selector
 ):
@@ -498,7 +499,7 @@ def test_unauthorized_stable_reference_keeps_api_denial(monkeypatch, tmp_path):
 
     monkeypatch.setattr(ApiClient, "from_profile", staticmethod(lambda profile=None: DeniedApi()))
     with pytest.raises(SystemExit):
-        resolve_target("in_23456789/ar_abcdefgh", profile="alice")
+        resolve_target("in/ar_abcdefgh", profile="alice")
     assert cfg_mod.current_customer_id("alice") == "personal-alice"
 
 
@@ -509,7 +510,7 @@ def test_cross_account_print_token_keeps_stdout_secret_only(monkeypatch, tmp_pat
     isolate(monkeypatch, tmp_path)
     fake = CrossAccountApi()
     monkeypatch.setattr(ApiClient, "from_profile", staticmethod(lambda profile=None: fake))
-    args = ["art", "token", "mint", "--target", "in_23456789/ar_abcdefgh"]
+    args = ["art", "token", "mint", "--target", "in/ar_abcdefgh"]
     if json_output:
         args.insert(0, "--json")
     result = runner.invoke(app, args)
@@ -538,6 +539,6 @@ def test_cross_account_issuance_denial_does_not_fallback_or_switch(monkeypatch, 
     fake = DeniedIssuance()
     monkeypatch.setattr(ApiClient, "from_profile", staticmethod(lambda profile=None: fake))
     with pytest.raises(SystemExit):
-        registry_context(kind="pypi", target="in_23456789/ar_abcdefgh", profile="alice")
+        registry_context(kind="pypi", target="in/ar_abcdefgh", profile="alice")
     assert [path for path, _ in fake.calls] == ["/repositories/resolve", "/package-credentials"]
     assert cfg_mod.current_customer_id("alice") == "personal-alice"

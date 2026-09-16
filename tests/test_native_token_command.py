@@ -28,6 +28,8 @@ def issuer(monkeypatch):
             "operations": ["download"],
             "token_type": "bearer",
             "formats": ["pypi"],
+            "native_realm": "in",
+            "native_paths": {"pypi": "/in/ar_abcdefgh"},
         },
     )
     target = SimpleNamespace(
@@ -43,7 +45,7 @@ def issuer(monkeypatch):
 
     def resolve(*args, **kwargs):
         print("Resolved fixture target")
-        return Discovery("fixture", target, ("pypi",), ("in_abcdefgh", "ar_abcdefgh"))
+        return Discovery("fixture", target, ("pypi",), ("in", "ar_abcdefgh"))
 
     monkeypatch.setattr(auth_commands, "discover", resolve)
     monkeypatch.setattr(ApiClient, "from_profile", lambda *args, **kwargs: client)
@@ -77,7 +79,7 @@ def test_manual_kind_is_required_only_when_target_is_ambiguous(issuer, monkeypat
         auth_commands,
         "discover",
         lambda *args, **kwargs: Discovery(
-            "fixture", target, ("pypi", "oci"), ("in_abcdefgh", "ar_abcdefgh")
+            "fixture", target, ("pypi", "oci"), ("in", "ar_abcdefgh")
         ),
     )
 

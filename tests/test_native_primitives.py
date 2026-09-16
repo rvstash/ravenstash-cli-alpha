@@ -24,7 +24,7 @@ def found(monkeypatch):
     target = config.ArtifactTarget(
         target_type="repository",
         customer_id="customer",
-        stable_selector="in_abcdefgh/ar_abcdefgh",
+        stable_selector="in/ar_abcdefgh",
         display_selector="space/packages",
         namespace_unique_ref="in_abcdefgh",
         repository_unique_ref="ar_abcdefgh",
@@ -35,7 +35,7 @@ def found(monkeypatch):
         "default",
         target,
         ("pypi", "npm", "maven", "oci"),
-        ("in_abcdefgh", "ar_abcdefgh"),
+        ("in", "ar_abcdefgh"),
     )
     monkeypatch.setattr(primitives, "discover", lambda *args: found)
     monkeypatch.setattr(config, "save", lambda *_: pytest.fail("template wrote configuration"))
@@ -75,7 +75,7 @@ def test_templates_do_not_issue_credentials_or_write_config(found, tool, formats
         assert "--format oci" in text
         assert text.count("--password-stdin") == 1
     if tool == "helm":
-        assert "push api-1.2.0.tgz oci://oci.rvsta.sh/space/packages/charts" in text
+        assert "push api-1.2.0.tgz oci://oci.rvsta.sh/in/ar_abcdefgh/charts" in text
 
 
 @pytest.mark.parametrize("tool", ["pip", "twine"])
@@ -126,7 +126,7 @@ def test_http_oci_templates_preserve_local_transport(found, tool, monkeypatch):
         assert "--to-plain-http" in text
         assert "--from-plain-http" not in text
     else:
-        assert "oci://localhost:5080/space/packages/charts --plain-http" in text
+        assert "oci://localhost:5080/in/ar_abcdefgh/charts --plain-http" in text
 
 
 @pytest.mark.parametrize(
@@ -164,8 +164,8 @@ def test_endpoint_prints_read_and_publish_addresses_by_default(found):
     result = runner.invoke(app, ["art", "endpoint", "--format", "pypi"])
     assert result.exit_code == 0, result.output
     assert result.stdout == (
-        "Read: https://pypi.rvsta.sh/in_abcdefgh/ar_abcdefgh/simple/\n"
-        "Publish: https://push.pypi.rvsta.sh/in_abcdefgh/ar_abcdefgh/\n"
+        "Read: https://pypi.rvsta.sh/in/ar_abcdefgh/simple/\n"
+        "Publish: https://push.pypi.rvsta.sh/in/ar_abcdefgh/\n"
     )
 
 
@@ -180,7 +180,7 @@ def test_endpoint_json_adds_publish_address_and_access_selects_one_raw_value(fou
     }
     result = runner.invoke(app, ["art", "endpoint", "--format", "pypi", "--access", "publish"])
     assert result.exit_code == 0, result.output
-    assert result.stdout == "https://push.pypi.rvsta.sh/in_abcdefgh/ar_abcdefgh/\n"
+    assert result.stdout == "https://push.pypi.rvsta.sh/in/ar_abcdefgh/\n"
     assert runner.invoke(app, ["art", "endpoint", "--json"]).exit_code == 2
 
 
@@ -195,7 +195,7 @@ def test_endpoint_omits_publish_address_for_read_only_mirror(found):
         "target": "space/packages",
         "format": "pypi",
         "access": "read",
-        "endpoint": "https://mirror.pypi.rvsta.sh/in_abcdefgh/ar_abcdefgh/simple/",
+        "endpoint": "https://mirror.pypi.rvsta.sh/in/ar_abcdefgh/simple/",
     }
 
 

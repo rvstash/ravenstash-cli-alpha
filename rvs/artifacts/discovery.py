@@ -83,6 +83,15 @@ class Discovery:
         )
         return qualify_reference(f"{self.endpoint(kind)}/{root}", operand)
 
+    def native_reference(self, kind: str, operand: str | None = None) -> str:
+        """Return the immutable realm-qualified reference used by native clients."""
+
+        from ..oci.reference import qualify_reference
+
+        self.select_format(kind, ("oci",))
+        root = "/".join(self.native_path)
+        return qualify_reference(f"{self.endpoint(kind)}/{root}", operand)
+
 
 def discover(
     target: str | None, profile: str | None, account: str | None, kind: str | None = None
@@ -110,7 +119,7 @@ def discover(
             for item in entry["repository"]["formats"]
             if isinstance(item, dict) and item.get("format") in FORMATS
         )
-        path = (str(selected.namespace_unique_ref), str(selected.repository_unique_ref))
+        path = ("in", str(selected.repository_unique_ref))
     else:
         params = {"account_ref": customer_id}
         if kind is not None:

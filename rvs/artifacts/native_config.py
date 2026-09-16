@@ -194,10 +194,10 @@ chmod 700 "$RVS_OCI_CONFIG"
             f'printf %s "$RVS_NATIVE_TOKEN" | {command} {login} {shlex.quote(read)} --username rvs --password-stdin{transport}',
         )
         for fmt in formats:
-            root = found.reference(fmt)
+            root = found.native_reference(fmt)
             add("command", f"# {fmt.title()} reference:\nrvs art reference {flags} --format {fmt}")
             if tool == "docker":
-                ref = found.reference(fmt, "backend:latest")
+                ref = found.native_reference(fmt, "backend:latest")
                 text = f"{command} pull {ref}"
                 if push:
                     text += f"\n{command} tag LOCAL_IMAGE {ref}\n{command} push {ref}"
@@ -210,7 +210,7 @@ chmod 700 "$RVS_OCI_CONFIG"
                     ("Container OCI", "images/api:latest"),
                     ("Helm OCI", "charts/api:1.2.0"),
                 ):
-                    ref = found.reference(fmt, path)
+                    ref = found.native_reference(fmt, path)
                     text = f'# {label}: copy an existing supported graph.\n{command} manifest fetch --registry-config "$RVS_OCI_CONFIG/oras.json" {ref}{transport}'
                     if push:
                         text += f'\n{command} cp --from-registry-config "$RVS_OCI_CONFIG/oras.json" --to-registry-config "$RVS_OCI_CONFIG/oras.json" SOURCE_REGISTRY/{path} {ref}'

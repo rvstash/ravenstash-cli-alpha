@@ -63,16 +63,9 @@ def _native_route_parts(native_path: str) -> tuple[str, str] | None:
     if len(parts) != 2:
         return None
     namespace, repository = parts
-    stable = namespace.startswith(("in_", "gn_", "ar_")) or repository.startswith(
-        ("in_", "gn_", "ar_")
-    )
+    stable = repository.startswith("ar_")
     if stable:
-        if not (
-            namespace.startswith(("in_", "gn_"))
-            and repository.startswith("ar_")
-            and _UNIQUE_ID.fullmatch(namespace.split("_", 1)[1])
-            and _UNIQUE_ID.fullmatch(repository.removeprefix("ar_"))
-        ):
+        if not (namespace == "in" and _UNIQUE_ID.fullmatch(repository.removeprefix("ar_"))):
             return None
     elif (
         not _OCI_COMPONENT.fullmatch(namespace)
@@ -84,18 +77,15 @@ def _native_route_parts(native_path: str) -> tuple[str, str] | None:
     return namespace, repository
 
 
-def _stable_oci_root(namespace_unique_ref: object, repository_unique_ref: object) -> str:
-    if not isinstance(namespace_unique_ref, str) or not isinstance(repository_unique_ref, str):
+def _stable_oci_root(native_realm: object, repository_unique_ref: object) -> str:
+    if native_realm != "in" or not isinstance(repository_unique_ref, str):
         output.fatal("Invalid OCI capability response: stable identity is missing.")
-    if not namespace_unique_ref.startswith(("in_", "gn_")) or not repository_unique_ref.startswith(
-        "ar_"
-    ):
+    if not repository_unique_ref.startswith("ar_"):
         output.fatal("Invalid OCI capability response: stable identity is invalid.")
-    namespace_id = namespace_unique_ref.split("_", 1)[1]
     repository_unique_id = repository_unique_ref.removeprefix("ar_")
-    if not _UNIQUE_ID.fullmatch(namespace_id) or not _UNIQUE_ID.fullmatch(repository_unique_id):
+    if not _UNIQUE_ID.fullmatch(repository_unique_id):
         output.fatal("Invalid OCI capability response: stable identity is invalid.")
-    return f"{namespace_unique_ref}/{repository_unique_ref}"
+    return f"in/{repository_unique_ref}"
 
 
 def _friendly_oci_root(namespace_name: object, repository_name: object) -> str:
@@ -184,9 +174,11 @@ def resolve_route(
         credential.get("repository_name"),
     )
     stable_root = _stable_oci_root(
-        credential.get("namespace_unique_ref"),
+        credential.get("native_realm"),
         credential.get("repository_unique_ref"),
     )
+    if response_root != stable_root:
+        output.fatal("Invalid OCI capability response: native_path is not canonical.")
     return OciRoute(
         kind=kind,
         registry_url=registry_url,

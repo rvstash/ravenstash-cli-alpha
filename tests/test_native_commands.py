@@ -120,10 +120,12 @@ class _FakeDevApi:
         return _JsonResponse(
             {
                 "access_token": "rvs_sltAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
-                "native_paths": {kind: "/staging/repo" for kind in json["formats"]},
+                "native_realm": "in",
+                "native_paths": {kind: "/in/ar_xyzabcde" for kind in json["formats"]},
                 "namespace_name": "staging",
                 "namespace_realm": "internal",
                 "repository_name": "repo",
+                "repository_unique_ref": "ar_xyzabcde",
             }
         )
 
@@ -134,7 +136,7 @@ def _isolate_config(monkeypatch: Any, tmp_path: Path) -> None:
     config_file = config_dir / "config.toml"
     config_file.write_text(
         f"""
-config_version = 5
+config_version = 6
 default_profile = "staging"
 
 [profiles.staging]
@@ -160,13 +162,13 @@ mirror_base_url = "{MAVEN_MIRROR_URL}"
 registry_base_url = "https://images.example.test"
 
 [profiles.staging.registries.pypi]
-default_repo = "in_abcdefgh/ar_xyzabcde"
+default_repo = "in/ar_xyzabcde"
 
 [profiles.staging.registries.npm]
-default_repo = "in_abcdefgh/ar_xyzabcde"
+default_repo = "in/ar_xyzabcde"
 
 [profiles.staging.registries.maven]
-default_repo = "in_abcdefgh/ar_xyzabcde"
+default_repo = "in/ar_xyzabcde"
 """.strip(),
         encoding="utf-8",
     )
@@ -271,7 +273,7 @@ def test_native_npm_respects_project_npmrc_and_injects_path_scoped_auth(
     _isolate_config(monkeypatch, tmp_path)
     _mock_native_tools(monkeypatch)
     (tmp_path / ".npmrc").write_text(
-        f"@acme:registry={NPM_READ_URL}/in_abcdefgh/ar_xyzabcde/\n",
+        f"@acme:registry={NPM_READ_URL}/in/ar_xyzabcde/\n",
         encoding="utf-8",
     )
     calls: list[dict[str, Any]] = []
@@ -284,12 +286,12 @@ def test_native_npm_respects_project_npmrc_and_injects_path_scoped_auth(
         "/bin/npm",
         "install",
         "--registry",
-        f"{NPM_READ_URL}/staging/repo/",
+        f"{NPM_READ_URL}/in/ar_xyzabcde/",
         "@acme/widgets",
     ]
-    assert calls[0]["env"]["NPM_CONFIG_REGISTRY"] == f"{NPM_READ_URL}/staging/repo/"
+    assert calls[0]["env"]["NPM_CONFIG_REGISTRY"] == f"{NPM_READ_URL}/in/ar_xyzabcde/"
     assert (
-        calls[0]["env"][f"NPM_CONFIG_//{NPM_READ_HOST}/staging/repo/:_authToken"]
+        calls[0]["env"][f"NPM_CONFIG_//{NPM_READ_HOST}/in/ar_xyzabcde/:_authToken"]
         == "rvs_sltAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
     )
 
@@ -322,7 +324,7 @@ def test_native_detected_registry_confirms_resolved_account(
 ) -> None:
     _isolate_config(monkeypatch, tmp_path)
     _mock_native_tools(monkeypatch)
-    monkeypatch.setenv("NPM_CONFIG_REGISTRY", f"{NPM_PUSH_URL}/staging/repo/")
+    monkeypatch.setenv("NPM_CONFIG_REGISTRY", f"{NPM_PUSH_URL}/in/ar_xyzabcde/")
 
     class OrgApi(_FakeDevApi):
         def get(self, path, params=None):
@@ -358,11 +360,11 @@ def test_native_npm_repo_override_uses_upload_registry_for_publish(
         "/bin/npm",
         "publish",
         "--registry",
-        f"{NPM_PUSH_URL}/staging/repo/",
+        f"{NPM_PUSH_URL}/in/ar_xyzabcde/",
     ]
-    assert calls[0]["env"]["NPM_CONFIG_REGISTRY"] == (f"{NPM_PUSH_URL}/staging/repo/")
+    assert calls[0]["env"]["NPM_CONFIG_REGISTRY"] == (f"{NPM_PUSH_URL}/in/ar_xyzabcde/")
     assert (
-        calls[0]["env"][f"NPM_CONFIG_//{NPM_PUSH_HOST}/staging/repo/:_authToken"]
+        calls[0]["env"][f"NPM_CONFIG_//{NPM_PUSH_HOST}/in/ar_xyzabcde/:_authToken"]
         == "rvs_sltAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
     )
 
@@ -386,12 +388,12 @@ def test_native_npm_repo_override_uses_upload_registry_for_unpublish(
         "/bin/npm",
         "unpublish",
         "--registry",
-        f"{NPM_PUSH_URL}/staging/repo/",
+        f"{NPM_PUSH_URL}/in/ar_xyzabcde/",
         "demo@1.0.0",
     ]
-    assert calls[0]["env"]["NPM_CONFIG_REGISTRY"] == f"{NPM_PUSH_URL}/staging/repo/"
+    assert calls[0]["env"]["NPM_CONFIG_REGISTRY"] == f"{NPM_PUSH_URL}/in/ar_xyzabcde/"
     assert (
-        calls[0]["env"][f"NPM_CONFIG_//{NPM_PUSH_HOST}/staging/repo/:_authToken"]
+        calls[0]["env"][f"NPM_CONFIG_//{NPM_PUSH_HOST}/in/ar_xyzabcde/:_authToken"]
         == "rvs_sltAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
     )
 
@@ -415,13 +417,13 @@ def test_native_npm_repo_override_uses_upload_registry_for_dist_tag_list(
         "/bin/npm",
         "dist-tag",
         "--registry",
-        f"{NPM_PUSH_URL}/staging/repo/",
+        f"{NPM_PUSH_URL}/in/ar_xyzabcde/",
         "ls",
         "demo",
     ]
-    assert calls[0]["env"]["NPM_CONFIG_REGISTRY"] == f"{NPM_PUSH_URL}/staging/repo/"
+    assert calls[0]["env"]["NPM_CONFIG_REGISTRY"] == f"{NPM_PUSH_URL}/in/ar_xyzabcde/"
     assert (
-        calls[0]["env"][f"NPM_CONFIG_//{NPM_PUSH_HOST}/staging/repo/:_authToken"]
+        calls[0]["env"][f"NPM_CONFIG_//{NPM_PUSH_HOST}/in/ar_xyzabcde/:_authToken"]
         == "rvs_sltAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
     )
 
@@ -453,7 +455,7 @@ def test_native_npm_repo_override_replaces_conflicting_registry_flag(
         "/bin/npm",
         "install",
         "--registry",
-        f"{NPM_READ_URL}/staging/repo/",
+        f"{NPM_READ_URL}/in/ar_xyzabcde/",
         "@acme/widgets",
     ]
 
@@ -511,7 +513,7 @@ def test_native_pip_respects_existing_index_and_injects_temp_netrc(
     monkeypatch.delenv("PIP_KEYRING_PROVIDER", raising=False)
     monkeypatch.setenv(
         "PIP_INDEX_URL",
-        f"{PYPI_READ_URL}/in_abcdefgh/ar_xyzabcde/simple/",
+        f"{PYPI_READ_URL}/in/ar_xyzabcde/simple/",
     )
     calls: list[dict[str, Any]] = []
     netrc_texts: list[str] = []
@@ -528,10 +530,10 @@ def test_native_pip_respects_existing_index_and_injects_temp_netrc(
         "/bin/pip",
         "install",
         "--index-url",
-        f"{PYPI_READ_URL}/staging/repo/simple/",
+        f"{PYPI_READ_URL}/in/ar_xyzabcde/simple/",
         "demo",
     ]
-    assert calls[0]["env"]["PIP_INDEX_URL"] == (f"{PYPI_READ_URL}/staging/repo/simple/")
+    assert calls[0]["env"]["PIP_INDEX_URL"] == (f"{PYPI_READ_URL}/in/ar_xyzabcde/simple/")
     assert "PIP_KEYRING_PROVIDER" not in calls[0]["env"]
     assert netrc_texts == [
         f"machine {PYPI_READ_HOST} login __token__ password rvs_sltAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\n"
@@ -556,6 +558,7 @@ def test_native_pip_exchanges_profile_token_for_scoped_remote_credential(
             None,
             "c",
             "piwheels",
+            None,
             "rvs_sltBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBA",
         ),
     )
@@ -611,6 +614,7 @@ def test_native_pip_local_remote_cache_netrc_uses_hostname_without_port(
             None,
             "c",
             "piwheels",
+            None,
             "rvs_sltBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBA",
         ),
     )
@@ -649,6 +653,7 @@ def test_native_pip_exchanges_official_remote_credential(
             None,
             "o",
             "pypiorg",
+            None,
             "rvs_sltBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBA",
         ),
     )
@@ -699,7 +704,7 @@ def test_native_pip_isolate_overrides_index_without_writing_credentials(
         "/bin/pip",
         "install",
         "--index-url",
-        f"{PYPI_READ_URL}/staging/repo/simple/",
+        f"{PYPI_READ_URL}/in/ar_xyzabcde/simple/",
         "demo",
     ]
     assert calls[0]["env"]["PIP_CONFIG_FILE"] == os.devnull
@@ -727,7 +732,7 @@ def test_native_pip_preserves_multi_part_pip_command_prefix(
         "pip",
         "install",
         "--index-url",
-        f"{PYPI_READ_URL}/staging/repo/simple/",
+        f"{PYPI_READ_URL}/in/ar_xyzabcde/simple/",
         "demo",
     ]
 
@@ -745,7 +750,7 @@ def test_native_uv_repo_override_sets_index_publish_env_and_netrc(
 
     assert result.exit_code == 0
     assert calls[0]["cmd"] == ["/bin/uv", "sync", "--locked"]
-    assert calls[0]["env"]["UV_DEFAULT_INDEX"] == (f"{PYPI_READ_URL}/staging/repo/simple/")
+    assert calls[0]["env"]["UV_DEFAULT_INDEX"] == (f"{PYPI_READ_URL}/in/ar_xyzabcde/simple/")
     assert "UV_PUBLISH_PASSWORD" not in calls[0]["env"]
     assert "NETRC" in calls[0]["env"]
     assert not Path(calls[0]["env"]["NETRC"]).exists()
@@ -767,7 +772,7 @@ def test_native_twine_repo_override_sets_ephemeral_upload_credentials(
 
     assert result.exit_code == 0
     assert calls[0]["cmd"] == ["/bin/twine", "upload", "dist/demo.whl"]
-    assert calls[0]["env"]["TWINE_REPOSITORY_URL"] == (f"{PYPI_PUSH_URL}/staging/repo/")
+    assert calls[0]["env"]["TWINE_REPOSITORY_URL"] == (f"{PYPI_PUSH_URL}/in/ar_xyzabcde/")
     assert calls[0]["env"]["TWINE_USERNAME"] == "__token__"
     assert calls[0]["env"]["TWINE_PASSWORD"] == "rvs_sltAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
 
@@ -794,7 +799,7 @@ def test_native_maven_repo_override_generates_temp_settings(
     assert result.exit_code == 0
     assert calls[0]["cmd"][0:2] == ["/bin/mvn", "--settings"]
     assert calls[0]["cmd"][-1] == (
-        f"-DaltDeploymentRepository=rvs-private::default::{MAVEN_PUSH_URL}/staging/repo/"
+        f"-DaltDeploymentRepository=rvs-private::default::{MAVEN_PUSH_URL}/in/ar_xyzabcde/"
     )
     assert "<id>rvs-private</id>" in settings_texts[0]
     assert "<mirrorOf>central</mirrorOf>" in settings_texts[0]
@@ -811,8 +816,9 @@ def test_native_maven_read_only_mirror_uses_only_download_route(tmp_path: Path) 
         kind="maven",
         read_base_url=MAVEN_MIRROR_URL,
         push_base_url=None,
-        namespace_unique_ref="o",
-        repository_unique_ref="maven-central",
+        route_coordinate="o",
+        repository_reference="maven-central",
+        route_realm=None,
         package_token="rvs_sltBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBA",
     )
     cmd = [
@@ -854,6 +860,7 @@ def test_native_maven_passthrough_accepts_dependency_get_flags(
             None,
             "o",
             "maven-central",
+            None,
             "download-token",
         ),
     )
@@ -912,7 +919,7 @@ def test_native_maven_deploy_file_injects_upload_destination(
     assert result.exit_code == 0
     assert calls[0]["cmd"][-2:] == [
         "-DrepositoryId=rvs-private",
-        f"-Durl={MAVEN_PUSH_URL}/staging/repo/",
+        f"-Durl={MAVEN_PUSH_URL}/in/ar_xyzabcde/",
     ]
 
 
@@ -932,8 +939,8 @@ def test_missing_target_never_launches_or_infers_from_native_config(
     _isolate_config(monkeypatch, tmp_path)
     _mock_native_tools(monkeypatch)
     path = cfg_mod.CONFIG_FILE
-    path.write_text(path.read_text().replace('default_repo = "in_abcdefgh/ar_xyzabcde"', ""))
-    monkeypatch.setenv("PIP_INDEX_URL", f"{PYPI_READ_URL}/staging/repo/simple/")
+    path.write_text(path.read_text().replace('default_repo = "in/ar_xyzabcde"', ""))
+    monkeypatch.setenv("PIP_INDEX_URL", f"{PYPI_READ_URL}/in/ar_xyzabcde/simple/")
     calls = []
     _capture_run(monkeypatch, calls)
     result = runner.invoke(app, [tool, *args])
@@ -993,12 +1000,12 @@ def test_foreign_lock_sources_warn_without_changes(
 @pytest.mark.parametrize(
     ("source", "warns"),
     [
-        (f"{NPM_READ_URL}/staging/repo/demo.tgz", False),
+        (f"{NPM_READ_URL}/in/ar_xyzabcde/demo.tgz", False),
         (f"{NPM_READ_URL}.attacker.example/secret-path", True),
         (f"{NPM_READ_URL}@attacker.example/secret-path", True),
         (f"{NPM_READ_URL.replace('https://', 'http://')}/staging/repo/demo.tgz", True),
         (f"{NPM_READ_URL}:444/staging/repo/demo.tgz", True),
-        (f"{NPM_READ_URL}/in_ijkmnpqr/ar_mnpqrstu/demo.tgz", True),
+        (f"{NPM_READ_URL}/in/ar_mnpqrstu/demo.tgz", True),
     ],
 )
 def test_native_source_warning_uses_exact_target_origin(monkeypatch, tmp_path, source, warns):
@@ -1052,7 +1059,7 @@ def test_uv_read_only_mirror_does_not_request_upload_url(monkeypatch, tmp_path):
         native_runner,
         "_resolve_route",
         lambda *a, **kw: native_runner.RegistryRoute(
-            "pypi", PYPI_MIRROR_URL, None, "o", "pypiorg", "download-token"
+            "pypi", PYPI_MIRROR_URL, None, "o", "pypiorg", None, "download-token"
         ),
     )
     calls = []
@@ -1115,7 +1122,7 @@ def test_npm_preserves_foreign_scope_and_injects_only_selected_auth(monkeypatch,
         if v == "rvs_sltAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
     }
     assert injected == {
-        f"NPM_CONFIG_//{NPM_READ_HOST}/staging/repo/:_authToken": "rvs_sltAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+        f"NPM_CONFIG_//{NPM_READ_HOST}/in/ar_xyzabcde/:_authToken": "rvs_sltAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
     }
 
 

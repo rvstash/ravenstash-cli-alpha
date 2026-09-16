@@ -17,7 +17,7 @@ def _isolate_config(monkeypatch, tmp_path: Path, content: str) -> None:
     config_file = config_dir / "config.toml"
     normalized = content.strip()
     if "config_version" not in normalized:
-        normalized = f"config_version = 5\n{normalized}"
+        normalized = f"config_version = 6\n{normalized}"
     config_file.write_text(normalized, encoding="utf-8")
     monkeypatch.setattr(cfg_mod, "CONFIG_DIR", config_dir)
     monkeypatch.setattr(cfg_mod, "CONFIG_FILE", config_file)
@@ -86,7 +86,7 @@ def test_delete_token_removes_access_and_refresh_tokens_and_clears_metadata(
         monkeypatch,
         tmp_path,
         """
-config_version = 5
+config_version = 6
 default_profile = "default"
 
 [profiles.default]

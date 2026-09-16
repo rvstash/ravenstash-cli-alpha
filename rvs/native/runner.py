@@ -65,16 +65,17 @@ class RegistryRoute:
     kind: RegistryKind
     read_base_url: str
     push_base_url: str | None
-    namespace_unique_ref: str
-    repository_unique_ref: str
+    route_coordinate: str
+    repository_reference: str
+    route_realm: Literal["in"] | None
     package_token: str = field(repr=False)
 
     @property
     def pypi_index_url(self) -> str:
         return _ROUTER.pypi_index_url(
             self.read_base_url,
-            self.namespace_unique_ref,
-            self.repository_unique_ref,
+            self.route_coordinate,
+            self.repository_reference,
         )
 
     @property
@@ -83,16 +84,16 @@ class RegistryRoute:
             output.fatal("The selected private mirror is read-only.")
         return _ROUTER.pypi_upload_url(
             self.push_base_url,
-            self.namespace_unique_ref,
-            self.repository_unique_ref,
+            self.route_coordinate,
+            self.repository_reference,
         )
 
     @property
     def npm_registry_url(self) -> str:
         return _ROUTER.npm_registry_url(
             self.read_base_url,
-            self.namespace_unique_ref,
-            self.repository_unique_ref,
+            self.route_coordinate,
+            self.repository_reference,
         )
 
     @property
@@ -101,16 +102,16 @@ class RegistryRoute:
             output.fatal("The selected private mirror is read-only.")
         return _ROUTER.npm_upload_registry_url(
             self.push_base_url,
-            self.namespace_unique_ref,
-            self.repository_unique_ref,
+            self.route_coordinate,
+            self.repository_reference,
         )
 
     @property
     def maven_repo_url(self) -> str:
         return _ROUTER.maven_repo_url(
             self.read_base_url,
-            self.namespace_unique_ref,
-            self.repository_unique_ref,
+            self.route_coordinate,
+            self.repository_reference,
         )
 
     @property
@@ -119,8 +120,8 @@ class RegistryRoute:
             output.fatal("The selected private mirror is read-only.")
         return _ROUTER.maven_upload_url(
             self.push_base_url,
-            self.namespace_unique_ref,
-            self.repository_unique_ref,
+            self.route_coordinate,
+            self.repository_reference,
         )
 
 
@@ -242,8 +243,9 @@ def _resolve_route(
         kind=kind,
         read_base_url=context.read_base_url,
         push_base_url=context.push_base_url,
-        namespace_unique_ref=context.namespace_reference,
-        repository_unique_ref=context.repository_reference,
+        route_coordinate=context.route_coordinate,
+        repository_reference=context.repository_reference,
+        route_realm=context.route_realm,
         package_token=context.token,
     )
 

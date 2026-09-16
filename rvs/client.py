@@ -66,10 +66,10 @@ class ApiError(Exception):
                 current_name = "/".join(
                     str(current.get(key) or "?") for key in ("namespace_name", "repository_name")
                 )
-                stable = "/".join(
-                    str(current.get(key) or expected.get(key) or "?")
-                    for key in ("namespace_unique_ref", "repository_unique_ref")
+                repository_ref = current.get("repository_unique_ref") or expected.get(
+                    "repository_unique_ref"
                 )
+                stable = f"in/{repository_ref or '?'}"
                 return (
                     "Repository target changed; no package operation was attempted. "
                     f"Expected {expected_name}, current {current_name}, identity {stable}. "

@@ -30,7 +30,7 @@ def _isolate_config(monkeypatch, tmp_path: Path) -> None:
     config_file = config_dir / "config.toml"
     config_file.write_text(
         """
-config_version = 5
+config_version = 6
 default_profile = "work"
 
 [profiles.work]

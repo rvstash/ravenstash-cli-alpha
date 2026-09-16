@@ -24,7 +24,7 @@ def test_friendly_oci_root_normalizes_display_case_without_changing_identity() -
     assert oci_runner._friendly_oci_root("Acme-HQ", "images") == "acme-hq/images"
     assert oci_runner._friendly_oci_root("Engineering", "Images") == "engineering/images"
     assert oci_runner._friendly_oci_root("Engineering", "IMAGES") == "engineering/images"
-    assert oci_runner._stable_oci_root("in_abcdefgh", "ar_xyzabcde") == "in_abcdefgh/ar_xyzabcde"
+    assert oci_runner._stable_oci_root("in", "ar_xyzabcde") == "in/ar_xyzabcde"
 
 
 class _Response:
@@ -42,7 +42,7 @@ class _Api:
             assert "format" not in params
         else:
             assert params["format"] in {"oci"}
-        if params["selector"].startswith("in_"):
+        if params["selector"].startswith(("in/", "ar_")):
             assert "account_ref" not in params
         else:
             assert params["account_ref"] == "ac_23456789"
@@ -85,7 +85,8 @@ class _Api:
         return _Response(
             {
                 "access_token": "rvs_sltDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDA",
-                "native_paths": {"oci": "/main/images"},
+                "native_realm": "in",
+                "native_paths": {"oci": "/in/ar_xyzabcde"},
                 "namespace_unique_ref": "in_abcdefgh",
                 "repository_unique_ref": "ar_xyzabcde",
                 "namespace_name": "main",
@@ -117,7 +118,7 @@ def _setup(monkeypatch, tmp_path: Path) -> None:
     config_file = config_dir / "config.toml"
     config_file.write_text(
         """
-config_version = 5
+config_version = 6
 default_profile = "default"
 
 [profiles.default]
@@ -224,7 +225,7 @@ def test_namespace_target_accepts_current_friendly_native_root(monkeypatch, tmp_
         def post(self, path: str, json=None) -> _Response:
             response = super().post(path, json)
             response.value["native_paths"] = {
-                "oci": "/in_abcdefgh/ar_xyzabcde",
+                "oci": "/in/ar_xyzabcde",
             }
             return response
 
@@ -240,8 +241,8 @@ def test_namespace_target_accepts_current_friendly_native_root(monkeypatch, tmp_
         ("download", "upload"),
     )
 
-    assert route.native_root == "oci.rvsta.sh/in_abcdefgh/ar_xyzabcde"
-    assert route.accepted_roots == frozenset({"main/images", "in_abcdefgh/ar_xyzabcde"})
+    assert route.native_root == "oci.rvsta.sh/in/ar_xyzabcde"
+    assert route.accepted_roots == frozenset({"main/images", "in/ar_xyzabcde"})
 
 
 def test_docker_preserves_other_native_credentials_but_replaces_ravenstash(
@@ -330,7 +331,7 @@ def test_native_signal_is_forwarded_with_shell_exit_code_and_secret_cleanup(
             "--rvs-target",
             "main/images",
             "push",
-            "oci.rvsta.sh/in_abcdefgh/ar_xyzabcde/backend:latest",
+            "oci.rvsta.sh/in/ar_xyzabcde/backend:latest",
             "--rvs-yes",
         ],
     )
@@ -340,7 +341,7 @@ def test_native_signal_is_forwarded_with_shell_exit_code_and_secret_cleanup(
     assert not captured["broker"].exists()
 
 
-@pytest.mark.parametrize("other_root", ["in_abcdefgh/ar_23456789", "Main/Other"])
+@pytest.mark.parametrize("other_root", ["in/ar_23456789", "Main/Other"])
 def test_oras_rejects_second_ravenstash_target(monkeypatch, tmp_path: Path, other_root) -> None:
     _setup(monkeypatch, tmp_path)
 
@@ -389,7 +390,7 @@ def test_oci_reference_prints_stable_root_without_v2(monkeypatch, tmp_path: Path
         def post(self, path: str, json=None) -> _Response:
             response = super().post(path, json)
             response.value["native_paths"] = {
-                "oci": "/in_abcdefgh/ar_xyzabcde",
+                "oci": "/in/ar_xyzabcde",
             }
             return response
 
@@ -469,7 +470,7 @@ def test_short_push_tags_exact_source_before_push(monkeypatch, tmp_path, command
     identity = "sha256:" + "a" * 64
     inspections = []
     launches = []
-    destination = "oci.rvsta.sh/main/images/team/api:RC1"
+    destination = "oci.rvsta.sh/in/ar_xyzabcde/team/api:RC1"
 
     def inspect(cmd, **kwargs):
         inspections.append(cmd)
@@ -582,7 +583,7 @@ def test_short_pull_uses_saved_target_without_local_alias(monkeypatch, tmp_path)
     result = runner.invoke(app, ["docker", "image", "pull", "--", "team/api"])
     assert result.exit_code == 0, result.output
     assert launches == [
-        ["/usr/bin/docker", "image", "pull", "oci.rvsta.sh/main/images/team/api:latest"]
+        ["/usr/bin/docker", "image", "pull", "oci.rvsta.sh/in/ar_xyzabcde/team/api:latest"]
     ]
 
 
@@ -605,7 +606,7 @@ def test_short_tag_keeps_source_from_another_repo_local(monkeypatch, tmp_path):
     assert result.exit_code == 0, result.output
     assert inspections[0] == source
     assert launches == [
-        ["/usr/bin/docker", "image", "tag", source, "oci.rvsta.sh/main/images/api:release"]
+        ["/usr/bin/docker", "image", "tag", source, "oci.rvsta.sh/in/ar_xyzabcde/api:release"]
     ]
 
 
@@ -638,7 +639,7 @@ def test_docker_explicit_config_preserves_context_plugins_and_buildx(monkeypatch
         app, ["docker", "--rvs-target", "main/images", f"--config={native}", "pull", "api"]
     )
     assert result.exit_code == 0, result.output
-    assert seen == [["/usr/bin/docker", "pull", "oci.rvsta.sh/main/images/api:latest"]]
+    assert seen == [["/usr/bin/docker", "pull", "oci.rvsta.sh/in/ar_xyzabcde/api:latest"]]
     assert (native / "config.json").read_text() == original
 
 
@@ -647,12 +648,15 @@ def test_docker_explicit_config_preserves_context_plugins_and_buildx(monkeypatch
     [
         (
             ["pull", "api", "--version", "1.2.3"],
-            ["pull", "oci://oci.rvsta.sh/main/images/api", "--version", "1.2.3"],
+            ["pull", "oci://oci.rvsta.sh/in/ar_xyzabcde/api", "--version", "1.2.3"],
         ),
-        (["--rvs-yes", "push", "api.tgz"], ["push", "api.tgz", "oci://oci.rvsta.sh/main/images"]),
+        (
+            ["--rvs-yes", "push", "api.tgz"],
+            ["push", "api.tgz", "oci://oci.rvsta.sh/in/ar_xyzabcde"],
+        ),
         (
             ["--rvs-yes", "push", "--plain-http", "api.tgz"],
-            ["push", "--plain-http", "api.tgz", "oci://oci.rvsta.sh/main/images"],
+            ["push", "--plain-http", "api.tgz", "oci://oci.rvsta.sh/in/ar_xyzabcde"],
         ),
     ],
 )
@@ -686,5 +690,5 @@ def test_helm_saved_target_shorthand_uses_temporary_config(monkeypatch, tmp_path
     assert result.exit_code == 0, result.output
     assert captured == [["/usr/bin/helm", *tail]]
     if "push" in arguments:
-        assert publish_arguments == [["push", "api.tgz", "oci://oci.rvsta.sh/main/images"]]
+        assert publish_arguments == [["push", "api.tgz", "oci://oci.rvsta.sh/in/ar_xyzabcde"]]
     assert source.read_text() == '{"auths":{"public.example":{"auth":"public-auth"}}}'

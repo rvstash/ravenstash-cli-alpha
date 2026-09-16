@@ -60,7 +60,8 @@ class _FakeApiClient:
             return _JsonResponse(
                 {
                     "access_token": "rvs_sltAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
-                    "native_paths": {kind: "/test-account/repo" for kind in json["formats"]},
+                    "native_realm": "in",
+                    "native_paths": {kind: "/in/ar_xyzabcde" for kind in json["formats"]},
                 }
             )
         return _JsonResponse(self.responses.pop(0) if self.responses else {})
@@ -114,7 +115,7 @@ def _isolate_config(monkeypatch, tmp_path: Path, content: str | None = None) -> 
     config_file.write_text(
         content
         or """
-config_version = 5
+config_version = 6
 default_profile = "default"
 
 [profiles.default]
@@ -125,22 +126,22 @@ account_ref = "ac_23456789"
 account_ref = "ac_23456789"
 
 [profiles.default.registries.pypi]
-default_repo = "in_abcdefgh/ar_xyzabcde"
+default_repo = "in/ar_xyzabcde"
 
 [profiles.default.registries.npm]
-default_repo = "in_abcdefgh/ar_xyzabcde"
+default_repo = "in/ar_xyzabcde"
 
 [profiles.default.registries.maven]
-default_repo = "in_abcdefgh/ar_xyzabcde"
+default_repo = "in/ar_xyzabcde"
 
 [profiles.staging.registries.pypi]
-default_repo = "in_abcdefgh/ar_xyzabcde"
+default_repo = "in/ar_xyzabcde"
 
 [profiles.staging.registries.npm]
-default_repo = "in_abcdefgh/ar_xyzabcde"
+default_repo = "in/ar_xyzabcde"
 
 [profiles.staging.registries.maven]
-default_repo = "in_abcdefgh/ar_xyzabcde"
+default_repo = "in/ar_xyzabcde"
 """.strip(),
         encoding="utf-8",
     )
@@ -196,8 +197,8 @@ def test_artifacts_repo_list_filters_by_kind_and_uses_profile_customer(
     assert "test-account" in result.output
     assert "Test account" not in result.output
     assert "test-account/repo-pypi" in result.output
-    assert "Permanent reference" in result.output
-    assert "in_abcdefgh/ar_xyzabcde" in result.output
+    assert "Native route" in result.output
+    assert "in/ar_xyzabcde" in result.output
     assert "Namespace" not in result.output
     assert "Repository ID" not in result.output
 
@@ -243,7 +244,7 @@ def test_artifacts_repo_list_preserves_json_shape_and_uses_account_handle(
             "account": "test-account",
             "namespace": "test-account",
             "repository": "repo-pypi",
-            "repository_id": "in_abcdefgh/ar_xyzabcde",
+            "native_route": "in/ar_xyzabcde",
             "formats": "pypi, npm, maven",
         }
     ]
@@ -288,7 +289,7 @@ def test_artifacts_repo_create_can_set_default_repo(monkeypatch, tmp_path: Path)
             },
         ),
     ]
-    assert cfg_mod.load().registry_defaults("npm").default_repo == "in_abcdefgh/ar_xyzabcde"
+    assert cfg_mod.load().registry_defaults("npm").default_repo == "in/ar_xyzabcde"
     assert "with formats: npm" in result.output
 
 
@@ -439,8 +440,8 @@ def test_artifacts_repo_show_renders_repository_details(monkeypatch, tmp_path: P
     assert "repo-pypi" in result.output
     assert "test-account/repo-pypi" in result.output
     assert "Test account" not in result.output
-    assert "Permanent reference" in result.output
-    assert "in_abcdefgh/ar_xyzabcde" in result.output
+    assert "Native route" in result.output
+    assert "in/ar_xyzabcde" in result.output
     assert "Repository ID" not in result.output
     assert "Packages" in result.output
     assert "7" in result.output
@@ -477,7 +478,7 @@ def test_artifacts_repo_rename_updates_matching_profile_default(
         ),
     ]
     saved = cfg_mod.load().registry_defaults("pypi", "default")
-    assert saved.default_repo == "in_abcdefgh/ar_xyzabcde"
+    assert saved.default_repo == "in/ar_xyzabcde"
     assert saved.namespace_name_cache == "test-account"
     assert saved.repository_name_cache == new_name
     assert saved.repository_unique_ref == "ar_xyzabcde"
