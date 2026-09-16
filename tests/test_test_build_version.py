@@ -39,14 +39,20 @@ def test_derive_version_rejects_ambiguous_identity(
         prepare_test_build.derive_version(base_version, source_sha, run_id)
 
 
-def test_apply_version_updates_only_project_identity(tmp_path: Path) -> None:
+def test_apply_version_updates_every_build_identity(tmp_path: Path) -> None:
     project = tmp_path / "pyproject.toml"
     lock = tmp_path / "uv.lock"
+    packaging = tmp_path / "packaging"
+    packaging.mkdir()
+    installer = packaging / "install.sh"
+    windows_installer = packaging / "install.ps1"
     project.write_text(
         '[build-system]\nrequires = ["setuptools>=75"]\n\n'
         '[project]\nname = "ravenstash-cli"\nversion = "0.13.4"\n',
         encoding="utf-8",
     )
+    installer.write_text('readonly release_version="0.13.4"\n', encoding="utf-8")
+    windows_installer.write_text('$ReleaseVersion = "0.13.4"\n', encoding="utf-8")
     lock.write_text(
         'version = 1\n\n[[package]]\nname = "other"\nversion = "9.0"\n\n'
         '[[package]]\nname = "ravenstash-cli"\nversion = "0.13.4"\nsource = { editable = "." }\n',
@@ -60,6 +66,8 @@ def test_apply_version_updates_only_project_identity(tmp_path: Path) -> None:
         assert tomllib.load(source)["project"]["version"] == version
     assert 'name = "other"\nversion = "9.0"' in lock.read_text(encoding="utf-8")
     assert f'name = "ravenstash-cli"\nversion = "{version}"' in lock.read_text(encoding="utf-8")
+    assert installer.read_text(encoding="utf-8") == f'readonly release_version="{version}"\n'
+    assert windows_installer.read_text(encoding="utf-8") == f'$ReleaseVersion = "{version}"\n'
 
 
 @pytest.mark.skipif(shutil.which("dpkg") is None, reason="dpkg is unavailable")

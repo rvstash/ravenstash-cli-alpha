@@ -69,11 +69,29 @@ def _replace_lock_version(path: Path, version: str) -> None:
     path.write_text("".join(lines), encoding="utf-8")
 
 
+def _replace_literal(path: Path, pattern: str, replacement: str) -> None:
+    source = path.read_text(encoding="utf-8")
+    updated, replacements = re.subn(pattern, replacement, source, count=1, flags=re.MULTILINE)
+    if replacements != 1:
+        raise ValueError(f"expected one release version in {path}, found {replacements}")
+    path.write_text(updated, encoding="utf-8")
+
+
 def apply_version(root: Path, version: str) -> None:
     if not TEST_VERSION.fullmatch(version):
         raise ValueError("test version must be X.Y.Z.devRUN_ID+gSHA8")
     _replace_project_version(root / "pyproject.toml", version)
     _replace_lock_version(root / "uv.lock", version)
+    _replace_literal(
+        root / "packaging/install.sh",
+        r'^readonly release_version="[^"]+"$',
+        f'readonly release_version="{version}"',
+    )
+    _replace_literal(
+        root / "packaging/install.ps1",
+        r'^\$ReleaseVersion = "[^"]+"$',
+        f'$ReleaseVersion = "{version}"',
+    )
     with (root / "pyproject.toml").open("rb") as source:
         if tomllib.load(source)["project"]["version"] != version:
             raise ValueError("failed to apply test version")
