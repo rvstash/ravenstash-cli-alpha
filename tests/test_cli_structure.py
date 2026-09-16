@@ -4,10 +4,12 @@ import json
 from typing import TYPE_CHECKING
 
 import pytest
-from click import unstyle
+from click import Context, unstyle
 from rvs import config as cfg_mod
 from rvs import output
 from rvs.cli import app
+from typer.core import TyperGroup
+from typer.main import get_command
 from typer.testing import CliRunner
 
 
@@ -54,6 +56,44 @@ def test_root_help_exposes_clean_public_command_surface() -> None:
     removed = runner.invoke(app, ["shell", "--help"])
     assert removed.exit_code != 0
     assert "No such command" in removed.output
+
+
+def test_root_help_groups_commands_by_ecosystem() -> None:
+    result = runner.invoke(app, ["--help"])
+
+    assert result.exit_code == 0
+    help_output = unstyle(result.output)
+    expected_panels = (
+        ("Python tools", ("pip", "twine", "uv")),
+        ("Node.js tools", ("npm",)),
+        ("JVM tools", ("mvn",)),
+        ("Container tools", ("docker", "oras")),
+        ("Helm tools", ("helm",)),
+        ("Artifact management", ("art",)),
+        ("Account and configuration", ("account", "auth", "context", "profile")),
+        ("Setup and maintenance", ("runtime", "update")),
+    )
+
+    for title, _ in expected_panels:
+        assert title in help_output
+
+    root_command = get_command(app)
+    assert isinstance(root_command, TyperGroup)
+    context = Context(root_command)
+    ordered_commands = []
+    for title, commands in expected_panels:
+        for command_name in commands:
+            command = root_command.get_command(context, command_name)
+            assert command is not None
+            assert getattr(command, "rich_help_panel", None) == title
+            ordered_commands.append(command_name)
+
+    visible_commands = [
+        command_name
+        for command_name in root_command.list_commands(context)
+        if not getattr(root_command.get_command(context, command_name), "hidden", False)
+    ]
+    assert visible_commands == ordered_commands
 
 
 def test_context_commands_are_separated_from_auth_help() -> None:
