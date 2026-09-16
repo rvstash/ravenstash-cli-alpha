@@ -32,3 +32,11 @@ rvs art token mint --target platform/packages -f pypi -f oci
 
 Whitespace is trimmed and duplicates are removed. Empty or unknown formats fail
 before any mutation. Commands requiring one format still accept only one.
+
+Beginning with RVS 0.14, an internal repository's immutable native route is
+`in/ar_...`. The `in` coordinate identifies the internal realm and the `ar_...`
+coordinate identifies the repository. Human-readable selection and `rvs art
+reference` continue to use `{namespace_name}/{repository_name}`. Configuration
+schema 5 is intentionally unsupported: sign in again and reselect the target to
+create schema 6 configuration. The retired `in_.../ar_...` route is never used as
+a compatibility fallback.

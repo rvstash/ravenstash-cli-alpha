@@ -6,6 +6,20 @@ All notable user-facing changes to `rvs` are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-09-16
+
+### Changed
+
+- Internal repositories now use the realm-qualified native route
+  `in/ar_...`; the former `in_.../ar_...` route is not accepted.
+- Local configuration schema 6 is a breaking reset. Version 5 profiles must
+  sign in again and reselect their account and repository.
+- Native endpoint, token, configuration, and OCI commands validate the exact
+  `in/ar_...` route while human-readable repository references remain
+  `{namespace_name}/{repository_name}`.
+
+Detailed release notes: [RVS 0.14.0](docs/releases/0.14.0.md).
+
 ## [0.13.7] - 2026-09-15
 
 ### Changed
@@ -84,7 +98,8 @@ Detailed release notes: [RVS 0.13.4](docs/releases/0.13.4.md).
 
 Detailed notes for every earlier release are in [docs/releases](docs/releases/).
 
-[Unreleased]: https://github.com/rvstash/ravenstash-cli-alpha/compare/v0.13.7...HEAD
+[Unreleased]: https://github.com/rvstash/ravenstash-cli-alpha/compare/v0.14.0...HEAD
+[0.14.0]: https://github.com/rvstash/ravenstash-cli-alpha/compare/v0.13.7...v0.14.0
 [0.13.7]: https://github.com/rvstash/ravenstash-cli-alpha/compare/v0.13.6...v0.13.7
 [0.13.6]: https://github.com/rvstash/ravenstash-cli-alpha/compare/v0.13.5...v0.13.6
 [0.13.5]: https://github.com/rvstash/ravenstash-cli-alpha/compare/v0.13.4...v0.13.5
