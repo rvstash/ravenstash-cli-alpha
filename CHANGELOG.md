@@ -6,6 +6,23 @@ All notable user-facing changes to `rvs` are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.14.4] - 2026-09-16
+
+### Changed
+
+- Repository selection now uses only the unified `rvs art select` target; the
+  per-ecosystem repository-default commands and fallback configuration have
+  been removed.
+- Release and installer promotion workflows now accept only `main` release
+  provenance and the current release workflow signer.
+
+### Removed
+
+- Removed the hidden `rvs account use` alias. Use `rvs account switch`.
+- Removed maintenance-branch and historical release-signing compatibility.
+
+Detailed release notes: [RVS 0.14.4](docs/releases/0.14.4.md).
+
 ## [0.14.3] - 2026-09-16
 
 ### Changed
@@ -16,5 +33,6 @@ All notable user-facing changes to `rvs` are recorded here. The format follows
 
 Detailed release notes: [RVS 0.14.3](docs/releases/0.14.3.md).
 
-[Unreleased]: https://github.com/rvstash/ravenstash-cli-alpha/compare/v0.14.3...HEAD
+[Unreleased]: https://github.com/rvstash/ravenstash-cli-alpha/compare/v0.14.4...HEAD
+[0.14.4]: https://github.com/rvstash/ravenstash-cli-alpha/compare/v0.14.3...v0.14.4
 [0.14.3]: https://github.com/rvstash/ravenstash-cli-alpha/releases/tag/v0.14.3
