@@ -14,4 +14,4 @@
 
 ## Release impact
 
-<!-- Note compatibility series, backport, packaging, migration, or release implications. -->
+<!-- Note compatibility-series, packaging, update, or release implications. -->

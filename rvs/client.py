@@ -73,8 +73,8 @@ class ApiError(Exception):
                 return (
                     "Repository target changed; no package operation was attempted. "
                     f"Expected {expected_name}, current {current_name}, ID-based target {stable}. "
-                    "Use `rvs art repo set-default` to explicitly re-select the ID-based "
-                    "target, or the repository currently using the former name."
+                    "Use `rvs art select` to select the ID-based target or the repository "
+                    "currently using the former name."
                 )
         return f"HTTP {self.status_code}: {self.detail}"
 

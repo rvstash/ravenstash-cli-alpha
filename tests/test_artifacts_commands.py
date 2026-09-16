@@ -124,24 +124,6 @@ account_ref = "ac_23456789"
 
 [profiles.staging]
 account_ref = "ac_23456789"
-
-[profiles.default.registries.pypi]
-default_repo = "in/ar_xyzabcde"
-
-[profiles.default.registries.npm]
-default_repo = "in/ar_xyzabcde"
-
-[profiles.default.registries.maven]
-default_repo = "in/ar_xyzabcde"
-
-[profiles.staging.registries.pypi]
-default_repo = "in/ar_xyzabcde"
-
-[profiles.staging.registries.npm]
-default_repo = "in/ar_xyzabcde"
-
-[profiles.staging.registries.maven]
-default_repo = "in/ar_xyzabcde"
 """.strip(),
         encoding="utf-8",
     )
@@ -250,47 +232,14 @@ def test_artifacts_repo_list_preserves_json_shape_and_uses_account_handle(
     ]
 
 
-def test_artifacts_repo_create_can_set_default_repo(monkeypatch, tmp_path: Path) -> None:
+def test_artifacts_repo_create_rejects_removed_default_option(monkeypatch, tmp_path: Path) -> None:
     _isolate_config(monkeypatch, tmp_path)
-    fake = _FakeApiClient(
-        [
-            [
-                {
-                    "account": _repository_entry()["account"],
-                    "namespace": {
-                        "namespace_unique_ref": "in_abcdefgh",
-                        "namespace_name": "test-account",
-                        "namespace_realm": "internal",
-                        "is_default": True,
-                    },
-                }
-            ],
-            _repository_entry("new-node"),
-        ]
-    )
-    _use_fake_client(monkeypatch, fake)
-
     result = runner.invoke(
         artifacts_cmd.app,
         ["repo", "create", "new-node", "--format", "npm", "--default"],
     )
-
-    assert result.exit_code == 0
-    assert fake.calls == [
-        ("GET", "/namespaces", {"account_ref": "ac_23456789"}),
-        (
-            "POST",
-            "/repositories",
-            {
-                "account_ref": "ac_23456789",
-                "namespace_unique_ref": "in_abcdefgh",
-                "repository_name": "new-node",
-                "formats": ["npm"],
-            },
-        ),
-    ]
-    assert cfg_mod.load().registry_defaults("npm").default_repo == "in/ar_xyzabcde"
-    assert "with formats: npm" in result.output
+    assert result.exit_code != 0
+    assert "No such option" in result.output
 
 
 @pytest.mark.parametrize(
@@ -455,9 +404,7 @@ def test_artifacts_repo_show_renders_repository_details(monkeypatch, tmp_path: P
 
 
 @pytest.mark.parametrize("new_name", ["renamed", "Repo-PyPI"])
-def test_artifacts_repo_rename_updates_matching_profile_default(
-    monkeypatch, tmp_path: Path, new_name
-) -> None:
+def test_artifacts_repo_rename(monkeypatch, tmp_path: Path, new_name) -> None:
     _isolate_config(monkeypatch, tmp_path)
     fake = _FakeApiClient([_repository_entry("repo-pypi"), _repository_entry(new_name)])
     _use_fake_client(monkeypatch, fake)
@@ -477,11 +424,6 @@ def test_artifacts_repo_rename_updates_matching_profile_default(
             {"repository_name": new_name},
         ),
     ]
-    saved = cfg_mod.load().registry_defaults("pypi", "default")
-    assert saved.default_repo == "in/ar_xyzabcde"
-    assert saved.namespace_name_cache == "test-account"
-    assert saved.repository_name_cache == new_name
-    assert saved.repository_unique_ref == "ar_xyzabcde"
 
 
 def test_artifacts_remote_management_and_upstream_configuration(

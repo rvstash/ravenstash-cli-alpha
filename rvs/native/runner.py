@@ -168,17 +168,15 @@ def _build_plan(
     kind = _kind_for_tool(tool)
     customer_id = _selected_customer_id(options)
     saved = cfg_mod.selected_artifact_target(options.profile, customer_id)
-    legacy = cfg_mod.load().registry_defaults(kind, options.profile)
-    if not options.target and saved is None and not legacy.default_repo:
+    if not options.target and saved is None:
         output.fatal(
             "No Ravenstash target is selected. Run `rvs art select` or pass --rvs-target. "
             "Use the native tool directly for its default registries."
         )
     operations = _operations_for(tool, argv)
     # Never infer a target from native defaults or run an unconfigured client.
-    # registry_context also supports explicitly selected legacy defaults.
     route = _resolve_route(
-        _kind_for_tool(tool),
+        kind,
         options,
         operations,
         artifacts=native_artifacts(tool, argv) if _is_publishing(tool, argv) else None,

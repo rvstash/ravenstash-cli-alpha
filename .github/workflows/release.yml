@@ -9,7 +9,7 @@ on:
         type: string
         required: true
       source_branch:
-        description: Protected source branch (main or release/vMAJOR.MINOR)
+        description: Protected source branch (main)
         type: string
         required: true
         default: main
@@ -61,7 +61,7 @@ jobs:
         run: |
           test "$GITHUB_REF" = refs/heads/main
           [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
-          [[ "$SOURCE_BRANCH" =~ ^(main|release/v[0-9]+\.[0-9]+)$ ]]
+          test "$SOURCE_BRANCH" = main
           if [[ "$KIND" == stable ]]; then
             [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
           else
@@ -71,9 +71,6 @@ jobs:
           test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
           git merge-base --is-ancestor "$SOURCE_SHA" "refs/remotes/origin/${SOURCE_BRANCH}"
           python3 packaging/repository/channel_policy.py validate "$VERSION" "$CHANNEL"
-          if [[ "$SOURCE_BRANCH" == release/* ]]; then
-            test "$SOURCE_BRANCH" = "release/${CHANNEL}"
-          fi
           test "$(sed -n 's/^version = "\([^"]*\)"/\1/p' pyproject.toml)" = "$VERSION"
           grep -Fx "readonly release_version=\"${VERSION}\"" packaging/install.sh
           grep -Fx "readonly compatibility_channel=\"${CHANNEL}\"" packaging/install.sh

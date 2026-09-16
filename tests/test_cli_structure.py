@@ -1,12 +1,10 @@
 from __future__ import annotations
 
-import json
 from typing import TYPE_CHECKING
 
 import pytest
 from click import Context, unstyle
 from rvs import config as cfg_mod
-from rvs import output
 from rvs.cli import app
 from typer.core import TyperGroup
 from typer.main import get_command
@@ -127,40 +125,20 @@ def test_version_option_prints_version() -> None:
     assert result.output.startswith("Ravenstash CLI ")
 
 
-def test_json_option_emits_structured_rvs_output(monkeypatch, tmp_path: Path) -> None:
-    _isolate_config(
-        monkeypatch,
-        tmp_path,
-        """
-default_profile = "default"
-
-[profiles.default.registries.pypi]
-default_repo = "private-pypi"
-""".strip(),
-    )
-
-    result = runner.invoke(app, ["--json", "art", "repo", "defaults"])
-    output.set_json(False)
-
-    assert result.exit_code == 0
-    payload = json.loads(result.output)
-    assert payload["title"] == "Repository defaults (default)"
-    assert payload["items"][0] == {
-        "format": "pypi",
-        "default_repository": "private-pypi",
-    }
-
-
 def test_removed_compatibility_groups_are_rejected() -> None:
     packages_result = runner.invoke(app, ["packages", "--help"])
     keyring_result = runner.invoke(app, ["auth", "keyring", "doctor"])
     cache_result = runner.invoke(app, ["art", "cache", "--help"])
     remote_cache_result = runner.invoke(app, ["art", "remote-cache", "--help"])
+    defaults_result = runner.invoke(app, ["art", "repo", "defaults"])
+    set_default_result = runner.invoke(app, ["art", "repo", "set-default", "pypi", "repo"])
 
     assert packages_result.exit_code != 0
     assert keyring_result.exit_code != 0
     assert cache_result.exit_code != 0
     assert remote_cache_result.exit_code != 0
+    assert defaults_result.exit_code != 0
+    assert set_default_result.exit_code != 0
 
 
 @pytest.mark.parametrize("command", ["install", "pypi", "npm", "maven"])
@@ -194,20 +172,9 @@ def test_artifact_spellings_share_one_command_application() -> None:
     assert not {"repo", "pkg"}.intersection(groups)
 
 
-@pytest.mark.parametrize("alias", ["art"])
-def test_artifact_alias_json_has_no_transition_warning(
-    monkeypatch, tmp_path: Path, alias: str
-) -> None:
-    _isolate_config(monkeypatch, tmp_path)
-    result = runner.invoke(app, ["--json", alias, "repo", "defaults"])
-    output.set_json(False)
+def test_artifact_command_has_no_transition_warning() -> None:
+    result = runner.invoke(app, ["art", "--help"])
     assert result.exit_code == 0
-    assert {item["format"] for item in json.loads(result.stdout)["items"]} == {
-        "pypi",
-        "npm",
-        "maven",
-        "oci",
-    }
     assert "DeprecationWarning" not in result.stderr
 
 
@@ -229,7 +196,7 @@ def test_upstream_commands_call_the_public_positional_argument_format() -> None:
     assert " KIND" not in help_output
 
 
-def test_repository_group_has_no_legacy_upstream_commands() -> None:
+def test_repository_group_rejects_removed_upstream_commands() -> None:
     result = runner.invoke(app, ["art", "repo", "--help"])
 
     assert result.exit_code == 0

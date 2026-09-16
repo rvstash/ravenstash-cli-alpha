@@ -39,14 +39,6 @@ Config file shape
     [profiles.default.native_registries.oci]
     registry_base_url = "https://oci.rvsta.sh"
 
-    [profiles.default.registries.pypi]
-    default_repo = "in/ar_m7nk3p4q"
-
-    [profiles.default.registries.npm]
-    default_repo = "in/ar_n4b6v8cx"
-
-    [profiles.default.registries.maven]
-    default_repo = "in/ar_p2q4r6st"
 """
 
 from __future__ import annotations
@@ -193,7 +185,6 @@ class ProfileConfig:
     refresh_expires_at: str | None = None
     active_customer_id: str | None = None
     accounts: dict[str, AccountContext] = field(default_factory=dict)
-    registries: dict[RegistryKind, RegistryDefaults] = field(default_factory=dict)
 
 
 @dataclass
@@ -234,21 +225,6 @@ class SessionContext:
 
 
 @dataclass
-class RegistryDefaults:
-    default_repo: str | None = None
-    customer_id: str | None = None
-    customer_unique_ref: str | None = None
-    namespace_realm: NamespaceRealm | None = None
-    namespace_unique_ref: str | None = None
-    namespace_name_cache: str | None = None
-    repository_unique_ref: str | None = None
-    repository_name_cache: str | None = None
-    organization_role: str | None = None
-    authority_revision: int | None = None
-    is_available: bool = True
-
-
-@dataclass
 class RvsConfig:
     default_profile: str = "default"
     credential_store: str = "auto"
@@ -257,17 +233,6 @@ class RvsConfig:
     def active_profile(self, profile_name: str | None = None) -> ProfileConfig:
         name = profile_name or os.environ.get("RVS_PROFILE") or self.default_profile
         return self.profiles.get(name, _default_profile_config(name))
-
-    def registry_defaults(
-        self,
-        kind: RegistryKind,
-        profile_name: str | None = None,
-    ) -> RegistryDefaults:
-        name = profile_name or os.environ.get("RVS_PROFILE") or self.default_profile
-        profile = self.profiles.get(name)
-        if profile and kind in profile.registries:
-            return profile.registries[kind]
-        return RegistryDefaults()
 
 
 def current_profile_name(cfg: RvsConfig | None = None) -> str:
@@ -740,10 +705,8 @@ def _normalize_raw_config(raw: dict) -> None:
         )
 
 
-def _validate_repository_target_identity(
-    value: dict, *, path: str, allow_short_selector: bool = False
-) -> None:
-    realm = value.get("namespace_realm", "internal" if "default_repo" in value else None)
+def _validate_repository_target_identity(value: dict, *, path: str) -> None:
+    realm = value.get("namespace_realm")
     if realm not in {"internal", "global"}:
         raise ValueError(f"invalid namespace realm at {path}.namespace_realm")
     namespace_ref = value.get("namespace_unique_ref")
@@ -760,7 +723,7 @@ def _validate_repository_target_identity(
     ):
         raise ValueError(f"invalid repository reference at {path}.repository_unique_ref")
 
-    selector = value.get("stable_selector", value.get("default_repo"))
+    selector = value.get("stable_selector")
     if not isinstance(selector, str) or not selector:
         raise ValueError(f"missing repository selector at {path}")
     if selector.split("/", 1)[-1].startswith("ar_"):
@@ -769,11 +732,7 @@ def _validate_repository_target_identity(
             raise ValueError(f"invalid stable repository selector at {path}")
         if repository_ref is not None and repository_ref != parts[1]:
             raise ValueError(f"conflicting repository identity at {path}")
-    elif (
-        selector.startswith("@")
-        or ":" in selector
-        or (selector.count("/") != 1 and not (allow_short_selector and "/" not in selector))
-    ):
+    elif selector.startswith("@") or ":" in selector or selector.count("/") != 1:
         raise ValueError(f"invalid repository selector at {path}")
 
 
@@ -802,26 +761,6 @@ def _validate_raw_config(raw: dict) -> None:
                 raise ValueError(f"invalid selected target at {target_path}")
             if selected.get("target_type") == "repository":
                 _validate_repository_target_identity(selected, path=target_path)
-
-        registries = profile.get("registries", {})
-        if not isinstance(registries, dict):
-            raise ValueError(f"registries must be a table at {profile_path}.registries")
-        for registry_kind, defaults in registries.items():
-            target_path = f"{profile_path}.registries.{registry_kind}"
-            if registry_kind not in {"pypi", "npm", "maven", "oci"}:
-                raise ValueError(f"invalid format at {target_path}")
-            if not isinstance(defaults, dict):
-                raise ValueError(f"invalid registry defaults at {target_path}")
-            selector = defaults.get("default_repo")
-            if selector is not None:
-                if not isinstance(selector, str) or not selector:
-                    raise ValueError(f"invalid default repository at {target_path}")
-                if not selector.startswith(("mirror:", "custom-mirror:")):
-                    _validate_repository_target_identity(
-                        defaults,
-                        path=target_path,
-                        allow_short_selector=True,
-                    )
 
 
 def _write_raw(raw: dict) -> None:
@@ -892,22 +831,6 @@ def _load_validated() -> RvsConfig:
             refresh_expires_at=vals.get("refresh_expires_at"),
             active_customer_id=vals.get("active_account_ref"),
             accounts=_account_contexts_from_mapping(vals.get("accounts")),
-            registries={
-                kind: RegistryDefaults(
-                    default_repo=defaults.get("default_repo"),
-                    customer_id=defaults.get("account_ref"),
-                    customer_unique_ref=defaults.get("account_ref"),
-                    namespace_realm=defaults.get("namespace_realm"),
-                    namespace_unique_ref=defaults.get("namespace_unique_ref"),
-                    namespace_name_cache=defaults.get("namespace_name_cache"),
-                    repository_unique_ref=defaults.get("repository_unique_ref"),
-                    repository_name_cache=defaults.get("repository_name_cache"),
-                    organization_role=defaults.get("organization_role"),
-                    authority_revision=defaults.get("authority_revision"),
-                    is_available=defaults.get("is_available", True),
-                )
-                for kind, defaults in vals.get("registries", {}).items()
-            },
         )
 
     return cfg
@@ -953,27 +876,6 @@ def save(cfg: RvsConfig) -> None:
                         for account_ref, account in p.accounts.items()
                     }
                     or None,
-                    "registries": {
-                        kind: {
-                            key: value
-                            for key, value in {
-                                "default_repo": defaults.default_repo,
-                                "account_ref": defaults.customer_id,
-                                "namespace_realm": defaults.namespace_realm,
-                                "namespace_unique_ref": defaults.namespace_unique_ref,
-                                "namespace_name_cache": defaults.namespace_name_cache,
-                                "repository_unique_ref": defaults.repository_unique_ref,
-                                "repository_name_cache": defaults.repository_name_cache,
-                                "organization_role": defaults.organization_role,
-                                "authority_revision": defaults.authority_revision,
-                                "is_available": (None if defaults.is_available else False),
-                            }.items()
-                            if value is not None
-                        }
-                        for kind, defaults in p.registries.items()
-                        if defaults.default_repo is not None
-                    }
-                    or None,
                 }.items()
                 if v is not None
             }
@@ -1001,7 +903,6 @@ def set_profile_value(profile: str, api_url: str | None = None) -> None:
         refresh_expires_at=existing.refresh_expires_at,
         active_customer_id=existing.active_customer_id,
         accounts=existing.accounts,
-        registries=existing.registries,
     )
     save(cfg)
 
@@ -1021,7 +922,6 @@ def clear_profile_credential_metadata(profile: str) -> None:
         refresh_expires_at=None,
         active_customer_id=existing.active_customer_id,
         accounts=existing.accounts,
-        registries=existing.registries,
     )
     save(cfg)
 
@@ -1061,7 +961,6 @@ def set_profile_metadata(
         else existing.refresh_expires_at,
         active_customer_id=existing.active_customer_id,
         accounts=existing.accounts,
-        registries=existing.registries,
     )
     save(cfg)
 
@@ -1207,132 +1106,3 @@ def delete_all_profiles() -> None:
     save(RvsConfig())
     if _session_file() is not None:
         save_session(SessionContext(profile="default"))
-
-
-def set_registry_default_repo(
-    kind: RegistryKind,
-    repo: str,
-    profile: str | None = None,
-) -> None:
-    cfg = load()
-    profile_name = profile or current_profile_name(cfg)
-    profile_config = cfg.profiles.get(profile_name, _default_profile_config(profile_name))
-    profile_config.registries[kind] = RegistryDefaults(default_repo=repo)
-    cfg.profiles[profile_name] = profile_config
-    save(cfg)
-
-
-def set_registry_default_target(
-    kind: RegistryKind,
-    *,
-    customer: dict,
-    repository: dict,
-    profile: str | None = None,
-) -> None:
-    """Persist immutable authority plus refreshable display-name caches."""
-    cfg = load()
-    profile_name = profile or current_profile_name(cfg)
-    profile_config = cfg.profiles.get(profile_name, _default_profile_config(profile_name))
-    stable_selector = f"in/{repository['repository_unique_ref']}"
-    profile_config.registries[kind] = RegistryDefaults(
-        default_repo=stable_selector,
-        customer_id=customer["account_ref"],
-        customer_unique_ref=customer["account_ref"],
-        namespace_realm=repository["namespace_realm"],
-        namespace_unique_ref=repository["namespace_unique_ref"],
-        namespace_name_cache=repository["namespace_name"],
-        repository_unique_ref=repository["repository_unique_ref"],
-        repository_name_cache=repository["repository_name"],
-        organization_role=customer.get("organization_role"),
-        authority_revision=customer.get("authority_revision"),
-        is_available=True,
-    )
-    cfg.profiles[profile_name] = profile_config
-    save(cfg)
-
-
-def registry_target_expectation(
-    kind: RegistryKind,
-    selector: str,
-    profile: str | None = None,
-) -> dict[str, str] | None:
-    """Return a complete saved identity/name guard for the selected stable target."""
-    cfg = load()
-    profile_name = profile or current_profile_name(cfg)
-    target = cfg.registry_defaults(kind, profile_name)
-    stable_selector = f"in/{target.repository_unique_ref}" if target.repository_unique_ref else None
-    if selector != stable_selector:
-        return None
-    expected = {
-        "namespace_unique_ref": target.namespace_unique_ref,
-        "namespace_name": target.namespace_name_cache,
-        "namespace_realm": target.namespace_realm,
-        "repository_unique_ref": target.repository_unique_ref,
-        "repository_name": target.repository_name_cache,
-    }
-    if not all(isinstance(value, str) and value for value in expected.values()):
-        return None
-    return {key: value for key, value in expected.items() if isinstance(value, str)}
-
-
-def repository_target_snapshot(repository: dict) -> dict[str, str]:
-    """Build the identity/name guard returned by repository resolution."""
-    keys = (
-        "namespace_unique_ref",
-        "namespace_name",
-        "namespace_realm",
-        "repository_unique_ref",
-        "repository_name",
-    )
-    values = {key: repository.get(key) for key in keys}
-    if not all(isinstance(value, str) and value for value in values.values()):
-        raise ValueError("Repository resolution omitted target identity or name metadata")
-    return {
-        "namespace_unique_ref": cast("str", values["namespace_unique_ref"]),
-        "namespace_name": cast("str", values["namespace_name"]),
-        "namespace_realm": cast("str", values["namespace_realm"]),
-        "repository_unique_ref": cast("str", values["repository_unique_ref"]),
-        "repository_name": cast("str", values["repository_name"]),
-    }
-
-
-def refresh_matching_registry_targets(
-    *,
-    customer: dict,
-    repository: dict,
-    profile: str | None = None,
-) -> None:
-    """Refresh saved names after an explicit CLI rename of the same identity."""
-    cfg = load()
-    profile_name = profile or current_profile_name(cfg)
-    profile_config = cfg.profiles.get(profile_name, _default_profile_config(profile_name))
-    stable_selector = f"in/{repository['repository_unique_ref']}"
-    for kind, target in tuple(profile_config.registries.items()):
-        if target.default_repo != stable_selector:
-            continue
-        profile_config.registries[kind] = RegistryDefaults(
-            default_repo=stable_selector,
-            customer_id=customer["account_ref"],
-            customer_unique_ref=customer["account_ref"],
-            namespace_realm=repository["namespace_realm"],
-            namespace_unique_ref=repository["namespace_unique_ref"],
-            namespace_name_cache=repository["namespace_name"],
-            repository_unique_ref=repository["repository_unique_ref"],
-            repository_name_cache=repository["repository_name"],
-            organization_role=customer.get("organization_role"),
-            authority_revision=customer.get("authority_revision"),
-            is_available=True,
-        )
-    cfg.profiles[profile_name] = profile_config
-    save(cfg)
-
-
-def mark_registry_default_unavailable(kind: RegistryKind, profile: str | None = None) -> None:
-    """Keep an immutable saved target but record that current authority denied it."""
-    cfg = load()
-    profile_name = profile or current_profile_name(cfg)
-    profile_config = cfg.profiles.get(profile_name)
-    if profile_config is None or kind not in profile_config.registries:
-        return
-    profile_config.registries[kind].is_available = False
-    save(cfg)

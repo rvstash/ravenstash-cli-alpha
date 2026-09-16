@@ -83,7 +83,7 @@ def test_runtime_use_writes_marker_for_resolved_full_version(
     assert "Pinned java 21.0.3+9" in result.output
 
 
-def test_runtime_use_replaces_legacy_static_shim(monkeypatch, tmp_path: Path) -> None:
+def test_runtime_use_refreshes_project_aware_shim(monkeypatch, tmp_path: Path) -> None:
     runtimes_dir = tmp_path / "runtimes"
     node_root = runtimes_dir / "node" / "24.14.1"
     node_bin = node_root if os.name == "nt" else node_root / "bin"

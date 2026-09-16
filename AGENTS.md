@@ -26,8 +26,7 @@ control-plane URL separate from package download and upload URLs.
 - Do not use GitHub's **Rebase and merge** or create merge commits. Never
   force-push a protected branch. On this alpha repository, an explicitly
   authorized maintainer or agent may also push a direct linear update.
-- Target `main` for normal development. Target the applicable
-  `release/vMAJOR.MINOR` branch only for a supported-line backport or hotfix.
+- Target `main` for all development and releases.
 - Keep commits reviewable and self-contained. If a branch cannot fast-forward,
   either use the allowed squash mode or have the contributor update and re-sign
   the branch; GitHub's rebase operation is not an allowed landing mode.

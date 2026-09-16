@@ -50,7 +50,7 @@ def _installer(kind: str):
 
 
 def _refresh_shims(kind: str, base: Path) -> None:
-    """Replace legacy static shims with project-aware dynamic shims."""
+    """Refresh project-aware dynamic shims for an installed runtime."""
     windows = os.name == "nt"
     bin_dir = base if windows and kind in {"python", "node"} else base / "bin"
     if kind == "python":

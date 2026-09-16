@@ -256,15 +256,3 @@ def account_switch(
 ) -> None:
     """Switch to a personal account or organization."""
     _switch_account(account, profile)
-
-
-@app.command("use", hidden=True)
-def account_use(
-    account: str = typer.Argument(
-        ..., help="Ravenstash username, organization handle, or account reference."
-    ),
-    profile: str | None = typer.Option(None, "--profile", "-p"),
-) -> None:
-    """Deprecated alias for `rvs account switch`."""
-    output.warn("`rvs account use` is deprecated; use `rvs account switch`.")
-    _switch_account(account, profile)

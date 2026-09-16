@@ -6,30 +6,11 @@ parallel builds, assembly, attestations, and signing. Only stable releases
 publish to APT. A separate manual test-build workflow produces expiring,
 unsigned artifacts without creating a public release.
 
-## Release lines
+## Release source
 
-`main` is the next development line. When two minor lines need independent
-fixes, create a protected maintenance branch for each supported line:
-
-```text
-main                    next development line
-release/v0.14           maintained 0.14.x source
-release/v0.15           maintained 0.15.x source
-release/v1.0            maintained 1.0.x source
-release/v1.1            maintained 1.1.x source
-```
-
-The matching APT suites are `v0.14`, `v0.15`, `v1.0`, and `v1.1`. Git branches
-and APT suites deliberately use the same compatibility identifier, but a branch
-holds source while a suite holds immutable signed packages. Patch releases are
-tags, not long-lived branches. Delete a maintenance branch only after that line
-is no longer supported; its APT objects and tags remain immutable.
-
-Backport a fix with a new pull request targeting the maintenance branch. A
-maintainer lands it as one verified squash commit or locally with
-`git merge --ff-only`, then pushes the maintenance branch. Never merge `main`
-into a maintenance branch, use GitHub's rebase operation, create a merge commit,
-or force-push a protected branch.
+`main` is the only release source. Compatibility channels remain package and
+update boundaries, but they do not have maintenance branches. Patch releases
+are immutable tags created by the release workflow.
 
 ## Trust boundaries
 
@@ -46,7 +27,7 @@ passphrases, deployment tokens, and revocation material must never be committed.
 
 ## Prepare an exact source commit
 
-1. Choose `main` or the owning `release/vMAJOR.MINOR` branch.
+1. Update `main` through a reviewed pull request.
 2. On a short-lived branch, update `pyproject.toml`, `uv.lock`, both installer
    version/channel constants, and release notes. Keep this as a dedicated final
    version commit.

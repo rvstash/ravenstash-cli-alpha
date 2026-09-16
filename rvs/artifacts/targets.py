@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 from typing import Literal, cast
 
 from .. import config as cfg_mod
@@ -289,32 +289,6 @@ def effective_target(
             customer_id=account.customer_id,
             kind=kind,
         )
-    legacy = cfg_mod.load().registry_defaults(cast("cfg_mod.RegistryKind", kind), profile_name)
-    if legacy.default_repo:
-        resolved_profile, resolved_account, resolved_target = resolve_target(
-            legacy.default_repo,
-            profile=profile_name,
-            customer_id=account.customer_id,
-            kind=kind,
-        )
-        if all(
-            (
-                legacy.namespace_realm,
-                legacy.namespace_unique_ref,
-                legacy.namespace_name_cache,
-                legacy.repository_unique_ref,
-                legacy.repository_name_cache,
-            )
-        ):
-            resolved_target = replace(
-                resolved_target,
-                namespace_realm=legacy.namespace_realm,
-                namespace_unique_ref=legacy.namespace_unique_ref,
-                namespace_name_cache=legacy.namespace_name_cache,
-                repository_unique_ref=legacy.repository_unique_ref,
-                repository_name_cache=legacy.repository_name_cache,
-            )
-        return resolved_profile, resolved_account, resolved_target
     output.fatal(
         f"No {kind} repository or mirror is selected. Pass --target or run `rvs art select`."
     )

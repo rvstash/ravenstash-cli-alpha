@@ -252,14 +252,6 @@ def _repository_name_from_response(repo: dict, fallback_repository_name: str = "
     )
 
 
-def _repo_ref_from_response(repo: dict, fallback_repository_name: str) -> str:
-    namespace_ref = repo.get("namespace_unique_ref")
-    repository_ref = repo.get("repository_unique_ref")
-    if namespace_ref and repository_ref:
-        return f"{namespace_ref}/{repository_ref}"
-    return _repository_name_from_response(repo, fallback_repository_name)
-
-
 def _public_account_handle(account: dict) -> str:
     handle = account.get("account_handle")
     if not isinstance(handle, str) or not handle.strip():
@@ -442,9 +434,6 @@ def repo_create(
     customer_id: str | None = typer.Option(
         None, "--account-ref", help="Typed owner account reference.", hidden=True
     ),
-    set_default: bool = typer.Option(
-        False, "--default", help="Set as default for each selected format."
-    ),
 ) -> None:
     """Create a repository."""
     if name.startswith(("internal:", "global:", "@")):
@@ -497,16 +486,6 @@ def repo_create(
 
     repository_name = _repository_name_from_response(repo, name)
     output.success(f"Created repository '{repository_name}' with formats: {', '.join(kinds)}.")
-    if set_default and repository_name:
-        default_repo = _repo_ref_from_response(repo, repository_name)
-        for registry_kind in kinds:
-            cfg_mod.set_registry_default_target(
-                registry_kind,
-                customer=entry["account"],
-                repository=repo,
-                profile=profile,
-            )
-        output.info(f"Default repository for {', '.join(kinds)} set to {default_repo}.")
 
 
 @repo_app.command("show")
@@ -624,59 +603,8 @@ def repo_rename(
         item = updated["repository"]
     except ApiError as exc:
         output.fatal(str(exc))
-    cfg_mod.refresh_matching_registry_targets(
-        customer=entry["account"],
-        repository=item,
-        profile=profile,
-    )
     renamed = _repository_name_from_response(item, new_name)
     output.success(f"Renamed repository '{repo}' to '{renamed}'.")
-
-
-@repo_app.command("set-default")
-def repo_set_default(
-    account: str | None = typer.Option(None, "--account"),
-    format: str = typer.Argument(
-        ...,
-        help="Format: pypi | npm | maven | oci",
-        metavar="FORMAT",
-    ),
-    repo: str = typer.Argument(..., help=_REPOSITORY_NAME_HELP),
-    profile: str | None = typer.Option(None, "--profile", "-p"),
-) -> None:
-    """Set the default repository for a format."""
-    registry_kind = _require_kind(format)
-    profile_name = _profile_name(profile)
-    entry = _resolve_repository_entry(repo, profile, kind=format)
-    repository = entry["repository"]
-    stable = f"in/{repository['repository_unique_ref']}"
-    cfg_mod.set_registry_default_target(
-        registry_kind,
-        customer=entry["account"],
-        repository=repository,
-        profile=profile_name,
-    )
-    output.success(f"Default {format} repository for profile '{profile_name}' set to {stable}.")
-
-
-@repo_app.command("defaults")
-def repo_defaults(
-    account: str | None = typer.Option(None, "--account"),
-    profile: str | None = typer.Option(None, "--profile", "-p"),
-) -> None:
-    """Show default repositories by format."""
-    cfg = cfg_mod.load()
-    profile_name = profile or cfg_mod.current_profile_name(cfg)
-    rows = [
-        [kind, cfg.registry_defaults(kind, profile_name).default_repo or "not set"]  # type: ignore[arg-type]
-        for kind in FORMATS
-    ]
-    output.table(
-        ["Format", "Default repository"],
-        rows,
-        title=f"Repository defaults ({profile_name})",
-        json_keys=["format", "default_repository"],
-    )
 
 
 def _upstream_path(repository_unique_ref: str, registry_kind: str) -> str:

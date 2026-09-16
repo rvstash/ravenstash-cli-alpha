@@ -396,11 +396,11 @@ def test_release_slot_check_accepts_candidate_tag(tmp_path: Path) -> None:
     assert result.returncode == 0
 
 
-def test_ci_only_tracks_canonical_release_branches() -> None:
+def test_ci_only_tracks_main() -> None:
     workflow = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
 
-    assert workflow.count('branches: [main, "release/v*.*"]') == 2
-    assert 'branches: [main, "release/**"]' not in workflow
+    assert workflow.count("branches: [main]") == 2
+    assert "release/v" not in workflow
 
 
 def test_reusable_builder_uses_exact_bundles_and_supplies_musl_bash() -> None:
@@ -520,13 +520,6 @@ def test_portable_installers_record_atomic_update_metadata() -> None:
     assert '"${install_root}/current/rvs"' in posix
     assert "_record-install" in windows
     assert 'Join-Path $source "rvs-install.json"' in windows
-
-
-def test_apt_installer_has_no_pre_receipt_migration_path() -> None:
-    source = INSTALLER.read_text(encoding="utf-8")
-
-    assert "legacy_source" not in source
-    assert "reconcile_legacy_portable_links" not in source
 
 
 def test_package_manager_manifests_cover_both_desktop_architectures(tmp_path: Path) -> None:

@@ -128,8 +128,6 @@ def resolve_route(
         if selected.target_type != "repository":
             output.fatal("OCI commands require a private repository target.")
         repo_ref = selected.stable_selector
-    if repo_ref is None:
-        repo_ref = config.registry_defaults(kind, profile_name).default_repo
     if not repo_ref:
         output.fatal(f"No {kind} repository selected. Pass --rvs-target or run `rvs art select`.")
     _, account, target = resolve_target(

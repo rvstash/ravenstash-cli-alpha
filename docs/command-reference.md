@@ -51,8 +51,6 @@ different choice for only that command. A repository target can be name-based
 | `rvs art repo show TARGET` | Shows repository details. |
 | `rvs art repo rename TARGET NEW` | Renames a repository. |
 | `rvs art repo delete TARGET` | Deletes a repository after confirmation. |
-| `rvs art repo set-default FORMAT TARGET` | Chooses the default repository for a package format. |
-| `rvs art repo defaults` | Lists the current defaults. |
 
 Supported formats are `pypi`, `npm`, `maven`, and `oci`. Container images and
 Helm charts are content types within OCI. Use commas or repeat `--format` to

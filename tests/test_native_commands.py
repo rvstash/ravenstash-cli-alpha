@@ -142,6 +142,23 @@ default_profile = "staging"
 [profiles.staging]
 api_url = "{STAGING_API_URL}"
 account_ref = "ac_23456789"
+active_account_ref = "ac_23456789"
+
+[profiles.staging.accounts.ac_23456789]
+account_type = "personal"
+account_label = "personal"
+account_handle = "staging"
+
+[profiles.staging.accounts.ac_23456789.selected_target]
+target_type = "repository"
+account_ref = "ac_23456789"
+stable_selector = "in/ar_xyzabcde"
+display_selector = "staging/repo"
+namespace_realm = "internal"
+namespace_unique_ref = "in_abcdefgh"
+namespace_name_cache = "staging"
+repository_unique_ref = "ar_xyzabcde"
+repository_name_cache = "repo"
 
 [profiles.staging.native_registries.pypi]
 read_base_url = "{PYPI_READ_URL}"
@@ -161,14 +178,6 @@ mirror_base_url = "{MAVEN_MIRROR_URL}"
 [profiles.staging.native_registries.oci]
 registry_base_url = "https://images.example.test"
 
-[profiles.staging.registries.pypi]
-default_repo = "in/ar_xyzabcde"
-
-[profiles.staging.registries.npm]
-default_repo = "in/ar_xyzabcde"
-
-[profiles.staging.registries.maven]
-default_repo = "in/ar_xyzabcde"
 """.strip(),
         encoding="utf-8",
     )
@@ -938,8 +947,7 @@ def test_missing_target_never_launches_or_infers_from_native_config(
 ):
     _isolate_config(monkeypatch, tmp_path)
     _mock_native_tools(monkeypatch)
-    path = cfg_mod.CONFIG_FILE
-    path.write_text(path.read_text().replace('default_repo = "in/ar_xyzabcde"', ""))
+    cfg_mod.set_selected_artifact_target(None, profile="staging", customer_id="ac_23456789")
     monkeypatch.setenv("PIP_INDEX_URL", f"{PYPI_READ_URL}/in/ar_xyzabcde/simple/")
     calls = []
     _capture_run(monkeypatch, calls)

@@ -244,44 +244,10 @@ def test_account_switch_without_selector_opens_account_picker(monkeypatch, tmp_p
     assert cfg_mod.load().profiles["work"].active_customer_id == "acme"
 
 
-def test_account_use_remains_a_hidden_deprecated_alias(monkeypatch, tmp_path: Path) -> None:
-    _isolate_config(monkeypatch, tmp_path)
-
-    class _Client:
-        @staticmethod
-        def get(path: str) -> _Response:
-            assert path == "/accounts"
-            return _Response(
-                {
-                    "items": [
-                        {
-                            "account_ref": "acme",
-                            "account_handle": "acme",
-                            "account_type": "organization",
-                            "account_label": "Acme Incorporated",
-                            "organization_role": "admin",
-                            "authority_revision": 2,
-                        }
-                    ]
-                }
-            )
-
-    monkeypatch.setattr(
-        account_cmd.ApiClient,
-        "from_profile",
-        staticmethod(lambda profile=None: _Client()),
-    )
-
+def test_removed_account_use_alias_is_rejected() -> None:
     result = runner.invoke(app, ["account", "use", "acme"])
-
-    assert result.exit_code == 0, result.output
-    assert "deprecated" in result.stderr
-    assert cfg_mod.load().profiles["work"].active_customer_id == "acme"
-
-    help_result = runner.invoke(app, ["account", "--help"])
-    assert help_result.exit_code == 0
-    assert "switch" in help_result.output
-    assert not any(line.strip().startswith("│ use ") for line in help_result.output.splitlines())
+    assert result.exit_code != 0
+    assert "No such command" in result.output
 
 
 def test_removed_profile_aliases_are_rejected(

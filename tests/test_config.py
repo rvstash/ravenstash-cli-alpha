@@ -303,7 +303,7 @@ def test_process_env_overrides_env_files(monkeypatch, tmp_path: Path) -> None:
     assert cfg_mod.profile_api_url("staging") == "https://process.example.test"
 
 
-def test_save_and_load_round_trips_profiles_and_registry_defaults(
+def test_save_and_load_round_trips_profiles(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
@@ -337,10 +337,6 @@ def test_save_and_load_round_trips_profiles_and_registry_defaults(
                 credential_type="expiring",
                 expires_at="2099-01-01T00:00:00+00:00",
                 refresh_expires_at="2099-01-02T00:00:00+00:00",
-                registries={
-                    "pypi": cfg_mod.RegistryDefaults(default_repo="in/ar_23456789"),
-                    "npm": cfg_mod.RegistryDefaults(default_repo="in/ar_xyzabcde"),
-                },
             )
         },
     )
@@ -364,39 +360,6 @@ def test_save_and_load_round_trips_profiles_and_registry_defaults(
     )
     assert loaded.profiles["work"].customer_id == "ac_abcdefgh"
     assert loaded.profiles["work"].credential_store == "pass"
-    assert loaded.registry_defaults("pypi").default_repo == "in/ar_23456789"
-    assert loaded.registry_defaults("npm").default_repo == "in/ar_xyzabcde"
-    assert loaded.registry_defaults("maven").default_repo is None
-
-
-def test_saved_target_retains_identity_when_authority_marks_it_unavailable(
-    monkeypatch,
-    tmp_path: Path,
-) -> None:
-    _point_config(monkeypatch, tmp_path)
-    cfg_mod.save(
-        cfg_mod.RvsConfig(
-            profiles={
-                "default": cfg_mod.ProfileConfig(
-                    registries={
-                        "pypi": cfg_mod.RegistryDefaults(
-                            default_repo="in/ar_23456789",
-                            repository_unique_ref="ar_23456789",
-                            authority_revision=4,
-                        )
-                    }
-                )
-            }
-        )
-    )
-
-    cfg_mod.mark_registry_default_unavailable("pypi")
-    saved = cfg_mod.load().registry_defaults("pypi")
-
-    assert saved.default_repo == "in/ar_23456789"
-    assert saved.repository_unique_ref == "ar_23456789"
-    assert saved.authority_revision == 4
-    assert saved.is_available is False
 
 
 def test_current_profile_name_prefers_environment(monkeypatch) -> None:
@@ -445,27 +408,3 @@ def test_delete_profile_updates_default_profile(monkeypatch, tmp_path: Path) -> 
     assert "work" not in loaded.profiles
     assert loaded.default_profile == "default"
     assert cfg_mod.delete_profile("missing") is False
-
-
-def test_registry_defaults_are_profile_scoped(
-    monkeypatch,
-    tmp_path: Path,
-) -> None:
-    _point_config(monkeypatch, tmp_path)
-    cfg_mod.save(
-        cfg_mod.RvsConfig(
-            default_profile="work",
-            profiles={
-                "work": cfg_mod.ProfileConfig(),
-                "staging": cfg_mod.ProfileConfig(),
-            },
-        )
-    )
-
-    cfg_mod.set_registry_default_repo("pypi", "work-repo", "work")
-    cfg_mod.set_registry_default_repo("pypi", "staging-repo", "staging")
-    loaded = cfg_mod.load()
-
-    assert loaded.registry_defaults("pypi", "work").default_repo == "work-repo"
-    assert loaded.registry_defaults("pypi", "staging").default_repo == "staging-repo"
-    assert loaded.registry_defaults("npm", "work").default_repo is None
