@@ -194,7 +194,11 @@ def test_portable_update_policy_is_published_after_github_release() -> None:
 def test_release_keeps_target_handoffs_isolated() -> None:
     release_text = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
     jobs = yaml.safe_load(release_text)["jobs"]
-    build_jobs = {name: job for name, job in jobs.items() if "uses" in job}
+    build_jobs = {
+        name: job
+        for name, job in jobs.items()
+        if job.get("uses") == "./.github/workflows/_build-release-target.yml"
+    }
     artifact_names = [
         Path(path).name
         for job in build_jobs.values()
@@ -262,6 +266,14 @@ def test_publication_graph_parallelizes_safe_jobs_and_serializes_mutations() -> 
     assert jobs["verify-apt"]["strategy"]["fail-fast"] is False
     assert len(jobs["verify-apt"]["strategy"]["matrix"]["include"]) == 2
     assert set(jobs["publish-github-release"]["needs"]) == {"sign", "verify-apt"}
+    assert jobs["publish-update-manifest"]["needs"] == "publish-github-release"
+    assert jobs["promote-installer"]["needs"] == "publish-update-manifest"
+    assert jobs["promote-installer"]["uses"] == "./.github/workflows/promote-installer.yml"
+    assert set(jobs["cleanup-artifacts"]["needs"]) == {
+        "publish-github-release",
+        "publish-update-manifest",
+        "promote-installer",
+    }
     assert jobs["restore-apt"]["if"] == "inputs.kind == 'stable'"
     assert jobs["publish-apt"]["if"] == "inputs.kind == 'stable'"
     assert jobs["verify-apt"]["if"] == "inputs.kind == 'stable'"
@@ -412,6 +424,10 @@ def test_channel_recommendation_activates_after_installer_verification() -> None
         "sign-channel-manifest",
         "promote",
     }
+    assert promotion["concurrency"]["group"] == "rvs-installer-promotion-${{ inputs.channel }}"
+    cleanup = jobs["cleanup-artifacts"]["steps"][0]["run"]
+    assert "promoted-channel-${GITHUB_RUN_ID}" in cleanup
+    assert ".artifacts[].id" not in cleanup
 
 
 def test_installer_worker_binds_both_public_routes() -> None:

@@ -122,8 +122,10 @@ The channel policy is published at the distribution-neutral
 `https://releases.ravenstash.com/rvs/channels.json` path; the matching APT path
 remains a compatibility alias for older clients.
 Stable release automation updates the neutral path only after the corresponding
-GitHub release is public; installer promotion can later change its recommended
-series without altering a release.
+GitHub release is public, then calls the protected installer-promotion stage to
+deploy the exact release installers and update its recommended series. The
+promotion workflow remains manually dispatchable for verified re-promotion or
+recovery without altering a release.
 Homebrew and WinGet update their versioned channel package in place, or replace
 it with rollback for an explicit series migration. Nix updates replace the
 tag-pinned `ravenstash-cli` profile element with the selected immutable release
@@ -135,12 +137,12 @@ Apple notarization and Windows Authenticode are deferred while these platforms
 use command-line distribution. The protected APT signer authenticates the APT
 repository and portable inventories. The build includes the installer in the
 checksummed and attested release artifacts. After the APT repository and GitHub
-release pass their publication gates, the separate promotion workflow embeds the
+release pass their publication gates, the protected promotion stage embeds the
 exact attested bytes in a dedicated
 Cloudflare Worker at `https://ravenstash.com/install.sh` and
 `https://ravenstash.com/install.ps1`. The Worker does not
 fetch executable shell code from R2, and the frontend website repository
-contains no installer implementation. The promotion workflow separately checks
+contains no installer implementation. The promotion workflow independently checks
 out the immutable release source, refuses installer rollback, deploys only bytes
 that match the release's signed inventory, verifies the live routes, and
 publishes the newly signed recommended-channel manifest last.
