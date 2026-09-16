@@ -6,6 +6,8 @@ All notable user-facing changes to `rvs` are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.14.1] - 2026-09-16
+
 ### Added
 
 - `rvs update`, `rvs update --apply`, release-series migrations, and signed
@@ -25,6 +27,13 @@ All notable user-facing changes to `rvs` are recorded here. The format follows
   remote-cache help calls `rc_...` a permanent ID.
 - `rvs update` recognizes Nix, Homebrew, and WinGet installations and delegates
   package replacement to their owning package manager.
+
+### Fixed
+
+- Ephemeral test builds keep project, lockfile, and installer identities aligned
+  while exercising the complete Alpine/musl test suite.
+
+Detailed release notes: [RVS 0.14.1](docs/releases/0.14.1.md).
 
 ## [0.14.0] - 2026-09-16
 
@@ -118,7 +127,8 @@ Detailed release notes: [RVS 0.13.4](docs/releases/0.13.4.md).
 
 Detailed notes for every earlier release are in [docs/releases](docs/releases/).
 
-[Unreleased]: https://github.com/rvstash/ravenstash-cli-alpha/compare/v0.14.0...HEAD
+[Unreleased]: https://github.com/rvstash/ravenstash-cli-alpha/compare/v0.14.1...HEAD
+[0.14.1]: https://github.com/rvstash/ravenstash-cli-alpha/compare/v0.14.0...v0.14.1
 [0.14.0]: https://github.com/rvstash/ravenstash-cli-alpha/compare/v0.13.7...v0.14.0
 [0.13.7]: https://github.com/rvstash/ravenstash-cli-alpha/compare/v0.13.6...v0.13.7
 [0.13.6]: https://github.com/rvstash/ravenstash-cli-alpha/compare/v0.13.5...v0.13.6
