@@ -116,7 +116,8 @@ def verify_distribution(repo: Path, keyring: Path, distribution: str) -> set[Pur
     if field(release, "Acquire-By-Hash").lower() != "yes":
         fail(f"Acquire-By-Hash is not enabled for {distribution}")
     valid_until = email.utils.parsedate_to_datetime(field(release, "Valid-Until"))
-    now = dt.datetime.now(dt.UTC)
+    # Repository tooling runs in the Ubuntu 20.04 signing image (Python 3.8).
+    now = dt.datetime.now(dt.timezone.utc)  # noqa: UP017
     if valid_until.tzinfo is None or not now < valid_until <= now + dt.timedelta(days=8):
         fail(f"Valid-Until is expired or exceeds policy for {distribution}")
     if field(release, "Suite") != distribution or field(release, "Codename") != distribution:

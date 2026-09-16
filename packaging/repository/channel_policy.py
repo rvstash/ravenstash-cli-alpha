@@ -110,8 +110,7 @@ def manifest(repository: Path, recommended: str) -> dict[str, Any]:
         channels[channel] = {
             "latest": latest_version(packages, channel),
             "migration_notes": (
-                "https://docs.ravenstash.com/cli/releases/"
-                f"{channel.removeprefix('v').replace('.', '-')}/"
+                f"https://docs.ravenstash.com/cli/releases/{channel[1:].replace('.', '-')}/"
             ),
             "status": "supported",
         }
