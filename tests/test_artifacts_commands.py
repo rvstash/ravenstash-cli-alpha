@@ -197,7 +197,7 @@ def test_artifacts_repo_list_filters_by_kind_and_uses_profile_customer(
     assert "test-account" in result.output
     assert "Test account" not in result.output
     assert "test-account/repo-pypi" in result.output
-    assert "Native route" in result.output
+    assert "ID-based target" in result.output
     assert "in/ar_xyzabcde" in result.output
     assert "Namespace" not in result.output
     assert "Repository ID" not in result.output
@@ -244,7 +244,7 @@ def test_artifacts_repo_list_preserves_json_shape_and_uses_account_handle(
             "account": "test-account",
             "namespace": "test-account",
             "repository": "repo-pypi",
-            "native_route": "in/ar_xyzabcde",
+            "id_based_target": "in/ar_xyzabcde",
             "formats": "pypi, npm, maven",
         }
     ]
@@ -440,7 +440,7 @@ def test_artifacts_repo_show_renders_repository_details(monkeypatch, tmp_path: P
     assert "repo-pypi" in result.output
     assert "test-account/repo-pypi" in result.output
     assert "Test account" not in result.output
-    assert "Native route" in result.output
+    assert "ID-based target" in result.output
     assert "in/ar_xyzabcde" in result.output
     assert "Repository ID" not in result.output
     assert "Packages" in result.output

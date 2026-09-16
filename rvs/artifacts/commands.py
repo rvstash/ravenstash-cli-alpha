@@ -51,7 +51,7 @@ app.command("reference")(reference)
 
 _PACKAGE_KINDS = ("pypi", "npm", "maven")
 _MAX_UPSTREAM_POSITION = 4
-_REPOSITORY_NAME_HELP = "Repository name or namespace/repository."
+_REPOSITORY_NAME_HELP = "Name-based target (namespace/repository) or ID-based target (in/ar_...)."
 
 
 def _format_age_hours(value: float | int | str | None, *, missing: str) -> str:
@@ -99,7 +99,10 @@ def _context_customer_id(profile: str | None, account: str | None) -> str | None
 def target_select(
     target: str = typer.Argument(
         ...,
-        help="namespace/repository, mirror:<source>, or custom-mirror:<name>.",
+        help=(
+            "Name-based target (namespace/repository), ID-based target (in/ar_...), "
+            "mirror:<source>, or custom-mirror:<name>."
+        ),
     ),
     kind: str | None = typer.Option(None, "--format", help="Format if needed."),
     account: str | None = typer.Option(None, "--account", help="Username or organization handle."),
@@ -383,7 +386,7 @@ def repo_list(
             _selected_account_handle(profile, selected_account_ref, entries) if items else ""
         )
         output.table(
-            ["Account", "Namespace", "Repository", "Native route", "Formats"],
+            ["Account", "Namespace", "Repository", "ID-based target", "Formats"],
             [
                 [
                     account_handle,
@@ -398,7 +401,7 @@ def repo_list(
                 ]
                 for entry, item in zip(entries, items, strict=True)
             ],
-            json_keys=["account", "namespace", "repository", "native_route", "formats"],
+            json_keys=["account", "namespace", "repository", "id_based_target", "formats"],
         )
         return
 
@@ -409,7 +412,7 @@ def repo_list(
         return
 
     output.table(
-        ["Repository", "Native route", "Formats"],
+        ["Repository", "ID-based target", "Formats"],
         [
             [
                 f"{item['namespace_name']}/{_repository_name_from_response(item)}",
@@ -521,7 +524,7 @@ def repo_show(
 
     account_handle = _public_account_handle(entry["account"])
     repository_name = _repository_name_from_response(item, repo)
-    native_route = f"in/{item['repository_unique_ref']}"
+    id_based_target = f"in/{item['repository_unique_ref']}"
     formats = ", ".join(
         detail["format"]
         for detail in item.get("formats", [])
@@ -539,8 +542,8 @@ def repo_show(
                 "Name": repository_name,
                 "Account": account_handle,
                 "Namespace": item["namespace_name"],
-                "Namespace reference": item["namespace_unique_ref"],
-                "Repository reference": item["repository_unique_ref"],
+                "Namespace permanent ID": item["namespace_unique_ref"],
+                "Repository permanent ID": item["repository_unique_ref"],
                 "Formats": formats,
                 "Packages": packages,
                 "Versions": versions,
@@ -571,7 +574,7 @@ def repo_show(
         {
             "Repository": f"{item['namespace_name']}/{repository_name}",
             "Account": account_handle,
-            "Native route": native_route,
+            "ID-based target": id_based_target,
             "Formats": formats,
             "Packages": packages,
             "Versions": versions,
@@ -737,7 +740,7 @@ def upstream_add(
     format: str = typer.Argument(..., metavar="FORMAT"),
     private_repository: str | None = typer.Option(None, "--private-repository"),
     remote_cache: str | None = typer.Option(
-        None, "--remote-cache", help="Remote-cache reference (rc_...)."
+        None, "--remote-cache", help="Remote-cache permanent ID (rc_...)."
     ),
     position: int = typer.Option(..., "--position", min=1, max=_MAX_UPSTREAM_POSITION),
     min_age_hours: float | None = typer.Option(None, "--min-age-hours", min=0),
@@ -1004,7 +1007,7 @@ def remote_create(
 @remote_app.command("show")
 def remote_show(
     remote: str = typer.Argument(
-        ..., help="Remote-cache reference (rc_...).", metavar="REMOTE_CACHE_REF"
+        ..., help="Remote-cache permanent ID (rc_...).", metavar="REMOTE_CACHE_ID"
     ),
     profile: str | None = typer.Option(None, "--profile", "-p"),
     account: str | None = typer.Option(None, "--account"),
@@ -1060,7 +1063,7 @@ def remote_show(
 @remote_app.command("set-age")
 def remote_set_age(
     remote: str = typer.Argument(
-        ..., help="Remote-cache reference (rc_...).", metavar="REMOTE_CACHE_REF"
+        ..., help="Remote-cache permanent ID (rc_...).", metavar="REMOTE_CACHE_ID"
     ),
     min_age_hours: float = typer.Option(..., "--min-age-hours", min=0),
     profile: str | None = typer.Option(None, "--profile", "-p"),
@@ -1088,7 +1091,7 @@ def remote_set_age(
 @remote_app.command("delete")
 def remote_delete(
     remote: str = typer.Argument(
-        ..., help="Remote-cache reference (rc_...).", metavar="REMOTE_CACHE_REF"
+        ..., help="Remote-cache permanent ID (rc_...).", metavar="REMOTE_CACHE_ID"
     ),
     profile: str | None = typer.Option(None, "--profile", "-p"),
     customer_id: str | None = typer.Option(None, "--account-ref", hidden=True),
