@@ -402,14 +402,19 @@ def _announce_portable_channel(manifest: dict[str, Any], current: str) -> None:
     )
 
 
+def _is_nix_application_executable(value: str) -> bool:
+    normalized = value.lower().replace("\\", "/")
+    return re.search(r"/nix/store/[a-z0-9]+-ravenstash-cli-env/", normalized) is not None
+
+
 def _managed_method() -> str | None:
     executable = Path(sys.executable).resolve()
-    value = str(executable).lower()
-    if "/nix/store/" in value.replace("\\", "/"):
+    value = str(executable).lower().replace("\\", "/")
+    if _is_nix_application_executable(value):
         return "nix"
     if not getattr(sys, "frozen", False):
         return None
-    if "/cellar/" in value.replace("\\", "/") or "/caskroom/" in value.replace("\\", "/"):
+    if "/cellar/" in value or "/caskroom/" in value:
         return "homebrew"
     if os.name == "nt" and "\\microsoft\\winget\\packages\\" in value:
         return "winget"
