@@ -56,7 +56,6 @@ import os
 import re
 import tempfile
 import tomllib
-from collections.abc import Callable
 from dataclasses import dataclass, field
 from ipaddress import ip_address
 from pathlib import Path
@@ -80,10 +79,7 @@ SESSIONS_DIR_NAME = "sessions"
 
 DEFAULT_API_URL = "https://api.ravenstash.com"
 DEFAULT_REPOSITORY_DOMAIN = "rvsta.sh"
-BASE_CONFIG_VERSION = 6
 CURRENT_CONFIG_VERSION = 6
-ConfigMigration = Callable[[dict], None]
-_CONFIG_MIGRATIONS: dict[int, ConfigMigration] = {}
 
 
 class ConfigError(ValueError):
@@ -730,30 +726,18 @@ def _load_raw() -> dict:
         return tomllib.load(f)
 
 
-def _migrate_raw_config(raw: dict) -> bool:
-    """Reject pre-v0.14 configuration; this breaking release has no migration."""
+def _normalize_raw_config(raw: dict) -> None:
     if not raw:
         raw["config_version"] = CURRENT_CONFIG_VERSION
-        return False
+        return
     version = raw.get("config_version")
     if isinstance(version, bool) or not isinstance(version, int):
         raise ValueError("config_version must be an integer")
-    if version < BASE_CONFIG_VERSION:
+    if version != CURRENT_CONFIG_VERSION:
         raise ValueError(
-            f"config version {version} is not supported by rvs 0.14; "
-            "run `rvs auth logout --all`, sign in again, and reselect your account "
-            "and repository target"
+            f"config version {version} is not supported "
+            f"(this release requires version {CURRENT_CONFIG_VERSION})"
         )
-    if version > CURRENT_CONFIG_VERSION:
-        raise ValueError(
-            f"config version {version} requires a newer rvs release "
-            f"(this release supports version {CURRENT_CONFIG_VERSION})"
-        )
-
-    changed = False
-    while version < CURRENT_CONFIG_VERSION:
-        raise RuntimeError(f"rvs has no config migration from version {version}")
-    return changed
 
 
 def _validate_repository_target_identity(
@@ -866,27 +850,6 @@ def _write_raw(raw: dict) -> None:
             temporary_path.unlink(missing_ok=True)
 
 
-def _backup_pre_migration_config(version: int) -> None:
-    """Create one owner-only backup before replacing an older config."""
-    backup_path = CONFIG_FILE.with_name(f"config.v{version}.toml.bak")
-    try:
-        descriptor = os.open(
-            backup_path,
-            os.O_WRONLY | os.O_CREAT | os.O_EXCL,
-            0o600,
-        )
-    except FileExistsError:
-        return
-    try:
-        with os.fdopen(descriptor, "wb") as backup:
-            backup.write(CONFIG_FILE.read_bytes())
-            backup.flush()
-            os.fsync(backup.fileno())
-    except Exception:
-        backup_path.unlink(missing_ok=True)
-        raise
-
-
 def stored_profile_api_url(profile_name: str) -> str | None:
     """Return a profile's persisted DevAPI URL without environment overrides."""
     load()
@@ -904,10 +867,8 @@ def stored_profile_api_url(profile_name: str) -> str | None:
 
 
 def _load_validated() -> RvsConfig:
-    config_exists = CONFIG_FILE.exists()
     raw = _load_raw()
-    original_version = raw.get("config_version")
-    migrated = _migrate_raw_config(raw)
+    _normalize_raw_config(raw)
     _validate_raw_config(raw)
     cfg = RvsConfig(
         default_profile=raw.get("default_profile", "default"),
@@ -949,11 +910,6 @@ def _load_validated() -> RvsConfig:
             },
         )
 
-    if migrated and config_exists:
-        if not isinstance(original_version, int) or isinstance(original_version, bool):
-            raise RuntimeError("validated config migration lost its original version")
-        _backup_pre_migration_config(original_version)
-        _write_raw(raw)
     return cfg
 
 

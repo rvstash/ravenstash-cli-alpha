@@ -19,7 +19,6 @@ case "$machine_architecture" in
   *) readonly package_architecture="unsupported" ;;
 esac
 readonly expected_source="deb [arch=${package_architecture} signed-by=${keyring_path}] ${repository_url} ${compatibility_channel} main"
-readonly legacy_source="deb [arch=${package_architecture} signed-by=${keyring_path}] ${repository_url} stable main"
 readonly repair="${RVS_INSTALL_REPAIR:-0}"
 
 say() {
@@ -126,32 +125,11 @@ download_release_asset() {
   rm -f -- "$auth_header"
 }
 
-reconcile_legacy_portable_links() {
-  [[ -n "${HOME:-}" && "$HOME" == /* && "$HOME" != "/" ]] || return
-  local bin_directory="${HOME}/.local/bin"
-  local install_root="${HOME}/.local/share/rvs"
-  local command_name link_path link_target
-  for command_name in rvs ravenstash docker-credential-rvs; do
-    link_path="${bin_directory}/${command_name}"
-    if [[ -L "$link_path" ]]; then
-      link_target="$(readlink "$link_path")"
-      case "$link_target" in
-        "${install_root}/"*/"${command_name}")
-          ln -sfn "/usr/bin/${command_name}" "$link_path"
-          say "redirected legacy portable command ${link_path} to the APT installation"
-          ;;
-      esac
-    elif [[ -e "$link_path" ]]; then
-      say "notice: ${link_path} was not installed by Ravenstash and may shadow /usr/bin/${command_name}"
-    fi
-  done
-}
-
 install_apt_package() {
   local temporary_directory="$1"
   local temporary_key="${temporary_directory}/ravenstash-rvs.gpg"
 
-  for command in apt-get awk curl dpkg install ln mktemp readlink tee; do
+  for command in apt-get awk curl dpkg install mktemp tee; do
     command -v "$command" >/dev/null 2>&1 || fail "required command not found: ${command}"
   done
   if [[ "$(dpkg --print-architecture)" != "$package_architecture" ]] \
@@ -182,9 +160,7 @@ install_apt_package() {
   if [[ -e "$source_path" ]]; then
     local existing_source
     existing_source="$(<"$source_path")"
-    if [[ "$existing_source" != "$expected_source" ]] \
-      && [[ "$existing_source" != "$legacy_source" ]] \
-      && [[ "$repair" != "1" ]]; then
+    if [[ "$existing_source" != "$expected_source" && "$repair" != "1" ]]; then
       fail "a conflicting Ravenstash APT source exists; inspect it, then rerun with RVS_INSTALL_REPAIR=1 to replace it"
     fi
   fi
@@ -199,7 +175,6 @@ install_apt_package() {
 
   local installed_version
   installed_version="$(dpkg-query -W -f='${Version}' rvs)"
-  reconcile_legacy_portable_links
   say "installed rvs ${installed_version} on compatibility channel ${compatibility_channel}"
 }
 

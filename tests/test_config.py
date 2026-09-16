@@ -228,44 +228,23 @@ registry_base_url = "https://images.example.test"
 
 
 @pytest.mark.parametrize(
-    ("version", "message"),
-    [
-        (4, "not supported by rvs 0.14"),
-        (5, "not supported by rvs 0.14"),
-        (999, "requires a newer rvs release"),
-    ],
+    "version",
+    [4, 5, 999],
 )
-def test_load_rejects_versions_outside_the_supported_migration_range(
+def test_load_rejects_unsupported_config_versions(
     monkeypatch,
     tmp_path: Path,
     version: int,
-    message: str,
 ) -> None:
     config_dir, config_file = _point_config(monkeypatch, tmp_path)
     config_dir.mkdir()
     original = f'config_version = {version}\ndefault_profile = "default"\n'
     config_file.write_text(original, encoding="utf-8")
 
-    with pytest.raises(ValueError, match=message):
+    with pytest.raises(ValueError, match=f"config version {version} is not supported"):
         cfg_mod.load()
 
     assert config_file.read_text(encoding="utf-8") == original
-
-
-def test_v5_breaking_cutover_does_not_touch_or_back_up_source(
-    monkeypatch,
-    tmp_path: Path,
-) -> None:
-    config_dir, config_file = _point_config(monkeypatch, tmp_path)
-    config_dir.mkdir()
-    original = 'config_version = 5\ndefault_profile = "default"\n'
-    config_file.write_text(original, encoding="utf-8")
-
-    with pytest.raises(ValueError, match=r"not supported by rvs 0\.14"):
-        cfg_mod.load()
-
-    assert config_file.read_text(encoding="utf-8") == original
-    assert not (config_dir / "config.v5.toml.bak").exists()
 
 
 def test_repository_domain_rejects_urls_and_ports(monkeypatch, tmp_path: Path) -> None:

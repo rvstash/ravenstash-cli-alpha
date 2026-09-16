@@ -13,13 +13,13 @@ fixes, create a protected maintenance branch for each supported line:
 
 ```text
 main                    next development line
-release/v0.13           maintained 0.13.x source
 release/v0.14           maintained 0.14.x source
+release/v0.15           maintained 0.15.x source
 release/v1.0            maintained 1.0.x source
 release/v1.1            maintained 1.1.x source
 ```
 
-The matching APT suites are `v0.13`, `v0.14`, `v1.0`, and `v1.1`. Git branches
+The matching APT suites are `v0.14`, `v0.15`, `v1.0`, and `v1.1`. Git branches
 and APT suites deliberately use the same compatibility identifier, but a branch
 holds source while a suite holds immutable signed packages. Patch releases are
 tags, not long-lived branches. Delete a maintenance branch only after that line
@@ -71,8 +71,8 @@ from `main` with:
 
 The workflow definition always comes from trusted `main`, checks out the chosen
 commit as data, and derives a unique version such as
-`0.14.0.dev12345+g01234567`. Its Debian equivalent is
-`0.14.0~dev12345+g01234567`, which sorts before both `0.14.0~rc1` and `0.14.0`.
+`0.14.4.dev12345+g01234567`. Its Debian equivalent is
+`0.14.4~dev12345+g01234567`, which sorts before both `0.14.4~rc1` and `0.14.4`.
 It builds selected targets in parallel and creates one GitHub Actions artifact
 retained for seven days. The run summary contains the exact `gh run download`
 command.
@@ -80,8 +80,8 @@ command.
 For example, after downloading a Linux glibc artifact:
 
 ```bash
-sha256sum --check rvs-v0.14.0.dev12345+g01234567-checksums.txt
-sudo apt install ./rvs_0.14.0.dev12345+g01234567_amd64.deb
+sha256sum --check rvs-v0.14.4.dev12345+g01234567-checksums.txt
+sudo apt install ./rvs_0.14.4.dev12345+g01234567_amd64.deb
 rvs --version
 ```
 
@@ -93,7 +93,7 @@ stable release after testing.
 
 ## Signed release candidate
 
-Use a PEP 440 version such as `0.14.0rc1`. Dispatch `release.yml` from `main`
+Use a PEP 440 version such as `0.14.4rc1`. Dispatch `release.yml` from `main`
 with `kind=candidate`, the exact source branch, SHA, version, and matching
 `vMAJOR.MINOR` channel. The workflow:
 
@@ -107,13 +107,13 @@ It does not restore, modify, or publish APT repository state. On a supported
 APT or portable installation, preview and install it with:
 
 ```bash
-rvs update --candidate 0.14.0rc1
-rvs update --candidate 0.14.0rc1 --apply
+rvs update --candidate 0.14.4rc1
+rvs update --candidate 0.14.4rc1 --apply
 ```
 
 The CLI selects the architecture-specific Debian package or portable archive,
 verifies the signed inventory, checksum, version, and target, then asks before
-installing. Debian uses version `0.14.0~rc1`, ensuring the later stable `0.14.0`
+installing. Debian uses version `0.14.4~rc1`, ensuring the later stable `0.14.4`
 sorts as an upgrade. Portable POSIX installations switch an atomic version
 pointer; Windows stages a verified bundle and activates it after the running
 process exits.

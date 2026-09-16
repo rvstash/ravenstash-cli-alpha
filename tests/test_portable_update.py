@@ -24,7 +24,7 @@ from rvs.update_trust import VerificationError, _release_key, verify_detached
 FIXTURES = Path(__file__).parent / "fixtures"
 
 
-def _installation(tmp_path: Path, version: str = "0.14.0") -> Installation:
+def _installation(tmp_path: Path, version: str = "0.14.3") -> Installation:
     return Installation(
         schema=1,
         method="portable",
@@ -52,28 +52,24 @@ def test_detached_verification_rejects_non_signature_data() -> None:
 
 
 def test_detached_verification_accepts_published_inventory_and_rejects_mutation() -> None:
-    inventory = (FIXTURES / "rvs-v0.14.0-checksums.txt").read_bytes()
-    signature = (FIXTURES / "rvs-v0.14.0-checksums.txt.asc").read_bytes()
+    inventory = (FIXTURES / "rvs-v0.14.3-checksums.txt").read_bytes()
+    signature = (FIXTURES / "rvs-v0.14.3-checksums.txt.asc").read_bytes()
 
     verify_detached(inventory, signature)
     with pytest.raises(VerificationError, match=r"digest prefix|invalid"):
         verify_detached(inventory + b"changed\n", signature)
 
 
-def test_channel_discovery_uses_legacy_alias_only_during_bootstrap(
+def test_channel_discovery_authenticates_the_public_manifest(
     httpx2_mock: Any, monkeypatch: Any
 ) -> None:
     manifest = {
         "schema": 1,
         "recommended": "v0.14",
-        "channels": {"v0.14": {"latest": "0.14.0", "status": "supported"}},
+        "channels": {"v0.14": {"latest": "0.14.3", "status": "supported"}},
     }
-    httpx2_mock.add_response(url=portable_update_mod.CHANNELS_URL, status_code=404)
-    httpx2_mock.add_response(url=f"{portable_update_mod.CHANNELS_URL}.gpg", status_code=404)
-    httpx2_mock.add_response(url=portable_update_mod.LEGACY_CHANNELS_URL, json=manifest)
-    httpx2_mock.add_response(
-        url=f"{portable_update_mod.LEGACY_CHANNELS_URL}.gpg", content=b"signature"
-    )
+    httpx2_mock.add_response(url=portable_update_mod.CHANNELS_URL, json=manifest)
+    httpx2_mock.add_response(url=f"{portable_update_mod.CHANNELS_URL}.gpg", content=b"signature")
     verified: list[tuple[bytes, bytes]] = []
     monkeypatch.setattr(
         portable_update_mod,
@@ -88,10 +84,10 @@ def test_channel_discovery_uses_legacy_alias_only_during_bootstrap(
 @pytest.mark.parametrize(
     ("installed", "candidate", "expected"),
     [
-        ("0.14.0rc1", "0.14.0rc2", True),
-        ("0.14.0rc2", "0.14.0", True),
-        ("0.14.0", "0.14.1", True),
-        ("0.14.1", "0.14.0", False),
+        ("0.14.4rc1", "0.14.4rc2", True),
+        ("0.14.4rc2", "0.14.4", True),
+        ("0.14.3", "0.14.4", True),
+        ("0.14.4", "0.14.3", False),
     ],
 )
 def test_portable_version_order(installed: str, candidate: str, expected: bool) -> None:
@@ -125,15 +121,15 @@ def test_receipt_rejects_root_install_path(tmp_path: Path) -> None:
 
 
 def test_extract_release_rejects_path_traversal(tmp_path: Path) -> None:
-    archive = tmp_path / "rvs-v0.14.1-linux-musl-amd64.tar.gz"
+    archive = tmp_path / "rvs-v0.14.4-linux-musl-amd64.tar.gz"
     with tarfile.open(archive, "w:gz") as bundle:
         content = b"bad"
-        member = tarfile.TarInfo("rvs-v0.14.1-linux-musl-amd64/../outside")
+        member = tarfile.TarInfo("rvs-v0.14.4-linux-musl-amd64/../outside")
         member.size = len(content)
         bundle.addfile(member, io.BytesIO(content))
 
     with pytest.raises(UpdateError, match="unsafe path"):
-        extract_release(archive, tmp_path / "extracted", "0.14.1", "linux-musl-amd64")
+        extract_release(archive, tmp_path / "extracted", "0.14.4", "linux-musl-amd64")
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX activation uses executable symlinks")
@@ -152,15 +148,15 @@ def test_posix_activation_switches_all_commands_and_keeps_previous_version(
     extracted = tmp_path / "new"
     extracted.mkdir()
     for command in ("rvs", "ravenstash", "docker-credential-rvs"):
-        _launcher(extracted / command, "0.14.1")
+        _launcher(extracted / command, "0.14.4")
 
-    activate_posix(extracted, installation, "0.14.1")
+    activate_posix(extracted, installation, "0.14.4")
 
-    assert (installation.root / "current").readlink() == Path("0.14.1")
+    assert (installation.root / "current").readlink() == Path("0.14.4")
     assert old.is_dir()
-    assert read_receipt(installation.root / "0.14.1" / RECEIPT_NAME).version == "0.14.1"
+    assert read_receipt(installation.root / "0.14.4" / RECEIPT_NAME).version == "0.14.4"
     for command in ("rvs", "ravenstash", "docker-credential-rvs"):
-        assert (installation.bin / command).resolve() == installation.root / "0.14.1" / command
+        assert (installation.bin / command).resolve() == installation.root / "0.14.4" / command
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX activation uses executable symlinks")
@@ -180,14 +176,14 @@ def test_posix_activation_rolls_back_before_replacing_an_unowned_command(
     extracted = tmp_path / "new"
     extracted.mkdir()
     for command in ("rvs", "ravenstash", "docker-credential-rvs"):
-        _launcher(extracted / command, "0.14.1")
+        _launcher(extracted / command, "0.14.4")
 
     with pytest.raises(UpdateError, match="non-symlink command"):
-        activate_posix(extracted, installation, "0.14.1")
+        activate_posix(extracted, installation, "0.14.4")
 
     assert (installation.bin / "rvs").read_text(encoding="utf-8") == "not installer owned\n"
     assert not (installation.root / "current").exists()
-    assert not (installation.root / "0.14.1").exists()
+    assert not (installation.root / "0.14.4").exists()
 
 
 def test_receipt_is_non_secret_json(tmp_path: Path) -> None:

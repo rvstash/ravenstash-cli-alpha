@@ -96,30 +96,30 @@ def _exercise_multarch_append(root: Path) -> None:
     bootstrap = root / "bootstrap"
     bootstrap.mkdir()
     (bootstrap / "BOOTSTRAP").touch()
-    v03 = root / "v03"
+    current = root / "current"
     _run(
         [
             str(APPEND),
             str(bootstrap),
-            str(v03),
+            str(current),
             str(keyring),
-            str(_build_deb(root, "0.3.1", "amd64")),
+            str(_build_deb(root, "0.14.3", "amd64")),
         ],
-        env=common_env | {"RVS_APT_CHANNEL": "v0.3"},
+        env=common_env | {"RVS_APT_CHANNEL": "v0.14"},
     )
-    v03_inrelease = (v03 / "dists/v0.3/InRelease").read_bytes()
+    current_inrelease = (current / "dists/v0.14/InRelease").read_bytes()
     amd64 = root / "amd64"
     _run(
         [
             str(APPEND),
-            str(v03),
+            str(current),
             str(amd64),
             str(keyring),
-            str(_build_deb(root, "0.12.1", "amd64")),
+            str(_build_deb(root, "0.15.0", "amd64")),
         ],
-        env=common_env | {"RVS_APT_CHANNEL": "v0.12"},
+        env=common_env | {"RVS_APT_CHANNEL": "v0.15"},
     )
-    assert (amd64 / "dists/v0.3/InRelease").read_bytes() == v03_inrelease
+    assert (amd64 / "dists/v0.14/InRelease").read_bytes() == current_inrelease
     multarch = root / "multarch"
     _run(
         [
@@ -127,14 +127,14 @@ def _exercise_multarch_append(root: Path) -> None:
             str(amd64),
             str(multarch),
             str(keyring),
-            str(_build_deb(root, "0.12.1", "arm64")),
+            str(_build_deb(root, "0.15.0", "arm64")),
         ],
-        env=common_env | {"RVS_APT_CHANNEL": "v0.12"},
+        env=common_env | {"RVS_APT_CHANNEL": "v0.15"},
     )
 
-    assert (multarch / "dists/v0.3/main/binary-arm64/Packages").read_text() == ""
+    assert (multarch / "dists/v0.14/main/binary-arm64/Packages").read_text() == ""
     assert (
-        "Architecture: arm64" in (multarch / "dists/v0.12/main/binary-arm64/Packages").read_text()
+        "Architecture: arm64" in (multarch / "dists/v0.15/main/binary-arm64/Packages").read_text()
     )
 
     for binary in (multarch / "dists").glob("*/main/binary-arm64"):
@@ -142,7 +142,7 @@ def _exercise_multarch_append(root: Path) -> None:
     _run(["python3", str(RECOVER), str(multarch), str(keyring)])
     _run(["python3", str(VERIFY), str(multarch), str(keyring)])
     assert (
-        "Architecture: arm64" in (multarch / "dists/v0.12/main/binary-arm64/Packages").read_text()
+        "Architecture: arm64" in (multarch / "dists/v0.15/main/binary-arm64/Packages").read_text()
     )
 
 
@@ -206,19 +206,19 @@ def _exercise_single_pass_multarch_append(root: Path) -> None:
             str(bootstrap),
             str(repository),
             str(keyring),
-            str(_build_deb(root, "0.13.0", "amd64")),
-            str(_build_deb(root, "0.13.0", "arm64")),
+            str(_build_deb(root, "0.14.3", "amd64")),
+            str(_build_deb(root, "0.14.3", "arm64")),
         ],
         env=base_env
         | {
             "RVS_APT_GPG_KEY_ID": fingerprint,
             "RVS_APT_GPG_FINGERPRINT": fingerprint,
-            "RVS_APT_CHANNEL": "v0.13",
+            "RVS_APT_CHANNEL": "v0.14",
         },
     )
     _run(["python3", str(VERIFY), str(repository), str(keyring)])
     for architecture in ("amd64", "arm64"):
-        packages = repository / f"dists/v0.13/main/binary-{architecture}/Packages"
+        packages = repository / f"dists/v0.14/main/binary-{architecture}/Packages"
         assert f"Architecture: {architecture}" in packages.read_text()
     assert counter.read_text() == "x"
 

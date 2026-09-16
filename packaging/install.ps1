@@ -70,10 +70,8 @@ try {
     $bin = Join-Path $InstallRoot "bin"
     $receiptScope = $Scope.ToLowerInvariant()
     if ((Test-Path $bin) -and -not $Repair) {
-        $legacyChannel = Join-Path $InstallRoot "channel"
         $receipt = Join-Path $bin "rvs-install.json"
-        if (-not (Test-Path -LiteralPath $legacyChannel) -and
-            -not (Test-Path -LiteralPath $receipt)) {
+        if (-not (Test-Path -LiteralPath $receipt)) {
             throw "$bin is not recognized as an installer-owned rvs directory; rerun with -Repair only after inspecting it"
         }
         $installed = & (Join-Path $bin "rvs.exe") --version 2>$null

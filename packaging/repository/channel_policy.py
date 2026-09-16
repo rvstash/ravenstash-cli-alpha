@@ -16,7 +16,6 @@ CHANNEL_PATTERN = re.compile(r"^v([0-9]+)\.([0-9]+)$")
 VERSION_PATTERN = re.compile(
     r"^([0-9]+)\.([0-9]+)\.([0-9]+)(?:rc[1-9][0-9]*|[~+.-][A-Za-z0-9.-]+)?$"
 )
-LEGACY_ALIASES = {"stable": "v0.3"}
 
 
 def channel_for_version(version: str) -> str:
@@ -35,8 +34,6 @@ def normalize_channel(value: str) -> str:
 
 
 def compatibility_channel(distribution: str) -> str:
-    if distribution in LEGACY_ALIASES:
-        return LEGACY_ALIASES[distribution]
     return normalize_channel(distribution)
 
 
@@ -104,7 +101,7 @@ def manifest(repository: Path, recommended: str) -> dict[str, Any]:
     recommended = normalize_channel(recommended)
     channels: dict[str, dict[str, str]] = {}
     for distribution in sorted((repository / "dists").iterdir()):
-        if not distribution.is_dir() or distribution.name in LEGACY_ALIASES:
+        if not distribution.is_dir():
             continue
         channel = normalize_channel(distribution.name)
         packages = distribution / "main/binary-amd64/Packages"

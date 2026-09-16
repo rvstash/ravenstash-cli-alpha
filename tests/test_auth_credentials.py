@@ -23,11 +23,9 @@ def _isolate_config(monkeypatch, tmp_path: Path, content: str) -> None:
     monkeypatch.setattr(cfg_mod, "CONFIG_FILE", config_file)
 
 
-def test_credential_type_display_keeps_legacy_temporary_user_facing_as_expiring() -> None:
+def test_expiring_credential_type_is_refreshable() -> None:
     assert auth_mod.is_refreshable_credential_type("expiring") is True
-    assert auth_mod.is_refreshable_credential_type("temporary") is True
     assert auth_mod.is_refreshable_credential_type("token") is False
-    assert auth_mod.display_credential_type("temporary") == "expiring"
     assert auth_mod.display_credential_type("expiring") == "expiring"
 
 

@@ -95,18 +95,10 @@ if [[ -d "$output_repository/dists" ]]; then
   )
 fi
 distribution_set["$RVS_APT_CHANNEL"]=1
-# The original public alpha used "stable". Keep it forever as a v0.3 alias so
-# those installations receive only compatible 0.3.x patches.
-if [[ "$RVS_APT_CHANNEL" == "v0.3" || -n "${distribution_set[stable]:-}" ]]; then
-  distribution_set[stable]=1
-fi
 mapfile -t distributions < <(printf '%s\n' "${!distribution_set[@]}" | sort)
 
 declare -A distributions_to_update=()
 distributions_to_update["$RVS_APT_CHANNEL"]=1
-if [[ "$RVS_APT_CHANNEL" == "v0.3" ]]; then
-  distributions_to_update[stable]=1
-fi
 if [[ "$refresh_all" == "1" || "${previous_architectures[*]}" != "${architectures[*]}" ]]; then
   for distribution in "${distributions[@]}"; do
     distributions_to_update["$distribution"]=1

@@ -131,7 +131,7 @@ def read_receipt(path: Path) -> Installation:
 def detect_portable_installation(
     *, executable: Path | None = None, installed_version: str
 ) -> Installation | None:
-    """Return a portable receipt, including a bounded legacy-layout migration."""
+    """Return the validated receipt for a portable installation."""
 
     if executable is None:
         if not getattr(sys, "frozen", False):
@@ -139,61 +139,11 @@ def detect_portable_installation(
         executable = Path(sys.executable)
     executable = executable.resolve()
     receipt = executable.parent / RECEIPT_NAME
-    if receipt.is_file():
-        installation = read_receipt(receipt)
-        if installation.version != installed_version or installation.target != platform_target():
-            raise ValueError(
-                "the rvs installation receipt does not describe the running executable"
-            )
-        if not executable.is_relative_to(installation.root):
-            raise ValueError("the running rvs executable is outside its recorded install root")
-        return installation
-
-    target = platform_target()
-    home = Path.home().resolve()
-    if os.name == "nt" and executable.parent.name.lower() == "bin":
-        root = executable.parent.parent
-        channel_path = root / "channel"
-        if not channel_path.is_file():
-            return None
-        channel = channel_path.read_text(encoding="ascii").strip()
-        scope = "user" if root.is_relative_to(home) else "system"
-        return validate_installation(
-            Installation(
-                1,
-                "portable",
-                scope,
-                installed_version,
-                channel,
-                target,
-                str(root),
-                str(executable.parent),
-            )
-        )
-
-    version_directory = executable.parent
-    root = version_directory.parent
-    expected_user_root = home / ".local" / "share" / "rvs"
-    if root == expected_user_root and version_directory.name == installed_version:
-        return Installation(
-            1,
-            "portable",
-            "user",
-            installed_version,
-            compatibility_channel(installed_version),
-            target,
-            str(root),
-            str(home / ".local" / "bin"),
-        )
-    if root == Path("/opt/rvs") and version_directory.name == installed_version:
-        return Installation(
-            1,
-            "portable",
-            "system",
-            installed_version,
-            compatibility_channel(installed_version),
-            target,
-            str(root),
-            "/usr/local/bin",
-        )
-    return None
+    if not receipt.is_file():
+        return None
+    installation = read_receipt(receipt)
+    if installation.version != installed_version or installation.target != platform_target():
+        raise ValueError("the rvs installation receipt does not describe the running executable")
+    if not executable.is_relative_to(installation.root):
+        raise ValueError("the running rvs executable is outside its recorded install root")
+    return installation

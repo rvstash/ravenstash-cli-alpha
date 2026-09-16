@@ -19,17 +19,17 @@ SPEC.loader.exec_module(prepare_test_build)
 
 def test_derive_version_is_traceable_and_pep_440_ordered() -> None:
     version = prepare_test_build.derive_version(
-        "0.14.0", "0123456789abcdef0123456789abcdef01234567", "12345"
+        "0.14.4", "0123456789abcdef0123456789abcdef01234567", "12345"
     )
-    assert version == "0.14.0.dev12345+g01234567"
+    assert version == "0.14.4.dev12345+g01234567"
 
 
 @pytest.mark.parametrize(
     ("base_version", "source_sha", "run_id"),
     [
         ("0.14", "0" * 40, "1"),
-        ("0.14.0", "ABCDEF" * 6 + "ABCD", "1"),
-        ("0.14.0", "0" * 40, "0"),
+        ("0.14.4", "ABCDEF" * 6 + "ABCD", "1"),
+        ("0.14.4", "0" * 40, "0"),
     ],
 )
 def test_derive_version_rejects_ambiguous_identity(
@@ -48,18 +48,18 @@ def test_apply_version_updates_every_build_identity(tmp_path: Path) -> None:
     windows_installer = packaging / "install.ps1"
     project.write_text(
         '[build-system]\nrequires = ["setuptools>=75"]\n\n'
-        '[project]\nname = "ravenstash-cli"\nversion = "0.13.4"\n',
+        '[project]\nname = "ravenstash-cli"\nversion = "0.14.3"\n',
         encoding="utf-8",
     )
-    installer.write_text('readonly release_version="0.13.4"\n', encoding="utf-8")
-    windows_installer.write_text('$ReleaseVersion = "0.13.4"\n', encoding="utf-8")
+    installer.write_text('readonly release_version="0.14.3"\n', encoding="utf-8")
+    windows_installer.write_text('$ReleaseVersion = "0.14.3"\n', encoding="utf-8")
     lock.write_text(
         'version = 1\n\n[[package]]\nname = "other"\nversion = "9.0"\n\n'
-        '[[package]]\nname = "ravenstash-cli"\nversion = "0.13.4"\nsource = { editable = "." }\n',
+        '[[package]]\nname = "ravenstash-cli"\nversion = "0.14.3"\nsource = { editable = "." }\n',
         encoding="utf-8",
     )
 
-    version = "0.14.0.dev12345+g01234567"
+    version = "0.14.4.dev12345+g01234567"
     prepare_test_build.apply_version(tmp_path, version)
 
     with project.open("rb") as source:
@@ -77,13 +77,13 @@ def test_debian_test_version_sorts_before_candidate_and_stable() -> None:
         [
             "bash",
             "-c",
-            f'source "{common}"; rvs_debian_version "0.14.0.dev12345+g01234567"',
+            f'source "{common}"; rvs_debian_version "0.14.4.dev12345+g01234567"',
         ],
         check=True,
         capture_output=True,
         text=True,
     )
-    assert result.stdout.strip() == "0.14.0~dev12345+g01234567"
+    assert result.stdout.strip() == "0.14.4~dev12345+g01234567"
     assert (
         subprocess.run(
             [
@@ -91,7 +91,7 @@ def test_debian_test_version_sorts_before_candidate_and_stable() -> None:
                 "--compare-versions",
                 result.stdout.strip(),
                 "lt",
-                "0.14.0~rc1",
+                "0.14.4~rc1",
             ],
             check=False,
         ).returncode
@@ -99,7 +99,7 @@ def test_debian_test_version_sorts_before_candidate_and_stable() -> None:
     )
     assert (
         subprocess.run(
-            ["dpkg", "--compare-versions", "0.14.0~rc1", "lt", "0.14.0"],
+            ["dpkg", "--compare-versions", "0.14.4~rc1", "lt", "0.14.4"],
             check=False,
         ).returncode
         == 0

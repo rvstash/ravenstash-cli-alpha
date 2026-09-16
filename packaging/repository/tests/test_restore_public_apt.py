@@ -33,7 +33,7 @@ class RestorePublicAptTests(unittest.TestCase):
         with self.assertRaises(SystemExit):
             package_paths(packages)
 
-    def test_package_paths_accepts_an_empty_legacy_architecture_index(self) -> None:
+    def test_package_paths_accepts_an_empty_architecture_index(self) -> None:
         self.assertEqual(package_paths(""), set())
 
     @patch("restore_public_apt.time.sleep")
@@ -53,13 +53,13 @@ class RestorePublicAptTests(unittest.TestCase):
         verify_signature,
         verify,
     ) -> None:
-        amd64_package_path = "pool/main/r/rvs/rvs_0.3.2_amd64_test.deb"
-        arm64_package_path = "pool/main/r/rvs/rvs_0.3.2_arm64_test.deb"
+        amd64_package_path = "pool/main/r/rvs/rvs_0.14.3_amd64_test.deb"
+        arm64_package_path = "pool/main/r/rvs/rvs_0.14.3_arm64_test.deb"
         amd64_packages = (
-            f"Package: rvs\nVersion: 0.3.2\nArchitecture: amd64\nFilename: {amd64_package_path}\n"
+            f"Package: rvs\nVersion: 0.14.3\nArchitecture: amd64\nFilename: {amd64_package_path}\n"
         ).encode()
         arm64_packages = (
-            f"Package: rvs\nVersion: 0.3.2\nArchitecture: arm64\nFilename: {arm64_package_path}\n"
+            f"Package: rvs\nVersion: 0.14.3\nArchitecture: arm64\nFilename: {arm64_package_path}\n"
         ).encode()
         amd64_digest = hashlib.sha256(amd64_packages).hexdigest()
         arm64_digest = hashlib.sha256(arm64_packages).hexdigest()
@@ -70,8 +70,8 @@ class RestorePublicAptTests(unittest.TestCase):
         ).encode()
         manifest = json.dumps(
             {
-                "channels": {"v0.3": {}},
-                "recommended": "v0.3",
+                "channels": {"v0.14": {}},
+                "recommended": "v0.14",
                 "schema": 1,
             }
         ).encode()
@@ -81,7 +81,7 @@ class RestorePublicAptTests(unittest.TestCase):
             amd64_package_path: b"amd64 deb",
             arm64_package_path: b"arm64 deb",
         }
-        for distribution in ("stable", "v0.3"):
+        for distribution in ("v0.14",):
             prefix = f"dists/{distribution}"
             files[f"{prefix}/InRelease"] = b"inrelease"
             files[f"{prefix}/Release"] = release

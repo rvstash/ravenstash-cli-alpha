@@ -13,12 +13,7 @@ import subprocess
 import tempfile
 from pathlib import Path, PurePosixPath
 
-from channel_policy import (
-    LEGACY_ALIASES,
-    compatibility_channel,
-    manifest,
-    version_matches_channel,
-)
+from channel_policy import compatibility_channel, manifest, version_matches_channel
 
 
 def fail(message: str) -> None:
@@ -113,9 +108,7 @@ def verify_signature(keyring: Path, signature: Path, content: Path | None = None
     return content.read_bytes() if content is not None else b""
 
 
-def verify_distribution(
-    repo: Path, keyring: Path, distribution: str, *, allow_legacy: bool
-) -> set[PurePosixPath]:
+def verify_distribution(repo: Path, keyring: Path, distribution: str) -> set[PurePosixPath]:
     channel = compatibility_channel(distribution)
     dist = repo / "dists" / distribution
     release = verify_signature(keyring, dist / "InRelease").decode("utf-8")
@@ -128,12 +121,8 @@ def verify_distribution(
         fail(f"Valid-Until is expired or exceeds policy for {distribution}")
     if field(release, "Suite") != distribution or field(release, "Codename") != distribution:
         fail(f"Release identity mismatch for {distribution}")
-    declared_channel = field(
-        release,
-        "Ravenstash-Compatibility-Channel",
-        required=not allow_legacy,
-    )
-    if declared_channel is not None and declared_channel != channel:
+    declared_channel = field(release, "Ravenstash-Compatibility-Channel")
+    if declared_channel != channel:
         fail(f"compatibility channel mismatch for {distribution}")
 
     entries = release_entries(release)
@@ -207,8 +196,7 @@ def verify_manifest(repo: Path, keyring: Path, distributions: set[str]) -> None:
         fail(f"invalid channel manifest: {exc}")
     if payload != expected:
         fail("channel manifest does not match signed APT distributions")
-    published = distributions - LEGACY_ALIASES.keys()
-    if set(payload["channels"]) != published:
+    if set(payload["channels"]) != distributions:
         fail("channel manifest and distribution inventory differ")
 
 
@@ -223,24 +211,15 @@ def verify(repository: Path, keyring: Path) -> None:
     }
     if not distributions:
         fail("repository has no signed distributions")
-    legacy_only = distributions == {"stable"} and not (repo / "channels.json").exists()
     listed: set[PurePosixPath] = set()
     for distribution in sorted(distributions):
-        listed.update(
-            verify_distribution(
-                repo,
-                keyring,
-                distribution,
-                allow_legacy=legacy_only and distribution == "stable",
-            )
-        )
+        listed.update(verify_distribution(repo, keyring, distribution))
     present = {
         PurePosixPath(path.relative_to(repo).as_posix()) for path in (repo / "pool").rglob("*.deb")
     }
     if present != listed:
         fail("the pool contains missing or unlisted Debian packages")
-    if not legacy_only:
-        verify_manifest(repo, keyring, distributions)
+    verify_manifest(repo, keyring, distributions)
 
 
 def main() -> None:

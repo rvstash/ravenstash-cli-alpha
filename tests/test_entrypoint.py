@@ -53,7 +53,7 @@ def test_invalid_config_is_reported_without_a_traceback(tmp_path: Path) -> None:
     stderr = " ".join(result.stderr.split())
     assert result.returncode == 1
     assert result.stdout == ""
-    assert "config version 999 requires a newer rvs release" in stderr
+    assert "config version 999 is not supported (this release requires version 6)" in stderr
     assert "rvs profile delete --all" in stderr
     assert "Traceback" not in stderr
 

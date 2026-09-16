@@ -468,7 +468,7 @@ def test_device_login_handles_slow_down_and_stores_expiring_jwt(
         lambda profile, **kwargs: metadata_writes.append({"profile": profile, **kwargs}),
     )
     monkeypatch.setattr(login_mod.auth_mod, "has_active_expiring_session", lambda profile: False)
-    monkeypatch.setattr(login_mod, "_rvs_version", lambda: "0.1.0")
+    monkeypatch.setattr(login_mod, "_rvs_version", lambda: "0.14.3")
     monkeypatch.setattr(login_mod, "_device_platform", lambda: "linux")
     monkeypatch.setattr(login_mod.time, "sleep", lambda seconds: sleeps.append(seconds))
 
@@ -501,10 +501,10 @@ def test_device_login_handles_slow_down_and_stores_expiring_jwt(
     assert first_payload["platform"] == "linux"
     assert first_payload["requested_duration_seconds"] == 12 * 60 * 60
     assert [headers for _url, _payload, headers in _FakeClient.requests] == [
-        {"User-Agent": "rvs/0.1.0"},
-        {"User-Agent": "rvs/0.1.0"},
-        {"User-Agent": "rvs/0.1.0"},
-        {"User-Agent": "rvs/0.1.0"},
+        {"User-Agent": "rvs/0.14.3"},
+        {"User-Agent": "rvs/0.14.3"},
+        {"User-Agent": "rvs/0.14.3"},
+        {"User-Agent": "rvs/0.14.3"},
     ]
 
 
@@ -567,7 +567,7 @@ def test_device_login_replaces_active_profile_and_revokes_previous_refresh(
         lambda api_url, token: revoked.append((api_url, token)) or True,
     )
     monkeypatch.setattr(login_mod.output, "info", lambda message: info_messages.append(message))
-    monkeypatch.setattr(login_mod, "_rvs_version", lambda: "0.1.0")
+    monkeypatch.setattr(login_mod, "_rvs_version", lambda: "0.14.3")
     monkeypatch.setattr(login_mod, "_device_platform", lambda: "linux")
 
     login_mod.perform_device_login(
@@ -663,7 +663,7 @@ def test_device_login_does_not_revoke_expired_previous_refresh(
         lambda api_url, token: revoked.append((api_url, token)) or True,
     )
     monkeypatch.setattr(login_mod.output, "info", lambda message: info_messages.append(message))
-    monkeypatch.setattr(login_mod, "_rvs_version", lambda: "0.1.0")
+    monkeypatch.setattr(login_mod, "_rvs_version", lambda: "0.14.3")
     monkeypatch.setattr(login_mod, "_device_platform", lambda: "linux")
 
     login_mod.perform_device_login(
@@ -710,14 +710,12 @@ def test_store_expiring_credential_rolls_back_when_metadata_cannot_be_saved(
     assert deleted == [("default", "pass")]
 
 
-@pytest.mark.parametrize("credential_type", ["expiring", "temporary"])
 def test_refresh_expiring_credential_rotates_tokens(
     monkeypatch,
     tmp_path: Path,
-    credential_type: str,
 ) -> None:
     config_dir = tmp_path / ".rvs"
-    _write_profiles_config(config_dir, credential_type=credential_type)
+    _write_profiles_config(config_dir, credential_type="expiring")
     monkeypatch.setattr(cfg_mod, "CONFIG_DIR", config_dir)
     monkeypatch.setattr(cfg_mod, "CONFIG_FILE", config_dir / "config.toml")
     monkeypatch.setenv("RVS_REPOSITORY_DOMAIN", "packages.enterprise.example")
@@ -745,7 +743,7 @@ def test_refresh_expiring_credential_rotates_tokens(
     ]
 
     monkeypatch.setattr(auth_mod.httpx, "Client", _FakeClient)
-    monkeypatch.setattr(auth_mod, "_rvs_user_agent", lambda: "rvs/0.1.0")
+    monkeypatch.setattr(auth_mod, "_rvs_user_agent", lambda: "rvs/0.14.3")
     monkeypatch.setattr(auth_mod, "_device_platform", lambda: "linux")
     monkeypatch.setattr(auth_mod, "_kr_set", lambda profile, token: stored.append((profile, token)))
 
@@ -759,7 +757,7 @@ def test_refresh_expiring_credential_rotates_tokens(
         (
             "https://api.ravenstash.com/v0/auth/device/refresh",
             {"refresh_token": "old-refresh", "platform": "linux", "operation_id": ANY},
-            {"User-Agent": "rvs/0.1.0"},
+            {"User-Agent": "rvs/0.14.3"},
         )
     ]
     profile = cfg_mod.load().profiles["default"]
@@ -782,7 +780,7 @@ def test_revoke_device_refresh_token_posts_to_devapi(monkeypatch) -> None:
     _FakeClient.responses = [_FakeResponse(204, {})]
 
     monkeypatch.setattr(auth_mod.httpx, "Client", _FakeClient)
-    monkeypatch.setattr(auth_mod, "_rvs_user_agent", lambda: "rvs/0.1.0")
+    monkeypatch.setattr(auth_mod, "_rvs_user_agent", lambda: "rvs/0.14.3")
 
     assert auth_mod.revoke_device_refresh_token(
         "https://api.ravenstash.com",
@@ -792,7 +790,7 @@ def test_revoke_device_refresh_token_posts_to_devapi(monkeypatch) -> None:
         (
             "https://api.ravenstash.com/v0/auth/device/revoke",
             {"refresh_token": "old-refresh"},
-            {"User-Agent": "rvs/0.1.0"},
+            {"User-Agent": "rvs/0.14.3"},
         )
     ]
 
@@ -872,7 +870,7 @@ def test_refresh_expiring_credential_failure_clears_profile(monkeypatch, tmp_pat
     ]
 
     monkeypatch.setattr(auth_mod.httpx, "Client", _FakeClient)
-    monkeypatch.setattr(auth_mod, "_rvs_user_agent", lambda: "rvs/0.1.0")
+    monkeypatch.setattr(auth_mod, "_rvs_user_agent", lambda: "rvs/0.14.3")
     monkeypatch.setattr(auth_mod, "_device_platform", lambda: "linux")
     monkeypatch.setattr(auth_mod, "delete_token", lambda profile: deleted.append(profile))
 
@@ -882,7 +880,7 @@ def test_refresh_expiring_credential_failure_clears_profile(monkeypatch, tmp_pat
         (
             "https://api.ravenstash.com/v0/auth/device/refresh",
             {"refresh_token": "old-refresh", "platform": "linux", "operation_id": ANY},
-            {"User-Agent": "rvs/0.1.0"},
+            {"User-Agent": "rvs/0.14.3"},
         )
     ]
 

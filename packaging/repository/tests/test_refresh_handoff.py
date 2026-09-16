@@ -13,15 +13,15 @@ from refresh_handoff import apply_handoff, create_handoff
 
 
 def repository(root: Path, marker: str) -> None:
-    (root / "dists/v0.3/main/binary-amd64").mkdir(parents=True, exist_ok=True)
+    (root / "dists/v0.14/main/binary-amd64").mkdir(parents=True, exist_ok=True)
     (root / "pool/main/r/rvs").mkdir(parents=True, exist_ok=True)
     (root / "channels.json").write_text(f"channels {marker}")
     (root / "channels.json.gpg").write_text(f"manifest signature {marker}")
     (root / "ravenstash-rvs.gpg").write_text("public key")
     (root / "pool/main/r/rvs/rvs.deb").write_text("package")
-    (root / "dists/v0.3/main/binary-amd64/Packages").write_text("index")
+    (root / "dists/v0.14/main/binary-amd64/Packages").write_text("index")
     for name in ("InRelease", "Release", "Release.gpg"):
-        (root / "dists/v0.3" / name).write_text(f"{name} {marker}")
+        (root / "dists/v0.14" / name).write_text(f"{name} {marker}")
 
 
 class RefreshHandoffTests(unittest.TestCase):
@@ -35,7 +35,7 @@ class RefreshHandoffTests(unittest.TestCase):
             shutil.copytree(prior, restored)
             shutil.copytree(prior, signed)
             repository(signed, "new")
-            (signed / "apt-ftparchive-release-v0.3.conf").write_text("temporary")
+            (signed / "apt-ftparchive-release-v0.14.conf").write_text("temporary")
 
             bundle = root / "handoff.tar.gz"
             create_handoff(prior, signed, bundle)
@@ -43,7 +43,7 @@ class RefreshHandoffTests(unittest.TestCase):
 
             self.assertEqual((restored / "channels.json").read_text(), "channels new")
             self.assertEqual(
-                (restored / "dists/v0.3/InRelease").read_text(),
+                (restored / "dists/v0.14/InRelease").read_text(),
                 "InRelease new",
             )
             self.assertEqual((restored / "pool/main/r/rvs/rvs.deb").read_text(), "package")

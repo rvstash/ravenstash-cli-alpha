@@ -32,7 +32,6 @@ REPOSITORY = "rvstash/ravenstash-cli-alpha"
 RELEASE_API = f"https://api.github.com/repos/{REPOSITORY}"
 RELEASE_DOWNLOAD_ROOT = f"https://github.com/{REPOSITORY}/releases/download"
 CHANNELS_URL = "https://releases.ravenstash.com/rvs/channels.json"
-LEGACY_CHANNELS_URL = "https://releases.ravenstash.com/rvs/apt/channels.json"
 _VERSION = re.compile(
     r"^(?P<major>[0-9]+)\.(?P<minor>[0-9]+)\.(?P<patch>[0-9]+)(?:rc(?P<rc>[1-9][0-9]*))?$"
 )
@@ -71,16 +70,10 @@ def _headers() -> dict[str, str]:
 def fetch_channel_manifest() -> dict[str, Any]:
     try:
         with httpx.Client(timeout=15.0, follow_redirects=False) as client:
-            for url in (CHANNELS_URL, LEGACY_CHANNELS_URL):
-                manifest_response = client.get(url)
-                signature_response = client.get(f"{url}.gpg")
-                if manifest_response.status_code == 404 and signature_response.status_code == 404:
-                    continue
-                manifest_response.raise_for_status()
-                signature_response.raise_for_status()
-                break
-            else:
-                raise UpdateError("the signed release-channel manifest is unavailable")
+            manifest_response = client.get(CHANNELS_URL)
+            signature_response = client.get(f"{CHANNELS_URL}.gpg")
+            manifest_response.raise_for_status()
+            signature_response.raise_for_status()
         verify_detached(manifest_response.content, signature_response.content)
         payload = json.loads(manifest_response.content)
         channels = payload.get("channels")

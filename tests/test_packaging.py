@@ -150,7 +150,7 @@ def test_apt_publisher_batches_architectures_without_weakening_activation_order(
 @pytest.mark.skipif(os.name == "nt", reason="APT publication tooling is POSIX-only")
 def test_apt_publisher_uses_constant_number_of_storage_calls(tmp_path: Path) -> None:
     repository = tmp_path / "repository"
-    for channel in ("stable", "v0.3", "v0.13"):
+    for channel in ("v0.14", "v0.15", "v1.0"):
         (repository / "dists" / channel).mkdir(parents=True)
     (repository / "pool").mkdir()
     calls = tmp_path / "aws-calls"
@@ -351,7 +351,7 @@ def test_release_slot_check_fails_closed(
         "#!/bin/sh\n"
         'case "$GH_MODE:$*" in\n'
         "  api-error:*) exit 1 ;;\n"
-        "  tag:*matching-refs*) printf '%s\\n' refs/tags/v0.13.2 ;;\n"
+        "  tag:*matching-refs*) printf '%s\\n' refs/tags/v0.14.4 ;;\n"
         "  release:*releases*) printf '%s\\n' 1234 ;;\n"
         "esac\n",
         encoding="utf-8",
@@ -362,7 +362,7 @@ def test_release_slot_check_fails_closed(
         [
             str(ROOT / "packaging/scripts/assert-github-release-slot-empty.sh"),
             "rvstash/ravenstash-cli-alpha",
-            "v0.13.2",
+            "v0.14.4",
         ],
         check=False,
         env=os.environ
@@ -387,7 +387,7 @@ def test_release_slot_check_accepts_candidate_tag(tmp_path: Path) -> None:
         [
             str(ROOT / "packaging/scripts/assert-github-release-slot-empty.sh"),
             "rvstash/ravenstash-cli-alpha",
-            "v0.13.5rc1",
+            "v0.14.4rc1",
         ],
         check=False,
         env=os.environ | {"PATH": f"{binary}{os.pathsep}{os.environ['PATH']}"},
@@ -448,17 +448,17 @@ def test_debian_package_installs_node_signature_verifier() -> None:
 def test_release_candidate_uses_debian_prerelease_ordering() -> None:
     helper = ROOT / "packaging/scripts/common.sh"
     converted = subprocess.run(
-        ["bash", "-c", f'source "{helper}"; rvs_debian_version 0.14.0rc2'],
+        ["bash", "-c", f'source "{helper}"; rvs_debian_version 0.14.4rc2'],
         check=True,
         capture_output=True,
         text=True,
     )
     ordering = subprocess.run(
-        ["dpkg", "--compare-versions", converted.stdout.strip(), "lt", "0.14.0"],
+        ["dpkg", "--compare-versions", converted.stdout.strip(), "lt", "0.14.4"],
         check=False,
     )
 
-    assert converted.stdout == "0.14.0~rc2\n"
+    assert converted.stdout == "0.14.4~rc2\n"
     assert ordering.returncode == 0
 
 
@@ -522,25 +522,21 @@ def test_portable_installers_record_atomic_update_metadata() -> None:
     assert 'Join-Path $source "rvs-install.json"' in windows
 
 
-def test_apt_installer_redirects_managed_portable_links() -> None:
+def test_apt_installer_has_no_pre_receipt_migration_path() -> None:
     source = INSTALLER.read_text(encoding="utf-8")
 
-    assert "reconcile_legacy_portable_links()" in source
-    assert 'install_root="${HOME}/.local/share/rvs"' in source
-    assert '"${install_root}/"*/"${command_name}")' in source
-    assert 'ln -sfn "/usr/bin/${command_name}" "$link_path"' in source
-    assert "reconcile_legacy_portable_links\n" in source
-    assert "was not installed by Ravenstash and may shadow" in source
+    assert "legacy_source" not in source
+    assert "reconcile_legacy_portable_links" not in source
 
 
 def test_package_manager_manifests_cover_both_desktop_architectures(tmp_path: Path) -> None:
     release = tmp_path / "release"
     release.mkdir()
     for name in (
-        "rvs-v0.12.0-macos-amd64.tar.gz",
-        "rvs-v0.12.0-macos-arm64.tar.gz",
-        "rvs-v0.12.0-windows-amd64.zip",
-        "rvs-v0.12.0-windows-arm64.zip",
+        "rvs-v0.14.3-macos-amd64.tar.gz",
+        "rvs-v0.14.3-macos-arm64.tar.gz",
+        "rvs-v0.14.3-windows-amd64.zip",
+        "rvs-v0.14.3-windows-arm64.zip",
     ):
         (release / name).write_bytes(name.encode())
 
@@ -549,22 +545,22 @@ def test_package_manager_manifests_cover_both_desktop_architectures(tmp_path: Pa
             sys.executable,
             str(ROOT / "packaging/scripts/generate_package_manifests.py"),
             str(release),
-            "0.12.0",
+            "0.14.3",
             "rvstash/ravenstash-cli-alpha",
         ],
         check=True,
     )
 
-    archive = release / "rvs-v0.12.0-package-manifests.tar.gz"
+    archive = release / "rvs-v0.14.3-package-manifests.tar.gz"
     with tarfile.open(archive) as package:
         names = package.getnames()
         installer = package.extractfile(
-            "package-manifests/winget/Ravenstash.rvs.v0.12.installer.yaml"
+            "package-manifests/winget/Ravenstash.rvs.v0.14.installer.yaml"
         )
         assert installer is not None
         installer_text = installer.read().decode()
         locale = package.extractfile(
-            "package-manifests/winget/Ravenstash.rvs.v0.12.locale.en-US.yaml"
+            "package-manifests/winget/Ravenstash.rvs.v0.14.locale.en-US.yaml"
         )
         assert locale is not None
         locale_text = locale.read().decode()
@@ -573,14 +569,14 @@ def test_package_manager_manifests_cover_both_desktop_architectures(tmp_path: Pa
                 manifest = package.extractfile(name)
                 assert manifest is not None
                 assert isinstance(yaml.safe_load(manifest), dict)
-        cask = package.extractfile("package-manifests/homebrew/rvs@0.12.rb")
+        cask = package.extractfile("package-manifests/homebrew/rvs@0.14.rb")
         assert cask is not None
         cask_text = cask.read().decode()
-    assert "package-manifests/homebrew/rvs@0.12.rb" in names
+    assert "package-manifests/homebrew/rvs@0.14.rb" in names
     assert "Architecture: x64" in installer_text
     assert "Architecture: arm64" in installer_text
     assert "License: Apache-2.0" in locale_text
-    assert "ravenstash-cli-alpha/releases/download/v0.12.0" in installer_text
+    assert "ravenstash-cli-alpha/releases/download/v0.14.3" in installer_text
     assert 'arch arm: "arm64", intel: "amd64"' in cask_text
 
 

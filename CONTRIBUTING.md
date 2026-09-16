@@ -9,7 +9,7 @@ license as the project, without additional terms or conditions.
 ## Branches and pull requests
 
 Normal development targets `main`. A maintained compatibility line has a
-`release/vMAJOR.MINOR` branch, such as `release/v0.13` or `release/v1.1`.
+`release/vMAJOR.MINOR` branch, such as `release/v0.14` or `release/v1.1`.
 Maintenance branches are created only while that line is supported; they are
 not created for every APT package or patch release.
 

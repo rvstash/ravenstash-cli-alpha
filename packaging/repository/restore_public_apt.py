@@ -13,7 +13,7 @@ import urllib.request
 from collections.abc import Callable
 from pathlib import Path, PurePosixPath
 
-from channel_policy import LEGACY_ALIASES, normalize_channel, stanza_fields, stanzas
+from channel_policy import normalize_channel, stanza_fields, stanzas
 from verify_apt import digest, fail, relative, release_entries, verify, verify_signature
 
 
@@ -71,7 +71,7 @@ def authenticated_distributions(
             raise ValueError("recommended channel is not published")
     except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
         fail(f"invalid authenticated channel manifest: {exc}")
-    return channels | {alias for alias, channel in LEGACY_ALIASES.items() if channel in channels}
+    return channels
 
 
 def package_paths(packages: str) -> set[PurePosixPath]:

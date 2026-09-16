@@ -42,11 +42,10 @@ _APT_KEYRING = Path("/etc/apt/keyrings/ravenstash-rvs.gpg")
 _REPOSITORY_URL = "https://releases.ravenstash.com/rvs/apt"
 _CHANNELS_URL = f"{_REPOSITORY_URL}/channels.json"
 _CHANNELS_SIGNATURE_URL = f"{_CHANNELS_URL}.gpg"
-_LEGACY_CHANNEL = "v0.3"
 _CANDIDATE_PATTERN = re.compile(r"^(?P<base>[0-9]+\.[0-9]+\.[0-9]+)rc(?P<number>[1-9][0-9]*)$")
 _SOURCE_PATTERN = re.compile(
     r"^deb \[arch=(?:amd64|arm64) signed-by=/etc/apt/keyrings/ravenstash-rvs\.gpg\] "
-    r"https://releases\.ravenstash\.com/rvs/apt (?P<channel>stable|v[0-9.]+) main$"
+    r"https://releases\.ravenstash\.com/rvs/apt (?P<channel>v[0-9.]+) main$"
 )
 
 
@@ -134,8 +133,7 @@ def _current_channel() -> str | None:
     match = _SOURCE_PATTERN.fullmatch(source)
     if match is None:
         return None
-    channel = match.group("channel")
-    return _LEGACY_CHANNEL if channel == "stable" else normalize_channel(channel)
+    return normalize_channel(match.group("channel"))
 
 
 def _source_for_channel(channel: str) -> str:
@@ -241,7 +239,7 @@ def _restore_source(source: str) -> None:
 def _candidate_debian_version(candidate: str) -> str:
     match = _CANDIDATE_PATTERN.fullmatch(candidate)
     if match is None:
-        output.fatal("Candidate versions must look like 0.14.0rc1.")
+        output.fatal("Candidate versions must look like 0.14.4rc1.")
     return f"{match.group('base')}~rc{match.group('number')}"
 
 
@@ -328,7 +326,7 @@ def _portable_update(*, to: str | None, candidate: str | None, apply: bool, yes:
     manifest: dict[str, Any] | None = None
     if candidate is not None:
         if _CANDIDATE_PATTERN.fullmatch(candidate) is None:
-            output.fatal("Candidate versions must look like 0.14.0rc1.")
+            output.fatal("Candidate versions must look like 0.14.4rc1.")
         target_version = candidate
         target_channel = compatibility_channel(candidate)
         release_label = "release candidate"
@@ -591,7 +589,7 @@ def update(
         output.fatal("--candidate and --to cannot be used together.")
     if candidate is not None:
         if _CANDIDATE_PATTERN.fullmatch(candidate) is None:
-            output.fatal("Candidate versions must look like 0.14.0rc1.")
+            output.fatal("Candidate versions must look like 0.14.4rc1.")
         installed, _apt_candidate = _apt_versions()
         if installed is not None:
             _update_candidate(candidate, apply=apply, yes=yes, installed_version=installed)

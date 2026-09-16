@@ -59,13 +59,13 @@ is unavailable on Windows; Windows credentials use Credential Manager instead.
 ## APT repository
 
 After building the `.deb`, generate static APT repository metadata. The channel
-is derived from the package version (`0.13.x` -> `v0.13`, `1.1.x` -> `v1.1`) and an
+is derived from the package version (`0.14.x` -> `v0.14`, `1.1.x` -> `v1.1`) and an
 explicit override must match that policy:
 
 ```bash
 RVS_APT_GPG_KEY_ID=<key-id> \
 RVS_APT_GPG_FINGERPRINT=<full-fingerprint> \
-RVS_APT_CHANNEL=v0.3 \
+RVS_APT_CHANNEL=v0.14 \
   packaging/scripts/update-apt-repo.sh
 ```
 
@@ -94,9 +94,8 @@ tree again under the storage environment. It does not consume GitHub Actions
 artifact storage.
 
 APT suites are compatibility boundaries, not rolling maturity labels. Every
-minor series has its own suite (`v0.13`, `v0.14`, `v1.0`, `v1.1`). Routine APT
-upgrades never cross that boundary. The legacy `stable` suite remains a permanent
-alias for `v0.3` so old installations cannot roll into an incompatible release.
+minor series has its own suite (`v0.14`, `v0.15`, `v1.0`, `v1.1`). Routine APT
+upgrades never cross that boundary.
 
 Published suites contain separate `amd64` and `arm64` indexes. Immutable pool
 filenames carry a digest suffix, so index generation filters the package's
@@ -107,10 +106,7 @@ compatibility suite, while every suite must retain at least one valid package.
 The POSIX user-facing installer source is `packaging/install.sh`; the Windows
 source is `packaging/install.ps1`. On a Debian-family system the shell installer
 verifies the expected signing-key fingerprint,
-configures this APT repository, and installs `rvs`. When replacing an older
-Ravenstash portable installation, it redirects only the installer-owned links in
-`~/.local/bin` to the APT commands so shell `PATH` order cannot keep running the
-old release; unrelated files are preserved and reported. On Linux glibc, Linux
+configures this APT repository, and installs `rvs`. On Linux glibc, Linux
 musl, and macOS for amd64 or arm64 it verifies an OpenPGP-signed release inventory
 plus the archive's exact SHA-256 digest and performs a user-local install by default.
 The PowerShell installer selects Windows x64 or ARM64, verifies the release digest,
@@ -119,8 +115,7 @@ write a non-secret installation receipt used to preserve scope and target during
 `rvs update`. The updater bundles the pinned release public key and verifies the
 OpenPGP-signed channel and checksum inventories on every portable platform.
 The channel policy is published at the distribution-neutral
-`https://releases.ravenstash.com/rvs/channels.json` path; the matching APT path
-remains a compatibility alias for older clients.
+`https://releases.ravenstash.com/rvs/channels.json` path.
 Stable release automation updates the neutral path only after the corresponding
 GitHub release is public, then calls the protected installer-promotion stage to
 deploy the exact release installers and update its recommended series. The

@@ -59,11 +59,6 @@ _SERVICE = "rvs"
 _REFRESH_SUFFIX = ":refresh"
 _REFRESH_SKEW_SECONDS = 60
 EXPIRING_CREDENTIAL_TYPE = "expiring"
-_LEGACY_TEMPORARY_CREDENTIAL_TYPE = "temporary"
-_REFRESHABLE_CREDENTIAL_TYPES = {
-    EXPIRING_CREDENTIAL_TYPE,
-    _LEGACY_TEMPORARY_CREDENTIAL_TYPE,
-}
 _CREDENTIAL_STORES = {"auto", "keyring", "pass", "vault", "plaintext"}
 
 
@@ -73,13 +68,11 @@ class NoCredentialStoreError(RuntimeError):
 
 def is_refreshable_credential_type(credential_type: str | None) -> bool:
     """Return whether *credential_type* can use device refresh tokens."""
-    return credential_type in _REFRESHABLE_CREDENTIAL_TYPES
+    return credential_type == EXPIRING_CREDENTIAL_TYPE
 
 
 def display_credential_type(credential_type: str | None) -> str | None:
     """Return the user-facing label for a stored credential type."""
-    if credential_type == _LEGACY_TEMPORARY_CREDENTIAL_TYPE:
-        return EXPIRING_CREDENTIAL_TYPE
     return credential_type
 
 
