@@ -118,10 +118,11 @@ The channel policy is published at the distribution-neutral
 `https://releases.ravenstash.com/rvs/channels.json` path.
 After the corresponding GitHub release is public, stable release automation
 publishes the neutral update policy alongside validation and signing for the
-protected installer-promotion stage. Installer deployment waits for both,
+protected installer-promotion jobs. Installer deployment waits for both,
 deploys the exact release installers, and updates the recommended series only
-after verifying the live bytes. The promotion workflow remains manually
-dispatchable for verified re-promotion or recovery without altering a release.
+after verifying the live bytes. These jobs are part of the stable release
+workflow so their credential boundaries and dependencies remain visible in one
+run.
 Homebrew and WinGet update their versioned channel package in place, or replace
 it with rollback for an explicit series migration. Nix updates replace the
 tag-pinned `ravenstash-cli` profile element with the selected immutable release

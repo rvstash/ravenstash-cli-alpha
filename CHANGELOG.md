@@ -6,6 +6,12 @@ All notable user-facing changes to `rvs` are recorded here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- Stable releases now own installer validation, deployment, and channel
+  promotion directly in `release.yml`, keeping each protected environment as a
+  separate job while removing the unused standalone promotion workflow.
+
 ## [0.14.5] - 2026-09-16
 
 ### Changed

@@ -119,9 +119,9 @@ installer-promotion validation and signing. The workflow joins those results,
 deploys and verifies the exact signed installer bytes, and publishes the signed
 recommended-series manifest last.
 
-`promote-installer.yml` remains separately dispatchable for an intentional
-verified re-promotion or recovery. Normal stable releases do not require a
-second dispatch.
+Installer validation, deployment, and channel promotion are jobs in
+`release.yml`; normal stable publication has one workflow run and no second
+dispatch.
 
 The scheduled `refresh-apt-metadata` workflow renews expiring APT metadata
 without changing packages, tags, channels, or installer recommendations.

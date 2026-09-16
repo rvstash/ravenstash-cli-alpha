@@ -179,21 +179,18 @@ def test_apt_publisher_uses_constant_number_of_storage_calls(tmp_path: Path) -> 
 
 
 def test_portable_update_policy_is_published_after_github_release() -> None:
-    release = yaml.safe_load((ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8"))
-    promotion_text = (ROOT / ".github/workflows/promote-installer.yml").read_text(encoding="utf-8")
-    promotion = yaml.safe_load(promotion_text)
+    release_text = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
+    release = yaml.safe_load(release_text)
 
     release_jobs = release["jobs"]
-    promotion_jobs = promotion["jobs"]
-    assert release_jobs["promote-installer"]["needs"] == "publish-github-release"
-    assert release_jobs["promote-installer"]["with"]["publish_update_policy"] is True
-    assert "needs" not in promotion_jobs["publish-update-manifest"]
-    assert set(promotion_jobs["promote"]["needs"]) == {
+    assert release_jobs["publish-update-manifest"]["needs"] == "publish-github-release"
+    assert release_jobs["sign-channel-manifest"]["needs"] == "publish-github-release"
+    assert set(release_jobs["deploy-installer"]["needs"]) == {
         "publish-update-manifest",
         "sign-channel-manifest",
     }
-    policy = promotion_text[
-        promotion_text.index("  publish-update-manifest:") : promotion_text.index(
+    policy = release_text[
+        release_text.index("  publish-update-manifest:") : release_text.index(
             "  sign-channel-manifest:"
         )
     ]
@@ -228,7 +225,6 @@ def test_top_level_workflow_run_names_are_distinct_and_purpose_first() -> None:
     expected_prefixes = {
         "ci.yml": "${{ github.event_name == 'pull_request'",
         "platform-certification.yml": "${{ github.event_name == 'schedule'",
-        "promote-installer.yml": "Promote rvs ",
         "refresh-apt.yml": "${{ github.event_name == 'schedule'",
         "release.yml": "${{ inputs.kind == 'candidate'",
         "test-build.yml": "Test build ·",
@@ -288,13 +284,19 @@ def test_publication_graph_parallelizes_safe_jobs_and_serializes_mutations() -> 
     assert "gh release create" not in publish_release
     assert "cmp expected-release-assets.tsv actual-release-assets.tsv" in publish_release
     assert 'gh api --method PATCH "$RELEASE_API_URL" -F draft=false' in publish_release
-    assert jobs["promote-installer"]["needs"] == "publish-github-release"
-    assert jobs["promote-installer"]["uses"] == "./.github/workflows/promote-installer.yml"
-    assert jobs["promote-installer"]["with"]["publish_update_policy"] is True
-    assert jobs["promote-installer"]["with"]["defer_cleanup"] is True
+    assert jobs["publish-update-manifest"]["needs"] == "publish-github-release"
+    assert jobs["sign-channel-manifest"]["needs"] == "publish-github-release"
+    assert set(jobs["deploy-installer"]["needs"]) == {
+        "publish-update-manifest",
+        "sign-channel-manifest",
+    }
+    assert set(jobs["publish-channel-manifest"]["needs"]) == {
+        "sign-channel-manifest",
+        "deploy-installer",
+    }
     assert set(jobs["cleanup-artifacts"]["needs"]) == {
         "publish-github-release",
-        "promote-installer",
+        "publish-channel-manifest",
     }
     assert jobs["restore-apt"]["if"] == "inputs.kind == 'stable'"
     assert jobs["publish-apt"]["if"] == "inputs.kind == 'stable'"
@@ -343,10 +345,8 @@ def test_test_build_is_expiring_unsigned_and_never_publishes() -> None:
 
 def test_successful_publication_is_not_failed_by_best_effort_cleanup() -> None:
     publication = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
-    promotion = (ROOT / ".github/workflows/promote-installer.yml").read_text(encoding="utf-8")
 
     assert "Delete current-run handoffs\n        continue-on-error: true" in publication
-    assert "Delete temporary promotion artifacts\n        continue-on-error: true" in promotion
 
 
 def test_publication_refuses_to_replace_an_existing_tag_or_release() -> None:
@@ -436,26 +436,24 @@ def test_reusable_builder_uses_exact_bundles_and_supplies_musl_bash() -> None:
 
 
 def test_channel_recommendation_activates_after_installer_verification() -> None:
-    promotion = yaml.safe_load(
-        (ROOT / ".github/workflows/promote-installer.yml").read_text(encoding="utf-8")
-    )
-    jobs = promotion["jobs"]
+    release = yaml.safe_load((ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8"))
+    jobs = release["jobs"]
 
-    assert "needs" not in jobs["publish-update-manifest"]
-    assert "needs" not in jobs["sign-channel-manifest"]
-    assert set(jobs["promote"]["needs"]) == {
+    assert jobs["publish-update-manifest"]["needs"] == "publish-github-release"
+    assert jobs["sign-channel-manifest"]["needs"] == "publish-github-release"
+    assert jobs["publish-update-manifest"]["environment"] == "apt-storage"
+    assert jobs["sign-channel-manifest"]["environment"] == "apt-signing"
+    assert set(jobs["deploy-installer"]["needs"]) == {
         "publish-update-manifest",
         "sign-channel-manifest",
     }
+    assert jobs["deploy-installer"]["environment"] == "installer-delivery"
     assert set(jobs["publish-channel-manifest"]["needs"]) == {
         "sign-channel-manifest",
-        "promote",
+        "deploy-installer",
     }
-    assert promotion["concurrency"]["group"] == "rvs-installer-promotion-${{ inputs.channel }}"
-    cleanup = jobs["cleanup-artifacts"]["steps"][0]["run"]
-    assert jobs["cleanup-artifacts"]["if"] == "inputs.defer_cleanup != true"
-    assert "promoted-channel-${GITHUB_RUN_ID}" in cleanup
-    assert ".artifacts[].id" not in cleanup
+    assert jobs["publish-channel-manifest"]["environment"] == "apt-storage"
+    assert not (ROOT / ".github/workflows/promote-installer.yml").exists()
 
 
 def test_installer_worker_binds_both_public_routes() -> None:
