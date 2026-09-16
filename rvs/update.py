@@ -585,6 +585,8 @@ def update(
     if candidate is not None and to is not None:
         output.fatal("--candidate and --to cannot be used together.")
     if candidate is not None:
+        if _CANDIDATE_PATTERN.fullmatch(candidate) is None:
+            output.fatal("Candidate versions must look like 0.14.0rc1.")
         installed, _apt_candidate = _apt_versions()
         if installed is not None:
             _update_candidate(candidate, apply=apply, yes=yes, installed_version=installed)
