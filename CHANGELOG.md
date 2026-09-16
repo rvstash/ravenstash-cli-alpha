@@ -6,6 +6,16 @@ All notable user-facing changes to `rvs` are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.14.3] - 2026-09-16
+
+### Changed
+
+- Top-level help groups package-tool wrappers by ecosystem and separates
+  artifact management, account configuration, and setup commands into clearly
+  labeled, alphabetically ordered sections.
+
+Detailed release notes: [RVS 0.14.3](docs/releases/0.14.3.md).
+
 ## [0.14.2] - 2026-09-16
 
 ### Fixed
@@ -136,7 +146,8 @@ Detailed release notes: [RVS 0.13.4](docs/releases/0.13.4.md).
 
 Detailed notes for every earlier release are in [docs/releases](docs/releases/).
 
-[Unreleased]: https://github.com/rvstash/ravenstash-cli-alpha/compare/v0.14.2...HEAD
+[Unreleased]: https://github.com/rvstash/ravenstash-cli-alpha/compare/v0.14.3...HEAD
+[0.14.3]: https://github.com/rvstash/ravenstash-cli-alpha/compare/v0.14.2...v0.14.3
 [0.14.2]: https://github.com/rvstash/ravenstash-cli-alpha/compare/v0.14.1...v0.14.2
 [0.14.1]: https://github.com/rvstash/ravenstash-cli-alpha/compare/v0.14.0...v0.14.1
 [0.14.0]: https://github.com/rvstash/ravenstash-cli-alpha/compare/v0.13.7...v0.14.0
