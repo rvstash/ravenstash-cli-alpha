@@ -57,6 +57,18 @@ def test_update_does_not_self_replace_unmanaged_install(monkeypatch: Any) -> Non
     assert "install.sh" in result.output
 
 
+def test_nix_detection_excludes_source_test_environment() -> None:
+    assert not update_mod._is_nix_application_executable(
+        "/nix/store/abc123-ravenstash-cli-test-env/bin/python3"
+    )
+
+
+def test_nix_detection_recognizes_packaged_application_environment() -> None:
+    assert update_mod._is_nix_application_executable(
+        "/nix/store/abc123-ravenstash-cli-env/bin/python3"
+    )
+
+
 def _portable(tmp_path: Path) -> Installation:
     return Installation(
         1,
