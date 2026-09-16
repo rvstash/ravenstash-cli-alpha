@@ -6,11 +6,15 @@ All notable user-facing changes to `rvs` are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.14.6] - 2026-09-16
+
 ### Changed
 
 - Stable releases now own installer validation, deployment, and channel
   promotion directly in `release.yml`, keeping each protected environment as a
   separate job while removing the unused standalone promotion workflow.
+
+Detailed release notes: [RVS 0.14.6](docs/releases/0.14.6.md).
 
 ## [0.14.5] - 2026-09-16
 
@@ -50,7 +54,8 @@ Detailed release notes: [RVS 0.14.4](docs/releases/0.14.4.md).
 
 Detailed release notes: [RVS 0.14.3](docs/releases/0.14.3.md).
 
-[Unreleased]: https://github.com/rvstash/ravenstash-cli-alpha/compare/v0.14.5...HEAD
+[Unreleased]: https://github.com/rvstash/ravenstash-cli-alpha/compare/v0.14.6...HEAD
+[0.14.6]: https://github.com/rvstash/ravenstash-cli-alpha/compare/v0.14.5...v0.14.6
 [0.14.5]: https://github.com/rvstash/ravenstash-cli-alpha/compare/v0.14.4...v0.14.5
 [0.14.4]: https://github.com/rvstash/ravenstash-cli-alpha/compare/v0.14.3...v0.14.4
 [0.14.3]: https://github.com/rvstash/ravenstash-cli-alpha/releases/tag/v0.14.3
