@@ -38,8 +38,9 @@ When a package tool must connect without an `rvs` wrapper, run `rvs art token mi
 For a personal account, `HANDLE` is the Ravenstash username. For an
 organization, it is the organization's public handle.
 
-Use `--account NAME` or `--target NAMESPACE/REPOSITORY` on an `rvs art` command
-when you want a different choice for only that command.
+Use `--account NAME` or `--target TARGET` on an `rvs art` command when you want a
+different choice for only that command. A repository target can be name-based
+(`NAMESPACE/REPOSITORY`) or ID-based (`in/ar_...`).
 
 ## Repositories
 
@@ -47,10 +48,10 @@ when you want a different choice for only that command.
 | --- | --- |
 | `rvs art repo list` | Lists repositories. |
 | `rvs art repo create NAME --format FORMAT` | Creates a repository for one or more package formats. |
-| `rvs art repo show NAME` | Shows repository details. |
-| `rvs art repo rename OLD NEW` | Renames a repository. |
-| `rvs art repo delete NAME` | Deletes a repository after confirmation. |
-| `rvs art repo set-default FORMAT NAME` | Chooses the default repository for a package format. |
+| `rvs art repo show TARGET` | Shows repository details. |
+| `rvs art repo rename TARGET NEW` | Renames a repository. |
+| `rvs art repo delete TARGET` | Deletes a repository after confirmation. |
+| `rvs art repo set-default FORMAT TARGET` | Chooses the default repository for a package format. |
 | `rvs art repo defaults` | Lists the current defaults. |
 
 Supported formats are `pypi`, `npm`, `maven`, and `oci`. Container images and
@@ -75,12 +76,12 @@ and adding or moving a source never shifts another source.
 
 | Command | What it does |
 | --- | --- |
-| `rvs art mirror list` | Lists private mirrors and their immutable `rc_...` remote-cache references. |
+| `rvs art mirror list` | Lists private mirrors and their `rc_...` remote-cache permanent IDs. |
 | `rvs art mirror create SOURCE` | Adds a Ravenstash-provided mirror. |
 | `rvs art mirror create --format FORMAT` | Adds the default mirror for a package format. |
-| `rvs art mirror show REMOTE_CACHE_REF` | Shows a private mirror through its owning remote-cache reference. |
-| `rvs art mirror set-age REMOTE_CACHE_REF --min-age-hours HOURS` | Changes the direct private-mirror age policy. |
-| `rvs art mirror delete REMOTE_CACHE_REF` | Deletes the remote cache and its private-mirror surface after confirmation. |
+| `rvs art mirror show REMOTE_CACHE_ID` | Shows a private mirror through its owning remote-cache permanent ID. |
+| `rvs art mirror set-age REMOTE_CACHE_ID --min-age-hours HOURS` | Changes the direct private-mirror age policy. |
+| `rvs art mirror delete REMOTE_CACHE_ID` | Deletes the remote cache and its private-mirror surface after confirmation. |
 | `rvs art mirror select SOURCE` | Chooses a Ravenstash-provided mirror. |
 | `rvs art mirror select --custom NAME` | Chooses a custom mirror. |
 
@@ -159,7 +160,7 @@ repositories, or only the read address for a mirror. Add `--access read` or
 `--access publish` to print one raw address for scripts. For OCI the address is
 the login host; other formats return the complete native URL.
 `rvs art reference [PATH[:TAG]|PATH@DIGEST] --format oci`
-prints a readable repository-qualified reference without adding a tag.
+prints a name-based repository-qualified reference without adding a tag.
 Both commands use read-only discovery and work with leaf `--target/-t`, `--account`,
 and `--profile/-p` options.
 

@@ -6,16 +6,23 @@ All notable user-facing changes to `rvs` are recorded here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- Repository listings and details now label `in/ar_...` as the ID-based target;
+  `rvs art repo list --json` exposes it as `id_based_target`.
+- Repository target help now documents both name-based and ID-based targets, and
+  remote-cache help calls `rc_...` a permanent ID.
+
 ## [0.14.0] - 2026-09-16
 
 ### Changed
 
-- Internal repositories now use the realm-qualified native route
+- Internal repositories now use the ID-based target
   `in/ar_...`; the former `in_.../ar_...` route is not accepted.
 - Local configuration schema 6 is a breaking reset. Version 5 profiles must
   sign in again and reselect their account and repository.
 - Native endpoint, token, configuration, and OCI commands validate the exact
-  `in/ar_...` route while human-readable repository references remain
+  `in/ar_...` target while name-based repository targets remain
   `{namespace_name}/{repository_name}`.
 
 Detailed release notes: [RVS 0.14.0](docs/releases/0.14.0.md).

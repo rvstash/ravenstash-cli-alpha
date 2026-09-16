@@ -79,12 +79,12 @@ def _native_route_parts(native_path: str) -> tuple[str, str] | None:
 
 def _stable_oci_root(native_realm: object, repository_unique_ref: object) -> str:
     if native_realm != "in" or not isinstance(repository_unique_ref, str):
-        output.fatal("Invalid OCI capability response: stable identity is missing.")
+        output.fatal("Invalid OCI capability response: repository permanent ID is missing.")
     if not repository_unique_ref.startswith("ar_"):
-        output.fatal("Invalid OCI capability response: stable identity is invalid.")
+        output.fatal("Invalid OCI capability response: repository permanent ID is invalid.")
     repository_unique_id = repository_unique_ref.removeprefix("ar_")
     if not _UNIQUE_ID.fullmatch(repository_unique_id):
-        output.fatal("Invalid OCI capability response: stable identity is invalid.")
+        output.fatal("Invalid OCI capability response: repository permanent ID is invalid.")
     return f"in/{repository_unique_ref}"
 
 

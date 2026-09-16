@@ -62,7 +62,7 @@ def _request(
                 raise ValueError("OCI commands require a repository target.")
             reference = found.target.repository_unique_ref
             if not reference:
-                raise ValueError("The selected repository has no stable reference.")
+                raise ValueError("The selected repository has no permanent ID.")
             client = ApiClient.from_profile(found.profile)
             url = f"/repositories/{quote(reference, safe='')}/oci/{suffix}"
             if method == "DELETE" and not yes:

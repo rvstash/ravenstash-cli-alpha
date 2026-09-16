@@ -56,10 +56,14 @@ def parse_target(value: str) -> TargetSpec:
         target_type = "custom_cache"
         namespace_realm = None
     elif candidate.startswith(("internal:", "global:", "@")):
-        output.fatal("Use namespace/repository without a realm prefix or @ notation.")
+        output.fatal(
+            "Use a name-based target (namespace/repository) or an ID-based target "
+            "(in/ar_...) without a realm prefix or @ notation."
+        )
     elif ":" in candidate:
         output.fatal(
-            "Unknown repository or mirror. Use namespace/repository, mirror:<source>, "
+            "Unknown repository or mirror. Use a name-based target "
+            "(namespace/repository), an ID-based target (in/ar_...), mirror:<source>, "
             "or custom-mirror:<name>."
         )
     else:
@@ -71,17 +75,23 @@ def parse_target(value: str) -> TargetSpec:
     if target_type == "repository":
         parts = selector.split("/")
         if len(parts) != 2 or not all(parts):
-            output.fatal("Repository targets must use namespace/repository.")
+            output.fatal(
+                "Repository targets must be name-based (namespace/repository) "
+                "or ID-based (in/ar_...)."
+            )
         namespace_part, repository_part = parts
         typed = namespace_part.startswith(("in_", "gn_", "ar_")) or repository_part.startswith(
             ("in_", "gn_", "ar_")
         )
         if repository_part.startswith("ar_"):
             if namespace_part != "in":
-                output.fatal("Stable internal repository targets require in/ar_....")
+                output.fatal("Internal ID-based targets must use `in/ar_...`.")
             namespace_realm = "internal"
         elif typed:
-            output.fatal("Typed IDs cannot be used as a name-based repository target.")
+            output.fatal(
+                "Permanent IDs cannot be substituted into a name-based target. "
+                "Use in/ar_... for an ID-based target."
+            )
     return TargetSpec(
         target_type=target_type,
         selector=selector,
@@ -336,7 +346,7 @@ def registry_context(
     try:
         if selected.target_type == "repository":
             if not selected.repository_unique_ref:
-                raise ValueError("Selected private repository has no stable identity")
+                raise ValueError("Selected private repository has no permanent ID")
             credential = client.issue_native(
                 "/package-credentials",
                 {

@@ -14,7 +14,7 @@ npm deprecation messages. Package details show the applicable state and reason.
 Use `art token mint`, `art endpoint`, `art reference`, and `art native config`.
 Native `rvs mvn deploy` remains available. Official mirrors use `art mirror create [SOURCE]`.
 Repository upstreams attach caches with `--remote-cache rc_...`; `art mirror list`
-prints that immutable reference while the mirror group remains the direct-access surface.
+prints that permanent ID while the mirror group remains the direct-access surface.
 `update --to SERIES` previews; adding `--apply` installs. Signed GitHub
 prereleases can be verified with `update --candidate X.Y.ZrcN` and installed by
 adding `--apply`. No transitional aliases are provided for retired commands.
@@ -33,10 +33,10 @@ rvs art token mint --target platform/packages -f pypi -f oci
 Whitespace is trimmed and duplicates are removed. Empty or unknown formats fail
 before any mutation. Commands requiring one format still accept only one.
 
-Beginning with RVS 0.14, an internal repository's immutable native route is
-`in/ar_...`. The `in` coordinate identifies the internal realm and the `ar_...`
-coordinate identifies the repository. Human-readable selection and `rvs art
-reference` continue to use `{namespace_name}/{repository_name}`. Configuration
+Beginning with RVS 0.14, an internal repository's ID-based target is `in/ar_...`.
+The `in` coordinate identifies the internal realm and the `ar_...` coordinate is
+the repository permanent ID. Name-based selection and `rvs art reference`
+continue to use `{namespace_name}/{repository_name}`. Configuration
 schema 5 is intentionally unsupported: sign in again and reselect the target to
 create schema 6 configuration. The retired `in_.../ar_...` route is never used as
 a compatibility fallback.
