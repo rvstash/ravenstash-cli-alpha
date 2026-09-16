@@ -691,14 +691,32 @@ jobs:
           aws s3 cp signed/channels.json.gpg "$destination/channels.json.gpg" \
             --endpoint-url "$endpoint" --cache-control no-cache --only-show-errors
 
+  promote-installer:
+    name: Promote and verify public installers
+    needs: publish-update-manifest
+    if: inputs.kind == 'stable'
+    permissions:
+      actions: write
+      contents: read
+    uses: ./.github/workflows/promote-installer.yml
+    with:
+      source_sha: ${{ inputs.source_sha }}
+      source_branch: ${{ inputs.source_branch }}
+      version: ${{ inputs.version }}
+      channel: ${{ inputs.channel }}
+    secrets: inherit
+
   cleanup-artifacts:
     name: Remove successful release handoffs
     needs:
       - publish-github-release
       - publish-update-manifest
+      - promote-installer
     if: >-
       ${{ always() && needs.publish-github-release.result == 'success' &&
-          (inputs.kind == 'candidate' || needs.publish-update-manifest.result == 'success') }}
+          (inputs.kind == 'candidate' ||
+           (needs.publish-update-manifest.result == 'success' &&
+            needs.promote-installer.result == 'success')) }}
     runs-on: ubuntu-24.04
     permissions:
       actions: write

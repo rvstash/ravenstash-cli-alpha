@@ -2,6 +2,24 @@ name: promote-installer
 run-name: Promote rvs v${{ inputs.version }} · ${{ inputs.channel }}
 
 on:
+  workflow_call:
+    inputs:
+      source_sha:
+        description: Exact 40-character source commit of the published release
+        type: string
+        required: true
+      source_branch:
+        description: Protected branch containing the release source
+        type: string
+        required: true
+      version:
+        description: Exact published semantic version without v prefix
+        type: string
+        required: true
+      channel:
+        description: Exact compatibility channel of the published release
+        type: string
+        required: true
   workflow_dispatch:
     inputs:
       source_sha:
@@ -26,7 +44,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: rvs-release
+  group: rvs-installer-promotion-${{ inputs.channel }}
   cancel-in-progress: false
 
 jobs:
@@ -501,7 +519,7 @@ jobs:
         run: |
           gh api --paginate \
             "/repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/artifacts?per_page=100" \
-            --jq '.artifacts[].id' \
+            --jq ".artifacts[] | select(.name == \"promoted-channel-${GITHUB_RUN_ID}\") | .id" \
             | while read -r artifact_id; do
                 gh api --method DELETE \
                   "/repos/${GITHUB_REPOSITORY}/actions/artifacts/${artifact_id}"
