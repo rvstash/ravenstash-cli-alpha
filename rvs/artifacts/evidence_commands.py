@@ -14,6 +14,7 @@ import uuid
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Annotated, Literal, cast
 
+import click
 import httpx2
 import typer
 from packaging.utils import (
@@ -484,21 +485,32 @@ def list_intents(
     target: Annotated[str, typer.Option("--target")],
     format: Annotated[Literal["pypi", "npm", "maven"], typer.Option("--format")],
     account: Annotated[str | None, typer.Option("--account")] = None,
+    limit: Annotated[int, typer.Option("--limit", min=1, max=100)] = 50,
+    cursor: Annotated[str | None, typer.Option("--cursor")] = None,
     profile: Annotated[str | None, typer.Option("--profile", "-p")] = None,
 ) -> None:
-    """List the latest bounded evidence intents for a repository."""
+    """List one cursor-paginated page of evidence intents for a repository."""
     client, repository_ref = _repository_target(
         target=target, format=format, profile=profile, account=account
     )
     try:
-        items = collection_items(
-            client.get(
-                "/package-evidence/intents",
-                params={"target": f"in/{repository_ref}", "format": format},
-            ).json()
-        )
+        payload = client.get(
+            "/package-evidence/intents",
+            params={
+                "target": f"in/{repository_ref}",
+                "format": format,
+                "limit": limit,
+                "cursor": cursor,
+            },
+        ).json()
+        items = collection_items(payload)
+        if not isinstance(payload, dict):
+            raise TypeError("Evidence intent page is invalid.")
     except (ApiError, httpx2.HTTPError, TypeError, ValueError) as exc:
         output.fatal(str(exc))
+    if output.is_json():
+        click.echo(json.dumps(payload))
+        return
     output.table(
         ["Intent", "Package", "Version", "Scope", "State", "Analysis"],
         [
@@ -515,6 +527,8 @@ def list_intents(
         title="Package evidence",
         json_keys=["evidence_intent_ref", "package", "version", "scope", "state", "analysis_state"],
     )
+    if payload.get("next_cursor"):
+        click.echo(f"Next page: --cursor {payload['next_cursor']}", err=True)
 
 
 @app.command("retire")

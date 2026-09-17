@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 from typing import TYPE_CHECKING, Any
 
@@ -212,6 +213,66 @@ def test_stage_emits_stable_json_without_upload_request(
     assert client.payload is not None
     assert client.payload["analysis_context_id"] == "pypi-cpython313-linux-x86_64-base"
     assert len(async_uploads) == 1
+
+
+def test_list_forwards_cursor_and_preserves_page_in_json(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class ListClient:
+        params: dict[str, object] | None = None
+
+        def get(self, path: str, *, params: dict[str, object]) -> _Response:
+            assert path == "/package-evidence/intents"
+            self.params = params
+            return _Response(
+                {
+                    "items": [
+                        {
+                            "evidence_intent_ref": "pe_23456789abcdefghijkmn",
+                            "package": "demo",
+                            "version": "1.0.0",
+                            "scope": "artifact",
+                            "state": "active",
+                            "analysis_state": "complete",
+                        }
+                    ],
+                    "next_cursor": "next-page",
+                }
+            )
+
+    client = ListClient()
+    monkeypatch.setattr(
+        evidence_commands,
+        "_repository_target",
+        lambda **_kwargs: (client, "ar_23456789"),
+    )
+    output.set_json(True)
+    try:
+        result = runner.invoke(
+            evidence_commands.app,
+            [
+                "list",
+                "--target",
+                "ar_23456789",
+                "--format",
+                "pypi",
+                "--limit",
+                "25",
+                "--cursor",
+                "current-page",
+            ],
+        )
+    finally:
+        output.set_json(False)
+
+    assert result.exit_code == 0
+    assert json.loads(result.stdout)["next_cursor"] == "next-page"
+    assert client.params == {
+        "target": "in/ar_23456789",
+        "format": "pypi",
+        "limit": 25,
+        "cursor": "current-page",
+    }
 
 
 def test_sbom_download_verifies_semantic_snapshot_etag(
