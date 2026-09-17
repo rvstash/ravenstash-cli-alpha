@@ -25,7 +25,7 @@ on:
           - stable
         required: true
       channel:
-        description: Exact vMAJOR.MINOR compatibility series
+        description: Exact rolling vMAJOR release channel
         type: string
         required: true
 
@@ -346,10 +346,14 @@ jobs:
             "s3://ravenstash-cli-releases/rvs/apt/" prior/ \
             --endpoint-url "https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com" \
             --no-progress
-          python3 packaging/repository/recover_missing_apt_indexes.py \
-            prior packaging/repository/keys/ravenstash-rvs.gpg
-          python3 packaging/repository/verify_apt.py \
-            prior packaging/repository/keys/ravenstash-rvs.gpg
+          if [[ -z "$(find prior -mindepth 1 -print -quit)" ]]; then
+            touch prior/BOOTSTRAP
+          else
+            python3 packaging/repository/recover_missing_apt_indexes.py \
+              prior packaging/repository/keys/ravenstash-rvs.gpg
+            python3 packaging/repository/verify_apt.py \
+              prior packaging/repository/keys/ravenstash-rvs.gpg
+          fi
       - name: Upload authenticated prior state
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
@@ -427,8 +431,12 @@ jobs:
           test "$(find build -maxdepth 1 -type f -name "rvs_${VERSION}_amd64.deb" | wc -l)" = 1
           test "$(find build -maxdepth 1 -type f -name "rvs_${VERSION}_arm64.deb" | wc -l)" = 1
           if [[ "$KIND" == stable ]]; then
-            python3 packaging/repository/verify_apt.py \
-              prior packaging/repository/keys/ravenstash-rvs.gpg
+            if [[ -f prior/BOOTSTRAP ]]; then
+              test "$(find prior -mindepth 1 -maxdepth 1 -printf '%f\n')" = BOOTSTRAP
+            else
+              python3 packaging/repository/verify_apt.py \
+                prior packaging/repository/keys/ravenstash-rvs.gpg
+            fi
           fi
       - name: Sign portable inventory and stable APT state
         env:

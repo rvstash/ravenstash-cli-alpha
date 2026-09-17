@@ -8,9 +8,10 @@ unsigned artifacts without creating a public release.
 
 ## Release source
 
-`main` is the only release source. Compatibility channels remain package and
-update boundaries, but they do not have maintenance branches. Patch releases
-are immutable tags created by the release workflow.
+`main` is the only release source. Rolling major channels remain package and
+update boundaries, but they do not have maintenance branches. All pre-1 stable
+releases publish into `v0`; patch releases are immutable tags created by the
+release workflow.
 
 ## Trust boundaries
 
@@ -76,7 +77,7 @@ stable release after testing.
 
 Use a PEP 440 version such as `0.14.4rc1`. Dispatch `release.yml` from `main`
 with `kind=candidate`, the exact source branch, SHA, version, and matching
-`vMAJOR.MINOR` channel. The workflow:
+`vMAJOR` channel. The workflow:
 
 - validates all gates for that exact SHA;
 - builds the eight release targets in parallel;
@@ -110,18 +111,30 @@ first candidate using this process requires the normal signed manual download.
 ## Stable release
 
 Use an exact `X.Y.Z` version. Dispatch `release.yml` from `main` with
-`kind=stable`, the owning source branch and SHA, and its `vMAJOR.MINOR` channel.
+`kind=stable`, the owning source branch and SHA, and its rolling `vMAJOR` channel.
 In the same visible workflow run, APT restore runs alongside the platform builds.
 After assembly, the workflow signs once, stages the immutable GitHub draft while
 APT publishes and verifies amd64 and arm64 in parallel, and then makes the
 GitHub release public. Portable update-policy publication runs alongside
 installer-promotion validation and signing. The workflow joins those results,
 deploys and verifies the exact signed installer bytes, and publishes the signed
-recommended-series manifest last.
+recommended-channel manifest last. That manifest also maps every retained
+`MAJOR.MINOR` line to its latest stable patch for one-shot `--to` selection.
 
 Installer validation, deployment, and channel promotion are jobs in
 `release.yml`; normal stable publication has one workflow run and no second
 dispatch.
+
+### One-time alpha `v0` APT bootstrap
+
+Before the first rolling-channel release, the separately authorized storage
+cutover must remove the old alpha APT tree completely. Do not dispatch a stable
+release while the public manifest still advertises a minor-named suite such as
+`v0.14`: current policy rejects it rather than silently importing legacy state.
+When the storage restore is genuinely empty, the release workflow creates a
+bounded `BOOTSTRAP` marker and signs the first `v0` repository from the new
+release's amd64 and arm64 packages. A non-empty, unauthenticated, or mixed store
+still fails closed. The workflow itself never deletes the old tree.
 
 The scheduled `refresh-apt-metadata` workflow renews expiring APT metadata
 without changing packages, tags, channels, or installer recommendations.

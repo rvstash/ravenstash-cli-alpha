@@ -26,9 +26,9 @@ def main() -> None:
     release: Path = args.release
     version: str = args.version
     repository: str = args.repository
-    major, minor, _patch = version.split(".", 2)
-    channel = f"v{major}.{minor}"
-    package_suffix = channel.removeprefix("v")
+    major, _minor, _patch = version.split(".", 2)
+    channel = f"v{major}"
+    package_suffix = major
     base = f"https://github.com/{repository}/releases/download/v{version}"
     manifests = release / "package-manifests"
     homebrew = manifests / "homebrew"

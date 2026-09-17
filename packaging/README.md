@@ -59,13 +59,13 @@ is unavailable on Windows; Windows credentials use Credential Manager instead.
 ## APT repository
 
 After building the `.deb`, generate static APT repository metadata. The channel
-is derived from the package version (`0.14.x` -> `v0.14`, `1.1.x` -> `v1.1`) and an
+is derived from the package major version (`0.14.x` and `0.15.x` -> `v0`) and an
 explicit override must match that policy:
 
 ```bash
 RVS_APT_GPG_KEY_ID=<key-id> \
 RVS_APT_GPG_FINGERPRINT=<full-fingerprint> \
-RVS_APT_CHANNEL=v0.14 \
+RVS_APT_CHANNEL=v0 \
   packaging/scripts/update-apt-repo.sh
 ```
 
@@ -93,15 +93,17 @@ passes only bounded signed metadata between jobs, and restores the canonical
 tree again under the storage environment. It does not consume GitHub Actions
 artifact storage.
 
-APT suites are compatibility boundaries, not rolling maturity labels. Every
-minor series has its own suite (`v0.14`, `v0.15`, `v1.0`, `v1.1`). Routine APT
-upgrades never cross that boundary.
+APT suites are rolling major channels. All pre-1 stable packages share the `v0`
+suite, and its signed channel manifest maps each `0.MINOR` selector to the latest
+published stable patch in that line. Plain APT upgrades follow the newest `v0`
+release; an exact `rvs update --to 0.MINOR` installs the mapped package version
+without changing the configured suite.
 
 Published suites contain separate `amd64` and `arm64` indexes. Immutable pool
 filenames carry a digest suffix, so index generation filters the package's
 declared architecture from its metadata instead of relying on Debian filename
 conventions. A newly added architecture may have an empty index in an older
-compatibility suite, while every suite must retain at least one valid package.
+major suite, while every suite must retain at least one valid package.
 
 The POSIX user-facing installer source is `packaging/install.sh`; the Windows
 source is `packaging/install.ps1`. On a Debian-family system the shell installer

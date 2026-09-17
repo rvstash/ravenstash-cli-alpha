@@ -18,7 +18,12 @@ import httpx2 as httpx
 import typer
 
 from . import output
-from .apt_channels import channel_order, normalize_channel, version_matches_channel
+from .apt_channels import (
+    channel_order,
+    normalize_channel,
+    normalize_minor_target,
+    version_matches_channel,
+)
 from .installations import compatibility_channel, detect_portable_installation
 from .portable_update import (
     UpdateError,
@@ -26,6 +31,7 @@ from .portable_update import (
     download_verified_assets,
     fetch_channel_manifest,
     latest_for_channel,
+    latest_for_minor,
     newer,
 )
 
@@ -35,7 +41,6 @@ _APT_GET = Path("/usr/bin/apt-get")
 _DPKG_QUERY = Path("/usr/bin/dpkg-query")
 _DPKG_DEB = Path("/usr/bin/dpkg-deb")
 _GPGV = Path("/usr/bin/gpgv")
-_INSTALL = Path("/usr/bin/install")
 _SUDO = Path("/usr/bin/sudo")
 _APT_SOURCE = Path("/etc/apt/sources.list.d/ravenstash-rvs.list")
 _APT_KEYRING = Path("/etc/apt/keyrings/ravenstash-rvs.gpg")
@@ -45,7 +50,7 @@ _CHANNELS_SIGNATURE_URL = f"{_CHANNELS_URL}.gpg"
 _CANDIDATE_PATTERN = re.compile(r"^(?P<base>[0-9]+\.[0-9]+\.[0-9]+)rc(?P<number>[1-9][0-9]*)$")
 _SOURCE_PATTERN = re.compile(
     r"^deb \[arch=(?:amd64|arm64) signed-by=/etc/apt/keyrings/ravenstash-rvs\.gpg\] "
-    r"https://releases\.ravenstash\.com/rvs/apt (?P<channel>v[0-9.]+) main$"
+    r"https://releases\.ravenstash\.com/rvs/apt (?P<channel>v(?:0|[1-9][0-9]*)) main$"
 )
 
 
@@ -136,23 +141,6 @@ def _current_channel() -> str | None:
     return normalize_channel(match.group("channel"))
 
 
-def _source_for_channel(channel: str) -> str:
-    normalized = normalize_channel(channel)
-    machine = platform.machine().lower()
-    architecture = {
-        "x86_64": "amd64",
-        "amd64": "amd64",
-        "aarch64": "arm64",
-        "arm64": "arm64",
-    }.get(machine)
-    if architecture is None:
-        output.fatal(f"APT updates are unsupported on CPU architecture {machine}.")
-    return (
-        f"deb [arch={architecture} signed-by=/etc/apt/keyrings/ravenstash-rvs.gpg] "
-        f"{_REPOSITORY_URL} {normalized} main\n"
-    )
-
-
 def _channel_manifest() -> dict[str, Any] | None:
     if not _APT_KEYRING.is_file() or not _GPGV.is_file():
         return None
@@ -194,6 +182,18 @@ def _channel_manifest() -> dict[str, Any] | None:
                 return None
             if not version_matches_channel(channel_data.get("latest", ""), normalized):
                 return None
+            targets = channel_data.get("minor_targets")
+            if not isinstance(targets, dict) or not targets:
+                return None
+            for selector, target in targets.items():
+                if (
+                    not isinstance(selector, str)
+                    or not isinstance(target, str)
+                    or normalize_minor_target(selector) != selector
+                    or not target.startswith(f"{selector}.")
+                    or not version_matches_channel(target, normalized)
+                ):
+                    return None
         if recommended not in payload["channels"]:
             return None
     except KeyError, TypeError, ValueError:
@@ -212,28 +212,29 @@ def _announce_new_channel(current_channel: str | None) -> None:
         return
     latest = manifest["channels"][recommended]["latest"]
     output.info(
-        f"rvs {latest} is available in release series {recommended}. "
+        f"rvs {latest} is available in release channel {recommended}. "
         f"Review the migration notes, then run: rvs update --to {recommended.removeprefix('v')}"
     )
 
 
-def _install_source(source: str) -> bool:
-    if not _INSTALL.is_file():
-        return False
-    with tempfile.NamedTemporaryFile(prefix="rvs-source-", delete=False) as stream:
-        temporary = Path(stream.name)
-        stream.write(source.encode("utf-8"))
-    temporary.chmod(0o600)
+def _requested_target(
+    manifest: dict[str, Any], current_channel: str, requested: str | None
+) -> tuple[str, str, str]:
+    """Return channel, exact version, and a user-facing target label."""
+    if requested is None:
+        channel = current_channel
+        return channel, latest_for_channel(manifest, channel), f"release channel {channel}"
     try:
-        installed = _run_visible([str(_INSTALL), "-m", "0644", str(temporary), str(_APT_SOURCE)])
-        return installed.returncode == 0
-    finally:
-        temporary.unlink(missing_ok=True)
-
-
-def _restore_source(source: str) -> None:
-    if _install_source(source):
-        _run_visible([str(_APT_GET), "update"])
+        channel = normalize_channel(requested)
+    except ValueError:
+        selector = normalize_minor_target(requested)
+        channel = normalize_channel(selector.partition(".")[0])
+        if channel_order(channel) < channel_order(current_channel):
+            raise ValueError("release-channel downgrades are not supported automatically") from None
+        return channel, latest_for_minor(manifest, selector), f"minor release {selector}"
+    if channel_order(channel) < channel_order(current_channel):
+        raise ValueError("release-channel downgrades are not supported automatically")
+    return channel, latest_for_channel(manifest, channel), f"release channel {channel}"
 
 
 def _candidate_debian_version(candidate: str) -> str:
@@ -328,21 +329,15 @@ def _portable_update(*, to: str | None, candidate: str | None, apply: bool, yes:
         if _CANDIDATE_PATTERN.fullmatch(candidate) is None:
             output.fatal("Candidate versions must look like 0.14.4rc1.")
         target_version = candidate
-        target_channel = compatibility_channel(candidate)
         release_label = "release candidate"
     else:
         try:
             manifest = fetch_channel_manifest()
-            target_channel = normalize_channel(to) if to is not None else installation.channel
-            if to is not None and channel_order(target_channel) <= channel_order(
-                installation.channel
-            ):
-                if target_channel != installation.channel:
-                    output.fatal("Release-series downgrades are not supported automatically.")
-            target_version = latest_for_channel(manifest, target_channel)
+            _target_channel, target_version, release_label = _requested_target(
+                manifest, installation.channel, to
+            )
         except (UpdateError, ValueError) as exc:
             output.fatal(str(exc))
-        release_label = f"release series {target_channel}"
     if not newer(target_version, installation.version):
         if target_version == installation.version:
             output.success(
@@ -360,11 +355,7 @@ def _portable_update(*, to: str | None, candidate: str | None, apply: bool, yes:
     command = (
         f"rvs update --candidate {target_version} --apply"
         if candidate is not None
-        else (
-            f"rvs update --to {target_channel.removeprefix('v')} --apply"
-            if to is not None
-            else "rvs update --apply"
-        )
+        else (f"rvs update --to {to} --apply" if to is not None else "rvs update --apply")
     )
     if not apply:
         output.info(f"Install it with: {command}")
@@ -395,7 +386,7 @@ def _announce_portable_channel(manifest: dict[str, Any], current: str) -> None:
         return
     latest = manifest["channels"][recommended]["latest"]
     output.info(
-        f"rvs {latest} is available in release series {recommended}. Review the migration "
+        f"rvs {latest} is available in release channel {recommended}. Review the migration "
         f"notes, then run: rvs update --to {recommended.removeprefix('v')}"
     )
 
@@ -433,17 +424,24 @@ def _delegate_package_manager_update(
     try:
         manifest = fetch_channel_manifest()
         current = compatibility_channel(installed)
-        target = normalize_channel(to) if to is not None else current
-        if to is not None and target != current and channel_order(target) <= channel_order(current):
-            output.fatal("Release-series downgrades are not supported automatically.")
-        target_version = latest_for_channel(manifest, target)
+        target, target_version, target_label = _requested_target(manifest, current, to)
     except (UpdateError, ValueError) as exc:
         output.fatal(str(exc))
+    minor_selected = to is not None and "." in to.removeprefix("v")
+    if minor_selected and method in {"homebrew", "winget"}:
+        output.fatal(
+            f"{method} cannot select an exact minor release without changing package state. "
+            "Use the signed portable installer for this one-shot target."
+        )
     if not newer(target_version, installed):
-        output.success(f"Installed: rvs {installed}. Latest in {target}: rvs {target_version}.")
-        if to is None:
-            _announce_portable_channel(manifest, current)
-        return
+        if target_version == installed:
+            output.success(
+                f"Installed: rvs {installed}. Latest in {target_label}: rvs {target_version}."
+            )
+            if to is None:
+                _announce_portable_channel(manifest, current)
+            return
+        output.fatal("The requested release is not newer than the installed managed version.")
     commands = {
         "homebrew": ["brew", "upgrade", f"rvs@{target.removeprefix('v')}"],
         "winget": [
@@ -459,9 +457,7 @@ def _delegate_package_manager_update(
     if not apply:
         if method == "nix":
             apply_command = (
-                f"rvs update --to {target.removeprefix('v')} --apply"
-                if target != current
-                else "rvs update --apply"
+                f"rvs update --to {to} --apply" if to is not None else "rvs update --apply"
             )
             output.info(
                 f"Install it with: {apply_command} "
@@ -563,7 +559,9 @@ def _replace_nix_profile(installed: str, target: str) -> None:
 
 def update(
     to: str | None = typer.Option(
-        None, "--to", help="Preview a newer release series; install with --apply."
+        None,
+        "--to",
+        help="Select a release channel (0/v0) or latest patch in a minor line (0.15).",
     ),
     candidate: str | None = typer.Option(
         None,
@@ -573,7 +571,7 @@ def update(
     apply: bool = typer.Option(
         False,
         "--apply",
-        help="Download and install the newest update in this release series.",
+        help="Download and install the selected update.",
     ),
     yes: bool = typer.Option(
         False,
@@ -617,7 +615,7 @@ def update(
     if not _upgrade_available(installed, candidate):
         if current_channel:
             output.success(
-                f"Installed: rvs {installed}. Latest in release series "
+                f"Installed: rvs {installed}. Latest in release channel "
                 f"{current_channel}: rvs {candidate}. You are up to date."
             )
         else:
@@ -630,7 +628,7 @@ def update(
 
     if current_channel and not version_matches_channel(candidate, current_channel):
         output.fatal(
-            f"APT candidate {candidate} does not belong to configured release series {current_channel}."
+            f"APT candidate {candidate} does not belong to configured release channel {current_channel}."
         )
     output.info(f"rvs {candidate} is available (installed: {installed}).")
     if not apply:
@@ -660,78 +658,39 @@ def update(
 def _update_series(
     to: str, *, apply: bool, yes: bool, installed_version: str | None = None
 ) -> None:
-    """Move the Ravenstash CLI to a newer release series."""
-    try:
-        target = normalize_channel(to)
-    except ValueError as exc:
-        output.fatal(str(exc))
+    """Install a selected rolling channel or exact minor-line target."""
     installed = installed_version
     if installed is None:
         installed, _candidate = _apt_versions()
     current = _current_channel()
     if installed is None or current is None:
         output.fatal("rvs is not managed by a recognized Ravenstash APT source.")
-    if target == current:
-        update(to=None, candidate=None, apply=apply, yes=yes)
-        return
-    if channel_order(target) <= channel_order(current):
-        output.fatal("Release-series downgrades are not supported automatically.")
-
     manifest = _channel_manifest()
     if manifest is None:
-        output.fatal("Cannot authenticate the Ravenstash release-series manifest.")
-    channel_data = manifest["channels"].get(target)
-    if not isinstance(channel_data, dict) or channel_data.get("status") != "supported":
-        output.fatal(f"Release series {target} is not available for upgrade.")
-    target_version = channel_data["latest"]
+        output.fatal("Cannot authenticate the Ravenstash release-channel manifest.")
+    try:
+        _target, target_version, target_label = _requested_target(manifest, current, to)
+    except (UpdateError, ValueError) as exc:
+        output.fatal(str(exc))
     if not _upgrade_available(installed, target_version):
         output.fatal("The target release is not newer than the installed package.")
-    notes = channel_data.get(
-        "migration_notes",
-        f"https://docs.ravenstash.com/cli/releases/{target.removeprefix('v').replace('.', '-')}/",
-    )
-    output.warn(
-        f"This changes release series {current} to {target} and may include breaking changes."
-    )
-    output.info(f"Target release: {target_version}")
-    output.info(f"Migration notes: {notes}")
+    output.info(f"Target: {target_label}, rvs {target_version}")
     if not apply:
         output.info(f"Install it with: rvs update --to {to} --apply")
         return
     if not yes:
-        typer.confirm(f"Upgrade rvs from {current} to {target}?", abort=True)
-
-    try:
-        previous_source = _APT_SOURCE.read_text(encoding="utf-8")
-    except OSError:
-        output.fatal("Cannot read the existing Ravenstash APT source.")
-    if not _install_source(_source_for_channel(target)):
-        output.fatal("Could not change the Ravenstash APT release series.")
+        typer.confirm(f"Install rvs {target_version} from {target_label}?", abort=True)
     if _run_visible([str(_APT_GET), "update"]).returncode != 0:
-        _restore_source(previous_source)
-        output.fatal(
-            "The target release series could not be authenticated; the prior release series was restored."
-        )
+        output.fatal("APT metadata refresh failed.")
 
-    installed_after_refresh, candidate = _apt_versions()
-    if (
-        installed_after_refresh != installed
-        or candidate is None
-        or candidate != target_version
-        or not version_matches_channel(candidate, target)
-    ):
-        _restore_source(previous_source)
-        output.fatal(
-            "The target release series returned an incompatible candidate; the prior release series was restored."
-        )
+    installed_after_refresh, _candidate = _apt_versions()
+    if installed_after_refresh != installed:
+        output.fatal("The installed package changed during refresh; run rvs update again.")
     if (
         _run_visible(
-            [str(_APT_GET), "install", "--only-upgrade", "--yes", f"rvs={candidate}"]
+            [str(_APT_GET), "install", "--only-upgrade", "--yes", f"rvs={target_version}"]
         ).returncode
         != 0
     ):
-        _restore_source(previous_source)
-        output.fatal(
-            "APT could not install the compatibility upgrade; the prior release series was restored."
-        )
-    output.success(f"Updated rvs to {candidate} on release series {target}.")
+        output.fatal("APT could not install the selected rvs update.")
+    output.success(f"Updated rvs to {target_version} from {target_label}.")

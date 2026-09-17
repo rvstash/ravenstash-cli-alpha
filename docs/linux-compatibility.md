@@ -80,16 +80,17 @@ that predate relevant protocol controls, maintained upstream lines, or security 
 
 ## Update boundaries
 
-Every minor line is an independent compatibility series across APT, portable,
-Homebrew, WinGet, and Nix installations. `rvs update` stays within the recorded
-series; `rvs update --to SERIES` is required to cross that boundary. Portable
+Pre-1 releases share one rolling `v0` channel across APT, portable, Homebrew,
+WinGet, and Nix installations. Plain `rvs update` advances to the newest stable
+`v0` release. `rvs update --to 0.MINOR` is a one-shot selector for the latest
+stable patch in that minor line; it does not create a persistent pin. Portable
 Linux, Alpine/musl, macOS, and Windows installations authenticate the signed
 channel manifest and release checksum inventory before staging the native
 bundle. POSIX activation switches one version pointer atomically. Windows uses a
 detached helper after the running executable exits. Nix, Homebrew, and WinGet
 remain package-manager-owned, so `rvs` delegates replacement instead of writing
-into their stores. Homebrew and WinGet update in place within one series and
-replace their versioned package with rollback for an explicit `--to` migration.
+into their stores. Homebrew and WinGet use one major-channel package and reject
+exact-minor selection without mutating package state; the portable path supports it.
 Their manifests are generated release artifacts; these package-manager paths are
 not generally available until the manifests are published in the external
 catalogs. The supported macOS and Windows installers therefore remain portable.

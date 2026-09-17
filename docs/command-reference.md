@@ -143,8 +143,8 @@ content type.
 | `rvs runtime setup-shell` | Makes installed runtimes available in future shells. |
 | `rvs runtime doctor` | Checks the runtime setup. |
 | `rvs update` | Checks for a CLI update. |
-| `rvs update --apply` | Installs an update in the current release series. |
-| `rvs update --to SERIES --apply` | Moves to a newer release series after confirmation. |
+| `rvs update --apply` | Installs the latest update in the rolling `v0` channel. |
+| `rvs update --to 0.MINOR --apply` | Installs the latest stable patch in one minor line without creating a pin. |
 | `rvs update --candidate X.Y.ZrcN` | Verifies and previews a signed GitHub release candidate. |
 | `rvs update --candidate X.Y.ZrcN --apply` | Installs the verified candidate package. |
 
@@ -183,14 +183,17 @@ the native tool's output. Diagnostics go to stderr for these capture-friendly co
 Custom mirror creation is available in the webapp. Existing custom mirrors remain
 available to CLI listing, selection, age changes, deletion, and upstream attachment.
 
-`rvs update --to SERIES` previews the selected newer release series without
-changing the active installation. Add `--apply` to install. APT installations
+`rvs update --to 0.MINOR` previews the latest stable patch in that minor line
+without changing the active installation or its rolling `v0` channel. Add
+`--apply` to install. A later plain `rvs update` resumes at the newest `v0`
+release. APT installations
 delegate to APT; portable Linux, Alpine/musl, macOS, and Windows installations
 download, authenticate, stage, health-check, and atomically activate the matching
 native bundle. Nix, Homebrew, and WinGet installations delegate replacement to
-their package manager. Homebrew and WinGet upgrade their versioned package in
-place within a series; `--to` replaces the old series package and rolls back if
-the new one cannot be installed. Homebrew and WinGet detection is ready for
+their package manager. Homebrew and WinGet upgrade their rolling major package.
+Because their catalogs cannot reliably select an older minor from that package,
+an exact-minor request fails before mutation and offers the signed portable path.
+Homebrew and WinGet detection is ready for
 their generated manifests, but those paths become generally available only when
 the manifests are accepted into their external catalogs. Because supported Nix
 installs use immutable version-tag flake references, the Nix path replaces the

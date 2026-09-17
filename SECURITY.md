@@ -2,10 +2,11 @@
 
 ## Supported versions
 
-Security fixes are made for the latest patch of each release series marked
-`supported` in Ravenstash's signed channel manifest. Unsupported series may not
-receive fixes. Upgrade to a supported series before reporting a version-specific
-problem when practical.
+Security fixes are made for the latest release in each channel marked `supported`
+in Ravenstash's signed channel manifest. Earlier minor targets remain available
+for controlled upgrades but do not represent separately supported security lines.
+Upgrade to the latest supported channel release before reporting a
+version-specific problem when practical.
 
 ## Reporting a vulnerability
 

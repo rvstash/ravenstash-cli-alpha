@@ -12,7 +12,8 @@ from pathlib import Path
 from typing import Any
 
 
-CHANNEL_PATTERN = re.compile(r"^v([0-9]+)\.([0-9]+)$")
+NUMBER = r"(?:0|[1-9][0-9]*)"
+CHANNEL_PATTERN = re.compile(rf"^v({NUMBER})$")
 VERSION_PATTERN = re.compile(
     r"^([0-9]+)\.([0-9]+)\.([0-9]+)(?:rc[1-9][0-9]*|[~+.-][A-Za-z0-9.-]+)?$"
 )
@@ -22,8 +23,7 @@ def channel_for_version(version: str) -> str:
     match = VERSION_PATTERN.fullmatch(version)
     if match is None:
         raise ValueError(f"unsupported rvs version: {version}")
-    major, minor, _patch = (int(value) for value in match.groups()[:3])
-    return f"v{major}.{minor}"
+    return f"v{int(match.group(1))}"
 
 
 def normalize_channel(value: str) -> str:
@@ -81,25 +81,45 @@ def newer(left: str, right: str) -> bool:
     return result.returncode == 0
 
 
-def latest_version(packages_file: Path, channel: str) -> str:
-    versions = [
+def versions(packages_file: Path, channel: str) -> list[str]:
+    return [
         fields["Version"]
         for block in stanzas(packages_file.read_text(encoding="utf-8"))
         if (fields := stanza_fields(block)).get("Package") == "rvs"
         and version_matches_channel(fields.get("Version", ""), channel)
     ]
+
+
+def latest(versions: list[str], label: str) -> str:
     if not versions:
-        raise ValueError(f"channel {channel} has no rvs packages")
-    latest = versions[0]
+        raise ValueError(f"{label} has no rvs packages")
+    result = versions[0]
     for candidate in versions[1:]:
-        if newer(candidate, latest):
-            latest = candidate
-    return latest
+        if newer(candidate, result):
+            result = candidate
+    return result
+
+
+def latest_version(packages_file: Path, channel: str) -> str:
+    return latest(versions(packages_file, channel), f"channel {channel}")
+
+
+def minor_targets(packages_file: Path, channel: str) -> dict[str, str]:
+    grouped: dict[str, list[str]] = {}
+    for version in versions(packages_file, channel):
+        match = VERSION_PATTERN.fullmatch(version)
+        assert match is not None
+        selector = f"{int(match.group(1))}.{int(match.group(2))}"
+        grouped.setdefault(selector, []).append(version)
+    return {
+        selector: latest(candidates, f"minor target {selector}")
+        for selector, candidates in sorted(grouped.items())
+    }
 
 
 def manifest(repository: Path, recommended: str) -> dict[str, Any]:
     recommended = normalize_channel(recommended)
-    channels: dict[str, dict[str, str]] = {}
+    channels: dict[str, dict[str, Any]] = {}
     for distribution in sorted((repository / "dists").iterdir()):
         if not distribution.is_dir():
             continue
@@ -109,9 +129,8 @@ def manifest(repository: Path, recommended: str) -> dict[str, Any]:
             continue
         channels[channel] = {
             "latest": latest_version(packages, channel),
-            "migration_notes": (
-                f"https://docs.ravenstash.com/cli/releases/{channel[1:].replace('.', '-')}/"
-            ),
+            "minor_targets": minor_targets(packages, channel),
+            "migration_notes": f"https://docs.ravenstash.com/cli/releases/{channel[1:]}/",
             "status": "supported",
         }
     if recommended not in channels:

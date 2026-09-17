@@ -17,7 +17,13 @@ from rvs.installations import (
     read_receipt,
     write_receipt,
 )
-from rvs.portable_update import UpdateError, activate_posix, extract_release, newer
+from rvs.portable_update import (
+    UpdateError,
+    activate_posix,
+    extract_release,
+    latest_for_minor,
+    newer,
+)
 from rvs.update_trust import VerificationError, _release_key, verify_detached
 
 
@@ -65,8 +71,14 @@ def test_channel_discovery_authenticates_the_public_manifest(
 ) -> None:
     manifest = {
         "schema": 1,
-        "recommended": "v0.14",
-        "channels": {"v0.14": {"latest": "0.14.3", "status": "supported"}},
+        "recommended": "v0",
+        "channels": {
+            "v0": {
+                "latest": "0.15.1",
+                "minor_targets": {"0.14": "0.14.3", "0.15": "0.15.1"},
+                "status": "supported",
+            }
+        },
     }
     httpx2_mock.add_response(url=portable_update_mod.CHANNELS_URL, json=manifest)
     httpx2_mock.add_response(url=f"{portable_update_mod.CHANNELS_URL}.gpg", content=b"signature")
@@ -79,6 +91,7 @@ def test_channel_discovery_authenticates_the_public_manifest(
 
     assert portable_update_mod.fetch_channel_manifest() == manifest
     assert verified and verified[0][1] == b"signature"
+    assert latest_for_minor(manifest, "0.14") == "0.14.3"
 
 
 @pytest.mark.parametrize(

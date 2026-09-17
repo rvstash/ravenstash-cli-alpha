@@ -14,7 +14,7 @@ from pathlib import Path
 
 RECEIPT_NAME = "rvs-install.json"
 _VERSION = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+(?:rc[1-9][0-9]*)?$")
-_CHANNEL = re.compile(r"^v[0-9]+\.[0-9]+$")
+_CHANNEL = re.compile(r"^v[0-9]+$")
 _TARGETS = {
     "linux-amd64",
     "linux-arm64",
@@ -51,8 +51,8 @@ def compatibility_channel(version: str) -> str:
     match = _VERSION.fullmatch(version)
     if match is None:
         raise ValueError("invalid installed rvs version")
-    major, minor, _patch = version.removesuffix(_candidate_suffix(version)).split(".")
-    return f"v{major}.{minor}"
+    major, _minor, _patch = version.removesuffix(_candidate_suffix(version)).split(".")
+    return f"v{major}"
 
 
 def _candidate_suffix(version: str) -> str:

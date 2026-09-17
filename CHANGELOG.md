@@ -6,6 +6,13 @@ All notable user-facing changes to `rvs` are recorded here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- Pre-1 stable releases now share one rolling `v0` update channel across APT,
+  portable archives, Nix, Homebrew, and WinGet.
+- `rvs update --to 0.MINOR` now selects the latest signed stable patch in that
+  minor line for one update without creating a persistent channel pin.
+
 ## [0.14.6] - 2026-09-16
 
 ### Changed

@@ -70,8 +70,8 @@ class RestorePublicAptTests(unittest.TestCase):
         ).encode()
         manifest = json.dumps(
             {
-                "channels": {"v0.14": {}},
-                "recommended": "v0.14",
+                "channels": {"v0": {}},
+                "recommended": "v0",
                 "schema": 1,
             }
         ).encode()
@@ -81,7 +81,7 @@ class RestorePublicAptTests(unittest.TestCase):
             amd64_package_path: b"amd64 deb",
             arm64_package_path: b"arm64 deb",
         }
-        for distribution in ("v0.14",):
+        for distribution in ("v0",):
             prefix = f"dists/{distribution}"
             files[f"{prefix}/InRelease"] = b"inrelease"
             files[f"{prefix}/Release"] = release

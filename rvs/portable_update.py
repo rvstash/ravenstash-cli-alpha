@@ -20,6 +20,7 @@ from typing import TYPE_CHECKING, Any
 
 import httpx2 as httpx
 
+from .apt_channels import minor_target_for_version, normalize_channel, normalize_minor_target
 from .installations import RECEIPT_NAME, Installation, compatibility_channel, write_receipt
 from .update_trust import VerificationError, verify_detached
 
@@ -83,13 +84,25 @@ def fetch_channel_manifest() -> dict[str, Any]:
         if not isinstance(recommended, str) or recommended not in channels:
             raise UpdateError("the signed release-channel manifest has no valid recommendation")
         for channel, details in channels.items():
-            if not re.fullmatch(r"v[0-9]+\.[0-9]+", channel) or not isinstance(details, dict):
+            if not re.fullmatch(r"v[0-9]+", channel) or not isinstance(details, dict):
                 raise UpdateError("the signed release-channel manifest contains an invalid channel")
             latest = details.get("latest")
-            if not isinstance(latest, str) or version_key(latest)[:2] != tuple(
-                int(part) for part in channel.removeprefix("v").split(".")
-            ):
+            if not isinstance(latest, str) or compatibility_channel(latest) != channel:
                 raise UpdateError("the signed release-channel manifest contains an invalid version")
+            targets = details.get("minor_targets")
+            if not isinstance(targets, dict) or not targets:
+                raise UpdateError("the signed release-channel manifest has no minor targets")
+            for selector, target in targets.items():
+                if (
+                    not isinstance(selector, str)
+                    or not isinstance(target, str)
+                    or normalize_minor_target(selector) != selector
+                    or minor_target_for_version(target) != selector
+                    or compatibility_channel(target) != channel
+                ):
+                    raise UpdateError(
+                        "the signed release-channel manifest contains an invalid minor target"
+                    )
         return payload
     except (OSError, ValueError, VerificationError, httpx.HTTPError) as exc:
         if isinstance(exc, UpdateError):
@@ -100,11 +113,24 @@ def fetch_channel_manifest() -> dict[str, Any]:
 def latest_for_channel(manifest: dict[str, Any], channel: str) -> str:
     details = manifest["channels"].get(channel)
     if not isinstance(details, dict) or details.get("status") != "supported":
-        raise UpdateError(f"release series {channel} is not available for upgrade")
+        raise UpdateError(f"release channel {channel} is not available for upgrade")
     latest = details.get("latest")
     if not isinstance(latest, str):
-        raise UpdateError(f"release series {channel} has no valid latest version")
+        raise UpdateError(f"release channel {channel} has no valid latest version")
     return latest
+
+
+def latest_for_minor(manifest: dict[str, Any], selector: str) -> str:
+    normalized = normalize_minor_target(selector)
+    channel = normalize_channel(normalized.partition(".")[0])
+    details = manifest["channels"].get(channel)
+    if not isinstance(details, dict) or details.get("status") != "supported":
+        raise UpdateError(f"release channel {channel} is not available for upgrade")
+    targets = details.get("minor_targets")
+    target = targets.get(normalized) if isinstance(targets, dict) else None
+    if not isinstance(target, str):
+        raise UpdateError(f"minor release {normalized} is not available for upgrade")
+    return target
 
 
 def _archive_name(version: str, target: str) -> str:

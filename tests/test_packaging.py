@@ -502,8 +502,8 @@ def test_installer_is_owned_by_cli_packaging_and_pins_release_identity() -> None
     source = INSTALLER.read_text(encoding="utf-8")
     project = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
     version = project["project"]["version"]
-    major, minor, _patch = version.split(".", 2)
-    channel = f"v{major}.{minor}"
+    major, _minor, _patch = version.split(".", 2)
+    channel = f"v{major}"
 
     if os.name != "nt":
         assert INSTALLER.stat().st_mode & 0o111
@@ -573,14 +573,10 @@ def test_package_manager_manifests_cover_both_desktop_architectures(tmp_path: Pa
     archive = release / "rvs-v0.14.3-package-manifests.tar.gz"
     with tarfile.open(archive) as package:
         names = package.getnames()
-        installer = package.extractfile(
-            "package-manifests/winget/Ravenstash.rvs.v0.14.installer.yaml"
-        )
+        installer = package.extractfile("package-manifests/winget/Ravenstash.rvs.v0.installer.yaml")
         assert installer is not None
         installer_text = installer.read().decode()
-        locale = package.extractfile(
-            "package-manifests/winget/Ravenstash.rvs.v0.14.locale.en-US.yaml"
-        )
+        locale = package.extractfile("package-manifests/winget/Ravenstash.rvs.v0.locale.en-US.yaml")
         assert locale is not None
         locale_text = locale.read().decode()
         for name in names:
@@ -588,10 +584,10 @@ def test_package_manager_manifests_cover_both_desktop_architectures(tmp_path: Pa
                 manifest = package.extractfile(name)
                 assert manifest is not None
                 assert isinstance(yaml.safe_load(manifest), dict)
-        cask = package.extractfile("package-manifests/homebrew/rvs@0.14.rb")
+        cask = package.extractfile("package-manifests/homebrew/rvs@0.rb")
         assert cask is not None
         cask_text = cask.read().decode()
-    assert "package-manifests/homebrew/rvs@0.14.rb" in names
+    assert "package-manifests/homebrew/rvs@0.rb" in names
     assert "Architecture: x64" in installer_text
     assert "Architecture: arm64" in installer_text
     assert "License: Apache-2.0" in locale_text
@@ -599,7 +595,7 @@ def test_package_manager_manifests_cover_both_desktop_architectures(tmp_path: Pa
     assert 'arch arm: "arm64", intel: "amd64"' in cask_text
 
 
-def test_package_manager_manifests_keep_major_minor_channel_for_v1(tmp_path: Path) -> None:
+def test_package_manager_manifests_use_rolling_major_channel_for_v1(tmp_path: Path) -> None:
     release = tmp_path / "release"
     release.mkdir()
     for name in (
@@ -623,5 +619,5 @@ def test_package_manager_manifests_keep_major_minor_channel_for_v1(tmp_path: Pat
 
     with tarfile.open(release / "rvs-v1.1.0-package-manifests.tar.gz") as package:
         names = package.getnames()
-    assert "package-manifests/homebrew/rvs@1.1.rb" in names
-    assert any("Ravenstash.rvs.v1.1" in name for name in names)
+    assert "package-manifests/homebrew/rvs@1.rb" in names
+    assert any("Ravenstash.rvs.v1" in name for name in names)

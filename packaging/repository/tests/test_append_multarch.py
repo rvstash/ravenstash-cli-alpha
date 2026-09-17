@@ -105,9 +105,8 @@ def _exercise_multarch_append(root: Path) -> None:
             str(keyring),
             str(_build_deb(root, "0.14.3", "amd64")),
         ],
-        env=common_env | {"RVS_APT_CHANNEL": "v0.14"},
+        env=common_env | {"RVS_APT_CHANNEL": "v0"},
     )
-    current_inrelease = (current / "dists/v0.14/InRelease").read_bytes()
     amd64 = root / "amd64"
     _run(
         [
@@ -117,9 +116,11 @@ def _exercise_multarch_append(root: Path) -> None:
             str(keyring),
             str(_build_deb(root, "0.15.0", "amd64")),
         ],
-        env=common_env | {"RVS_APT_CHANNEL": "v0.15"},
+        env=common_env | {"RVS_APT_CHANNEL": "v0"},
     )
-    assert (amd64 / "dists/v0.14/InRelease").read_bytes() == current_inrelease
+    amd64_packages = (amd64 / "dists/v0/main/binary-amd64/Packages").read_text()
+    assert "Version: 0.14.3" in amd64_packages
+    assert "Version: 0.15.0" in amd64_packages
     multarch = root / "multarch"
     _run(
         [
@@ -129,21 +130,16 @@ def _exercise_multarch_append(root: Path) -> None:
             str(keyring),
             str(_build_deb(root, "0.15.0", "arm64")),
         ],
-        env=common_env | {"RVS_APT_CHANNEL": "v0.15"},
+        env=common_env | {"RVS_APT_CHANNEL": "v0"},
     )
 
-    assert (multarch / "dists/v0.14/main/binary-arm64/Packages").read_text() == ""
-    assert (
-        "Architecture: arm64" in (multarch / "dists/v0.15/main/binary-arm64/Packages").read_text()
-    )
+    assert "Architecture: arm64" in (multarch / "dists/v0/main/binary-arm64/Packages").read_text()
 
     for binary in (multarch / "dists").glob("*/main/binary-arm64"):
         shutil.rmtree(binary)
     _run(["python3", str(RECOVER), str(multarch), str(keyring)])
     _run(["python3", str(VERIFY), str(multarch), str(keyring)])
-    assert (
-        "Architecture: arm64" in (multarch / "dists/v0.15/main/binary-arm64/Packages").read_text()
-    )
+    assert "Architecture: arm64" in (multarch / "dists/v0/main/binary-arm64/Packages").read_text()
 
 
 def _exercise_single_pass_multarch_append(root: Path) -> None:
@@ -213,12 +209,12 @@ def _exercise_single_pass_multarch_append(root: Path) -> None:
         | {
             "RVS_APT_GPG_KEY_ID": fingerprint,
             "RVS_APT_GPG_FINGERPRINT": fingerprint,
-            "RVS_APT_CHANNEL": "v0.14",
+            "RVS_APT_CHANNEL": "v0",
         },
     )
     _run(["python3", str(VERIFY), str(repository), str(keyring)])
     for architecture in ("amd64", "arm64"):
-        packages = repository / f"dists/v0.14/main/binary-{architecture}/Packages"
+        packages = repository / f"dists/v0/main/binary-{architecture}/Packages"
         assert f"Architecture: {architecture}" in packages.read_text()
     assert counter.read_text() == "x"
 
@@ -228,7 +224,7 @@ class AppendMultiarchTests(unittest.TestCase):
         any(shutil.which(command) is None for command in ("apt-ftparchive", "dpkg-deb", "gpg")),
         "APT repository tooling is unavailable",
     )
-    def test_new_architecture_keeps_older_channel_indexes_valid(self) -> None:
+    def test_new_architecture_keeps_older_minor_packages_in_rolling_channel(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             _exercise_multarch_append(Path(directory))
 
