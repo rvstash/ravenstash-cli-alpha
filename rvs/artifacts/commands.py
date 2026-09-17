@@ -15,6 +15,7 @@ from ..client import ApiClient, ApiError
 from ..devapi import collection_items
 from ..devapi import remote_cache as remote_cache_payload
 from .auth_commands import app as native_auth_app
+from .evidence_commands import app as evidence_app
 from .formats import FORMATS, flatten_formats
 from .oci_commands import app as oci_app
 from .primitives import endpoint, native_app, reference
@@ -43,6 +44,7 @@ app.add_typer(repo_app, name="repo")
 repo_app.add_typer(upstream_app, name="upstream")
 app.add_typer(remote_app, name="mirror")
 app.add_typer(package_app, name="package")
+app.add_typer(evidence_app, name="evidence")
 app.add_typer(oci_app, name="oci")
 app.add_typer(native_auth_app, name="token")
 app.add_typer(native_app, name="native")

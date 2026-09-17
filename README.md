@@ -175,3 +175,20 @@ Lists expose `--limit` and `--cursor`; root `--json` retains pagination metadata
 Use `rvs docker`, `rvs helm`, or `rvs oras` to transfer native content. ORAS needs
 no Ravenstash format flag. Wrapper credentials and logout changes stay in temporary
 configuration, including independent ORAS copy source/destination configs.
+
+Stage or attach package evidence without changing native publishing:
+
+```bash
+rvs art evidence stage dist/demo-1.0.0-py3-none-any.whl \
+  --target platform/packages --format pypi \
+  --package demo --version 1.0.0 --scope artifact \
+  --evidence cyclonedx=bom.cdx.json --analysis-context observed
+
+rvs art evidence status pe_EXAMPLE --wait
+rvs art evidence sbom pa_EXAMPLE --analysis-context observed -o demo.cdx.json
+```
+
+Staging does not publish the package; use the normal native client afterward.
+Release scope freezes every explicitly supplied digest and never includes future
+files. `--profile/-p` selects an RVS connection profile; evidence uses the distinct
+`--analysis-context` option.

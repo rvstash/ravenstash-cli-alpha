@@ -19,6 +19,7 @@ dependencies = [
     "cryptography==50.0.1; sys_platform != 'win32'",
     "idna==3.19",
     "pyyaml==6.0.3",
+    "packaging==26.3",
 ]
 classifiers = [
     "Environment :: Console",
