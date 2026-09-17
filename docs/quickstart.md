@@ -27,8 +27,10 @@ rvs account switch
 ```
 
 Use up/down and Enter to select a personal account or organization. You can
-also switch directly with `rvs account switch HANDLE`, using your Ravenstash
-username or an organization's public handle.
+also switch directly with `rvs account switch user:USERNAME` or
+`rvs account switch org:HANDLE`. The CLI always displays account handles with
+one of these prefixes, while namespace names remain unprefixed. Bare account
+handles remain accepted for compatibility.
 
 ## 3. Choose a repository
 

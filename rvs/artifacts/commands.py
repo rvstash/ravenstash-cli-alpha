@@ -10,7 +10,7 @@ import typer
 from .. import config as cfg_mod
 from .. import output
 from ..account.commands import display_name as account_display_name
-from ..account.commands import ensure_active_account, resolve_account
+from ..account.commands import ensure_active_account, payload_display_name, resolve_account
 from ..client import ApiClient, ApiError
 from ..devapi import collection_items
 from ..devapi import remote_cache as remote_cache_payload
@@ -54,6 +54,7 @@ app.command("reference")(reference)
 _PACKAGE_KINDS = ("pypi", "npm", "maven")
 _MAX_UPSTREAM_POSITION = 4
 _REPOSITORY_NAME_HELP = "Name-based target (namespace/repository) or ID-based target (in/ar_...)."
+_ACCOUNT_HELP = "Typed account handle (user:USERNAME or org:HANDLE). Bare handles remain supported."
 
 
 def _format_age_hours(value: float | int | str | None, *, missing: str) -> str:
@@ -107,7 +108,7 @@ def target_select(
         ),
     ),
     kind: str | None = typer.Option(None, "--format", help="Format if needed."),
-    account: str | None = typer.Option(None, "--account", help="Username or organization handle."),
+    account: str | None = typer.Option(None, "--account", help=_ACCOUNT_HELP),
     profile: str | None = typer.Option(None, "--profile", "-p"),
 ) -> None:
     """Choose the repository or mirror used when --target is omitted."""
@@ -136,7 +137,7 @@ def target_select(
 
 @app.command("current")
 def target_current(
-    account: str | None = typer.Option(None, "--account", help="Username or organization handle."),
+    account: str | None = typer.Option(None, "--account", help=_ACCOUNT_HELP),
     profile: str | None = typer.Option(None, "--profile", "-p"),
 ) -> None:
     """Show the current profile, account, and repository or mirror."""
@@ -159,7 +160,7 @@ def target_current(
 
 @app.command("clear")
 def target_clear(
-    account: str | None = typer.Option(None, "--account", help="Username or organization handle."),
+    account: str | None = typer.Option(None, "--account", help=_ACCOUNT_HELP),
     profile: str | None = typer.Option(None, "--profile", "-p"),
 ) -> None:
     """Clear the selected repository or mirror without signing out."""
@@ -254,13 +255,6 @@ def _repository_name_from_response(repo: dict, fallback_repository_name: str = "
     )
 
 
-def _public_account_handle(account: dict) -> str:
-    handle = account.get("account_handle")
-    if not isinstance(handle, str) or not handle.strip():
-        output.fatal("Ravenstash returned an account without a public handle.")
-    return handle.strip()
-
-
 def _selected_account_handle(
     profile: str | None,
     account_ref: str,
@@ -269,14 +263,12 @@ def _selected_account_handle(
     for entry in entries:
         account = entry.get("account")
         if isinstance(account, dict) and account.get("account_ref") == account_ref:
-            handle = account.get("account_handle")
-            if isinstance(handle, str) and handle.strip():
-                return handle
+            return payload_display_name(account)
 
     profile_name, selected = ensure_active_account(profile, account_ref)
     if selected.customer_handle:
-        return selected.customer_handle
-    return _public_account_handle(resolve_account(account_ref, profile_name))
+        return account_display_name(selected)
+    return payload_display_name(resolve_account(account_ref, profile_name))
 
 
 def _root_package_options() -> dict[str, str | None]:
@@ -523,7 +515,7 @@ def repo_show(
     except ApiError as exc:
         output.fatal(str(exc))
 
-    account_handle = _public_account_handle(entry["account"])
+    account_handle = payload_display_name(entry["account"])
     repository_name = _repository_name_from_response(item, repo)
     id_based_target = f"in/{item['repository_unique_ref']}"
     formats = ", ".join(
@@ -809,7 +801,7 @@ def remote_select(
     mirror: str = typer.Argument(..., help="Official source slug or custom mirror name."),
     custom: bool = typer.Option(False, "--custom", help="Select a custom mirror."),
     kind: str | None = typer.Option(None, "--format", help="Package format if needed."),
-    account: str | None = typer.Option(None, "--account", help="Username or organization handle."),
+    account: str | None = typer.Option(None, "--account", help=_ACCOUNT_HELP),
     profile: str | None = typer.Option(None, "--profile", "-p"),
 ) -> None:
     """Select a Ravenstash-provided or custom private mirror."""
@@ -859,7 +851,7 @@ def remote_list(
         ],
         [
             [
-                str(entry.get("account", {}).get("account_label", "")),
+                payload_display_name(entry.get("account", {})),
                 str(item["remote_cache_ref"]),
                 str(item.get("source_type") or "unknown"),
                 str(

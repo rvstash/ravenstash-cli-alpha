@@ -11,6 +11,7 @@ from .. import config as cfg_mod
 from .. import output
 from ..client import ApiClient, ApiError
 from ..interactive import select_index
+from .handles import typed_handle
 
 
 app = typer.Typer(
@@ -36,11 +37,12 @@ def accounts(profile: str | None = None) -> list[dict]:
     return [item for item in payload if isinstance(item, dict)]
 
 
-def _public_handle(account: dict) -> str:
-    handle = account.get("account_handle")
-    if not isinstance(handle, str) or not handle.strip():
-        output.fatal("Ravenstash returned an account without a public handle.")
-    return handle.strip()
+def payload_display_name(account: dict) -> str:
+    """Return the typed public handle from an API account payload."""
+    try:
+        return typed_handle(account.get("account_type"), account.get("account_handle"))
+    except ValueError:
+        output.fatal("Ravenstash returned an account without a valid type and public handle.")
 
 
 def resolve_account(selector: str, profile: str | None = None) -> dict:
@@ -50,14 +52,24 @@ def resolve_account(selector: str, profile: str | None = None) -> dict:
         output.fatal("Account name cannot be empty.")
 
     lowered = value.casefold()
-    handle_selector = value[4:] if lowered.startswith("org:") else value
+    expected_type = None
+    if lowered.startswith("user:"):
+        expected_type = "personal"
+        handle_selector = value[5:].strip()
+    elif lowered.startswith("org:"):
+        expected_type = "organization"
+        handle_selector = value[4:].strip()
+    else:
+        handle_selector = value
+    if not handle_selector:
+        output.fatal("Account handle cannot be empty.")
     handle_selector_folded = handle_selector.casefold()
     handle_matches = [
         item
         for item in items
         if isinstance(item.get("account_handle"), str)
         and item["account_handle"].casefold() == handle_selector_folded
-        and (not lowered.startswith("org:") or item.get("account_type") == "organization")
+        and (expected_type is None or item.get("account_type") == expected_type)
     ]
     if handle_matches:
         matches = handle_matches
@@ -125,11 +137,10 @@ def ensure_active_account(
 
 
 def display_name(account: cfg_mod.AccountContext) -> str:
-    if account.customer_handle:
-        return account.customer_handle
-    if account.account_type == "personal":
-        return "personal"
-    return f"org:{account.account_label}"
+    return typed_handle(
+        account.account_type,
+        account.customer_handle or account.account_label or account.customer_unique_ref,
+    )
 
 
 @app.command("list")
@@ -142,7 +153,7 @@ def account_list(
     rows = []
     for item in accounts(profile_name):
         account_ref = str(item.get("account_ref", ""))
-        label = _public_handle(item)
+        label = payload_display_name(item)
         rows.append(
             [
                 f"{label} (active)" if account_ref == active_id else label,
@@ -165,7 +176,7 @@ def account_current(
             "Account": display_name(account),
             "Selected by": cfg_mod.account_selection_source(profile_name),
             "Display name": account.account_label,
-            "Username or handle": account.customer_handle or "unknown",
+            "Account handle": display_name(account),
             "Account ref": account.customer_unique_ref,
             "Role": account.organization_role or "unknown",
         },
@@ -184,7 +195,7 @@ def _render_account_selector(
         "",
     ]
     for index, item in enumerate(items):
-        handle = escape(_public_handle(item))
+        handle = escape(payload_display_name(item))
         account_ref = str(item.get("account_ref", ""))
         account_type = item.get("account_type")
         role = str(item.get("organization_role") or "")
@@ -204,7 +215,7 @@ def _select_account_interactive(profile_name: str) -> dict:
     items.sort(
         key=lambda item: (
             item.get("account_type") != "personal",
-            _public_handle(item).casefold(),
+            payload_display_name(item).casefold(),
         )
     )
     active_account_ref = cfg_mod.current_customer_id(profile_name)
@@ -221,7 +232,8 @@ def _select_account_interactive(profile_name: str) -> dict:
         initial_index=initial_index,
         render=lambda index: _render_account_selector(items, index, active_account_ref),
         unavailable_message=(
-            "Cannot open account selector. Use `rvs account switch USERNAME_OR_HANDLE`."
+            "Cannot open account selector. Use `rvs account switch user:USERNAME` "
+            "or `rvs account switch org:HANDLE`."
         ),
     )
     return items[selected_index]
@@ -250,7 +262,10 @@ def _switch_account(account: str | None, profile: str | None) -> None:
 def account_switch(
     account: str | None = typer.Argument(
         None,
-        help="Public username or organization handle. Omit to choose interactively.",
+        help=(
+            "Typed user or organization handle (user:USERNAME or org:HANDLE). "
+            "Bare handles remain supported. Omit to choose interactively."
+        ),
     ),
     profile: str | None = typer.Option(None, "--profile", "-p"),
 ) -> None:

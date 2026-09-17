@@ -57,7 +57,22 @@ def test_context_current_shows_distinct_user_profile_account_and_target(
         @staticmethod
         def get(path: str) -> _Response:
             calls.append(path)
-            return _Response({"email": "developer@example.test"})
+            if path == "/me":
+                return _Response({"email": "developer@example.test"})
+            assert path == "/accounts"
+            return _Response(
+                {
+                    "items": [
+                        {
+                            "account_ref": "personal-user",
+                            "account_handle": "avery",
+                            "account_type": "personal",
+                            "account_label": "Avery Example",
+                            "organization_role": "owner",
+                        }
+                    ]
+                }
+            )
 
     monkeypatch.setattr(
         context_cmd.ApiClient,
@@ -68,11 +83,11 @@ def test_context_current_shows_distinct_user_profile_account_and_target(
     result = runner.invoke(app, ["context", "current"])
 
     assert result.exit_code == 0, result.output
-    assert calls == ["/me"]
+    assert calls == ["/me", "/accounts"]
     assert "developer@example.test" in result.output
     assert "work" in result.output
     assert "persisted default" in result.output
-    assert "personal" in result.output
+    assert "user:avery" in result.output
     assert "personal account default" in result.output
     assert "not selected" in result.output
     assert "https://api.work.example" in result.output
@@ -182,10 +197,53 @@ def test_account_switch_warns_when_environment_still_overrides_selection(
     result = runner.invoke(app, ["account", "switch", "acme"])
 
     assert result.exit_code == 0, result.output
-    assert "Account 'acme' selected for persisted profile" in result.output
+    assert "Account 'org:acme' selected for persisted profile" in result.output
     assert "RVS_ACCOUNT_REF is set and still overrides" in result.stderr
     assert cfg_mod.load().profiles["work"].active_customer_id == "acme"
     assert cfg_mod.current_customer_id("work") == "forced-customer"
+
+
+def test_account_list_displays_typed_user_and_organization_handles(
+    monkeypatch, tmp_path: Path
+) -> None:
+    _isolate_config(monkeypatch, tmp_path)
+
+    class _Client:
+        @staticmethod
+        def get(path: str) -> _Response:
+            assert path == "/accounts"
+            return _Response(
+                {
+                    "items": [
+                        {
+                            "account_ref": "personal-user",
+                            "account_handle": "avery",
+                            "account_type": "personal",
+                            "account_label": "Avery Example",
+                            "organization_role": "owner",
+                        },
+                        {
+                            "account_ref": "acme",
+                            "account_handle": "acme",
+                            "account_type": "organization",
+                            "account_label": "Acme Incorporated",
+                            "organization_role": "admin",
+                        },
+                    ]
+                }
+            )
+
+    monkeypatch.setattr(
+        account_cmd.ApiClient,
+        "from_profile",
+        staticmethod(lambda profile=None: _Client()),
+    )
+
+    result = runner.invoke(app, ["account", "list"])
+
+    assert result.exit_code == 0, result.output
+    assert "user:avery" in result.output
+    assert "org:acme" in result.output
 
 
 def test_account_switch_without_selector_opens_account_picker(monkeypatch, tmp_path: Path) -> None:
@@ -233,14 +291,14 @@ def test_account_switch_without_selector_opens_account_picker(monkeypatch, tmp_p
     assert result.exit_code == 0, result.output
     assert selector["initial_index"] == 0
     rendered = selector["render"](1)
-    assert "avery" in rendered
+    assert "user:avery" in rendered
     assert "Personal · owner" in rendered
-    assert "acme" in rendered
+    assert "org:acme" in rendered
     assert "Organization · admin" in rendered
     assert "Avery Example" not in rendered
     assert "Acme Incorporated" not in rendered
     assert "(active)" in rendered
-    assert "Account 'acme' selected for persisted profile" in result.output
+    assert "Account 'org:acme' selected for persisted profile" in result.output
     assert cfg_mod.load().profiles["work"].active_customer_id == "acme"
 
 

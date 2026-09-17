@@ -162,7 +162,7 @@ def test_oci_publish_decline_does_not_launch(monkeypatch, tmp_path: Path, tool, 
     monkeypatch.setattr(oci_runner.subprocess, "Popen", lambda *args, **kwargs: calls.append(args))
     result = runner.invoke(app, [tool, "--rvs-target", "main/images", *args], input="\n")
     assert result.exit_code != 0
-    assert "Publish to main/images (personal)" in result.output
+    assert "Publish to main/images (user:personal)" in result.output
     assert not calls
 
 

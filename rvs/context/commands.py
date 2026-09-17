@@ -6,7 +6,7 @@ import typer
 
 from .. import config as cfg_mod
 from .. import output
-from ..account.commands import accounts, display_name
+from ..account.commands import accounts, display_name, payload_display_name
 from ..client import ApiClient, ApiError
 
 
@@ -24,10 +24,6 @@ def _account_display(profile_name: str) -> tuple[str, cfg_mod.AccountContext | N
     if cached is not None:
         return display_name(cached), cached
 
-    profile = cfg.profiles.get(profile_name)
-    if profile is not None and customer_id == profile.customer_id:
-        return "personal", None
-
     items = accounts(profile_name)
     if customer_id:
         matches = [item for item in items if item.get("account_ref") == customer_id]
@@ -37,10 +33,7 @@ def _account_display(profile_name: str) -> tuple[str, cfg_mod.AccountContext | N
         return f"unresolved:{customer_id}", None
     if len(matches) != 1:
         return "not selected", None
-    selected = matches[0]
-    if selected.get("account_type") == "personal":
-        return "personal", None
-    return f"org:{selected.get('account_label') or 'unknown'}", None
+    return payload_display_name(matches[0]), None
 
 
 def _identity_display(identity: object) -> str:

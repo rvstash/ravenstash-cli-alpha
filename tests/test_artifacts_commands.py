@@ -205,7 +205,7 @@ def test_artifacts_repo_list_omits_unset_query_filters(
     assert "No repositories found" in result.output
 
 
-def test_artifacts_repo_list_preserves_json_shape_and_uses_account_handle(
+def test_artifacts_repo_list_preserves_json_shape_and_uses_typed_account_handle(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
@@ -223,7 +223,7 @@ def test_artifacts_repo_list_preserves_json_shape_and_uses_account_handle(
     payload = json.loads(result.output)
     assert payload["items"] == [
         {
-            "account": "test-account",
+            "account": "org:test-account",
             "namespace": "test-account",
             "repository": "repo-pypi",
             "id_based_target": "in/ar_xyzabcde",

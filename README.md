@@ -33,8 +33,10 @@ rvs account switch
 rvs art select platform/packages
 ```
 
-Use the interactive picker, or pass a Ravenstash username or organization
-handle directly with `rvs account switch HANDLE`. Handles are matched without
+Use the interactive picker, or pass a typed Ravenstash account handle directly:
+`rvs account switch user:USERNAME` or `rvs account switch org:HANDLE`. Account
+handles are always displayed with these prefixes so they cannot be confused
+with namespace names. Bare handles remain accepted and are matched without
 regard to letter case.
 
 Then run the package tool you already use:

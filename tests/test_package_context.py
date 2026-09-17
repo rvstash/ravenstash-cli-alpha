@@ -212,12 +212,30 @@ def test_handle_selection_preserves_customer_id_and_canonical_case(monkeypatch, 
     monkeypatch.setattr(ApiClient, "from_profile", staticmethod(lambda profile=None: fake))
     selected = runner.invoke(app, ["account", "switch", "ACMEHQ"])
     assert selected.exit_code == 0, selected.output
-    assert "acmeHQ" in selected.output
+    assert "org:acmeHQ" in selected.output
     assert cfg_mod.current_customer_id("alice") == "acme-id"
     cached = cfg_mod.cached_account("alice", "acme-id")
     assert cached is not None
     assert cached.customer_handle == "acmeHQ"
     assert cached.customer_unique_ref == owner["account_ref"]
+
+
+def test_typed_handle_selectors_disambiguate_user_and_organization(monkeypatch, tmp_path):
+    isolate(monkeypatch, tmp_path)
+    personal = customer("personal-alice", "shared", "personal")
+    organization = customer("org-shared", "shared")
+    fake = FakeApi([personal, organization], [])
+    monkeypatch.setattr(ApiClient, "from_profile", staticmethod(lambda profile=None: fake))
+
+    selected_user = runner.invoke(app, ["account", "switch", "user:SHARED"])
+    assert selected_user.exit_code == 0, selected_user.output
+    assert "Account 'user:shared' selected" in selected_user.output
+    assert cfg_mod.current_customer_id("alice") == "personal-alice"
+
+    selected_org = runner.invoke(app, ["account", "switch", "org:shared"])
+    assert selected_org.exit_code == 0, selected_org.output
+    assert "Account 'org:shared' selected" in selected_org.output
+    assert cfg_mod.current_customer_id("alice") == "org-shared"
 
 
 def test_repository_resolution_rejects_cross_customer_response(monkeypatch, tmp_path):
@@ -424,7 +442,7 @@ def test_stable_cross_account_target_reports_owner_without_switching(monkeypatch
     ]
     assert owner.customer_id == target.customer_id == "org-foreign"
     assert cfg_mod.current_customer_id("alice") == "personal-alice"
-    assert "OtherOrg" in capsys.readouterr().out
+    assert "org:OtherOrg" in capsys.readouterr().out
 
 
 def test_cross_account_selection_stays_in_current_context_and_uses_owner_credentials(
@@ -474,6 +492,7 @@ def test_management_stable_reference_crosses_account_with_json_hint(
     assert messages[0]["event"] == "cross_account_resource"
     assert messages[0]["selected_account_ref"] == "personal-alice"
     assert messages[0]["owner_account_ref"] == "org-foreign"
+    assert messages[0]["owner_account"] == "org:OtherOrg"
     assert cfg_mod.current_customer_id("alice") == "personal-alice"
 
 

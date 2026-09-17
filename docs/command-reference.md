@@ -28,19 +28,22 @@ When a package tool must connect without an `rvs` wrapper, run `rvs art token mi
 | --- | --- |
 | `rvs account list` | Lists personal accounts and organizations you can use. |
 | `rvs account switch` | Interactively chooses a personal account or organization. |
-| `rvs account switch HANDLE` | Chooses an account directly by username or organization handle. |
+| `rvs account switch user:USERNAME` | Chooses a personal account directly by username. |
+| `rvs account switch org:HANDLE` | Chooses an organization directly by its public handle. |
 | `rvs account current` | Shows the selected account. |
 | `rvs art select NAMESPACE/REPOSITORY` | Chooses a private repository. |
 | `rvs art current` | Shows the selected repository or mirror. |
 | `rvs art clear` | Clears that choice without signing out. |
 | `rvs context current` | Shows the signed-in user and current choices together. |
 
-For a personal account, `HANDLE` is the Ravenstash username. For an
-organization, it is the organization's public handle.
+Account resources are always displayed as `user:USERNAME` or `org:HANDLE` so
+they remain distinct from unprefixed namespace names. Bare account handles are
+still accepted as selectors for compatibility.
 
-Use `--account NAME` or `--target TARGET` on an `rvs art` command when you want a
-different choice for only that command. A repository target can be name-based
-(`NAMESPACE/REPOSITORY`) or ID-based (`in/ar_...`).
+Use `--account user:USERNAME`, `--account org:HANDLE`, or `--target TARGET` on an
+`rvs art` command when you want a different choice for only that command. A
+repository target can be name-based (`NAMESPACE/REPOSITORY`) or ID-based
+(`in/ar_...`).
 
 ## Repositories
 

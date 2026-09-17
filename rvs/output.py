@@ -9,6 +9,8 @@ from rich.console import Console
 from rich.table import Table
 from rich.text import Text
 
+from .account.handles import typed_handle
+
 
 console = Console()
 err_console = Console(stderr=True)
@@ -133,8 +135,14 @@ def resource_account_hint(selector: str, selected_account_ref: str, owner: dict)
     from rich.markup import escape
 
     owner_id = str(owner["account_ref"])
-    label = str(owner.get("account_handle") or owner.get("account_label") or owner_id)
     account_type = str(owner.get("account_type") or "account")
+    try:
+        label = typed_handle(
+            account_type,
+            owner.get("account_handle") or owner.get("account_label") or owner_id,
+        )
+    except ValueError:
+        label = f"account:{owner_id}"
     message = (
         f"Resource {selector} belongs to another account: {label} ({account_type}, {owner_id}). "
         "The selected account is unchanged; resource operations use the owning account."

@@ -321,7 +321,7 @@ def test_native_publish_decline_does_not_launch(monkeypatch, tmp_path: Path, too
     _capture_run(monkeypatch, calls)
     result = runner.invoke(app, [tool, "--rvs-target", "staging/repo", *args], input="\n")
     assert result.exit_code != 0
-    assert "Publish to staging/repo (staging)" in result.output
+    assert "Publish to staging/repo (user:staging)" in result.output
     assert not calls
 
 
@@ -348,7 +348,7 @@ def test_native_detected_registry_confirms_resolved_account(
     assert (result.exit_code == 0) == published, result.output
     assert bool(calls) == published
     if not flags:
-        assert "Publish to staging/repo (staging)" in result.output
+        assert "Publish to staging/repo (org:staging)" in result.output
     if calls:
         assert "--rvs-yes" not in calls[0]["cmd"]
 

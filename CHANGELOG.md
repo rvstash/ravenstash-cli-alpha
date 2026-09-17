@@ -8,6 +8,9 @@ All notable user-facing changes to `rvs` are recorded here. The format follows
 
 ### Changed
 
+- User and organization account resources are now displayed unambiguously as
+  `user:USERNAME` and `org:HANDLE`; both typed forms are accepted as selectors,
+  while bare handles remain compatible.
 - Pre-1 stable releases now share one rolling `v0` update channel across APT,
   portable archives, Nix, Homebrew, and WinGet.
 - `rvs update --to 0.MINOR` now selects the latest signed stable patch in that

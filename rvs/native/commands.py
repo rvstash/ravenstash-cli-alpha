@@ -13,6 +13,9 @@ if TYPE_CHECKING:
     from . import runner
 
 
+_ACCOUNT_HELP = "Typed account handle (user:USERNAME or org:HANDLE). Bare handles remain supported."
+
+
 PASSTHROUGH_CONTEXT = {
     "allow_extra_args": True,
     "ignore_unknown_options": True,
@@ -61,9 +64,7 @@ def pip(
     rvs_target: str | None = typer.Option(
         None, "--rvs-target", help="Repository or mirror for this command."
     ),
-    rvs_account: str | None = typer.Option(
-        None, "--rvs-account", help="Username or organization handle."
-    ),
+    rvs_account: str | None = typer.Option(None, "--rvs-account", help=_ACCOUNT_HELP),
     rvs_customer_id: str | None = typer.Option(
         None,
         "--rvs-account-ref",
@@ -90,9 +91,7 @@ def uv(
     rvs_target: str | None = typer.Option(
         None, "--rvs-target", help="Repository or mirror for this command."
     ),
-    rvs_account: str | None = typer.Option(
-        None, "--rvs-account", help="Username or organization handle."
-    ),
+    rvs_account: str | None = typer.Option(None, "--rvs-account", help=_ACCOUNT_HELP),
     rvs_customer_id: str | None = typer.Option(
         None,
         "--rvs-account-ref",
@@ -119,9 +118,7 @@ def twine(
     rvs_target: str | None = typer.Option(
         None, "--rvs-target", help="Repository or mirror for this command."
     ),
-    rvs_account: str | None = typer.Option(
-        None, "--rvs-account", help="Username or organization handle."
-    ),
+    rvs_account: str | None = typer.Option(None, "--rvs-account", help=_ACCOUNT_HELP),
     rvs_customer_id: str | None = typer.Option(
         None,
         "--rvs-account-ref",
@@ -148,9 +145,7 @@ def npm(
     rvs_target: str | None = typer.Option(
         None, "--rvs-target", help="Repository or mirror for this command."
     ),
-    rvs_account: str | None = typer.Option(
-        None, "--rvs-account", help="Username or organization handle."
-    ),
+    rvs_account: str | None = typer.Option(None, "--rvs-account", help=_ACCOUNT_HELP),
     rvs_customer_id: str | None = typer.Option(
         None,
         "--rvs-account-ref",
@@ -177,9 +172,7 @@ def mvn(
     rvs_target: str | None = typer.Option(
         None, "--rvs-target", help="Repository or mirror for this command."
     ),
-    rvs_account: str | None = typer.Option(
-        None, "--rvs-account", help="Username or organization handle."
-    ),
+    rvs_account: str | None = typer.Option(None, "--rvs-account", help=_ACCOUNT_HELP),
     rvs_customer_id: str | None = typer.Option(
         None,
         "--rvs-account-ref",
