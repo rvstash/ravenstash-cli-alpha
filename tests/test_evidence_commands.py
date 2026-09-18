@@ -6,6 +6,7 @@ import os
 from typing import TYPE_CHECKING, Any
 
 import pytest
+from click import unstyle
 from rvs import output
 from rvs.artifacts import evidence_commands
 from typer.testing import CliRunner
@@ -150,13 +151,15 @@ def test_evidence_help_keeps_profile_and_analysis_context_distinct() -> None:
     result = runner.invoke(
         evidence_commands.app,
         ["stage", "--help"],
+        color=True,
         env={"COLUMNS": "120"},
     )
+    help_output = unstyle(result.output)
 
     assert result.exit_code == 0
-    assert "--profile" in result.output
-    assert "--analysis-context" in result.output
-    assert "--analysis-profile" not in result.output
+    assert "--profile" in help_output
+    assert "--analysis-context" in help_output
+    assert "--analysis-profile" not in help_output
 
 
 def test_stage_emits_stable_json_without_upload_request(
