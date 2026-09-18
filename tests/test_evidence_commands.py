@@ -147,7 +147,11 @@ def test_stage_coordinate_validation_accepts_native_filenames(
 
 
 def test_evidence_help_keeps_profile_and_analysis_context_distinct() -> None:
-    result = runner.invoke(evidence_commands.app, ["stage", "--help"])
+    result = runner.invoke(
+        evidence_commands.app,
+        ["stage", "--help"],
+        env={"COLUMNS": "120"},
+    )
 
     assert result.exit_code == 0
     assert "--profile" in result.output
