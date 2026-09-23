@@ -20,6 +20,19 @@ case "$machine_architecture" in
 esac
 readonly expected_source="deb [arch=${package_architecture} signed-by=${keyring_path}] ${repository_url} ${compatibility_channel} main"
 readonly repair="${RVS_INSTALL_REPAIR:-0}"
+readonly portable_installer_api="1"
+readonly install_method="${RVS_INSTALL_METHOD:-auto}"
+readonly selected_release_version="${RVS_INSTALL_VERSION:-${release_version}}"
+# Exposed for setup-ravenstash, which authenticates the installer before reading
+# this compatibility contract.
+: "$portable_installer_api"
+# Portable releases through 0.14.6 validate receipts against the former v0.14
+# compatibility channel. Later releases use the rolling major channel.
+portable_compatibility_channel="$compatibility_channel"
+case "$selected_release_version" in
+  0.14.[3-6] | 0.14.[3-6]rc*) portable_compatibility_channel="v0.14" ;;
+esac
+readonly portable_compatibility_channel
 
 say() {
   printf 'rvs installer: %s\n' "$*"
@@ -64,6 +77,17 @@ fail() {
   exit 1
 }
 
+case "$install_method" in
+  auto | portable) ;;
+  *) fail "RVS_INSTALL_METHOD must be auto or portable" ;;
+esac
+if [[ -n "${RVS_INSTALL_VERSION:-}" ]]; then
+  [[ "$install_method" == "portable" ]] \
+    || fail "RVS_INSTALL_VERSION requires RVS_INSTALL_METHOD=portable"
+  [[ "$selected_release_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(rc[1-9][0-9]*)?$ ]] \
+    || fail "RVS_INSTALL_VERSION must be a stable or release-candidate version"
+fi
+
 has_os_family() {
   local candidate="$1"
   [[ " ${ID:-} ${ID_LIKE:-} " == *" ${candidate} "* ]]
@@ -103,7 +127,7 @@ download_release_asset() {
   local release_api asset_api auth_header
   auth_header="${destination}.github-auth"
   (umask 077; printf 'Authorization: Bearer %s\n' "$RVS_GITHUB_TOKEN" > "$auth_header")
-  release_api="https://api.github.com/repos/rvstash/ravenstash-cli-alpha/releases/tags/v${release_version}"
+  release_api="https://api.github.com/repos/rvstash/ravenstash-cli-alpha/releases/tags/v${selected_release_version}"
   asset_api="$(
     curl --proto '=https' --proto-redir '=https' --tlsv1.2 -fsSL \
       -H "@${auth_header}" \
@@ -284,13 +308,13 @@ install_portable_archive() {
     command -v "$command" >/dev/null 2>&1 || fail "required command not found: ${command}"
   done
 
-  local archive_name="rvs-v${release_version}-${system_name}-${architecture}.tar.gz"
-  local checksums_name="rvs-v${release_version}-checksums.txt"
+  local archive_name="rvs-v${selected_release_version}-${system_name}-${architecture}.tar.gz"
+  local checksums_name="rvs-v${selected_release_version}-checksums.txt"
   local signature_name="${checksums_name}.asc"
-  local release_url="${github_release_url}/v${release_version}"
+  local release_url="${github_release_url}/v${selected_release_version}"
   local temporary_key="${temporary_directory}/ravenstash-rvs.gpg"
 
-  say "downloading the signed portable rvs ${release_version} archive"
+  say "downloading the signed portable rvs ${selected_release_version} archive"
   download_release_asset "$release_url" "$archive_name" "${temporary_directory}/${archive_name}"
   download_release_asset "$release_url" "$checksums_name" "${temporary_directory}/${checksums_name}"
   download_release_asset "$release_url" "$signature_name" "${temporary_directory}/${signature_name}"
@@ -327,7 +351,7 @@ install_portable_archive() {
       ;;
     *) fail "RVS_INSTALL_SCOPE must be user or system" ;;
   esac
-  install_directory="${install_root}/${release_version}"
+  install_directory="${install_root}/${selected_release_version}"
   [[ "$install_root" == /* && "$install_root" != "/" ]] \
     || fail "RVS_INSTALL_ROOT must be an absolute directory other than /"
   [[ "$bin_directory" == /* && "$bin_directory" != "/" ]] \
@@ -338,7 +362,7 @@ install_portable_archive() {
 
   local extracted="${temporary_directory}/extracted"
   mkdir -p "$extracted"
-  local archive_prefix="rvs-v${release_version}-${system_name}-${architecture}"
+  local archive_prefix="rvs-v${selected_release_version}-${system_name}-${architecture}"
   while IFS= read -r member; do
     case "$member" in
       "$archive_prefix" | "$archive_prefix"/*) ;;
@@ -355,8 +379,8 @@ install_portable_archive() {
   "${archive_root}/rvs" _record-install \
     --output "${archive_root}/rvs-install.json" \
     --scope "${RVS_INSTALL_SCOPE:-user}" \
-    --version "$release_version" \
-    --channel "$compatibility_channel" \
+    --version "$selected_release_version" \
+    --channel "$portable_compatibility_channel" \
     --target "${system_name}-${architecture}" \
     --install-root "$install_root" \
     --bin-directory "$bin_directory"
@@ -378,7 +402,7 @@ install_portable_archive() {
       as_root rm -rf -- "$install_directory"
     fi
     as_root mv "$archive_root" "$install_directory"
-    as_root ln -sfn "$release_version" "${install_root}/current"
+    as_root ln -sfn "$selected_release_version" "${install_root}/current"
     as_root ln -sfn "${install_root}/current/rvs" "${bin_directory}/rvs"
     as_root ln -sfn "${install_root}/current/ravenstash" "${bin_directory}/ravenstash"
     as_root ln -sfn "${install_root}/current/docker-credential-rvs" "${bin_directory}/docker-credential-rvs"
@@ -391,13 +415,13 @@ install_portable_archive() {
       rm -rf -- "$install_directory"
     fi
     mv "$archive_root" "$install_directory"
-    ln -sfn "$release_version" "${install_root}/current"
+    ln -sfn "$selected_release_version" "${install_root}/current"
     ln -sfn "${install_root}/current/rvs" "${bin_directory}/rvs"
     ln -sfn "${install_root}/current/ravenstash" "${bin_directory}/ravenstash"
     ln -sfn "${install_root}/current/docker-credential-rvs" "${bin_directory}/docker-credential-rvs"
   fi
   "${bin_directory}/rvs" --version >/dev/null
-  say "installed rvs ${release_version} in ${install_directory}"
+  say "installed rvs ${selected_release_version} in ${install_directory}"
   if [[ ":${PATH}:" != *":${bin_directory}:"* ]]; then
     say "add ${bin_directory} to PATH"
   fi
@@ -418,7 +442,8 @@ fi
 temporary_directory="$(mktemp -d)"
 trap 'rm -rf -- "$temporary_directory"' EXIT
 
-if [[ "$(uname -s)" == "Linux" ]] \
+if [[ "$install_method" == "auto" ]] \
+  && [[ "$(uname -s)" == "Linux" ]] \
   && command -v apt-get >/dev/null 2>&1 \
   && command -v dpkg >/dev/null 2>&1 \
   && { [[ -e /etc/debian_version ]] || has_os_family debian || has_os_family ubuntu; }; then
@@ -428,4 +453,6 @@ else
 fi
 
 print_success_banner
-say "next: rvs auth login"
+if [[ "${RVS_INSTALL_NO_HINTS:-0}" != "1" ]]; then
+  say "next: rvs auth login"
+fi

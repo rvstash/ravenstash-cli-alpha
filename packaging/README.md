@@ -116,6 +116,23 @@ installs per-user by default, and updates user `PATH`. Both portable installers
 write a non-secret installation receipt used to preserve scope and target during
 `rvs update`. The updater bundles the pinned release public key and verifies the
 OpenPGP-signed channel and checksum inventories on every portable platform.
+
+Ephemeral CI can force the authenticated portable path on Debian-family runners
+without configuring APT:
+
+```bash
+curl -fsSL https://ravenstash.com/install.sh \
+  | RVS_INSTALL_METHOD=portable RVS_INSTALL_NO_BANNER=1 \
+      RVS_INSTALL_NO_HINTS=1 bash
+```
+
+`RVS_INSTALL_VERSION=X.Y.Z` selects an exact stable release, or `X.Y.ZrcN`
+selects an exact candidate, and is accepted only with
+`RVS_INSTALL_METHOD=portable`. The archive still passes the same signed inventory
+and checksum verification. `RVS_INSTALL_ROOT` and `RVS_INSTALL_BIN_DIR` may point
+at a runner-local tool directory; they must never contain credentials.
+The installer publishes `portable_installer_api=1` as the compatibility contract
+used by the standalone `setup-ravenstash` GitHub Action.
 The channel policy is published at the distribution-neutral
 `https://releases.ravenstash.com/rvs/channels.json` path.
 After the corresponding GitHub release is public, stable release automation

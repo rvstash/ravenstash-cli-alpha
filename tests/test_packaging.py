@@ -532,9 +532,26 @@ def test_installer_prints_ravenstash_banner_after_success() -> None:
     source = INSTALLER.read_text(encoding="utf-8")
 
     assert "RVS_INSTALL_NO_BANNER" in source
+    assert "RVS_INSTALL_NO_HINTS" in source
     assert "█████████████████████████▄▄▄" in source
     assert "CLI installed successfully" in source
-    assert 'print_success_banner\nsay "next: rvs auth login"' in source
+    assert "print_success_banner" in source
+    assert 'say "next: rvs auth login"' in source
+
+
+def test_installer_supports_explicit_portable_ci_installation() -> None:
+    source = INSTALLER.read_text(encoding="utf-8")
+
+    assert 'readonly portable_installer_api="1"' in source
+    assert 'readonly install_method="${RVS_INSTALL_METHOD:-auto}"' in source
+    assert "auto | portable)" in source
+    assert '[[ "$install_method" == "auto" ]]' in source
+    assert "RVS_INSTALL_VERSION requires RVS_INSTALL_METHOD=portable" in source
+    assert "RVS_INSTALL_VERSION must be a stable or release-candidate version" in source
+    assert "(rc[1-9][0-9]*)?" in source
+    assert "rvs-v${selected_release_version}" in source
+    assert '0.14.[3-6] | 0.14.[3-6]rc*) portable_compatibility_channel="v0.14"' in source
+    assert '--channel "$portable_compatibility_channel"' in source
 
 
 def test_portable_installers_record_atomic_update_metadata() -> None:
@@ -542,7 +559,7 @@ def test_portable_installers_record_atomic_update_metadata() -> None:
     windows = WINDOWS_INSTALLER.read_text(encoding="utf-8")
 
     assert "_record-install" in posix
-    assert 'ln -sfn "$release_version" "${install_root}/current"' in posix
+    assert 'ln -sfn "$selected_release_version" "${install_root}/current"' in posix
     assert '"${install_root}/current/rvs"' in posix
     assert "_record-install" in windows
     assert 'Join-Path $source "rvs-install.json"' in windows
