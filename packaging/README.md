@@ -86,8 +86,9 @@ then mutable indexes and releases, with `InRelease` and channel discovery last.
 If an interrupted older publish omitted an architecture's indexes, the
 storage-side restore may reconstruct only bytes that exactly match the
 already-authenticated `InRelease` SHA-256 inventory; any mismatch remains a hard
-failure. A twice-weekly split-credential workflow refreshes the
-seven-day `Valid-Until`, leaving at least three days between scheduled runs.
+failure. A daily split-credential workflow refreshes the seven-day
+`Valid-Until`, so several consecutive missed or failed runs are needed before
+public metadata expires.
 The refresh restores the read-only public tree under the signing environment,
 passes only bounded signed metadata between jobs, and restores the canonical
 tree again under the storage environment. It does not consume GitHub Actions

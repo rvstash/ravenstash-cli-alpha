@@ -3,7 +3,7 @@ run-name: ${{ github.event_name == 'schedule' && 'APT metadata refresh · Schedu
 
 on:
   schedule:
-    - cron: "17 3 * * 1,4"
+    - cron: "41 5 * * *"
   workflow_dispatch:
 
 permissions:
