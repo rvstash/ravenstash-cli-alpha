@@ -6,8 +6,22 @@ All notable user-facing changes to `rvs` are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.14.7] - 2026-09-25
+
+### Added
+
+- `install.sh` accepts `RVS_INSTALL_METHOD=portable` to force the authenticated
+  portable archive on any supported Linux, including Debian-family CI runners,
+  without configuring APT. `RVS_INSTALL_VERSION` selects an exact signed stable
+  or candidate release on that path.
+- `rvs art evidence stage`, `status`, and `sbom` stage package evidence such as
+  CycloneDX SBOMs, report its processing status, and download analyzed SBOMs
+  without changing native publishing.
+
 ### Changed
 
+- `rvs art repo list` shows the effective access level (`Read`, `Publish`, or
+  `Admin`) for each repository.
 - User and organization account resources are now displayed unambiguously as
   `user:USERNAME` and `org:HANDLE`; both typed forms are accepted as selectors,
   while bare handles remain compatible.
@@ -15,6 +29,12 @@ All notable user-facing changes to `rvs` are recorded here. The format follows
   portable archives, Nix, Homebrew, and WinGet.
 - `rvs update --to 0.MINOR` now selects the latest signed stable patch in that
   minor line for one update without creating a persistent channel pin.
+- The APT repository is now a single `v0` suite. Existing APT installations
+  configured for the former `v0.14` suite must rerun the installer with
+  `RVS_INSTALL_REPAIR=1`; earlier portable installations reinstall once.
+- Signed APT metadata is refreshed daily instead of twice weekly.
+
+Detailed release notes: [RVS 0.14.7](docs/releases/0.14.7.md).
 
 ## [0.14.6] - 2026-09-16
 
@@ -64,7 +84,8 @@ Detailed release notes: [RVS 0.14.4](docs/releases/0.14.4.md).
 
 Detailed release notes: [RVS 0.14.3](docs/releases/0.14.3.md).
 
-[Unreleased]: https://github.com/rvstash/ravenstash-cli-alpha/compare/v0.14.6...HEAD
+[Unreleased]: https://github.com/rvstash/ravenstash-cli-alpha/compare/v0.14.7...HEAD
+[0.14.7]: https://github.com/rvstash/ravenstash-cli-alpha/compare/v0.14.6...v0.14.7
 [0.14.6]: https://github.com/rvstash/ravenstash-cli-alpha/compare/v0.14.5...v0.14.6
 [0.14.5]: https://github.com/rvstash/ravenstash-cli-alpha/compare/v0.14.4...v0.14.5
 [0.14.4]: https://github.com/rvstash/ravenstash-cli-alpha/compare/v0.14.3...v0.14.4
