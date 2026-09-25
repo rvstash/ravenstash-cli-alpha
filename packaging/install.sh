@@ -26,13 +26,6 @@ readonly selected_release_version="${RVS_INSTALL_VERSION:-${release_version}}"
 # Exposed for setup-ravenstash, which authenticates the installer before reading
 # this compatibility contract.
 : "$portable_installer_api"
-# Portable releases through 0.14.6 validate receipts against the former v0.14
-# compatibility channel. Later releases use the rolling major channel.
-portable_compatibility_channel="$compatibility_channel"
-case "$selected_release_version" in
-  0.14.[3-6] | 0.14.[3-6]rc*) portable_compatibility_channel="v0.14" ;;
-esac
-readonly portable_compatibility_channel
 
 say() {
   printf 'rvs installer: %s\n' "$*"
@@ -84,8 +77,11 @@ esac
 if [[ -n "${RVS_INSTALL_VERSION:-}" ]]; then
   [[ "$install_method" == "portable" ]] \
     || fail "RVS_INSTALL_VERSION requires RVS_INSTALL_METHOD=portable"
-  [[ "$selected_release_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(rc[1-9][0-9]*)?$ ]] \
+  [[ "$selected_release_version" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)(rc[1-9][0-9]*)?$ ]] \
     || fail "RVS_INSTALL_VERSION must be a stable or release-candidate version"
+  # 0.14.7 is the first release on the rolling v0 channel and portable contract.
+  (( BASH_REMATCH[1] > 0 || BASH_REMATCH[2] > 14 || (BASH_REMATCH[2] == 14 && BASH_REMATCH[3] >= 7) )) \
+    || fail "RVS_INSTALL_VERSION must be 0.14.7 or later"
 fi
 
 has_os_family() {
@@ -380,7 +376,7 @@ install_portable_archive() {
     --output "${archive_root}/rvs-install.json" \
     --scope "${RVS_INSTALL_SCOPE:-user}" \
     --version "$selected_release_version" \
-    --channel "$portable_compatibility_channel" \
+    --channel "$compatibility_channel" \
     --target "${system_name}-${architecture}" \
     --install-root "$install_root" \
     --bin-directory "$bin_directory"

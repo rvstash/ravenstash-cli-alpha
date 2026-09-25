@@ -6,6 +6,11 @@ All notable user-facing changes to `rvs` are recorded here. The format follows
 
 ## [Unreleased]
 
+### Removed
+
+- `install.sh` no longer installs portable releases older than 0.14.7 through
+  `RVS_INSTALL_VERSION`; earlier releases predate the rolling `v0` channel.
+
 ## [0.14.7] - 2026-09-25
 
 ### Added

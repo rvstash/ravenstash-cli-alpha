@@ -550,8 +550,9 @@ def test_installer_supports_explicit_portable_ci_installation() -> None:
     assert "RVS_INSTALL_VERSION must be a stable or release-candidate version" in source
     assert "(rc[1-9][0-9]*)?" in source
     assert "rvs-v${selected_release_version}" in source
-    assert '0.14.[3-6] | 0.14.[3-6]rc*) portable_compatibility_channel="v0.14"' in source
-    assert '--channel "$portable_compatibility_channel"' in source
+    assert "RVS_INSTALL_VERSION must be 0.14.7 or later" in source
+    assert "portable_compatibility_channel" not in source
+    assert '--channel "$compatibility_channel"' in source
 
 
 def test_portable_installers_record_atomic_update_metadata() -> None:

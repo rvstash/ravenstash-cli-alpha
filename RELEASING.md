@@ -125,16 +125,11 @@ Installer validation, deployment, and channel promotion are jobs in
 `release.yml`; normal stable publication has one workflow run and no second
 dispatch.
 
-### One-time alpha `v0` APT bootstrap
-
-Before the first rolling-channel release, the separately authorized storage
-cutover must remove the old alpha APT tree completely. Do not dispatch a stable
-release while the public manifest still advertises a minor-named suite such as
-`v0.14`: current policy rejects it rather than silently importing legacy state.
-When the storage restore is genuinely empty, the release workflow creates a
-bounded `BOOTSTRAP` marker and signs the first `v0` repository from the new
-release's amd64 and arm64 packages. A non-empty, unauthenticated, or mixed store
-still fails closed. The workflow itself never deletes the old tree.
+When the canonical APT store is genuinely empty, the release workflow creates a
+bounded `BOOTSTRAP` marker and signs a new repository from the release's amd64
+and arm64 packages. A non-empty store that is unauthenticated, mixed, or uses an
+unsupported suite name fails closed; the workflow never deletes published
+objects.
 
 The scheduled `refresh-apt-metadata` workflow renews expiring APT metadata
 without changing packages, tags, channels, or installer recommendations.
