@@ -6,6 +6,8 @@ All notable user-facing changes to `rvs` are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.14.8] - 2026-09-26
+
 ### Changed
 
 - `rvs` now uses the product-grouped Ravenstash developer API: sign-in and
@@ -41,6 +43,8 @@ All notable user-facing changes to `rvs` are recorded here. The format follows
 
 - `install.sh` no longer installs portable releases older than 0.14.7 through
   `RVS_INSTALL_VERSION`; earlier releases predate the rolling `v0` channel.
+
+Detailed release notes: [RVS 0.14.8](docs/releases/0.14.8.md).
 
 ## [0.14.7] - 2026-09-25
 
@@ -120,7 +124,8 @@ Detailed release notes: [RVS 0.14.4](docs/releases/0.14.4.md).
 
 Detailed release notes: [RVS 0.14.3](docs/releases/0.14.3.md).
 
-[Unreleased]: https://github.com/rvstash/ravenstash-cli-alpha/compare/v0.14.7...HEAD
+[Unreleased]: https://github.com/rvstash/ravenstash-cli-alpha/compare/v0.14.8...HEAD
+[0.14.8]: https://github.com/rvstash/ravenstash-cli-alpha/compare/v0.14.7...v0.14.8
 [0.14.7]: https://github.com/rvstash/ravenstash-cli-alpha/compare/v0.14.6...v0.14.7
 [0.14.6]: https://github.com/rvstash/ravenstash-cli-alpha/compare/v0.14.5...v0.14.6
 [0.14.5]: https://github.com/rvstash/ravenstash-cli-alpha/compare/v0.14.4...v0.14.5
