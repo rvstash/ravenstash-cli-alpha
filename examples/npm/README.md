@@ -18,11 +18,12 @@ node src/index.js versions chalk --limit 5
 
 ```bash
 rvs auth login
-rvs art repo create my-node-packages --format npm --default
+rvs art repo create <namespace>/my-node-packages --format npm
+rvs art select <namespace>/my-node-packages
 rvs art endpoint --format npm
 rvs art native config npm
 rvs npm publish
-rvs art package list --target <repo-name>
+rvs art package list
 ```
 
 To install from a private Ravenstash npm repository:

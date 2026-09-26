@@ -85,6 +85,16 @@ rvs twine upload dist/*
 You can also publish with `rvs npm publish` or `rvs mvn deploy`. Ravenstash shows
 the destination and asks for confirmation before uploading.
 
+Check what the selected repository now holds:
+
+```bash
+rvs art package list
+rvs art package show PACKAGE
+```
+
+Add `--format pypi`, `npm`, or `maven` when the repository has more than one of
+these formats.
+
 In a protected automation job, add `--rvs-yes` before the wrapped tool's normal
 arguments:
 

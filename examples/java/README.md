@@ -19,11 +19,12 @@ system-wide or through your preferred local toolchain manager.
 
 ```bash
 rvs auth login
-rvs art repo create my-java-packages --format maven --default
+rvs art repo create <namespace>/my-java-packages --format maven
+rvs art select <namespace>/my-java-packages
 rvs art endpoint --format maven
 rvs art native config mvn
 rvs mvn deploy
-rvs art package list --target <repo-name>
+rvs art package list
 ```
 
 To fetch from a private Ravenstash Maven repository:

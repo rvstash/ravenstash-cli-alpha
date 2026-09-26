@@ -137,7 +137,7 @@ def test_oci_exact_references_reach_typed_routes(transport, args, method, suffix
 
 
 @pytest.mark.parametrize(
-    ("status", "message"), [(201, "Created tag 'stable'"), (200, "Tag 'stable' now points at")]
+    ("status", "message"), [(201, "Created tag 'stable'"), (200, "Tag 'stable' already points at")]
 )
 def test_oci_tag_create_puts_the_tag_with_its_digest(transport, status, message):
     transport.put.return_value.status_code = status

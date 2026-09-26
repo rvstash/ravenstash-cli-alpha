@@ -79,8 +79,28 @@ rvs npm publish
 rvs mvn deploy
 ```
 
-In a protected automation job, use `--rvs-yes` with these wrapped tools. The
-built-in `rvs art` publishing commands use `--yes` instead.
+In a protected automation job, use `--rvs-yes` with these wrapped tools.
+Deletion commands under `rvs art`, such as `rvs art package delete-version`,
+take `--yes` instead.
+
+## Inspect packages
+
+Package commands use the repository chosen with `rvs art select` unless you pass
+`--target NAMESPACE/REPOSITORY`:
+
+```bash
+rvs art package list
+rvs art package show internal-sdk
+rvs art package show internal-sdk --version 1.2.0
+```
+
+Add `--format pypi`, `npm`, or `maven` only when the repository has more than one
+of these formats. `package show` lists the newest 50 versions; use `--limit N` or
+`--all-versions` for more.
+
+Renaming or deleting a repository, changing its package sources, changing a
+private mirror's package-age policy, deleting a private mirror, and deleting a
+whole package are done in the Ravenstash web app.
 
 ## Native setup and manual tokens
 

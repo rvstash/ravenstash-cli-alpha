@@ -33,14 +33,14 @@ rvs runtime use java 21
 ```bash
 rvs auth login
 rvs art repo list
-rvs art repo create my-python-packages --format pypi --default
-rvs art repo create my-node-packages --format npm --default
-rvs art repo create my-java-packages --format maven --default
+rvs art repo create <namespace>/rvs-examples --format pypi,npm,maven
+rvs art select <namespace>/rvs-examples
 ```
 
-`rvs art` expects package repository names, such as `my-python-packages`.
-After a repository is set as the default for its ecosystem, the `--target` flag can be
-omitted for that ecosystem.
+Repository targets are `namespace/repository`, such as
+`<namespace>/rvs-examples`. After `rvs art select`, the `--target` flag can be
+omitted. `rvs art package` commands need `--format pypi`, `npm`, or `maven`
+because this repository has more than one package format.
 
 ## Native Package Tools
 

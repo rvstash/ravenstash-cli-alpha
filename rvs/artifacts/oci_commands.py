@@ -86,15 +86,15 @@ def _request(
             return
         payload = response.json()
         if method == "PUT":
-            # 201 when the tag was created, 200 when an existing tag was set
-            # (moved, or already pointing at the digest).
+            # 201 when the tag was created, 200 when it already pointed at the
+            # digest; a tag on another manifest is refused with 409.
             created = response.status_code == 201
             if output.is_json():
                 click.echo(json.dumps({**payload, "created": created}))
             elif created:
                 output.success(f"Created tag '{payload['tag']}' at {payload['digest']}.")
             else:
-                output.success(f"Tag '{payload['tag']}' now points at {payload['digest']}.")
+                output.success(f"Tag '{payload['tag']}' already points at {payload['digest']}.")
         elif output.is_json():
             click.echo(json.dumps(payload))
         elif method == "GET" and (suffix in _COLLECTIONS or suffix.endswith("/referrers")):
@@ -295,7 +295,7 @@ def create_tag(
     account: str | None = typer.Option(None, "--account"),
     profile: str | None = typer.Option(None, "--profile", "-p"),
 ) -> None:
-    """Point TAG at a manifest; an existing tag is moved to the digest."""
+    """Create TAG at a manifest; a tag on another manifest is never moved."""
     path, digest = _validated(_reference, reference, "digest")
     _validated(qualify_reference, "unused", f"{path}:{tag}")
     _request(
