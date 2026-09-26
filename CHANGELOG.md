@@ -6,6 +6,8 @@ All notable user-facing changes to `rvs` are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.14.9] - 2026-09-26
+
 ### Fixed
 
 - `rvs update` on APT installations now checks the signed release channel, so it
@@ -15,6 +17,8 @@ All notable user-facing changes to `rvs` are recorded here. The format follows
   installing, so an unrelated broken or slow APT source no longer blocks an rvs
   update, and it stops with a clear message when APT still does not offer the
   signed release (for example because of a pin, hold, or mirror delay).
+
+Detailed release notes: [RVS 0.14.9](docs/releases/0.14.9.md).
 
 ## [0.14.8] - 2026-09-26
 
@@ -134,7 +138,8 @@ Detailed release notes: [RVS 0.14.4](docs/releases/0.14.4.md).
 
 Detailed release notes: [RVS 0.14.3](docs/releases/0.14.3.md).
 
-[Unreleased]: https://github.com/rvstash/ravenstash-cli-alpha/compare/v0.14.8...HEAD
+[Unreleased]: https://github.com/rvstash/ravenstash-cli-alpha/compare/v0.14.9...HEAD
+[0.14.9]: https://github.com/rvstash/ravenstash-cli-alpha/compare/v0.14.8...v0.14.9
 [0.14.8]: https://github.com/rvstash/ravenstash-cli-alpha/compare/v0.14.7...v0.14.8
 [0.14.7]: https://github.com/rvstash/ravenstash-cli-alpha/compare/v0.14.6...v0.14.7
 [0.14.6]: https://github.com/rvstash/ravenstash-cli-alpha/compare/v0.14.5...v0.14.6
