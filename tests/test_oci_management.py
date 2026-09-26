@@ -81,14 +81,15 @@ def test_oci_list_has_one_format_and_preserves_cursor_envelope(transport):
     assert result.exit_code == 0, result.output
     assert json.loads(result.stdout) == {"items": [], "next_cursor": "next"}
     transport.get.assert_called_once_with(
-        "/repositories/ar_23456789/oci/paths", params={"content_type": "helm_chart", "limit": 1}
+        "/v0/artifacts/repositories/ar_23456789/formats/oci/paths",
+        params={"content_type": "helm_chart", "limit": 1},
     )
 
 
 @pytest.mark.parametrize(
     ("args", "method", "suffix", "params"),
     [
-        (["show", "images/api"], "get", "paths/detail", {"path": "images/api"}),
+        (["show", "images/api"], "get", "path", {"path": "images/api"}),
         (
             ["manifest", "show", "images/api@" + DIGEST],
             "get",
@@ -104,8 +105,26 @@ def test_oci_list_has_one_format_and_preserves_cursor_envelope(transport):
         (
             ["tag", "delete", "images/api:1.2.3", "--yes"],
             "delete",
+            "tags/1.2.3",
+            {"path": "images/api"},
+        ),
+        (
+            ["referrer", "list", "images/api@" + DIGEST, "--limit", "5"],
+            "get",
+            "manifests/sha256%3A" + "a" * 64 + "/referrers",
+            {"path": "images/api", "limit": 5},
+        ),
+        (
+            ["manifest", "list", "images/api"],
+            "get",
+            "manifests",
+            {"path": "images/api", "limit": 50},
+        ),
+        (
+            ["tag", "list", "images/api"],
+            "get",
             "tags",
-            {"path": "images/api", "tag": "1.2.3"},
+            {"path": "images/api", "limit": 50},
         ),
     ],
 )
@@ -113,8 +132,26 @@ def test_oci_exact_references_reach_typed_routes(transport, args, method, suffix
     result = runner.invoke(app, ["art", "oci", *args])
     assert result.exit_code == 0, result.output
     getattr(transport, method).assert_called_once_with(
-        "/repositories/ar_23456789/oci/" + suffix, params=params
+        "/v0/artifacts/repositories/ar_23456789/formats/oci/" + suffix, params=params
     )
+
+
+def test_oci_tag_create_posts_path_tag_and_digest(transport):
+    transport.post.return_value.json.return_value = {"tag": "stable", "created": True}
+    result = runner.invoke(app, ["art", "oci", "tag", "create", "images/api@" + DIGEST, "stable"])
+    assert result.exit_code == 0, result.output
+    transport.post.assert_called_once_with(
+        "/v0/artifacts/repositories/ar_23456789/formats/oci/tags",
+        json={"path": "images/api", "digest": DIGEST, "tag": "stable"},
+    )
+    assert "stable" in result.stdout
+
+
+def test_oci_list_rejects_a_non_envelope_collection(transport):
+    transport.get.return_value.json.return_value = [{"path": "images/api"}]
+    result = runner.invoke(app, ["art", "oci", "list"])
+    assert result.exit_code == 1
+    assert "collection response is invalid" in result.stderr
 
 
 @pytest.mark.parametrize("reference", ["images/api", "images/api:latest", "../api@" + DIGEST])

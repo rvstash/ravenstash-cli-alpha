@@ -10,11 +10,16 @@ from .. import output
 from ..account.commands import ensure_active_account
 from ..auth.token_format import STATIC_NATIVE_DURATION_SECONDS, validate_public_token
 from ..client import ApiClient, ApiError
-from ..devapi import collection_items, remote_cache
+from ..devapi import (
+    artifacts_path,
+    collection_items,
+    remote_cache_mint_token_path,
+    repository_mint_token_path,
+)
 
 
 PackageKind = Literal["pypi", "npm", "maven"]
-PackageOperation = Literal["download", "upload"]
+PackageOperation = Literal["read", "publish"]
 DEFAULT_OFFICIAL_SOURCES: dict[PackageKind, str] = {
     "pypi": "pypiorg",
     "npm": "npmjs",
@@ -107,45 +112,57 @@ def _package_kind(kind: str | None) -> PackageKind | None:
     return cast("PackageKind", kind)
 
 
-def _repository_target(entry: dict) -> cfg_mod.ArtifactTarget:
-    account = entry["account"]
-    repository = entry["repository"]
-    repository_kinds = [
-        item["format"]
-        for item in repository.get("formats", [])
-        if isinstance(item, dict) and item.get("format") in {"pypi", "npm", "maven", "oci"}
-    ]
+def repository_formats(repository: dict) -> tuple[str, ...]:
+    """Return the enabled formats of a DevAPI ``Repository``."""
+    return tuple(item["format"] for item in repository["formats"])
+
+
+def repository_display_name(repository: dict) -> str:
+    return f"{repository['namespace']['name']}/{repository['name']}"
+
+
+def remote_public_name(remote: dict) -> str:
+    """Return the official source slug or custom name that selects a remote cache."""
+    if remote["source_type"] == "official":
+        return str(remote.get("official_slug") or remote["ref"])
+    return str(remote.get("remote_name") or remote["ref"])
+
+
+def remote_target_name(remote: dict) -> str:
+    prefix = "mirror" if remote["source_type"] == "official" else "custom-mirror"
+    return f"{prefix}:{remote_public_name(remote)}"
+
+
+def _repository_target(repository: dict) -> cfg_mod.ArtifactTarget:
+    namespace = repository["namespace"]
+    repository_kinds = repository_formats(repository)
     inferred_kind = repository_kinds[0] if len(repository_kinds) == 1 else None
     return cfg_mod.ArtifactTarget(
         target_type="repository",
-        customer_id=account["account_ref"],
-        stable_selector=(f"in/{repository['repository_unique_ref']}"),
-        display_selector=f"{repository['namespace_name']}/{repository['repository_name']}",
+        customer_id=repository["account"]["ref"],
+        stable_selector=f"in/{repository['ref']}",
+        display_selector=repository_display_name(repository),
         registry_kind=cast("cfg_mod.RegistryKind | None", inferred_kind),
-        namespace_realm=repository["namespace_realm"],
-        namespace_unique_ref=repository["namespace_unique_ref"],
-        namespace_name_cache=repository["namespace_name"],
-        repository_unique_ref=repository["repository_unique_ref"],
-        repository_name_cache=repository["repository_name"],
+        namespace_realm=namespace["realm"],
+        namespace_unique_ref=namespace["ref"],
+        namespace_name_cache=namespace["name"],
+        repository_unique_ref=repository["ref"],
+        repository_name_cache=repository["name"],
         is_available=True,
     )
 
 
-def _remote_target(entry: dict, target_type: cfg_mod.ArtifactTargetType) -> cfg_mod.ArtifactTarget:
-    account = entry["account"]
-    remote = remote_cache(entry)
-    family = remote.get("source_type")
+def _remote_target(remote: dict, target_type: cfg_mod.ArtifactTargetType) -> cfg_mod.ArtifactTarget:
+    family = remote["source_type"]
     expected_family = "official" if target_type == "official_cache" else "custom"
     if family != expected_family:
-        raise ValueError(f"Remote cache is {family or 'of an unknown type'}, not {expected_family}")
-    public_name = (
-        remote.get("official_slug") or remote.get("remote_name") or remote["remote_cache_ref"]
-    )
+        raise ValueError(f"Remote cache is {family}, not {expected_family}")
+    public_name = remote_public_name(remote)
     prefix = "mirror" if target_type == "official_cache" else "custom-mirror"
-    unique_ref = remote["remote_cache_ref"]
+    unique_ref = remote["ref"]
     return cfg_mod.ArtifactTarget(
         target_type=target_type,
-        customer_id=account["account_ref"],
+        customer_id=remote["account"]["ref"],
         stable_selector=f"{prefix}:{unique_ref}",
         display_selector=f"{prefix}:{public_name}",
         registry_kind=cast("cfg_mod.RegistryKind", remote["format"]),
@@ -154,6 +171,18 @@ def _remote_target(entry: dict, target_type: cfg_mod.ArtifactTargetType) -> cfg_
         remote_name_cache=public_name,
         is_available=True,
     )
+
+
+def matching_remote_caches(
+    remotes: list[dict], target_type: cfg_mod.ArtifactTargetType, selector: str
+) -> list[dict]:
+    family = "official" if target_type == "official_cache" else "custom"
+    return [
+        remote
+        for remote in remotes
+        if remote["source_type"] == family
+        and selector in {remote["ref"], remote.get("official_slug"), remote.get("remote_name")}
+    ]
 
 
 def is_stable_repository_selector(selector: str) -> bool:
@@ -177,13 +206,13 @@ def resolve_repository_entry(
         params["account_ref"] = customer_id
     if kind is not None:
         params["format"] = kind
-    entry = client.get("/repositories/resolve", params=params).json()
-    owner = entry["account"]
-    if owner["account_ref"] != customer_id:
+    repository = client.get(artifacts_path("repositories/resolve"), params=params).json()
+    owner = repository["account"]
+    if owner["ref"] != customer_id:
         if not stable:
             output.fatal("The repository belongs to a different account.")
         output.resource_account_hint(selector, customer_id, owner)
-    return entry
+    return repository
 
 
 def resolve_target(
@@ -207,21 +236,20 @@ def resolve_target(
             effective_customer_id = customer_id or cfg_mod.current_customer_id(profile_name)
             if effective_customer_id is None:
                 output.fatal("No account is selected. Run `rvs account switch`.")
-            entry = resolve_repository_entry(
+            repository = resolve_repository_entry(
                 client, spec.selector, effective_customer_id, registry_kind
             )
-            raw_customer = entry["account"]
             account = cfg_mod.cache_account(
                 profile=profile_name,
-                customer=raw_customer,
+                customer=repository["account"],
                 activate=False,
             )
-            target = _repository_target(entry)
+            target = _repository_target(repository)
         else:
             profile_name, account = ensure_active_account(profile_name, customer_id)
-            entries = collection_items(
+            remotes = collection_items(
                 client.get(
-                    "/remote-caches",
+                    artifacts_path("remote-caches"),
                     params={
                         key: value
                         for key, value in {
@@ -232,22 +260,11 @@ def resolve_target(
                     },
                 ).json()
             )
-            expected_family = "official" if spec.target_type == "official_cache" else "custom"
-            matches = []
-            for entry in entries:
-                remote = remote_cache(entry)
-                if remote.get("source_type") == expected_family and spec.selector in {
-                    remote.get("remote_cache_ref"),
-                    remote.get("official_slug"),
-                    remote.get("remote_name"),
-                }:
-                    matches.append(entry)
+            matches = matching_remote_caches(remotes, spec.target_type, spec.selector)
             if not matches:
                 raise ValueError(f"Package target '{value}' was not found in this account")
             if len(matches) > 1:
-                kinds = ", ".join(
-                    sorted({str(remote_cache(item).get("format")) for item in matches})
-                )
+                kinds = ", ".join(sorted({str(item["format"]) for item in matches}))
                 raise ValueError(
                     f"Package target '{value}' is ambiguous across {kinds}. Pass --format."
                 )
@@ -294,6 +311,17 @@ def effective_target(
     )
 
 
+def expected_repository_target(selected: cfg_mod.ArtifactTarget) -> dict[str, object]:
+    """Return the identity guard sent with every repository token mint."""
+    return {
+        "namespace_ref": selected.namespace_unique_ref,
+        "namespace_name": selected.namespace_name_cache,
+        "namespace_realm": selected.namespace_realm,
+        "repository_ref": selected.repository_unique_ref,
+        "repository_name": selected.repository_name_cache,
+    }
+
+
 def registry_context(
     *,
     kind: str,
@@ -302,7 +330,7 @@ def registry_context(
     profile: str | None = None,
     customer_id: str | None = None,
     require_private: bool = False,
-    operations: tuple[PackageOperation, ...] = ("download",),
+    operations: tuple[PackageOperation, ...] = ("read",),
 ) -> RegistryContext:
     profile_name, account, selected = effective_target(
         kind=kind,
@@ -314,30 +342,21 @@ def registry_context(
     if require_private and selected.target_type != "repository":
         output.fatal(f"'{selected.display_selector}' is read-only; select a private repository.")
     client = ApiClient.from_profile(profile_name)
-    profile_config = cfg_mod.load().active_profile(profile_name)
     registry_kind = cast("PackageKind", kind)
-    endpoints = profile_config.native_registries.package(registry_kind)
     try:
         if selected.target_type == "repository":
             if not selected.repository_unique_ref:
                 raise ValueError("Selected private repository has no permanent ID")
             credential = client.issue_native(
-                "/package-credentials",
+                repository_mint_token_path(selected.repository_unique_ref),
                 {
-                    "repository_unique_ref": selected.repository_unique_ref,
                     "formats": [kind],
                     "operations": list(operations),
                     "duration_seconds": STATIC_NATIVE_DURATION_SECONDS,
-                    "expected_target": {
-                        "namespace_unique_ref": selected.namespace_unique_ref,
-                        "namespace_name": selected.namespace_name_cache,
-                        "namespace_realm": selected.namespace_realm,
-                        "repository_unique_ref": selected.repository_unique_ref,
-                        "repository_name": selected.repository_name_cache,
-                    },
+                    "expected_target": expected_repository_target(selected),
                 },
             ).json()
-            native_path = credential.get("native_paths", {}).get(kind)
+            native_path = credential["native_paths"].get(kind)
             if not isinstance(native_path, str):
                 raise ValueError("Private repository resolution omitted its native path")
             native_parts = native_path.strip("/").split("/")
@@ -349,28 +368,34 @@ def registry_context(
                 raise ValueError("Private repository resolution returned an invalid native path")
             route_coordinate, repository_reference = native_parts
             route_realm: Literal["in"] | None = "in"
-            read_base_url = endpoints.read_base_url
-            push_base_url: str | None = endpoints.push_base_url
         else:
+            if not selected.remote_unique_ref:
+                raise ValueError("Selected private mirror has no permanent ID")
             credential = client.issue_native(
-                "/remote-package-credentials",
-                {
-                    "account_ref": account.customer_id,
-                    "remote_cache_ref": selected.remote_unique_ref,
-                    "duration_seconds": STATIC_NATIVE_DURATION_SECONDS,
-                    "format": kind,
-                },
+                remote_cache_mint_token_path(selected.remote_unique_ref),
+                {"duration_seconds": STATIC_NATIVE_DURATION_SECONDS},
             ).json()
+            if credential["format"] != kind or credential["remote_cache_ref"] != (
+                selected.remote_unique_ref
+            ):
+                raise ValueError("Remote cache resolution returned a different private mirror")
             native_parts = credential["native_path"].strip("/").split("/")
             if len(native_parts) != 2 or not all(native_parts):
                 raise ValueError("Remote cache resolution returned an invalid native path")
             route_coordinate, repository_reference = native_parts
             route_realm = None
-            read_base_url = endpoints.mirror_base_url
-            push_base_url = None
         native_token = validate_public_token(credential["access_token"], native=True)
     except (ApiError, KeyError, TypeError, ValueError) as exc:
         output.fatal(str(exc))
+    # Minting may refresh the session and its registry discovery; read the profile
+    # afterwards so this invocation uses the current endpoints.
+    endpoints = cfg_mod.load().active_profile(profile_name).native_registries.package(registry_kind)
+    if selected.target_type == "repository":
+        read_base_url = endpoints.read_base_url
+        push_base_url: str | None = endpoints.push_base_url
+    else:
+        read_base_url = endpoints.mirror_base_url
+        push_base_url = None
     return RegistryContext(
         profile_name=profile_name,
         customer_id=account.customer_id,

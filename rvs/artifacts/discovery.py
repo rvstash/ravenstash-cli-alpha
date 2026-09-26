@@ -8,7 +8,7 @@ from typing import cast
 from .. import config as cfg
 from ..account.commands import resolve_account
 from ..client import ApiClient
-from ..devapi import collection_items, remote_cache
+from ..devapi import artifacts_path, collection_items
 from ..oci.registry import normalized_registry_host
 from ..oci.runner import _friendly_oci_root
 from .formats import FORMATS
@@ -17,7 +17,10 @@ from .targets import (
     PackageKind,
     _remote_target,
     _repository_target,
+    matching_remote_caches,
     parse_target,
+    remote_public_name,
+    repository_formats,
     resolve_repository_entry,
 )
 
@@ -98,7 +101,7 @@ def discover(
 ) -> Discovery:
     profile_name = profile or cfg.current_profile_name()
     customer_id = (
-        str(resolve_account(account, profile_name)["account_ref"])
+        str(resolve_account(account, profile_name)["ref"])
         if account
         else cfg.current_customer_id(profile_name)
     )
@@ -112,41 +115,28 @@ def discover(
     spec = parse_target(target)
     client = ApiClient.from_profile(profile_name)
     if spec.target_type == "repository":
-        entry = resolve_repository_entry(client, spec.selector, customer_id)
-        selected = _repository_target(entry)
-        formats = tuple(
-            item["format"]
-            for item in entry["repository"]["formats"]
-            if isinstance(item, dict) and item.get("format") in FORMATS
-        )
+        repository = resolve_repository_entry(client, spec.selector, customer_id)
+        selected = _repository_target(repository)
+        formats = tuple(item for item in repository_formats(repository) if item in FORMATS)
         path = ("in", str(selected.repository_unique_ref))
     else:
         params = {"account_ref": customer_id}
         if kind is not None:
             params["format"] = kind
-        entries = collection_items(client.get("/remote-caches", params=params).json())
-        family = "official" if spec.target_type == "official_cache" else "custom"
-        matches = [
-            item
-            for item in entries
-            if (remote := remote_cache(item)).get("source_type") == family
-            and spec.selector
-            in {
-                remote.get("remote_cache_ref"),
-                remote.get("official_slug"),
-                remote.get("remote_name"),
-            }
-        ]
+        remotes = collection_items(
+            client.get(artifacts_path("remote-caches"), params=params).json()
+        )
+        matches = matching_remote_caches(remotes, spec.target_type, spec.selector)
         if len(matches) != 1:
             raise ValueError(
                 "Mirror was not found or is ambiguous; specify --account and --format."
             )
-        selected = _remote_target(matches[0], spec.target_type)
-        remote = remote_cache(matches[0])
+        remote = matches[0]
+        selected = _remote_target(remote, spec.target_type)
         formats = (str(remote["format"]),)
         path = (
-            "o" if family == "official" else "c",
-            str(remote["official_slug"] if family == "official" else remote["remote_name"]),
+            "o" if spec.target_type == "official_cache" else "c",
+            remote_public_name(remote),
         )
     if not formats:
         raise ValueError("The target has no enabled formats.")

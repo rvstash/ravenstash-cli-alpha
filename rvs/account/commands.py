@@ -10,6 +10,7 @@ from rich.markup import escape
 from .. import config as cfg_mod
 from .. import output
 from ..client import ApiClient, ApiError
+from ..devapi import collection_items, platform_path
 from ..interactive import select_index
 from .handles import typed_handle
 
@@ -27,20 +28,20 @@ def _profile_name(profile: str | None) -> str:
 
 def accounts(profile: str | None = None) -> list[dict]:
     try:
-        payload = ApiClient.from_profile(profile).get("/accounts").json()
-        if isinstance(payload, dict):
-            payload = payload.get("items", [])
+        items = collection_items(
+            ApiClient.from_profile(profile).get(platform_path("accounts")).json()
+        )
     except ApiError as exc:
         output.fatal(str(exc))
-    if not isinstance(payload, list):
+    except ValueError:
         output.fatal("Ravenstash returned an invalid account list.")
-    return [item for item in payload if isinstance(item, dict)]
+    return [item for item in items if isinstance(item, dict)]
 
 
 def payload_display_name(account: dict) -> str:
-    """Return the typed public handle from an API account payload."""
+    """Return the typed public handle from an API account or account summary."""
     try:
-        return typed_handle(account.get("account_type"), account.get("account_handle"))
+        return typed_handle(account.get("type"), account.get("handle"))
     except ValueError:
         output.fatal("Ravenstash returned an account without a valid type and public handle.")
 
@@ -67,20 +68,20 @@ def resolve_account(selector: str, profile: str | None = None) -> dict:
     handle_matches = [
         item
         for item in items
-        if isinstance(item.get("account_handle"), str)
-        and item["account_handle"].casefold() == handle_selector_folded
-        and (expected_type is None or item.get("account_type") == expected_type)
+        if isinstance(item.get("handle"), str)
+        and item["handle"].casefold() == handle_selector_folded
+        and (expected_type is None or item.get("type") == expected_type)
     ]
     if handle_matches:
         matches = handle_matches
     elif lowered == "personal":
-        matches = [item for item in items if item.get("account_type") == "personal"]
+        matches = [item for item in items if item.get("type") == "personal"]
     else:
-        matches = [item for item in items if value == item.get("account_ref")]
+        matches = [item for item in items if value == item.get("ref")]
     if not matches:
         output.fatal(f"Account '{selector}' was not found for this profile.")
     if len(matches) > 1:
-        refs = ", ".join(str(item.get("account_ref")) for item in matches)
+        refs = ", ".join(str(item.get("ref")) for item in matches)
         output.fatal(
             f"More than one account matches '{selector}'. "
             f"Use one of these account references: {refs}"
@@ -107,17 +108,17 @@ def ensure_active_account(
         profile_config = cfg_mod.load().active_profile(profile_name)
         if effective_id == profile_config.customer_id:
             customer = {
-                "account_ref": effective_id,
-                "account_type": "personal",
-                "account_label": "personal",
+                "ref": effective_id,
+                "type": "personal",
+                "label": "personal",
                 "organization_role": "owner",
                 "authority_revision": None,
             }
         elif customer_id is not None:
             customer = {
-                "account_ref": effective_id,
-                "account_type": "organization",
-                "account_label": effective_id,
+                "ref": effective_id,
+                "type": "organization",
+                "label": effective_id,
                 "organization_role": None,
                 "authority_revision": None,
             }
@@ -125,7 +126,7 @@ def ensure_active_account(
             customer = resolve_account(effective_id, profile_name)
     else:
         items = accounts(profile_name)
-        personal = [item for item in items if item.get("account_type") == "personal"]
+        personal = [item for item in items if item.get("type") == "personal"]
         if len(personal) != 1:
             output.fatal("No account is selected. Run `rvs account switch`.")
         customer = personal[0]
@@ -134,6 +135,19 @@ def ensure_active_account(
         customer=customer,
         activate=customer_id is None,
     )
+
+
+def identity_display(identity: object) -> str:
+    """Describe the principal returned by the platform identity endpoint."""
+    if not isinstance(identity, dict):
+        return "unknown"
+    email = identity.get("email")
+    if isinstance(email, str) and email:
+        return email
+    credential = identity.get("credential")
+    if isinstance(credential, dict) and isinstance(credential.get("account"), dict):
+        return f"{identity.get('principal_type') or 'automation'} for {payload_display_name(credential['account'])}"
+    return "unknown"
 
 
 def display_name(account: cfg_mod.AccountContext) -> str:
@@ -152,7 +166,7 @@ def account_list(
     active_id = cfg_mod.current_customer_id(profile_name)
     rows = []
     for item in accounts(profile_name):
-        account_ref = str(item.get("account_ref", ""))
+        account_ref = str(item.get("ref", ""))
         label = payload_display_name(item)
         rows.append(
             [
@@ -196,8 +210,8 @@ def _render_account_selector(
     ]
     for index, item in enumerate(items):
         handle = escape(payload_display_name(item))
-        account_ref = str(item.get("account_ref", ""))
-        account_type = item.get("account_type")
+        account_ref = str(item.get("ref", ""))
+        account_type = item.get("type")
         role = str(item.get("organization_role") or "")
         kind = "Personal" if account_type == "personal" else "Organization"
         detail = f"{kind} · {role}" if role else kind
@@ -214,17 +228,13 @@ def _select_account_interactive(profile_name: str) -> dict:
         output.fatal("No accounts are available for this profile.")
     items.sort(
         key=lambda item: (
-            item.get("account_type") != "personal",
+            item.get("type") != "personal",
             payload_display_name(item).casefold(),
         )
     )
     active_account_ref = cfg_mod.current_customer_id(profile_name)
     initial_index = next(
-        (
-            index
-            for index, item in enumerate(items)
-            if item.get("account_ref") == active_account_ref
-        ),
+        (index for index, item in enumerate(items) if item.get("ref") == active_account_ref),
         0,
     )
     selected_index = select_index(

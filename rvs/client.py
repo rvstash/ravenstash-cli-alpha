@@ -6,7 +6,9 @@ handling are consistent everywhere.
 Usage
 -----
     client = ApiClient.from_profile("default")
-    repos = client.get("/repositories").json()
+    repos = client.get(artifacts_path("repositories")).json()
+
+Resource paths are built with the group-aware builders in :mod:`rvs.devapi`.
 """
 
 from __future__ import annotations
@@ -20,7 +22,13 @@ from typing import TYPE_CHECKING, Any
 
 from . import auth as auth_mod
 from . import config as cfg_mod
-from .devapi import ApiVersionMismatchError, api_url, validate_api_version
+from .devapi import (
+    API_ROUTE_RETIRED,
+    ApiVersionMismatchError,
+    api_url,
+    is_mint_token_path,
+    validate_api_version,
+)
 
 
 if TYPE_CHECKING:
@@ -29,7 +37,7 @@ if TYPE_CHECKING:
     from .config import ProfileConfig
 
 
-def _rvs_ua() -> str:
+def rvs_user_agent() -> str:
     try:
         return f"rvs/{importlib.metadata.version('ravenstash-cli')}"
     except importlib.metadata.PackageNotFoundError:
@@ -46,6 +54,9 @@ class ApiError(Exception):
         super().__init__(self._message())
 
     def _message(self) -> str:
+        if isinstance(self.detail, dict) and self.detail.get("code") == API_ROUTE_RETIRED:
+            message = self.detail.get("message")
+            return message if isinstance(message, str) and message else API_ROUTE_RETIRED
         if isinstance(self.detail, dict) and self.detail.get("code") == "RepositoryTargetAmbiguous":
             matches = self.detail.get("matches")
             if isinstance(matches, list):
@@ -66,9 +77,7 @@ class ApiError(Exception):
                 current_name = "/".join(
                     str(current.get(key) or "?") for key in ("namespace_name", "repository_name")
                 )
-                repository_ref = current.get("repository_unique_ref") or expected.get(
-                    "repository_unique_ref"
-                )
+                repository_ref = current.get("repository_ref") or expected.get("repository_ref")
                 stable = f"in/{repository_ref or '?'}"
                 return (
                     "Repository target changed; no package operation was attempted. "
@@ -132,7 +141,7 @@ class ApiClient:
         return {
             "Authorization": f"Bearer {self._token}",
             "Accept": "application/json",
-            "User-Agent": _rvs_ua(),
+            "User-Agent": rvs_user_agent(),
         }
 
     def _url(self, path: str) -> str:
@@ -234,8 +243,10 @@ class ApiClient:
         """Bounded retries only for temporary issuance, never arbitrary mutations."""
         import httpx2 as httpx
 
-        if path not in {"/package-credentials", "/remote-package-credentials"}:
-            raise ValueError("Native issuance requires a known credential endpoint")
+        if not is_mint_token_path(path):
+            raise ValueError(
+                "Native issuance requires a repository or remote-cache mint-token path"
+            )
         deadline = time.monotonic() + 30
         for attempt in range(3):
             retry_after = None
@@ -270,14 +281,6 @@ class ApiClient:
         params: dict | None = None,
     ) -> httpx.Response:
         return self._request("PATCH", path, json=json, params=params)
-
-    def put(
-        self,
-        path: str,
-        json: Any = None,
-        params: dict | None = None,
-    ) -> httpx.Response:
-        return self._request("PUT", path, json=json, params=params)
 
     def delete(self, path: str, params: dict | None = None) -> httpx.Response:
         return self._request("DELETE", path, params=params)

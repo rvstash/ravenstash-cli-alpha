@@ -35,9 +35,22 @@ class _Response:
         return self.value
 
 
+EXPECTED_MINT_PATH = "/v0/artifacts/repositories/ar_xyzabcde/mint-token"
+EXPECTED_TARGET = {
+    "namespace_ref": "in_abcdefgh",
+    "namespace_name": "main",
+    "namespace_realm": "internal",
+    "repository_ref": "ar_xyzabcde",
+    "repository_name": "images",
+}
+
+
 class _Api:
+    def __init__(self) -> None:
+        self.mints: list[tuple[str, dict]] = []
+
     def get(self, path: str, params=None) -> _Response:
-        assert path == "/repositories/resolve"
+        assert path == "/v0/artifacts/repositories/resolve"
         if params.get("format") is None:
             assert "format" not in params
         else:
@@ -48,67 +61,63 @@ class _Api:
             assert params["account_ref"] == "ac_23456789"
         return _Response(
             {
-                "account": {
-                    "account_ref": "ac_23456789",
-                    "account_handle": "personal",
-                    "account_type": "personal",
-                    "account_label": "personal",
-                    "organization_role": None,
+                "ref": "ar_xyzabcde",
+                "name": "images",
+                "account": {"ref": "ac_23456789", "handle": "personal", "type": "personal"},
+                "namespace": {"ref": "in_abcdefgh", "name": "main", "realm": "internal"},
+                "formats": [
+                    {"format": "oci", "upstream_config_revision": 1},
+                ],
+                "allowed_actions": [],
+                "totals": {
+                    "package_count": 0,
+                    "version_count": 0,
+                    "oci_path_count": 0,
+                    "manifest_count": 0,
+                    "storage_bytes": 0,
                 },
-                "repository": {
-                    "repository_name": "images",
-                    "formats": [
-                        {"format": "oci", "upstream_config_revision": 1},
-                    ],
-                    "namespace_name": "main",
-                    "namespace_realm": "internal",
-                    "namespace_unique_ref": "in_abcdefgh",
-                    "repository_unique_ref": "ar_xyzabcde",
-                },
+                "is_deleted": False,
+                "deleted_at": None,
+                "latest_uploaded_at": None,
+                "created_at": "2026-01-01T00:00:00Z",
+                "updated_at": "2026-01-01T00:00:00Z",
             }
         )
 
     def issue_native(self, path: str, payload: dict):
         assert payload["duration_seconds"] == 14400
+        self.mints.append((path, payload))
         return self.post(path, json=payload)
 
     def post(self, path: str, json=None) -> _Response:
-        assert path == "/package-credentials"
-        assert json["operations"] in (["download"], ["download", "upload"])
-        assert json["expected_target"] == {
-            "namespace_unique_ref": "in_abcdefgh",
-            "namespace_name": "main",
-            "namespace_realm": "internal",
-            "repository_unique_ref": "ar_xyzabcde",
-            "repository_name": "images",
-        }
+        assert path == EXPECTED_MINT_PATH
+        assert set(json) == {"formats", "operations", "duration_seconds", "expected_target"}
+        assert json["formats"] == ["oci"]
+        assert json["operations"] in (["read"], ["read", "publish"])
+        assert json["expected_target"] == EXPECTED_TARGET
         return _Response(
             {
                 "access_token": "rvs_sltDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDA",
+                "token_type": "Bearer",
+                "expires_in": 14400,
+                "account_ref": "ac_23456789",
+                "target": dict(EXPECTED_TARGET),
+                "formats": ["oci"],
+                "operations": list(json["operations"]),
                 "native_realm": "in",
                 "native_paths": {"oci": "/in/ar_xyzabcde"},
-                "namespace_unique_ref": "in_abcdefgh",
-                "repository_unique_ref": "ar_xyzabcde",
-                "namespace_name": "main",
-                "repository_name": "images",
             }
         )
 
 
 def test_oci_commands_request_only_the_operations_they_need() -> None:
-    assert oci_runner._operations_for("docker", ["pull", "image:tag"]) == ("download",)
-    assert oci_runner._operations_for("docker", ["push", "image:tag"]) == (
-        "download",
-        "upload",
-    )
-    assert oci_runner._operations_for("helm", ["show", "chart", "oci://chart"]) == ("download",)
-    assert oci_runner._operations_for("helm", ["push", "chart.tgz"]) == (
-        "download",
-        "upload",
-    )
+    assert oci_runner._operations_for("docker", ["pull", "image:tag"]) == ("read",)
+    assert oci_runner._operations_for("docker", ["push", "image:tag"]) == ("read", "publish")
+    assert oci_runner._operations_for("helm", ["show", "chart", "oci://chart"]) == ("read",)
+    assert oci_runner._operations_for("helm", ["push", "chart.tgz"]) == ("read", "publish")
     assert oci_runner._operations_for("oras", ["copy", "source", "target"]) == (
-        "download",
-        "upload",
+        "read",
+        "publish",
     )
 
 
@@ -229,20 +238,81 @@ def test_namespace_target_accepts_current_friendly_native_root(monkeypatch, tmp_
             }
             return response
 
+    api = StablePathApi()
     monkeypatch.setattr(
         oci_runner.ApiClient,
         "from_profile",
-        staticmethod(lambda profile=None: StablePathApi()),
+        staticmethod(lambda profile=None: api),
     )
 
     route = oci_runner.resolve_route(
         "docker",
         oci_runner.OciOptions(target="main/images"),
-        ("download", "upload"),
+        ("read", "publish"),
     )
 
     assert route.native_root == "oci.rvsta.sh/in/ar_xyzabcde"
     assert route.accepted_roots == frozenset({"main/images", "in/ar_xyzabcde"})
+    assert api.mints == [
+        (
+            "/v0/artifacts/repositories/ar_xyzabcde/mint-token",
+            {
+                "formats": ["oci"],
+                "operations": ["read", "publish"],
+                "duration_seconds": 14400,
+                "expected_target": {
+                    "namespace_ref": "in_abcdefgh",
+                    "namespace_name": "main",
+                    "namespace_realm": "internal",
+                    "repository_ref": "ar_xyzabcde",
+                    "repository_name": "images",
+                },
+            },
+        )
+    ]
+
+
+def test_oci_route_rejects_a_token_minted_for_another_repository(
+    monkeypatch, tmp_path: Path
+) -> None:
+    _setup(monkeypatch, tmp_path)
+
+    class OtherRepositoryApi(_Api):
+        def post(self, path: str, json=None) -> _Response:
+            response = super().post(path, json)
+            response.value["native_paths"] = {"oci": "/in/ar_23456789"}
+            response.value["target"] = response.value["target"] | {"repository_ref": "ar_23456789"}
+            return response
+
+    api = OtherRepositoryApi()
+    monkeypatch.setattr(
+        oci_runner.ApiClient, "from_profile", staticmethod(lambda profile=None: api)
+    )
+
+    with pytest.raises(SystemExit):
+        oci_runner.resolve_route("docker", oci_runner.OciOptions(target="main/images"))
+
+
+def test_oci_read_route_mints_read_only_repository_token(monkeypatch, tmp_path: Path) -> None:
+    _setup(monkeypatch, tmp_path)
+    api = _Api()
+    monkeypatch.setattr(
+        oci_runner.ApiClient, "from_profile", staticmethod(lambda profile=None: api)
+    )
+
+    oci_runner.resolve_route("docker", oci_runner.OciOptions(target="main/images"))
+
+    assert api.mints == [
+        (
+            EXPECTED_MINT_PATH,
+            {
+                "formats": ["oci"],
+                "operations": ["read"],
+                "duration_seconds": 14400,
+                "expected_target": EXPECTED_TARGET,
+            },
+        )
+    ]
 
 
 def test_docker_preserves_other_native_credentials_but_replaces_ravenstash(

@@ -6,8 +6,9 @@ import typer
 
 from .. import config as cfg_mod
 from .. import output
-from ..account.commands import accounts, display_name, payload_display_name
+from ..account.commands import accounts, display_name, identity_display, payload_display_name
 from ..client import ApiClient, ApiError
+from ..devapi import platform_path
 
 
 app = typer.Typer(
@@ -26,20 +27,14 @@ def _account_display(profile_name: str) -> tuple[str, cfg_mod.AccountContext | N
 
     items = accounts(profile_name)
     if customer_id:
-        matches = [item for item in items if item.get("account_ref") == customer_id]
+        matches = [item for item in items if item.get("ref") == customer_id]
     else:
-        matches = [item for item in items if item.get("account_type") == "personal"]
+        matches = [item for item in items if item.get("type") == "personal"]
     if len(matches) != 1 and customer_id:
         return f"unresolved:{customer_id}", None
     if len(matches) != 1:
         return "not selected", None
     return payload_display_name(matches[0]), None
-
-
-def _identity_display(identity: object) -> str:
-    if not isinstance(identity, dict):
-        return "unknown"
-    return str(identity.get("email") or identity.get("id") or "unknown")
 
 
 @app.command("current")
@@ -56,7 +51,7 @@ def context_current(
     profile_name = profile or cfg_mod.current_profile_name(cfg)
     selected_profile = cfg.active_profile(profile_name)
     try:
-        identity = ApiClient.from_profile(profile_name).get("/me").json()
+        identity = ApiClient.from_profile(profile_name).get(platform_path("me")).json()
     except ApiError as exc:
         output.fatal(f"Could not verify the current Ravenstash sign-in: {exc}")
 
@@ -64,7 +59,7 @@ def context_current(
     target = account.selected_target if account is not None else None
     output.kv(
         {
-            "User": _identity_display(identity),
+            "User": identity_display(identity),
             "Local profile": profile_name,
             "Profile selected by": (
                 "command option (--profile)" if profile else cfg_mod.profile_selection_source()

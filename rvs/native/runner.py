@@ -41,7 +41,7 @@ if TYPE_CHECKING:
 
 NativeTool = Literal["pip", "uv", "twine", "npm", "mvn"]
 RegistryKind = Literal["pypi", "npm", "maven"]
-PackageOperation = Literal["download", "upload"]
+PackageOperation = Literal["read", "publish"]
 ConfigPolicy = Literal["respect", "override", "isolate"]
 
 POLICIES: tuple[ConfigPolicy, ...] = ("respect", "override", "isolate")
@@ -252,7 +252,7 @@ def _selected_customer_id(options: NativeOptions) -> str | None:
     if options.customer_id:
         return options.customer_id
     if options.account:
-        return str(resolve_account(options.account, options.profile)["account_ref"])
+        return str(resolve_account(options.account, options.profile)["ref"])
     profile_name = options.profile or cfg_mod.current_profile_name()
     return cfg_mod.current_customer_id(profile_name)
 
@@ -270,16 +270,16 @@ def _operations_for(
     argv: list[str],
 ) -> tuple[PackageOperation, ...]:
     if tool == "twine":
-        return ("upload",)
+        return ("publish",)
     if tool == "uv" and any(arg == "publish" for arg in argv if not arg.startswith("-")):
-        return ("upload",)
+        return ("publish",)
     if tool == "npm" and _npm_is_publish(argv):
-        return ("upload",)
+        return ("publish",)
     if tool == "npm" and _npm_is_mutation(argv):
-        return ("download", "upload")
+        return ("read", "publish")
     if tool == "mvn" and _maven_is_upload(argv):
-        return ("download", "upload")
-    return ("download",)
+        return ("read", "publish")
+    return ("read",)
 
 
 def _extract_urls(text: str) -> list[str]:

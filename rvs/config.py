@@ -581,6 +581,13 @@ def _native_registries_from_mapping(
     )
 
 
+def parse_native_registries(value: object, *, profile_name: str) -> NativeRegistryEndpoints:
+    """Validate a discovered native-registry projection for one profile."""
+    if value is None:
+        raise ValueError(f"{profile_name} native registry endpoints are missing")
+    return _native_registries_from_mapping(value, profile_name=profile_name)
+
+
 def _default_profile_config(profile_name: str) -> ProfileConfig:
     return ProfileConfig(
         api_url=profile_api_url(profile_name),
@@ -1001,19 +1008,37 @@ def cache_account(
     customer: dict,
     activate: bool = False,
 ) -> AccountContext:
-    """Cache safe account metadata, optionally making the account active."""
+    """Cache safe account metadata, optionally making the account active.
+
+    *customer* is a DevAPI ``Account`` or embedded ``AccountSummary``. A summary
+    carries only ``ref``, ``handle``, and ``type``; the label, role, and authority
+    revision already cached from the full account list are then retained.
+    """
     cfg = load()
     profile_config = cfg.profiles.get(profile, _default_profile_config(profile))
-    customer_id = str(customer["account_ref"])
+    customer_id = str(customer["ref"])
     existing = profile_config.accounts.get(customer_id)
+    handle = customer.get("handle")
+    if "label" in customer:
+        label = str(customer["label"])
+    elif existing is not None:
+        label = existing.account_label
+    else:
+        label = str(handle or customer_id)
     account = AccountContext(
         customer_id=customer_id,
         customer_unique_ref=customer_id,
-        account_type=cast("Literal['personal', 'organization']", customer["account_type"]),
-        account_label=str(customer["account_label"]),
-        customer_handle=customer.get("account_handle"),
-        organization_role=customer.get("organization_role"),
-        authority_revision=customer.get("authority_revision"),
+        account_type=cast("Literal['personal', 'organization']", customer["type"]),
+        account_label=label,
+        customer_handle=handle
+        if handle is not None
+        else (existing.customer_handle if existing is not None else None),
+        organization_role=customer["organization_role"]
+        if "organization_role" in customer
+        else (existing.organization_role if existing is not None else None),
+        authority_revision=customer["authority_revision"]
+        if "authority_revision" in customer
+        else (existing.authority_revision if existing is not None else None),
         selected_target=existing.selected_target if existing is not None else None,
     )
     profile_config.accounts[customer_id] = account

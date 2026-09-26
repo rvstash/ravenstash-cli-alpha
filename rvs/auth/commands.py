@@ -12,7 +12,9 @@ from rich.markup import escape
 from .. import auth as auth_mod
 from .. import config as cfg_mod
 from .. import output
+from ..account.commands import identity_display
 from ..client import ApiClient, ApiError
+from ..devapi import platform_path
 from ..interactive import select_index
 from . import stores
 from .device import perform_device_login
@@ -511,13 +513,13 @@ def whoami(
     cfg = cfg_mod.load()
     profile_name = _target_profile(profile, cfg)
     try:
-        identity = ApiClient.from_profile(profile_name).get("/me").json()
+        identity = ApiClient.from_profile(profile_name).get(platform_path("me")).json()
     except ApiError as exc:
         output.fatal(f"Could not verify the current identity: {exc}")
     output.kv(
         {
             "Local profile": profile_name,
-            "User": identity.get("email") or identity.get("id") or "unknown",
+            "User": identity_display(identity),
         },
         title="Authenticated Ravenstash user",
     )

@@ -24,6 +24,16 @@ class _Response:
         return self._payload
 
 
+def _identity(email: str | None = "developer@example.test") -> dict[str, Any]:
+    """Return a wire ``Identity`` for a signed-in user."""
+    return {
+        "principal_type": "user",
+        "email": email,
+        "personal_account": {"ref": "personal-user", "handle": "avery", "type": "personal"},
+        "credential": None,
+    }
+
+
 def _isolate_config(monkeypatch, tmp_path: Path) -> None:
     config_dir = tmp_path / ".rvs"
     config_dir.mkdir()
@@ -57,20 +67,23 @@ def test_context_current_shows_distinct_user_profile_account_and_target(
         @staticmethod
         def get(path: str) -> _Response:
             calls.append(path)
-            if path == "/me":
-                return _Response({"email": "developer@example.test"})
-            assert path == "/accounts"
+            if path == "/v0/platform/me":
+                return _Response(_identity())
+            assert path == "/v0/platform/accounts"
             return _Response(
                 {
                     "items": [
                         {
-                            "account_ref": "personal-user",
-                            "account_handle": "avery",
-                            "account_type": "personal",
-                            "account_label": "Avery Example",
-                            "organization_role": "owner",
+                            "ref": "personal-user",
+                            "handle": "avery",
+                            "type": "personal",
+                            "label": "Avery Example",
+                            "is_admin": True,
+                            "organization_role": None,
+                            "authority_revision": 1,
                         }
-                    ]
+                    ],
+                    "next_cursor": None,
                 }
             )
 
@@ -83,7 +96,7 @@ def test_context_current_shows_distinct_user_profile_account_and_target(
     result = runner.invoke(app, ["context", "current"])
 
     assert result.exit_code == 0, result.output
-    assert calls == ["/me", "/accounts"]
+    assert calls == ["/v0/platform/me", "/v0/platform/accounts"]
     assert "developer@example.test" in result.output
     assert "work" in result.output
     assert "persisted default" in result.output
@@ -98,9 +111,11 @@ def test_context_current_shows_account_scoped_selected_target(monkeypatch, tmp_p
     cfg_mod.set_active_account(
         profile="work",
         customer={
-            "account_ref": "acme",
-            "account_type": "organization",
-            "account_label": "acme",
+            "ref": "acme",
+            "handle": "acme",
+            "type": "organization",
+            "label": "Acme Incorporated",
+            "is_admin": True,
             "organization_role": "admin",
             "authority_revision": 2,
         },
@@ -120,8 +135,8 @@ def test_context_current_shows_account_scoped_selected_target(monkeypatch, tmp_p
     class _Client:
         @staticmethod
         def get(path: str) -> _Response:
-            assert path == "/me"
-            return _Response({"email": "developer@example.test"})
+            assert path == "/v0/platform/me"
+            return _Response(_identity())
 
     monkeypatch.setattr(
         context_cmd.ApiClient,
@@ -171,15 +186,16 @@ def test_account_switch_warns_when_environment_still_overrides_selection(
     class _Client:
         @staticmethod
         def get(path: str) -> _Response:
-            assert path == "/accounts"
+            assert path == "/v0/platform/accounts"
             return _Response(
                 {
                     "items": [
                         {
-                            "account_ref": "acme",
-                            "account_handle": "acme",
-                            "account_type": "organization",
-                            "account_label": "Acme Incorporated",
+                            "ref": "acme",
+                            "handle": "acme",
+                            "type": "organization",
+                            "label": "Acme Incorporated",
+                            "is_admin": True,
                             "organization_role": "admin",
                             "authority_revision": 2,
                         }
@@ -211,25 +227,30 @@ def test_account_list_displays_typed_user_and_organization_handles(
     class _Client:
         @staticmethod
         def get(path: str) -> _Response:
-            assert path == "/accounts"
+            assert path == "/v0/platform/accounts"
             return _Response(
                 {
                     "items": [
                         {
-                            "account_ref": "personal-user",
-                            "account_handle": "avery",
-                            "account_type": "personal",
-                            "account_label": "Avery Example",
-                            "organization_role": "owner",
+                            "ref": "personal-user",
+                            "handle": "avery",
+                            "type": "personal",
+                            "label": "Avery Example",
+                            "is_admin": True,
+                            "organization_role": None,
+                            "authority_revision": 1,
                         },
                         {
-                            "account_ref": "acme",
-                            "account_handle": "acme",
-                            "account_type": "organization",
-                            "account_label": "Acme Incorporated",
+                            "ref": "acme",
+                            "handle": "acme",
+                            "type": "organization",
+                            "label": "Acme Incorporated",
+                            "is_admin": True,
                             "organization_role": "admin",
+                            "authority_revision": 2,
                         },
-                    ]
+                    ],
+                    "next_cursor": None,
                 }
             )
 
@@ -250,19 +271,21 @@ def test_account_switch_without_selector_opens_account_picker(monkeypatch, tmp_p
     _isolate_config(monkeypatch, tmp_path)
     account_items = [
         {
-            "account_ref": "acme",
-            "account_handle": "acme",
-            "account_type": "organization",
-            "account_label": "Acme Incorporated",
+            "ref": "acme",
+            "handle": "acme",
+            "type": "organization",
+            "label": "Acme Incorporated",
+            "is_admin": True,
             "organization_role": "admin",
             "authority_revision": 2,
         },
         {
-            "account_ref": "personal-user",
-            "account_handle": "avery",
-            "account_type": "personal",
-            "account_label": "Avery Example",
-            "organization_role": "owner",
+            "ref": "personal-user",
+            "handle": "avery",
+            "type": "personal",
+            "label": "Avery Example",
+            "is_admin": True,
+            "organization_role": None,
             "authority_revision": 1,
         },
     ]
@@ -270,7 +293,7 @@ def test_account_switch_without_selector_opens_account_picker(monkeypatch, tmp_p
     class _Client:
         @staticmethod
         def get(path: str) -> _Response:
-            assert path == "/accounts"
+            assert path == "/v0/platform/accounts"
             return _Response({"items": account_items, "next_cursor": None})
 
     selector: dict[str, Any] = {}
@@ -292,7 +315,7 @@ def test_account_switch_without_selector_opens_account_picker(monkeypatch, tmp_p
     assert selector["initial_index"] == 0
     rendered = selector["render"](1)
     assert "user:avery" in rendered
-    assert "Personal · owner" in rendered
+    assert "[dim]Personal[/]" in rendered
     assert "org:acme" in rendered
     assert "Organization · admin" in rendered
     assert "Avery Example" not in rendered

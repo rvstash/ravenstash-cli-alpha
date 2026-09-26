@@ -109,10 +109,16 @@ account_ref = "ac_23456789"
 
     class _Response:
         @staticmethod
-        def json() -> dict[str, str]:
+        def json() -> dict[str, Any]:
             return {
+                "principal_type": "user",
                 "email": "developer@example.test",
-                "account_ref": "ac_23456789",
+                "personal_account": {
+                    "ref": "ac_23456789",
+                    "handle": "developer",
+                    "type": "personal",
+                },
+                "credential": None,
             }
 
     class _Client:
@@ -130,13 +136,58 @@ account_ref = "ac_23456789"
     result = runner.invoke(auth_cmd.app, ["whoami"])
 
     assert result.exit_code == 0
-    assert calls == ["/me"]
+    assert calls == ["/v0/platform/me"]
     assert "work" in result.output
     assert "developer@example.test" in result.output
     assert "cus_verified" not in result.output
     assert "custpid1" not in result.output
     assert "https://api.work.example" not in result.output
     assert "Repository domain" not in result.output
+
+
+def test_auth_whoami_describes_automation_credential_without_email(
+    monkeypatch, tmp_path: Path
+) -> None:
+    _isolate_config(
+        monkeypatch,
+        tmp_path,
+        """
+default_profile = "work"
+
+[profiles.work]
+api_url = "https://api.work.example"
+""",
+    )
+
+    class _Response:
+        @staticmethod
+        def json() -> dict[str, Any]:
+            return {
+                "principal_type": "automation",
+                "email": None,
+                "personal_account": None,
+                "credential": {
+                    "scenario": "organization_workload",
+                    "account": {"ref": "ac_acme2345", "handle": "acme", "type": "organization"},
+                },
+            }
+
+    class _Client:
+        @staticmethod
+        def get(path: str) -> _Response:
+            assert path == "/v0/platform/me"
+            return _Response()
+
+    monkeypatch.setattr(
+        auth_cmd.ApiClient,
+        "from_profile",
+        staticmethod(lambda profile=None: _Client()),
+    )
+
+    result = runner.invoke(auth_cmd.app, ["whoami"])
+
+    assert result.exit_code == 0, result.output
+    assert "automation for org:acme" in result.output
 
 
 def test_auth_login_delegates_to_device_login_with_active_profile(

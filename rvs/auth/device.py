@@ -15,8 +15,9 @@ from rich.live import Live
 from .. import auth as auth_mod
 from .. import config as cfg_mod
 from .. import output
+from ..artifacts.meta import sync_native_registries
 from ..devapi import api_url as devapi_url
-from ..devapi import validate_api_version
+from ..devapi import platform_path, retired_route_message, validate_api_version
 
 
 _POLL_FRAMES = ("🔄", "🔃")
@@ -101,7 +102,6 @@ def _store_expiring_credential(
     token: str,
     refresh_token: str,
     customer_id: str | None,
-    native_registries: object | None,
     expires_in: int,
     refresh_expires_in: int,
     credential_store: str | None = None,
@@ -118,7 +118,6 @@ def _store_expiring_credential(
         cfg_mod.set_profile_metadata(
             profile,
             api_url=api_url,
-            native_registries=native_registries,
             customer_id=customer_id,
             credential_store=credential_store,
             credential_type=auth_mod.EXPIRING_CREDENTIAL_TYPE,
@@ -221,11 +220,13 @@ def perform_device_login(
             if requested_duration_seconds is not None:
                 request_payload["requested_duration_seconds"] = requested_duration_seconds
             create_resp = client.post(
-                devapi_url(resolved_api_url, "/auth/device/code"),
+                devapi_url(resolved_api_url, platform_path("auth/device/code")),
                 headers={"User-Agent": f"rvs/{rvs_version}"},
                 json=request_payload,
             )
             validate_api_version(create_resp)
+            if retired := retired_route_message(create_resp):
+                raise RuntimeError(retired)
             create_resp.raise_for_status()
             session = create_resp.json()
     except Exception as exc:
@@ -245,7 +246,7 @@ def perform_device_login(
         with httpx.Client(timeout=15.0) as client, _AuthorizationPollDisplay() as poll_display:
             while time.monotonic() < deadline:
                 poll_resp = client.post(
-                    devapi_url(resolved_api_url, "/auth/device/token"),
+                    devapi_url(resolved_api_url, platform_path("auth/device/token")),
                     headers={"User-Agent": _rvs_user_agent()},
                     json={"device_code": device_code},
                 )
@@ -259,7 +260,6 @@ def perform_device_login(
                             token=payload["access_token"],
                             refresh_token=payload["refresh_token"],
                             customer_id=payload.get("account_ref"),
-                            native_registries=payload.get("native_registries"),
                             expires_in=int(payload.get("expires_in") or 0),
                             refresh_expires_in=int(payload.get("refresh_expires_in") or 0),
                             credential_store=credential_store,
@@ -275,7 +275,15 @@ def perform_device_login(
                             previous_refresh_api_url,
                             previous_refresh_token,
                         )
+                    discovery = sync_native_registries(
+                        profile, resolved_api_url, http_client=client
+                    )
                     poll_display.stop()
+                    if discovery == "failed":
+                        output.warn(
+                            "Could not refresh native registry endpoints; package tools "
+                            "keep the profile's stored endpoints until the next refresh."
+                        )
                     output.success(
                         f"Authenticated profile '{profile}' with an expiring credential."
                     )
@@ -293,6 +301,8 @@ def perform_device_login(
                     output.fatal("Login was denied.")
                 if error == "expired_token":
                     output.fatal("Login session expired before approval.")
+                if retired := retired_route_message(poll_resp):
+                    output.fatal(f"Login failed: {retired}")
 
                 poll_resp.raise_for_status()
     except KeyboardInterrupt:

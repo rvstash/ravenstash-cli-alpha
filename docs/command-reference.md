@@ -63,15 +63,17 @@ enable more than one format.
 
 | Command | What it does |
 | --- | --- |
-| `rvs art repo upstream list REPOSITORY FORMAT` | Lists the package sources used by a repository. |
+| `rvs art repo upstream list REPOSITORY FORMAT` | Lists the package sources used by a repository, addressed by position. |
 | `rvs art repo upstream add REPOSITORY FORMAT --position N --private-repository NAMESPACE/REPOSITORY` | Adds another private repository at fixed position 1–4. |
 | `rvs art repo upstream add REPOSITORY FORMAT --position N --remote-cache rc_...` | Adds a remote cache at fixed position 1–4. |
-| `rvs art repo upstream update REPOSITORY FORMAT SOURCE_ID --position N` | Moves a source into an empty fixed position or changes its package-age settings. |
-| `rvs art repo upstream remove REPOSITORY FORMAT SOURCE_ID` | Removes a source. |
+| `rvs art repo upstream update REPOSITORY FORMAT POSITION --position N` | Moves the source at `POSITION` into an empty fixed position or changes its package-age settings. |
+| `rvs art repo upstream remove REPOSITORY FORMAT POSITION` | Removes the source at `POSITION`. |
 
 The repository's own packages are always checked first and have no stored
 position. Configured upstream positions are `1` through `4`; gaps are retained,
-and adding or moving a source never shifts another source.
+and adding or moving a source never shifts another source. `update` and `remove`
+address a source by the position shown in `upstream list`; a concurrent change to
+the repository's sources makes them fail instead of changing another source.
 
 ## Private mirrors
 

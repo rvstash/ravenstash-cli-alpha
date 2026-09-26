@@ -30,7 +30,7 @@ from .. import config as cfg_mod
 from .. import output
 from ..account.commands import ensure_active_account, resolve_account
 from ..client import ApiClient, ApiError
-from ..devapi import collection_items
+from ..devapi import artifacts_path, collection_items, segment
 from .targets import resolve_target
 
 
@@ -179,15 +179,16 @@ def _parse_evidence(values: list[str]) -> list[tuple[str, FileDigest]]:
 def _effective_account(profile: str | None, account: str | None) -> tuple[str, str]:
     profile_name = profile or cfg_mod.current_profile_name()
     customer_id = (
-        str(resolve_account(account, profile_name)["account_ref"]) if account is not None else None
+        str(resolve_account(account, profile_name)["ref"]) if account is not None else None
     )
     profile_name, selected = ensure_active_account(profile_name, customer_id)
     return profile_name, selected.customer_id
 
 
 def _repository_target(
-    *, target: str, format: str, profile: str | None, account: str | None
+    *, target: str, format: str | None, profile: str | None, account: str | None
 ) -> tuple[ApiClient, str]:
+    """Resolve a friendly or ID-based target to its immutable repository reference."""
     if target.startswith("ar_"):
         target = f"in/{target}"
     profile_name, customer_id = _effective_account(profile, account)
@@ -202,9 +203,17 @@ def _repository_target(
     return ApiClient.from_profile(profile_name), selected.repository_unique_ref
 
 
+def _evidence_path(path: str) -> str:
+    return artifacts_path(f"package-evidence/{path}")
+
+
+def _intent_path(intent_ref: object, suffix: str = "") -> str:
+    return _evidence_path(f"intents/{segment(str(intent_ref))}{suffix}")
+
+
 def _intent_payload(
     *,
-    target: str,
+    repository_ref: str,
     format: str,
     package: str,
     version: str,
@@ -229,9 +238,9 @@ def _intent_payload(
     if scope == "artifact" and len(manifest) != 1:
         output.fatal("Artifact scope requires exactly one distribution artifact.")
     return {
-        "target": target,
+        "repository_ref": repository_ref,
         "format": format,
-        "package": package,
+        "package_name": package,
         "version": version,
         "scope": scope,
         "analysis_context_id": analysis_context,
@@ -261,11 +270,11 @@ def _upload_evidence(
     if not isinstance(uploads, list) or len(uploads) != len(evidence):
         output.fatal("Ravenstash returned an invalid evidence manifest.")
     prepared = client.post(
-        f"/package-evidence/intents/{intent['evidence_intent_ref']}/uploads",
+        _intent_path(intent["ref"], "/uploads"),
         json={
             "uploads": [
                 {
-                    "upload_ref": upload["upload_ref"],
+                    "upload_ref": upload["ref"],
                     "content_md5": local.content_md5,
                 }
                 for upload, (_evidence_type, local) in zip(uploads, evidence, strict=True)
@@ -275,9 +284,7 @@ def _upload_evidence(
     requests = prepared.get("uploads")
     if not isinstance(requests, list) or len(requests) != len(evidence):
         output.fatal("Ravenstash returned invalid upload requests.")
-    by_ref = {
-        str(item["upload_ref"]): local for item, (_, local) in zip(uploads, evidence, strict=True)
-    }
+    by_ref = {str(item["ref"]): local for item, (_, local) in zip(uploads, evidence, strict=True)}
     for prepared_upload in requests:
         request = prepared_upload.get("request")
         upload_ref = str(prepared_upload.get("upload_ref"))
@@ -299,7 +306,7 @@ def _upload_evidence(
         except (OSError, httpx2.HTTPError, KeyError, TypeError) as exc:
             output.fatal(f"Evidence upload failed for {local.filename}: {exc}")
         intent = client.post(
-            f"/package-evidence/intents/{intent['evidence_intent_ref']}/uploads/{upload_ref}/complete",
+            _intent_path(intent["ref"], f"/uploads/{segment(upload_ref)}/complete"),
             json={"expected_size": local.size, "sha256_digest": local.sha256},
         ).json()
     return intent
@@ -315,10 +322,11 @@ def _show_intent(intent: dict[str, object]) -> None:
     else:
         output.kv(
             {
-                "Evidence intent": str(intent.get("evidence_intent_ref")),
+                "Evidence intent": str(intent.get("ref")),
                 "State": str(intent.get("state")),
-                "Target": str(intent.get("target")),
-                "Package": f"{intent.get('package')} {intent.get('version')}",
+                "Repository": f"in/{intent.get('repository_ref')}",
+                "Format": str(intent.get("format")),
+                "Package": f"{intent.get('package_name')} {intent.get('version')}",
                 "Scope": str(intent.get("scope")),
                 "Analysis": str(intent.get("analysis_state")),
             }
@@ -331,7 +339,7 @@ def _wait(client: ApiClient, intent: dict[str, object], timeout: float) -> dict[
         if time.monotonic() >= deadline:
             output.fatal("Timed out waiting for the durable evidence intent; check it with status.")
         time.sleep(min(5.0, max(0.1, deadline - time.monotonic())))
-        intent = client.get(f"/package-evidence/intents/{intent['evidence_intent_ref']}").json()
+        intent = client.get(_intent_path(intent["ref"])).json()
     return intent
 
 
@@ -366,7 +374,7 @@ def stage(
     )
     evidence_files = _parse_evidence(evidence or [])
     payload = _intent_payload(
-        target=f"in/{repository_ref}",
+        repository_ref=repository_ref,
         format=format,
         package=package,
         version=version,
@@ -377,7 +385,7 @@ def stage(
         idempotency_key=idempotency_key,
     )
     try:
-        intent = client.post("/package-evidence/intents", json=payload).json()
+        intent = client.post(_evidence_path("intents"), json=payload).json()
         intent = _upload_evidence(client, intent, evidence_files)
         if wait:
             intent = _wait(client, intent, wait_timeout)
@@ -415,12 +423,12 @@ def upload(
     evidence_digest = _hash_file(evidence_file, max_bytes=50 * 1024**2)
     try:
         candidates = collection_items(
-            client.post(
-                "/package-evidence/artifacts/resolve",
-                json={
-                    "target": f"in/{repository_ref}",
+            client.get(
+                _evidence_path("artifacts"),
+                params={
+                    "repository_ref": repository_ref,
                     "format": format,
-                    "package": package,
+                    "package_name": package,
                     "version": version,
                 },
             ).json()
@@ -434,7 +442,7 @@ def upload(
         if any(not item.get("targetable") for item in selected):
             output.fatal("One selected artifact is a non-targetable sidecar.")
         payload = _intent_payload(
-            target=f"in/{repository_ref}",
+            repository_ref=repository_ref,
             format=format,
             package=package,
             version=version,
@@ -451,7 +459,7 @@ def upload(
             evidence=[(evidence_type, evidence_digest)],
             idempotency_key=idempotency_key,
         )
-        intent = client.post("/package-evidence/intents", json=payload).json()
+        intent = client.post(_evidence_path("intents"), json=payload).json()
         intent = _upload_evidence(client, intent, [(evidence_type, evidence_digest)])
         if wait:
             intent = _wait(client, intent, wait_timeout)
@@ -472,7 +480,7 @@ def status(
     """Show the durable binding and analysis state for one evidence intent."""
     client = ApiClient.from_profile(profile)
     try:
-        intent = client.get(f"/package-evidence/intents/{evidence_intent_ref}").json()
+        intent = client.get(_intent_path(evidence_intent_ref)).json()
         if wait:
             intent = _wait(client, intent, wait_timeout)
     except (ApiError, httpx2.HTTPError, TypeError, ValueError) as exc:
@@ -483,24 +491,33 @@ def status(
 @app.command("list")
 def list_intents(
     target: Annotated[str, typer.Option("--target")],
-    format: Annotated[Literal["pypi", "npm", "maven"], typer.Option("--format")],
+    format: Annotated[
+        Literal["pypi", "npm", "maven"] | None,
+        typer.Option("--format", help="Require this enabled format on the target."),
+    ] = None,
     account: Annotated[str | None, typer.Option("--account")] = None,
     limit: Annotated[int, typer.Option("--limit", min=1, max=100)] = 50,
     cursor: Annotated[str | None, typer.Option("--cursor")] = None,
     profile: Annotated[str | None, typer.Option("--profile", "-p")] = None,
 ) -> None:
-    """List one cursor-paginated page of evidence intents for a repository."""
+    """List one cursor-paginated page of evidence intents for a repository.
+
+    Intents of every package format in the repository are listed.
+    """
     client, repository_ref = _repository_target(
         target=target, format=format, profile=profile, account=account
     )
     try:
         payload = client.get(
-            "/package-evidence/intents",
+            _evidence_path("intents"),
             params={
-                "target": f"in/{repository_ref}",
-                "format": format,
-                "limit": limit,
-                "cursor": cursor,
+                key: value
+                for key, value in {
+                    "repository_ref": repository_ref,
+                    "limit": limit,
+                    "cursor": cursor,
+                }.items()
+                if value is not None
             },
         ).json()
         items = collection_items(payload)
@@ -512,11 +529,12 @@ def list_intents(
         click.echo(json.dumps(payload))
         return
     output.table(
-        ["Intent", "Package", "Version", "Scope", "State", "Analysis"],
+        ["Intent", "Format", "Package", "Version", "Scope", "State", "Analysis"],
         [
             [
-                str(item.get("evidence_intent_ref", "")),
-                str(item.get("package", "")),
+                str(item.get("ref", "")),
+                str(item.get("format", "")),
+                str(item.get("package_name", "")),
                 str(item.get("version", "")),
                 str(item.get("scope", "")),
                 str(item.get("state", "")),
@@ -525,7 +543,15 @@ def list_intents(
             for item in items
         ],
         title="Package evidence",
-        json_keys=["evidence_intent_ref", "package", "version", "scope", "state", "analysis_state"],
+        json_keys=[
+            "ref",
+            "format",
+            "package_name",
+            "version",
+            "scope",
+            "state",
+            "analysis_state",
+        ],
     )
     if payload.get("next_cursor"):
         click.echo(f"Next page: --cursor {payload['next_cursor']}", err=True)
@@ -547,11 +573,7 @@ def retire(
             err=True,
         )
     try:
-        intent = (
-            ApiClient.from_profile(profile)
-            .delete(f"/package-evidence/intents/{evidence_intent_ref}")
-            .json()
-        )
+        intent = ApiClient.from_profile(profile).delete(_intent_path(evidence_intent_ref)).json()
     except (ApiError, httpx2.HTTPError, TypeError, ValueError) as exc:
         output.fatal(str(exc))
     _show_intent(intent)
@@ -568,7 +590,9 @@ def _download_document(
     client = ApiClient.from_profile(profile)
     params = {"analysis_context_id": analysis_context} if analysis_context else None
     try:
-        response = client.get(f"/package-evidence/artifacts/{artifact_ref}/{kind}", params=params)
+        response = client.get(
+            _evidence_path(f"artifacts/{segment(artifact_ref)}/{kind}"), params=params
+        )
     except (ApiError, httpx2.HTTPError) as exc:
         output.fatal(str(exc))
     expected = response.headers.get("etag", "").strip('"')

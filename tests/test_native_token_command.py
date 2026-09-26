@@ -9,6 +9,7 @@ from rvs.artifacts.discovery import Discovery
 from rvs.auth import credentials
 from rvs.cli import app
 from rvs.client import ApiClient, ApiError
+from rvs.devapi import remote_cache_mint_token_path, repository_mint_token_path
 from typer.testing import CliRunner
 
 
@@ -25,8 +26,16 @@ def issuer(monkeypatch):
         json={
             "access_token": SECRET,
             "expires_in": 14400,
-            "operations": ["download"],
+            "operations": ["read"],
             "token_type": "bearer",
+            "account_ref": "ac_23456789",
+            "target": {
+                "namespace_ref": "in_abcdefgh",
+                "namespace_name": "space",
+                "namespace_realm": "internal",
+                "repository_ref": "ar_abcdefgh",
+                "repository_name": "packages",
+            },
             "formats": ["pypi"],
             "native_realm": "in",
             "native_paths": {"pypi": "/in/ar_abcdefgh"},
@@ -59,10 +68,19 @@ def test_manual_default_prints_only_the_secret_to_stdout(issuer):
     assert result.stdout == SECRET + "\n"
     assert "Resolved fixture target" in result.stderr
     path, payload = issuer.issue_native.call_args.args
-    assert path == "/package-credentials"
-    assert payload["duration_seconds"] == 14400
-    assert payload["operations"] == ["download"]
-    assert payload["formats"] == ["pypi"]
+    assert path == "/v0/artifacts/repositories/ar_abcdefgh/mint-token"
+    assert payload == {
+        "formats": ["pypi"],
+        "operations": ["read"],
+        "duration_seconds": 14400,
+        "expected_target": {
+            "namespace_ref": "in_abcdefgh",
+            "namespace_name": "space",
+            "namespace_realm": "internal",
+            "repository_ref": "ar_abcdefgh",
+            "repository_name": "packages",
+        },
+    }
 
 
 def test_manual_kind_is_required_only_when_target_is_ambiguous(issuer, monkeypatch):
@@ -113,7 +131,7 @@ def test_manual_json_and_publish_are_explicit(issuer):
     assert result.exit_code == 0, result.output
     assert json.loads(result.stdout)["access_token"] == SECRET
     assert issuer.issue_native.call_args.args[1]["duration_seconds"] == 43200
-    assert issuer.issue_native.call_args.args[1]["operations"] == ["download", "upload"]
+    assert issuer.issue_native.call_args.args[1]["operations"] == ["read", "publish"]
 
 
 def test_manual_admin_requests_delete_without_changing_publish(issuer):
@@ -133,7 +151,7 @@ def test_manual_admin_requests_delete_without_changing_publish(issuer):
     )
     assert result.exit_code == 0, result.output
     assert result.stdout == SECRET + "\n"
-    assert issuer.issue_native.call_args.args[1]["operations"] == ["download", "upload", "delete"]
+    assert issuer.issue_native.call_args.args[1]["operations"] == ["read", "publish", "delete"]
 
 
 @pytest.mark.parametrize("duration", ["14m", "0h", "13h", "4", "forever"])
@@ -190,7 +208,7 @@ def test_native_issuance_retries_are_bounded_and_respect_retry_after(monkeypatch
     monkeypatch.setattr(client, "post", post)
     sleep = Mock()
     monkeypatch.setattr("rvs.client.time.sleep", sleep)
-    assert client.issue_native("/package-credentials", {}) is reply
+    assert client.issue_native(repository_mint_token_path("ar_abcdefgh"), {}) is reply
     assert post.call_count == 3
     assert sleep.call_args_list[0].args[0] >= 2
     assert all(call.kwargs["retry"] is False for call in post.call_args_list)
@@ -202,7 +220,7 @@ def test_native_issuance_does_not_retry_denials(monkeypatch, status):
     post = Mock(side_effect=ApiError(status, "denied"))
     monkeypatch.setattr(client, "post", post)
     with pytest.raises(ApiError):
-        client.issue_native("/package-credentials", {})
+        client.issue_native(remote_cache_mint_token_path("rc_abcdefgh"), {})
     assert post.call_count == 1
 
 
@@ -210,6 +228,189 @@ def test_issuance_retry_policy_cannot_be_used_for_an_arbitrary_mutation(monkeypa
     client = ApiClient("https://api.example.test", "source")
     post = Mock()
     monkeypatch.setattr(client, "post", post)
-    with pytest.raises(ValueError):
-        client.issue_native("/repositories", {})
+    for path in ("/repositories", "/package-credentials", "/v0/artifacts/repositories"):
+        with pytest.raises(ValueError):
+            client.issue_native(path, {})
     post.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    ("access", "operations"),
+    [
+        ("read", ["read"]),
+        ("publish", ["read", "publish"]),
+        ("admin", ["read", "publish", "delete"]),
+    ],
+)
+def test_access_levels_map_to_grant_operations(issuer, access, operations):
+    result = runner.invoke(
+        app, ["art", "token", "mint", "--target", "space/packages", "--access", access]
+    )
+    assert result.exit_code == 0, result.output
+    assert issuer.issue_native.call_args.args[1]["operations"] == operations
+
+
+def _multi_lane_issuer(monkeypatch, issuer, formats):
+    target = SimpleNamespace(
+        target_type="repository",
+        repository_unique_ref="ar_abcdefgh",
+        namespace_unique_ref="in_abcdefgh",
+        namespace_name_cache="space",
+        repository_name_cache="packages",
+        namespace_realm="internal",
+        registry_kind=None,
+        display_selector="space/packages",
+    )
+    monkeypatch.setattr(
+        auth_commands,
+        "discover",
+        lambda *args, **kwargs: Discovery("fixture", target, formats, ("in", "ar_abcdefgh")),
+    )
+    issuer.issue_native.return_value = httpx.Response(
+        200,
+        json={
+            "access_token": SECRET,
+            "expires_in": 14400,
+            "operations": ["read", "publish"],
+            "token_type": "bearer",
+            "account_ref": "ac_23456789",
+            "target": {
+                "namespace_ref": "in_abcdefgh",
+                "namespace_name": "space",
+                "namespace_realm": "internal",
+                "repository_ref": "ar_abcdefgh",
+                "repository_name": "packages",
+            },
+            "formats": list(formats),
+            "native_realm": "in",
+            "native_paths": {kind: "/in/ar_abcdefgh" for kind in formats},
+        },
+    )
+
+
+def test_all_formats_mints_one_token_for_every_lane_including_oci(issuer, monkeypatch):
+    import json
+
+    _multi_lane_issuer(monkeypatch, issuer, ("pypi", "npm", "oci"))
+    result = runner.invoke(
+        app,
+        [
+            "--json",
+            "art",
+            "token",
+            "mint",
+            "--target",
+            "space/packages",
+            "--all-formats",
+            "--access",
+            "publish",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    path, payload = issuer.issue_native.call_args.args
+    assert path == "/v0/artifacts/repositories/ar_abcdefgh/mint-token"
+    assert payload["all_formats"] is True
+    assert "formats" not in payload
+    assert payload["operations"] == ["read", "publish"]
+    assert json.loads(result.stdout)["formats"] == ["pypi", "npm", "oci"]
+
+
+def test_explicit_multi_format_mint_includes_oci_lane(issuer, monkeypatch):
+    _multi_lane_issuer(monkeypatch, issuer, ("pypi", "oci"))
+    result = runner.invoke(
+        app, ["art", "token", "mint", "--target", "space/packages", "--format", "pypi,oci"]
+    )
+    assert result.exit_code == 0, result.output
+    payload = issuer.issue_native.call_args.args[1]
+    assert payload["formats"] == ["pypi", "oci"]
+    assert "all_formats" not in payload
+
+
+def test_all_formats_and_format_are_mutually_exclusive(issuer):
+    result = runner.invoke(
+        app,
+        ["art", "token", "mint", "--target", "space/packages", "--all-formats", "-f", "pypi"],
+    )
+    assert result.exit_code == 1
+    issuer.issue_native.assert_not_called()
+
+
+def test_mirror_mint_sends_only_duration_and_checks_format(issuer, monkeypatch):
+    target = SimpleNamespace(
+        target_type="official_cache",
+        remote_unique_ref="rc_abcdefgh",
+        registry_kind="pypi",
+        display_selector="mirror:pypiorg",
+    )
+    monkeypatch.setattr(
+        auth_commands,
+        "discover",
+        lambda *args, **kwargs: Discovery("fixture", target, ("pypi",), ("o", "pypiorg")),
+    )
+    issuer.issue_native.return_value = httpx.Response(
+        200,
+        json={
+            "access_token": SECRET,
+            "token_type": "bearer",
+            "expires_in": 14400,
+            "account_ref": "ac_23456789",
+            "remote_cache_ref": "rc_abcdefgh",
+            "format": "pypi",
+            "native_path": "/o/pypiorg",
+            "operations": ["read"],
+        },
+    )
+    result = runner.invoke(app, ["art", "token", "mint", "--target", "mirror:pypiorg"])
+    assert result.exit_code == 0, result.output
+    assert result.stdout == SECRET + "\n"
+    path, payload = issuer.issue_native.call_args.args
+    assert path == "/v0/artifacts/remote-caches/rc_abcdefgh/mint-token"
+    assert payload == {"duration_seconds": 14400}
+
+    denied = runner.invoke(
+        app, ["art", "token", "mint", "--target", "mirror:pypiorg", "--access", "publish"]
+    )
+    assert denied.exit_code == 1
+    assert "read credentials only" in denied.stderr
+
+
+@pytest.mark.parametrize(
+    "mismatch",
+    [
+        {"format": "npm"},
+        {"remote_cache_ref": "rc_23456789"},
+        {"native_path": "/o"},
+    ],
+)
+def test_mirror_mint_rejects_a_credential_for_another_mirror(issuer, monkeypatch, mismatch):
+    target = SimpleNamespace(
+        target_type="official_cache",
+        remote_unique_ref="rc_abcdefgh",
+        registry_kind="pypi",
+        display_selector="mirror:pypiorg",
+    )
+    monkeypatch.setattr(
+        auth_commands,
+        "discover",
+        lambda *args, **kwargs: Discovery("fixture", target, ("pypi",), ("o", "pypiorg")),
+    )
+    issuer.issue_native.return_value = httpx.Response(
+        200,
+        json={
+            "access_token": SECRET,
+            "token_type": "bearer",
+            "expires_in": 14400,
+            "account_ref": "ac_23456789",
+            "remote_cache_ref": "rc_abcdefgh",
+            "format": "pypi",
+            "native_path": "/o/pypiorg",
+            "operations": ["read"],
+        }
+        | mismatch,
+    )
+
+    result = runner.invoke(app, ["art", "token", "mint", "--target", "mirror:pypiorg"])
+
+    assert result.exit_code == 1
+    assert "different private mirror" in result.stderr
+    assert SECRET not in result.stdout

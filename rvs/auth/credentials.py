@@ -29,6 +29,7 @@ import httpx2 as httpx
 
 from ..devapi import (
     ApiVersionMismatchError,
+    platform_path,
     validate_api_version,
 )
 from ..devapi import (
@@ -394,7 +395,7 @@ def revoke_device_refresh_token(api_url: str, refresh_token: str) -> bool:
     try:
         with httpx.Client(timeout=15.0) as client:
             response = client.post(
-                devapi_url(api_url, "/auth/device/revoke"),
+                devapi_url(api_url, platform_path("auth/device/revoke")),
                 headers={"User-Agent": _rvs_user_agent()},
                 json={"refresh_token": refresh_token},
             )
@@ -462,13 +463,13 @@ def refresh_expiring_credential(
             if http_client is None:
                 with httpx.Client(timeout=15.0) as client:
                     response = client.post(
-                        devapi_url(p.api_url, "/auth/device/refresh"),
+                        devapi_url(p.api_url, platform_path("auth/device/refresh")),
                         headers={"User-Agent": _rvs_user_agent()},
                         json=request,
                     )
             else:
                 response = http_client.post(
-                    devapi_url(p.api_url, "/auth/device/refresh"),
+                    devapi_url(p.api_url, platform_path("auth/device/refresh")),
                     headers={"User-Agent": _rvs_user_agent()},
                     json=request,
                     timeout=15.0,
@@ -508,7 +509,6 @@ def refresh_expiring_credential(
             cfg_mod.set_profile_metadata(
                 profile,
                 api_url=p.api_url,
-                native_registries=payload.get("native_registries"),
                 customer_id=payload.get("account_ref"),
                 credential_store=store,
                 credential_type=EXPIRING_CREDENTIAL_TYPE,
@@ -524,7 +524,13 @@ def refresh_expiring_credential(
             delete_token_from_store(profile, store)
             cfg_mod.clear_profile_credential_metadata(profile)
             return None
-        return access_token
+        refreshed_api_url = p.api_url
+
+    # Product discovery is outside the refresh lock and never fails the refresh.
+    from ..artifacts.meta import sync_native_registries
+
+    sync_native_registries(profile, refreshed_api_url, http_client=http_client)
+    return access_token
 
 
 # ── Public API ────────────────────────────────────────────────────────────────

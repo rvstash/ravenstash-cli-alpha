@@ -12,8 +12,7 @@ from .. import output
 from ..account.commands import display_name as account_display_name
 from ..account.commands import ensure_active_account, payload_display_name, resolve_account
 from ..client import ApiClient, ApiError
-from ..devapi import collection_items
-from ..devapi import remote_cache as remote_cache_payload
+from ..devapi import artifacts_path, collection_items, platform_path, segment
 from .auth_commands import app as native_auth_app
 from .evidence_commands import app as evidence_app
 from .formats import FORMATS, flatten_formats
@@ -23,6 +22,9 @@ from .targets import (
     DEFAULT_OFFICIAL_SOURCES,
     PackageKind,
     parse_target,
+    remote_target_name,
+    repository_display_name,
+    repository_formats,
     resolve_repository_entry,
     resolve_target,
 )
@@ -84,7 +86,7 @@ def _customer_id(profile: str | None, explicit_customer_id: str | None = None) -
     options = _root_package_options()
     profile = profile or options.get("profile")
     if options.get("account"):
-        return str(resolve_account(cast("str", options["account"]), profile)["account_ref"])
+        return str(resolve_account(cast("str", options["account"]), profile)["ref"])
     profile_name, _ = _profile(profile)
     customer_id = cfg_mod.current_customer_id(profile_name)
     if not customer_id:
@@ -95,7 +97,7 @@ def _customer_id(profile: str | None, explicit_customer_id: str | None = None) -
 def _context_customer_id(profile: str | None, account: str | None) -> str | None:
     if account is None:
         return None
-    return str(resolve_account(account, profile)["account_ref"])
+    return str(resolve_account(account, profile)["ref"])
 
 
 @app.command("select")
@@ -245,25 +247,14 @@ def _split_repo_ref(repo_ref: str) -> tuple[str | None, str]:
     return namespace_selector, repository_name
 
 
-def _repository_name_from_response(repo: dict, fallback_repository_name: str = "") -> str:
-    return (
-        repo.get("repo_name")
-        or repo.get("name")
-        or repo.get("repository_name")
-        or repo.get("id")
-        or fallback_repository_name
-    )
-
-
 def _selected_account_handle(
     profile: str | None,
     account_ref: str,
-    entries: list[dict],
+    repositories: list[dict],
 ) -> str:
-    for entry in entries:
-        account = entry.get("account")
-        if isinstance(account, dict) and account.get("account_ref") == account_ref:
-            return payload_display_name(account)
+    for repository in repositories:
+        if repository["account"]["ref"] == account_ref:
+            return payload_display_name(repository["account"])
 
     profile_name, selected = ensure_active_account(profile, account_ref)
     if selected.customer_handle:
@@ -319,18 +310,26 @@ def _resolved_repository_unique_ref(
     *,
     kind: str,
 ) -> str:
-    return _resolve_repository_entry(
-        repo,
-        profile,
-        kind=kind,
-    )["repository"]["repository_unique_ref"]
+    return _resolve_repository_entry(repo, profile, kind=kind)["ref"]
+
+
+def _repository_path(repository_ref: str, suffix: str = "") -> str:
+    return artifacts_path(f"repositories/{segment(repository_ref)}{suffix}")
+
+
+def _format_path(repository_ref: str, registry_kind: str, suffix: str) -> str:
+    return _repository_path(repository_ref, f"/formats/{registry_kind}/{suffix}")
+
+
+def _remote_cache_path(remote_cache_ref: str) -> str:
+    return artifacts_path(f"remote-caches/{segment(remote_cache_ref)}")
 
 
 # ── repo ─────────────────────────────────────────────────────────────────────
 
 
-def _repository_access_label(entry: dict) -> str:
-    actions = set(entry.get("allowed_actions") or ())
+def _repository_access_label(repository: dict) -> str:
+    actions = set(repository["allowed_actions"])
     if actions & {"repository.write", "repository.delete", "upstream.write", "content.delete"}:
         return "Admin"
     if "content.publish" in actions:
@@ -368,36 +367,26 @@ def repo_list(
         if value is not None
     }
     try:
-        data = client.get(
-            "/repositories",
-            params=params,
-        ).json()
-    except ApiError as exc:
+        items = collection_items(client.get(artifacts_path("repositories"), params=params).json())
+    except (ApiError, ValueError) as exc:
         output.fatal(str(exc))
-
-    entries = data if isinstance(data, list) else data.get("items", [])
-    items = [entry["repository"] for entry in entries]
 
     if output.is_json():
         account_handle = (
-            _selected_account_handle(profile, selected_account_ref, entries) if items else ""
+            _selected_account_handle(profile, selected_account_ref, items) if items else ""
         )
         output.table(
             ["Account", "Namespace", "Repository", "ID-based target", "Formats", "Access"],
             [
                 [
                     account_handle,
-                    entry["repository"]["namespace_name"],
-                    _repository_name_from_response(item),
-                    (f"in/{item['repository_unique_ref']}"),
-                    ", ".join(
-                        detail["format"]
-                        for detail in item.get("formats", [])
-                        if isinstance(detail, dict) and isinstance(detail.get("format"), str)
-                    ),
-                    _repository_access_label(entry),
+                    item["namespace"]["name"],
+                    item["name"],
+                    f"in/{item['ref']}",
+                    ", ".join(repository_formats(item)),
+                    _repository_access_label(item),
                 ]
-                for entry, item in zip(entries, items, strict=True)
+                for item in items
             ],
             json_keys=[
                 "account",
@@ -410,7 +399,7 @@ def repo_list(
         )
         return
 
-    account_handle = _selected_account_handle(profile, selected_account_ref, entries)
+    account_handle = _selected_account_handle(profile, selected_account_ref, items)
     output.kv({"Account": account_handle})
     if not items:
         output.info("No repositories found.")
@@ -420,16 +409,12 @@ def repo_list(
         ["Repository", "ID-based target", "Formats", "Access"],
         [
             [
-                f"{item['namespace_name']}/{_repository_name_from_response(item)}",
-                (f"in/{item['repository_unique_ref']}"),
-                ", ".join(
-                    detail["format"]
-                    for detail in item.get("formats", [])
-                    if isinstance(detail, dict) and isinstance(detail.get("format"), str)
-                ),
-                _repository_access_label(entry),
+                repository_display_name(item),
+                f"in/{item['ref']}",
+                ", ".join(repository_formats(item)),
+                _repository_access_label(item),
             ]
-            for entry, item in zip(entries, items, strict=True)
+            for item in items
         ],
     )
 
@@ -460,24 +445,21 @@ def repo_create(
     client = _client(profile)
     try:
         selected_customer_id = _customer_id(profile, customer_id)
-        namespaces_payload = client.get(
-            "/namespaces", params={"account_ref": selected_customer_id}
-        ).json()
-        namespaces = collection_items(namespaces_payload)
+        namespaces = collection_items(
+            client.get(
+                platform_path("namespaces"), params={"account_ref": selected_customer_id}
+            ).json()
+        )
         matches = [
-            entry
-            for entry in namespaces
-            if entry["account"]["account_ref"] == selected_customer_id
+            namespace
+            for namespace in namespaces
+            if namespace["account"]["ref"] == selected_customer_id
             and (
-                (
-                    entry["namespace"]["is_default"]
-                    and entry["namespace"]["namespace_realm"] == "internal"
-                )
+                (namespace["is_default"] and namespace["realm"] == "internal")
                 if namespace_selector is None
                 else (
-                    entry["namespace"]["namespace_unique_ref"] == namespace_selector
-                    or entry["namespace"]["namespace_name"].casefold()
-                    == namespace_selector.casefold()
+                    namespace["ref"] == namespace_selector
+                    or namespace["name"].casefold() == namespace_selector.casefold()
                 )
             )
         ]
@@ -486,20 +468,16 @@ def repo_create(
                 "Select an accessible namespace with namespace/repository. "
                 "If this account has no namespace, finish onboarding in the webapp."
             )
-        selected_namespace = matches[0]
         payload = {
-            "account_ref": selected_namespace["account"]["account_ref"],
-            "namespace_unique_ref": selected_namespace["namespace"]["namespace_unique_ref"],
-            "repository_name": repository_name,
+            "namespace_ref": matches[0]["ref"],
+            "name": repository_name,
             "formats": kinds,
         }
-        entry = client.post("/repositories", json=payload).json()
-        repo = entry["repository"]
-    except ApiError as exc:
+        repo = client.post(artifacts_path("repositories"), json=payload).json()
+    except (ApiError, ValueError) as exc:
         output.fatal(str(exc))
 
-    repository_name = _repository_name_from_response(repo, name)
-    output.success(f"Created repository '{repository_name}' with formats: {', '.join(kinds)}.")
+    output.success(f"Created repository '{repo['name']}' with formats: {', '.join(kinds)}.")
 
 
 @repo_app.command("show")
@@ -510,33 +488,30 @@ def repo_show(
 ) -> None:
     """Show repository details."""
     try:
-        entry = _resolve_repository_entry(repo, profile)
-        item = entry["repository"]
+        item = _resolve_repository_entry(repo, profile)
     except ApiError as exc:
         output.fatal(str(exc))
 
-    account_handle = payload_display_name(entry["account"])
-    repository_name = _repository_name_from_response(item, repo)
-    id_based_target = f"in/{item['repository_unique_ref']}"
-    formats = ", ".join(
-        detail["format"]
-        for detail in item.get("formats", [])
-        if isinstance(detail, dict) and isinstance(detail.get("format"), str)
-    )
-    packages = str(item.get("aggregate_package_count", item.get("package_count", "0")))
-    versions = str(item.get("aggregate_version_count", item.get("version_count", "0")))
-    oci_paths = str(item.get("aggregate_oci_repository_count", "0"))
-    manifests = str(item.get("aggregate_manifest_count", "0"))
-    storage_bytes = str(item.get("aggregate_storage_bytes", item.get("storage_bytes", "0")))
-    created = str(item.get("created_at", ""))
+    account_handle = payload_display_name(item["account"])
+    repository_name = item["name"]
+    namespace = item["namespace"]
+    id_based_target = f"in/{item['ref']}"
+    formats = ", ".join(repository_formats(item))
+    totals = item["totals"]
+    packages = str(totals["package_count"])
+    versions = str(totals["version_count"])
+    oci_paths = str(totals.get("oci_path_count", 0))
+    manifests = str(totals.get("manifest_count", 0))
+    storage_bytes = str(totals["storage_bytes"])
+    created = str(item["created_at"])
     if output.is_json():
         output.kv(
             {
                 "Name": repository_name,
                 "Account": account_handle,
-                "Namespace": item["namespace_name"],
-                "Namespace permanent ID": item["namespace_unique_ref"],
-                "Repository permanent ID": item["repository_unique_ref"],
+                "Namespace": namespace["name"],
+                "Namespace permanent ID": namespace["ref"],
+                "Repository permanent ID": item["ref"],
                 "Formats": formats,
                 "Packages": packages,
                 "Versions": versions,
@@ -565,7 +540,7 @@ def repo_show(
 
     output.kv(
         {
-            "Repository": f"{item['namespace_name']}/{repository_name}",
+            "Repository": repository_display_name(item),
             "Account": account_handle,
             "ID-based target": id_based_target,
             "Formats": formats,
@@ -576,7 +551,7 @@ def repo_show(
             "Storage bytes": storage_bytes,
             "Created": created,
         },
-        title=f"Repository {item['namespace_name']}/{repository_name}",
+        title=f"Repository {repository_display_name(item)}",
     )
 
 
@@ -592,8 +567,8 @@ def repo_delete(
         typer.confirm(f"Delete repository '{repo}' and all its content?", abort=True)
     client = _client(profile)
     try:
-        entry = _resolve_repository_entry(repo, profile)
-        client.delete(f"/repositories/{entry['repository']['repository_unique_ref']}")
+        repository = _resolve_repository_entry(repo, profile)
+        client.delete(_repository_path(repository["ref"]))
     except ApiError as exc:
         output.fatal(str(exc))
     output.success(f"Deleted repository '{repo}'.")
@@ -609,48 +584,46 @@ def repo_rename(
     """Rename a repository."""
     client = _client(profile)
     try:
-        entry = _resolve_repository_entry(repo, profile)
-        updated = client.patch(
-            f"/repositories/{entry['repository']['repository_unique_ref']}",
-            json={"repository_name": new_name},
-        ).json()
-        item = updated["repository"]
+        repository = _resolve_repository_entry(repo, profile)
+        updated = client.patch(_repository_path(repository["ref"]), json={"name": new_name}).json()
     except ApiError as exc:
         output.fatal(str(exc))
-    renamed = _repository_name_from_response(item, new_name)
-    output.success(f"Renamed repository '{repo}' to '{renamed}'.")
+    output.success(f"Renamed repository '{repo}' to '{updated['name']}'.")
 
 
-def _upstream_path(repository_unique_ref: str, registry_kind: str) -> str:
-    return f"/repositories/{repository_unique_ref}/formats/{registry_kind}/upstreams"
+def _upstream_path(repository_ref: str, registry_kind: str, position: int | None = None) -> str:
+    suffix = "upstreams" if position is None else f"upstreams/{position}"
+    return _format_path(repository_ref, registry_kind, suffix)
 
 
-def _upstream_revision(entry: dict, registry_kind: str) -> int:
-    formats = entry["repository"]["formats"]
-    detail = next(item for item in formats if item["format"] == registry_kind)
+def _upstream_revision(repository: dict, registry_kind: str) -> int:
+    detail = next(item for item in repository["formats"] if item["format"] == registry_kind)
     return int(detail["upstream_config_revision"])
+
+
+def _upstream_source_label(source: dict) -> str:
+    if source.get("namespace_name"):
+        return f"{source['namespace_name']}/{source['display_name']}"
+    return str(source["display_name"])
 
 
 def _print_upstreams(items: list[dict]) -> None:
     output.table(
-        ["ID", "Position", "Type", "Source", "Minimum age", "Maximum age"],
+        ["Position", "Type", "Source", "Source ref", "Minimum age", "Maximum age"],
         [
             [
-                str(item.get("attachment_id") or item.get("id", "")),
-                str(item.get("position", "")),
-                str(item.get("source_type", "")),
-                (
-                    f"{item.get('source_namespace_name')}/{item.get('display_name') or item.get('source_repository_name')}"
-                    if item.get("source_namespace_name")
-                    else str(item.get("display_name") or item.get("source_repository_name", ""))
-                ),
+                str(item["position"]),
+                str(item["source"]["kind"]),
+                _upstream_source_label(item["source"]),
+                # A remote cache the caller cannot see has no public reference.
+                str(item["source"]["ref"] or "-"),
                 _format_age_hours(item.get("min_age_hours"), missing="No minimum"),
                 _format_age_hours(item.get("max_age_hours"), missing="No maximum"),
             ]
-            for item in items
+            for item in sorted(items, key=lambda value: int(value["position"]))
         ],
         title="Repository upstreams",
-        json_keys=["id", "position", "type", "source", "min_age_hours", "max_age_hours"],
+        json_keys=["position", "type", "source", "source_ref", "min_age_hours", "max_age_hours"],
     )
 
 
@@ -661,16 +634,14 @@ def upstream_list(
     format: str = typer.Argument(..., metavar="FORMAT"),
     profile: str | None = typer.Option(None, "--profile", "-p"),
 ) -> None:
-    """List the package sources used by one repository format."""
+    """List the package sources used by one repository format, by position."""
     registry_kind = _require_package_kind(format)
     client = _client(profile)
     try:
-        entry = _resolve_repository_entry(repository, profile, kind=registry_kind)
-        payload = client.get(
-            _upstream_path(entry["repository"]["repository_unique_ref"], registry_kind)
-        ).json()
+        destination = _resolve_repository_entry(repository, profile, kind=registry_kind)
+        payload = client.get(_upstream_path(destination["ref"], registry_kind)).json()
         items = collection_items(payload)
-    except (ApiError, KeyError, TypeError) as exc:
+    except (ApiError, KeyError, TypeError, ValueError) as exc:
         output.fatal(str(exc))
     _print_upstreams(items)
 
@@ -697,38 +668,27 @@ def upstream_add(
     try:
         destination = _resolve_repository_entry(repository, profile, kind=registry_kind)
         if private_repository is not None:
-            source = _resolve_repository_entry(private_repository, profile, kind=registry_kind)
-            source_type = "private"
-            source_identity = {
-                "source_repository_unique_ref": source["repository"]["repository_unique_ref"]
-            }
+            source_repository = _resolve_repository_entry(
+                private_repository, profile, kind=registry_kind
+            )
+            source = {"kind": "repository", "ref": source_repository["ref"]}
         else:
-            remote_entry = client.get(
-                f"/remote-caches/{remote_cache}",
-                params={"format": registry_kind},
-            ).json()
-            source_type = "remote"
-            remote_payload = remote_cache_payload(remote_entry)
-            source_identity = {
-                "remote_cache_ref": remote_payload.get("remote_cache_ref")
-                or remote_payload.get("unique_ref")
-                or remote_cache
-            }
-        body = {
-            "source_type": source_type,
-            **source_identity,
+            remote = client.get(_remote_cache_path(cast("str", remote_cache))).json()
+            if remote["format"] != registry_kind:
+                output.fatal(f"Remote cache '{remote_cache}' is for {remote['format']}.")
+            source = {"kind": "remote_cache", "ref": remote["ref"]}
+        body: dict[str, object] = {
             "position": position,
+            "source": source,
             "expected_revision": _upstream_revision(destination, registry_kind),
-            "max_age_hours": max_age_hours,
         }
+        if max_age_hours is not None:
+            body["max_age_hours"] = max_age_hours
         if min_age_hours is not None:
             body["min_age_hours"] = min_age_hours
-        elif source_type == "private":
+        elif source["kind"] == "repository":
             body["min_age_hours"] = 0.0
-        item = client.post(
-            _upstream_path(destination["repository"]["repository_unique_ref"], registry_kind),
-            json=body,
-        ).json()
+        item = client.post(_upstream_path(destination["ref"], registry_kind), json=body).json()
     except (ApiError, KeyError, TypeError) as exc:
         output.fatal(str(exc))
     _print_upstreams([item])
@@ -739,14 +699,22 @@ def upstream_update(
     account: str | None = typer.Option(None, "--account"),
     repository: str = typer.Argument(...),
     format: str = typer.Argument(..., metavar="FORMAT"),
-    attachment: str = typer.Argument(...),
-    position: int | None = typer.Option(None, "--position", min=1, max=_MAX_UPSTREAM_POSITION),
+    current_position: int = typer.Argument(
+        ...,
+        metavar="POSITION",
+        min=1,
+        max=_MAX_UPSTREAM_POSITION,
+        help="Current position of the source, as shown by `upstream list`.",
+    ),
+    position: int | None = typer.Option(
+        None, "--position", min=1, max=_MAX_UPSTREAM_POSITION, help="Move to this position."
+    ),
     min_age_hours: float | None = typer.Option(None, "--min-age-hours", min=0),
     max_age_hours: float | None = typer.Option(None, "--max-age-hours", min=0),
     profile: str | None = typer.Option(None, "--profile", "-p"),
 ) -> None:
     """Change the fixed position or package-age settings for one source."""
-    body = {
+    body: dict[str, object] = {
         key: value
         for key, value in {
             "position": position,
@@ -763,7 +731,7 @@ def upstream_update(
         destination = _resolve_repository_entry(repository, profile, kind=registry_kind)
         body["expected_revision"] = _upstream_revision(destination, registry_kind)
         item = client.patch(
-            f"{_upstream_path(destination['repository']['repository_unique_ref'], registry_kind)}/{attachment}",
+            _upstream_path(destination["ref"], registry_kind, current_position),
             json=body,
         ).json()
     except (ApiError, KeyError, TypeError) as exc:
@@ -776,21 +744,29 @@ def upstream_remove(
     account: str | None = typer.Option(None, "--account"),
     repository: str = typer.Argument(...),
     format: str = typer.Argument(..., metavar="FORMAT"),
-    attachment: str = typer.Argument(...),
+    position: int = typer.Argument(
+        ...,
+        metavar="POSITION",
+        min=1,
+        max=_MAX_UPSTREAM_POSITION,
+        help="Position of the source, as shown by `upstream list`.",
+    ),
     profile: str | None = typer.Option(None, "--profile", "-p"),
 ) -> None:
-    """Remove one package source."""
+    """Remove the package source at one position."""
     registry_kind = _require_package_kind(format)
     client = _client(profile)
     try:
         destination = _resolve_repository_entry(repository, profile, kind=registry_kind)
         client.delete(
-            f"{_upstream_path(destination['repository']['repository_unique_ref'], registry_kind)}/{attachment}",
+            _upstream_path(destination["ref"], registry_kind, position),
             params={"expected_revision": _upstream_revision(destination, registry_kind)},
         )
     except (ApiError, KeyError, TypeError) as exc:
         output.fatal(str(exc))
-    output.success(f"Removed upstream '{attachment}' from '{repository}' ({registry_kind}).")
+    output.success(
+        f"Removed the upstream at position {position} from '{repository}' ({registry_kind})."
+    )
 
 
 # ── private mirrors and their remote caches ──────────────────────────────────
@@ -823,19 +799,13 @@ def remote_list(
     effective_customer_id = _context_customer_id(profile, account) or _customer_id(
         profile, customer_id
     )
-    try:
-        payload = client.get(
-            "/remote-caches",
-            params={
-                "account_ref": effective_customer_id,
-                "format": kind,
-            },
-        ).json()
-        items = collection_items(payload)
-    except ApiError as exc:
-        output.fatal(str(exc))
+    params = {"account_ref": effective_customer_id}
     if kind:
-        items = [entry for entry in items if remote_cache_payload(entry).get("format") == kind]
+        params["format"] = kind
+    try:
+        items = collection_items(client.get(artifacts_path("remote-caches"), params=params).json())
+    except (ApiError, ValueError) as exc:
+        output.fatal(str(exc))
     if not items:
         output.info("No private mirrors found.")
         return
@@ -851,27 +821,15 @@ def remote_list(
         ],
         [
             [
-                payload_display_name(entry.get("account", {})),
-                str(item["remote_cache_ref"]),
-                str(item.get("source_type") or "unknown"),
-                str(
-                    item.get("publication_control")
-                    or (
-                        "externally_controlled"
-                        if item.get("source_type") == "official"
-                        else "unknown"
-                    )
-                ),
-                (
-                    f"mirror:{item.get('official_slug') or item['remote_cache_ref']}"
-                    if item.get("source_type") == "official"
-                    else f"custom-mirror:{item.get('remote_name') or item['remote_cache_ref']}"
-                ),
-                str(item.get("format", "")),
+                payload_display_name(item["account"]),
+                str(item["ref"]),
+                str(item["source_type"]),
+                "externally_controlled" if item["source_type"] == "official" else "unknown",
+                remote_target_name(item),
+                str(item["format"]),
                 _format_age_hours(item.get("min_age_hours"), missing="No minimum"),
             ]
-            for entry in items
-            for item in [remote_cache_payload(entry)]
+            for item in items
         ],
         json_keys=[
             "account",
@@ -905,37 +863,33 @@ def remote_create(
         _require_package_kind(kind)
     client = _client(profile)
     try:
-        sources_payload = client.get(
-            "/remote-caches/official-sources",
-            params={"account_ref": customer_id},
-        ).json()
-        sources = collection_items(sources_payload)
+        sources = collection_items(
+            client.get(
+                artifacts_path("official-sources"),
+                params={"account_ref": customer_id},
+            ).json()
+        )
         matches = [
             item
             for item in sources
-            if source == item.get("source_ref") and (kind is None or item.get("format") == kind)
+            if source == item["ref"] and (kind is None or item["format"] == kind)
         ]
         if not matches:
             output.fatal(f"Official mirror source '{source}' was not found.")
         if len(matches) > 1:
             output.fatal(f"Official mirror source '{source}' is ambiguous. Pass --format.")
-        selected_source = matches[0]
         payload: dict[str, object] = {
             "account_ref": customer_id,
-            "source_ref": selected_source["source_ref"],
+            "source_ref": matches[0]["ref"],
         }
         if min_age_hours is not None:
             payload["min_age_hours"] = min_age_hours
         if max_age_hours is not None:
             payload["max_age_hours"] = max_age_hours
-        entry = client.post(
-            "/remote-caches/official",
-            json=payload,
-        ).json()
-    except (ApiError, KeyError, TypeError) as exc:
+        item = client.post(artifacts_path("remote-caches"), json=payload).json()
+    except (ApiError, KeyError, TypeError, ValueError) as exc:
         output.fatal(str(exc))
-    item = remote_cache_payload(entry)
-    target_name = f"mirror:{item.get('official_slug') or item['remote_cache_ref']}"
+    target_name = remote_target_name(item)
     output.success(f"Added private mirror '{target_name}'.")
     if select:
         target_select(
@@ -952,34 +906,30 @@ def remote_show(
         ..., help="Remote-cache permanent ID (rc_...).", metavar="REMOTE_CACHE_ID"
     ),
     profile: str | None = typer.Option(None, "--profile", "-p"),
-    account: str | None = typer.Option(None, "--account"),
+    account: str | None = typer.Option(None, "--account", hidden=True),
     customer_id: str | None = typer.Option(None, "--account-ref", hidden=True),
-    kind: str | None = typer.Option(None, "--format", "-f"),
+    kind: str | None = typer.Option(None, "--format", "-f", help="Require this format."),
 ) -> None:
     """Show a private mirror."""
+    # A remote-cache reference already identifies its owner; the hidden account
+    # options remain accepted for existing scripts but are not sent.
+    del account, customer_id
     if kind:
         _require_package_kind(kind)
-    selected_customer = _context_customer_id(profile, account) or _customer_id(profile, customer_id)
     client = _client(profile)
     try:
-        entry = client.get(
-            f"/remote-caches/{remote}",
-            params={"account_ref": selected_customer, "format": kind},
-        ).json()
-        item = remote_cache_payload(entry)
+        item = client.get(_remote_cache_path(remote)).json()
     except (ApiError, KeyError, TypeError) as exc:
         output.fatal(str(exc))
+    if kind and item["format"] != kind:
+        output.fatal(f"Private mirror '{remote}' is for {item['format']}, not {kind}.")
     output.kv(
         {
-            "Remote-cache ref": item["remote_cache_ref"],
-            "Type": item.get("source_type"),
-            "Target": (
-                f"mirror:{item.get('official_slug') or item['remote_cache_ref']}"
-                if item.get("source_type") == "official"
-                else f"custom-mirror:{item.get('remote_name') or item['remote_cache_ref']}"
-            ),
-            "Format": item.get("format"),
-            "Account ref": entry.get("account", {}).get("account_ref"),
+            "Remote-cache ref": item["ref"],
+            "Type": item["source_type"],
+            "Target": remote_target_name(item),
+            "Format": item["format"],
+            "Account ref": item["account"]["ref"],
             "Private mirror": "ready",
             "Mirror minimum package age": _format_age_hours(
                 item.get("min_age_hours"), missing="No minimum"
@@ -1009,22 +959,19 @@ def remote_set_age(
     ),
     min_age_hours: float = typer.Option(..., "--min-age-hours", min=0),
     profile: str | None = typer.Option(None, "--profile", "-p"),
-    account: str | None = typer.Option(None, "--account"),
+    account: str | None = typer.Option(None, "--account", hidden=True),
     customer_id: str | None = typer.Option(None, "--account-ref", hidden=True),
-    kind: str | None = typer.Option(None, "--format", "-f"),
+    kind: str | None = typer.Option(None, "--format", "-f", hidden=True),
 ) -> None:
     """Update the private mirror minimum package age."""
+    # A remote-cache reference already identifies its owner; the hidden account
+    # options remain accepted for existing scripts but are not sent.
+    del account, customer_id
     if kind:
         _require_package_kind(kind)
-    selected_customer = _context_customer_id(profile, account) or _customer_id(profile, customer_id)
     client = _client(profile)
-    payload = {"min_age_hours": min_age_hours}
     try:
-        client.patch(
-            f"/remote-caches/{remote}",
-            params={"account_ref": selected_customer, "format": kind},
-            json=payload,
-        )
+        client.patch(_remote_cache_path(remote), json={"min_age_hours": min_age_hours})
     except ApiError as exc:
         output.fatal(str(exc))
     output.success(f"Updated private mirror minimum package age for '{remote}'.")
@@ -1037,20 +984,21 @@ def remote_delete(
     ),
     profile: str | None = typer.Option(None, "--profile", "-p"),
     customer_id: str | None = typer.Option(None, "--account-ref", hidden=True),
-    account: str | None = typer.Option(None, "--account"),
-    kind: str | None = typer.Option(None, "--format", "-f"),
+    account: str | None = typer.Option(None, "--account", hidden=True),
+    kind: str | None = typer.Option(None, "--format", "-f", hidden=True),
     yes: bool = typer.Option(False, "--yes", "-y"),
 ) -> None:
     """Delete a private mirror."""
+    # A remote-cache reference already identifies its owner; the hidden account
+    # options remain accepted for existing scripts but are not sent.
+    del account, customer_id
     if kind:
         _require_package_kind(kind)
     if not yes:
         typer.confirm(f"Delete private mirror '{remote}'?", abort=True)
-    selected_customer = _context_customer_id(profile, account) or _customer_id(profile, customer_id)
-    params = {"account_ref": selected_customer, "format": kind}
     client = _client(profile)
     try:
-        client.delete(f"/remote-caches/{remote}", params=params)
+        client.delete(_remote_cache_path(remote))
     except ApiError as exc:
         output.fatal(str(exc))
     output.success(f"Deleted private mirror '{remote}'.")
@@ -1076,13 +1024,12 @@ def package_list(
     client = _client(profile)
     try:
         repository_unique_ref = _resolved_repository_unique_ref(repo, profile, kind=registry_kind)
-        data = client.get(
-            f"/repositories/{repository_unique_ref}/formats/{registry_kind}/packages"
-        ).json()
-    except ApiError as exc:
+        items = collection_items(
+            client.get(_format_path(repository_unique_ref, registry_kind, "packages")).json()
+        )
+    except (ApiError, ValueError) as exc:
         output.fatal(str(exc))
 
-    items = data if isinstance(data, list) else data.get("items", [])
     if not items:
         output.info(f"No packages found in '{repo}'.")
         return
@@ -1091,7 +1038,7 @@ def package_list(
         ["Name", "Latest", "Versions", "Size", "Downloads", "Bandwidth"],
         [
             [
-                item.get("package_name") or item.get("normalized_name", ""),
+                item["name"],
                 item.get("latest_version") or "",
                 str(item.get("version_count", "")),
                 str(item.get("total_size_bytes", "")),
@@ -1124,7 +1071,7 @@ def package_show(
     try:
         repository_unique_ref = _resolved_repository_unique_ref(repo, profile, kind=registry_kind)
         item = client.get(
-            f"/repositories/{repository_unique_ref}/formats/{registry_kind}/packages/detail",
+            _format_path(repository_unique_ref, registry_kind, "package"),
             params={"package_name": name},
         ).json()
     except ApiError as exc:
@@ -1132,9 +1079,9 @@ def package_show(
 
     output.kv(
         {
-            "Repository": item.get("repository_unique_ref", repo),
-            "Name": item.get("package_name") or item.get("normalized_name", name),
-            "Status": item.get("package_status") or "active",
+            "Repository": repository_unique_ref,
+            "Name": item["name"],
+            "Status": item.get("status") or "active",
             "Latest": item.get("latest_version") or "",
             "Versions": str(item.get("version_count", "")),
             "Size": str(item.get("total_size_bytes", "")),
@@ -1211,7 +1158,7 @@ def package_delete(
     try:
         repository_unique_ref = _resolved_repository_unique_ref(repo, profile, kind=registry_kind)
         client.delete(
-            f"/repositories/{repository_unique_ref}/formats/{registry_kind}/packages/detail",
+            _format_path(repository_unique_ref, registry_kind, "package"),
             params={"package_name": name},
         )
     except ApiError as exc:
@@ -1242,12 +1189,27 @@ def package_delete_version(
     try:
         repository_unique_ref = _resolved_repository_unique_ref(repo, profile, kind=registry_kind)
         client.delete(
-            f"/repositories/{repository_unique_ref}/formats/{registry_kind}/packages/version",
+            _format_path(repository_unique_ref, registry_kind, "package/version"),
             params={"package_name": name, "version": version},
         )
     except ApiError as exc:
         output.fatal(str(exc))
     output.success(f"Deleted {name}@{version} from '{repo}'.")
+
+
+def _update_package_version(
+    client: ApiClient,
+    repository_ref: str,
+    registry_kind: str,
+    name: str,
+    version: str,
+    body: dict[str, object],
+) -> None:
+    client.patch(
+        _format_path(repository_ref, registry_kind, "package/version"),
+        params={"package_name": name, "version": version},
+        json=body,
+    )
 
 
 @package_app.command("yank")
@@ -1272,14 +1234,12 @@ def package_yank(
         operation="Yanking a package version",
     )
     client = _client(profile)
-    body = {"yanked": True, "reason": reason}
+    body: dict[str, object] = {"yanked": True}
+    if reason is not None:
+        body["yanked_reason"] = reason
     try:
         repository_unique_ref = _resolved_repository_unique_ref(repo, profile, kind=registry_kind)
-        client.post(
-            f"/repositories/{repository_unique_ref}/formats/{registry_kind}/packages/version/yank",
-            params={"package_name": name, "version": version},
-            json=body,
-        )
+        _update_package_version(client, repository_unique_ref, registry_kind, name, version, body)
     except ApiError as exc:
         output.fatal(str(exc))
     output.success(f"Yanked {name}@{version} in '{repo}'.")
@@ -1303,10 +1263,8 @@ def package_unyank(
     client = _client(profile)
     try:
         repository_unique_ref = _resolved_repository_unique_ref(repo, profile, kind=registry_kind)
-        client.post(
-            f"/repositories/{repository_unique_ref}/formats/{registry_kind}/packages/version/yank",
-            params={"package_name": name, "version": version},
-            json={"yanked": False, "reason": None},
+        _update_package_version(
+            client, repository_unique_ref, registry_kind, name, version, {"yanked": False}
         )
     except ApiError as exc:
         output.fatal(str(exc))
@@ -1340,10 +1298,13 @@ def package_deprecate(
     client = _client(profile)
     try:
         repository_unique_ref = _resolved_repository_unique_ref(repo, profile, kind=registry_kind)
-        client.patch(
-            f"/repositories/{repository_unique_ref}/formats/{registry_kind}/packages/version/deprecation",
-            params={"package_name": name, "version": version},
-            json={"deprecated": True, "message": normalized_message},
+        _update_package_version(
+            client,
+            repository_unique_ref,
+            registry_kind,
+            name,
+            version,
+            {"deprecated": True, "deprecated_reason": normalized_message},
         )
     except ApiError as exc:
         output.fatal(str(exc))
@@ -1368,10 +1329,8 @@ def package_undeprecate(
     client = _client(profile)
     try:
         repository_unique_ref = _resolved_repository_unique_ref(repo, profile, kind=registry_kind)
-        client.patch(
-            f"/repositories/{repository_unique_ref}/formats/{registry_kind}/packages/version/deprecation",
-            params={"package_name": name, "version": version},
-            json={"deprecated": False, "message": None},
+        _update_package_version(
+            client, repository_unique_ref, registry_kind, name, version, {"deprecated": False}
         )
     except ApiError as exc:
         output.fatal(str(exc))

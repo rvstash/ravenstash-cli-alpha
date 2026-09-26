@@ -408,3 +408,50 @@ def test_delete_profile_updates_default_profile(monkeypatch, tmp_path: Path) -> 
     assert "work" not in loaded.profiles
     assert loaded.default_profile == "default"
     assert cfg_mod.delete_profile("missing") is False
+
+
+def test_cache_account_summary_keeps_fields_known_from_the_full_account(
+    monkeypatch, tmp_path: Path
+) -> None:
+    _point_config(monkeypatch, tmp_path)
+    monkeypatch.setattr(cfg_mod, "_session_file", lambda: None)
+    cfg_mod.cache_account(
+        profile="default",
+        customer={
+            "ref": "ac_23456789",
+            "handle": "acme",
+            "type": "organization",
+            "label": "Acme Inc.",
+            "is_admin": True,
+            "organization_role": "admin",
+            "authority_revision": 4,
+        },
+    )
+
+    summary = cfg_mod.cache_account(
+        profile="default",
+        customer={"ref": "ac_23456789", "handle": "acme-renamed", "type": "organization"},
+    )
+
+    assert summary.customer_handle == "acme-renamed"
+    assert summary.account_label == "Acme Inc."
+    assert summary.organization_role == "admin"
+    assert summary.authority_revision == 4
+    stored = cfg_mod.load().profiles["default"].accounts["ac_23456789"]
+    assert stored.account_label == "Acme Inc."
+
+
+def test_cache_account_summary_without_history_uses_the_handle_as_label(
+    monkeypatch, tmp_path: Path
+) -> None:
+    _point_config(monkeypatch, tmp_path)
+    monkeypatch.setattr(cfg_mod, "_session_file", lambda: None)
+
+    account = cfg_mod.cache_account(
+        profile="default",
+        customer={"ref": "ac_23456789", "handle": "dev", "type": "personal"},
+    )
+
+    assert account.account_label == "dev"
+    assert account.organization_role is None
+    assert account.authority_revision is None

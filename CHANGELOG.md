@@ -6,6 +6,37 @@ All notable user-facing changes to `rvs` are recorded here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- `rvs` now uses the product-grouped Ravenstash developer API: sign-in and
+  account resources live under `/v0/platform/` and repository, mirror, package,
+  OCI, token, and evidence resources under `/v0/artifacts/`. This release
+  requires the product-grouped service and does not work against a service that
+  serves only the former routes. Once the service moves, releases 0.10 through
+  0.14.7 stop working and report an "upgrade rvs" message.
+- Native registry addresses are discovered from the Artifacts metadata endpoint
+  after `rvs auth login` and after each session refresh. A failed discovery keeps
+  the saved addresses and never fails the command; `rvs auth login` warns when it
+  could not refresh them.
+- `rvs art repo upstream update` and `remove` now take the source's `POSITION`
+  (1–4) instead of a source ID, and `upstream list` shows position as its
+  addressing column together with the source type and permanent ID.
+- `rvs art token mint --access` now requests the `read`, `publish`, and `delete`
+  grant operations; `--all-formats` covers every enabled lane, including OCI.
+- `rvs art evidence list` lists intents of every package format in the
+  repository and shows each intent's format; `--format` is optional.
+- Machine-readable output that echoes API objects follows the new API field
+  names: `rvs art evidence ... --json` intents use `ref`, `repository_ref`, and
+  `package_name`; `rvs art oci ... --json` objects no longer carry `format`; and
+  `rvs art repo upstream list --json` rows use `position`, `type`, `source`, and
+  `source_ref` instead of `id`, with `type` values `repository` and
+  `remote_cache` instead of `private` and `remote`.
+- `rvs art token mint` now rejects a private-mirror token issued for another
+  mirror or format.
+- `rvs art mirror show`, `set-age`, and `delete` address a private mirror only by
+  its `rc_...` permanent ID. Their `--account` options, and the `--format` option
+  of `set-age` and `delete`, are now hidden and ignored for script compatibility.
+
 ### Removed
 
 - `install.sh` no longer installs portable releases older than 0.14.7 through

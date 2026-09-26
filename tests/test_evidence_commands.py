@@ -4,6 +4,7 @@ import hashlib
 import json
 import os
 from typing import TYPE_CHECKING, Any
+from unittest.mock import ANY
 
 import pytest
 from click import unstyle
@@ -43,12 +44,12 @@ class _Client:
         self.payload: dict[str, object] | None = None
 
     def post(self, path: str, *, json: dict[str, object]) -> _Response:
-        assert path == "/package-evidence/intents"
+        assert path == "/v0/artifacts/package-evidence/intents"
         self.payload = json
         return _Response(
             {
                 **json,
-                "evidence_intent_ref": "pe_23456789abcdefghijkmn",
+                "ref": "pe_23456789abcdefghijkmn",
                 "state": "prepared",
                 "analysis_state": "not_started",
                 "bound_artifact_refs": [],
@@ -215,10 +216,15 @@ def test_stage_emits_stable_json_without_upload_request(
         output.set_json(False)
 
     assert result.exit_code == 0
-    assert "evidence_intent_ref" in result.output
+    assert json.loads(result.stdout)["ref"] == "pe_23456789abcdefghijkmn"
     assert "upload_request" not in result.output
     assert client.payload is not None
     assert client.payload["analysis_context_id"] == "pypi-cpython313-linux-x86_64-base"
+    assert client.payload["repository_ref"] == "ar_23456789"
+    assert client.payload["format"] == "pypi"
+    assert client.payload["package_name"] == "demo"
+    assert "target" not in client.payload
+    assert "package" not in client.payload
     assert len(async_uploads) == 1
 
 
@@ -229,14 +235,16 @@ def test_list_forwards_cursor_and_preserves_page_in_json(
         params: dict[str, object] | None = None
 
         def get(self, path: str, *, params: dict[str, object]) -> _Response:
-            assert path == "/package-evidence/intents"
+            assert path == "/v0/artifacts/package-evidence/intents"
             self.params = params
             return _Response(
                 {
                     "items": [
                         {
-                            "evidence_intent_ref": "pe_23456789abcdefghijkmn",
-                            "package": "demo",
+                            "ref": "pe_23456789abcdefghijkmn",
+                            "repository_ref": "ar_23456789",
+                            "format": "pypi",
+                            "package_name": "demo",
                             "version": "1.0.0",
                             "scope": "artifact",
                             "state": "active",
@@ -275,8 +283,7 @@ def test_list_forwards_cursor_and_preserves_page_in_json(
     assert result.exit_code == 0
     assert json.loads(result.stdout)["next_cursor"] == "next-page"
     assert client.params == {
-        "target": "in/ar_23456789",
-        "format": "pypi",
+        "repository_ref": "ar_23456789",
         "limit": 25,
         "cursor": "current-page",
     }
@@ -323,3 +330,232 @@ def test_sbom_download_verifies_semantic_snapshot_etag(
     )
 
     assert destination.read_bytes() == payload
+
+
+def test_evidence_target_resolves_friendly_selector_to_repository_ref(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from rvs import config as cfg_mod
+    from rvs.artifacts import targets
+
+    config_dir = tmp_path / ".rvs"
+    config_dir.mkdir()
+    (config_dir / "config.toml").write_text(
+        'config_version = 6\ndefault_profile = "default"\n\n[profiles.default]\n'
+        'account_ref = "ac_23456789"\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(cfg_mod, "CONFIG_DIR", config_dir)
+    monkeypatch.setattr(cfg_mod, "CONFIG_FILE", config_dir / "config.toml")
+    monkeypatch.setattr(cfg_mod, "PROFILE_ENV_FILE", config_dir / "profiles.env")
+    monkeypatch.setattr(
+        evidence_commands,
+        "_effective_account",
+        lambda _profile, _account: ("default", "ac_23456789"),
+    )
+    calls: list[tuple[str, dict[str, object] | None]] = []
+
+    class ResolveClient:
+        def get(self, path: str, params: dict[str, object] | None = None) -> _Response:
+            calls.append((path, params))
+            return _Response(
+                {
+                    "ref": "ar_23456789",
+                    "name": "packages",
+                    "account": {"ref": "ac_23456789", "handle": "space", "type": "personal"},
+                    "namespace": {"ref": "in_23456789", "name": "space", "realm": "internal"},
+                    "formats": [{"format": "pypi", "upstream_config_revision": 1}],
+                    "allowed_actions": ["content.read", "content.publish"],
+                }
+            )
+
+    monkeypatch.setattr(targets.ApiClient, "from_profile", lambda *_args: ResolveClient())
+
+    for selector in ("space/packages", "ar_23456789", "in/ar_23456789"):
+        calls.clear()
+        _client, repository_ref = evidence_commands._repository_target(
+            target=selector, format="pypi", profile=None, account=None
+        )
+        assert repository_ref == "ar_23456789"
+        expected_selector = "in/ar_23456789" if "ar_" in selector else selector
+        assert calls[0][0] == "/v0/artifacts/repositories/resolve"
+        assert calls[0][1] is not None
+        assert calls[0][1]["selector"] == expected_selector
+        assert calls[0][1]["format"] == "pypi"
+
+
+def test_upload_resolves_release_artifacts_and_completes_uploads_by_ref(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    evidence = tmp_path / "bom.cdx.json"
+    evidence.write_text("{}", encoding="utf-8")
+    digest = "b" * 64
+    calls: list[tuple[str, str, object]] = []
+
+    class FlowClient:
+        def get(self, path: str, params: dict[str, object] | None = None) -> _Response:
+            calls.append(("GET", path, params))
+            return _Response(
+                {
+                    "items": [
+                        {
+                            "ref": "pa_23456789abcdefghijkmn",
+                            "filename": "demo-1.0.0-py3-none-any.whl",
+                            "sha256_digest": digest,
+                            "size": 5,
+                            "artifact_type": "wheel",
+                            "targetable": True,
+                            "exclusion_reason": None,
+                        }
+                    ],
+                    "next_cursor": None,
+                }
+            )
+
+        def post(self, path: str, *, json: dict[str, object]) -> _Response:
+            calls.append(("POST", path, json))
+            intent = {
+                "ref": "pe_23456789abcdefghijkmn",
+                "state": "prepared",
+                "repository_ref": "ar_23456789",
+                "format": "pypi",
+                "package_name": "demo",
+                "version": "1.0.0",
+                "evidence": [{"ref": "pu_23456789abcdefghijkmn", "filename": "bom.cdx.json"}],
+            }
+            if path.endswith("/uploads"):
+                return _Response(
+                    {
+                        "uploads": [
+                            {
+                                "upload_ref": "pu_23456789abcdefghijkmn",
+                                "request": {"url": "https://uploads.example.test/x"},
+                            }
+                        ]
+                    }
+                )
+            if path.endswith("/complete"):
+                return _Response({**intent, "state": "evidence_ready"})
+            return _Response(intent)
+
+    class PutClient:
+        def __init__(self, *args: object, **kwargs: object) -> None:
+            pass
+
+        def __enter__(self) -> PutClient:
+            return self
+
+        def __exit__(self, *args: object) -> None:
+            return None
+
+        def put(self, url: str, **_kwargs: object) -> Any:
+            calls.append(("PUT", url, None))
+
+            class _Ok:
+                def raise_for_status(self) -> None:
+                    return None
+
+            return _Ok()
+
+    monkeypatch.setattr(
+        evidence_commands, "_repository_target", lambda **_kwargs: (FlowClient(), "ar_23456789")
+    )
+    monkeypatch.setattr(evidence_commands.httpx2, "Client", PutClient)
+
+    result = runner.invoke(
+        evidence_commands.app,
+        [
+            "upload",
+            str(evidence),
+            "--target",
+            "space/packages",
+            "--format",
+            "pypi",
+            "--package",
+            "demo",
+            "--version",
+            "1.0.0",
+            "--artifact-sha256",
+            digest,
+            "--type",
+            "cyclonedx",
+            "--analysis-context",
+            "observed",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert calls[0] == (
+        "GET",
+        "/v0/artifacts/package-evidence/artifacts",
+        {
+            "repository_ref": "ar_23456789",
+            "format": "pypi",
+            "package_name": "demo",
+            "version": "1.0.0",
+        },
+    )
+    assert calls[1][:2] == ("POST", "/v0/artifacts/package-evidence/intents")
+    create_body = calls[1][2]
+    assert isinstance(create_body, dict)
+    assert create_body["repository_ref"] == "ar_23456789"
+    assert create_body["package_name"] == "demo"
+    assert create_body["artifact_manifest"] == [
+        {"sha256_digest": digest, "size": 5, "filename": "demo-1.0.0-py3-none-any.whl"}
+    ]
+    assert [call[:2] for call in calls[2:]] == [
+        ("POST", "/v0/artifacts/package-evidence/intents/pe_23456789abcdefghijkmn/uploads"),
+        ("PUT", "https://uploads.example.test/x"),
+        (
+            "POST",
+            "/v0/artifacts/package-evidence/intents/pe_23456789abcdefghijkmn/uploads/"
+            "pu_23456789abcdefghijkmn/complete",
+        ),
+    ]
+    assert calls[2][2] == {
+        "uploads": [{"upload_ref": "pu_23456789abcdefghijkmn", "content_md5": ANY}]
+    }
+    assert "pe_23456789abcdefghijkmn" in result.output
+
+
+def test_status_retire_and_documents_use_flat_evidence_routes(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    paths: list[tuple[str, str]] = []
+    intent = {"ref": "pe_23456789abcdefghijkmn", "state": "active"}
+
+    class RefClient:
+        def get(self, path: str, params: object = None) -> Any:
+            paths.append(("GET", path))
+            if path.endswith("/report"):
+                return _DocumentResponse(b"{}", "")
+            return _Response(intent)
+
+        def delete(self, path: str) -> _Response:
+            paths.append(("DELETE", path))
+            return _Response({**intent, "state": "cancelled"})
+
+    monkeypatch.setattr(evidence_commands.ApiClient, "from_profile", lambda _profile: RefClient())
+
+    assert (
+        runner.invoke(evidence_commands.app, ["status", "pe_23456789abcdefghijkmn"]).exit_code == 0
+    )
+    assert (
+        runner.invoke(
+            evidence_commands.app, ["retire", "pe_23456789abcdefghijkmn", "--yes"]
+        ).exit_code
+        == 0
+    )
+    report = tmp_path / "report.json"
+    assert (
+        runner.invoke(
+            evidence_commands.app,
+            ["report", "pa_23456789abcdefghijkmn", "--output", str(report)],
+        ).exit_code
+        == 0
+    )
+    assert paths == [
+        ("GET", "/v0/artifacts/package-evidence/intents/pe_23456789abcdefghijkmn"),
+        ("DELETE", "/v0/artifacts/package-evidence/intents/pe_23456789abcdefghijkmn"),
+        ("GET", "/v0/artifacts/package-evidence/artifacts/pa_23456789abcdefghijkmn/report"),
+    ]

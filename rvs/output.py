@@ -134,13 +134,10 @@ def resource_account_hint(selector: str, selected_account_ref: str, owner: dict)
     """Report explicit cross-account access without changing CLI context."""
     from rich.markup import escape
 
-    owner_id = str(owner["account_ref"])
-    account_type = str(owner.get("account_type") or "account")
+    owner_id = str(owner["ref"])
+    account_type = str(owner.get("type") or "account")
     try:
-        label = typed_handle(
-            account_type,
-            owner.get("account_handle") or owner.get("account_label") or owner_id,
-        )
+        label = typed_handle(account_type, owner.get("handle") or owner_id)
     except ValueError:
         label = f"account:{owner_id}"
     message = (

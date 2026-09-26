@@ -55,45 +55,61 @@ class _JsonResponse:
         return self.payload
 
 
+REPOSITORY_MINT_PATH = "/v0/artifacts/repositories/ar_xyzabcde/mint-token"
+REMOTE_CACHE_MINT_PREFIX = "/v0/artifacts/remote-caches/"
+EXPECTED_REPOSITORY_TARGET = {
+    "namespace_ref": "in_abcdefgh",
+    "namespace_name": "staging",
+    "namespace_realm": "internal",
+    "repository_ref": "ar_xyzabcde",
+    "repository_name": "repo",
+}
+
+
 class _FakeDevApi:
     def get(self, path: str, params=None) -> _JsonResponse:
-        if path == "/accounts":
+        if path == "/v0/platform/accounts":
             return _JsonResponse(
                 {
                     "items": [
                         {
-                            "account_ref": "ac_23456789",
-                            "account_handle": "staging",
-                            "account_type": "personal",
-                            "account_label": "personal",
+                            "ref": "ac_23456789",
+                            "handle": "staging",
+                            "type": "personal",
+                            "label": "personal",
+                            "is_admin": True,
                             "organization_role": None,
+                            "authority_revision": 1,
                         }
                     ],
                     "next_cursor": None,
                 }
             )
-        assert path == "/repositories/resolve"
+        assert path == "/v0/artifacts/repositories/resolve"
         return _JsonResponse(
             {
-                "account": {
-                    "account_ref": "ac_23456789",
-                    "account_handle": "staging",
-                    "account_type": "personal",
-                    "account_label": "personal",
-                    "organization_role": None,
+                "ref": "ar_xyzabcde",
+                "name": "repo",
+                "account": {"ref": "ac_23456789", "handle": "staging", "type": "personal"},
+                "namespace": {"ref": "in_abcdefgh", "name": "staging", "realm": "internal"},
+                "formats": [
+                    {"format": "pypi", "upstream_config_revision": 1},
+                    {"format": "npm", "upstream_config_revision": 1},
+                    {"format": "maven", "upstream_config_revision": 1},
+                ],
+                "allowed_actions": [],
+                "totals": {
+                    "package_count": 0,
+                    "version_count": 0,
+                    "oci_path_count": 0,
+                    "manifest_count": 0,
+                    "storage_bytes": 0,
                 },
-                "repository": {
-                    "repository_name": "repo",
-                    "namespace_unique_ref": "in_abcdefgh",
-                    "namespace_name": "staging",
-                    "namespace_realm": "internal",
-                    "repository_unique_ref": "ar_xyzabcde",
-                    "formats": [
-                        {"format": "pypi", "upstream_config_revision": 1},
-                        {"format": "npm", "upstream_config_revision": 1},
-                        {"format": "maven", "upstream_config_revision": 1},
-                    ],
-                },
+                "is_deleted": False,
+                "deleted_at": None,
+                "latest_uploaded_at": None,
+                "created_at": "2026-01-01T00:00:00Z",
+                "updated_at": "2026-01-01T00:00:00Z",
             }
         )
 
@@ -102,30 +118,42 @@ class _FakeDevApi:
         return self.post(path, json=payload)
 
     def post(self, path: str, json: dict[str, Any] | None = None) -> _JsonResponse:
-        if path == "/remote-package-credentials":
-            assert json is not None
-            assert json["account_ref"] == "ac_23456789"
-            assert json["format"] == "pypi"
-            assert json["remote_cache_ref"]
-            namespace = "o" if json["remote_cache_ref"] == "pypiorg" else "c"
+        if path.startswith(REMOTE_CACHE_MINT_PREFIX):
+            assert json == {"duration_seconds": 14400}
+            remote_cache_ref = path.removeprefix(REMOTE_CACHE_MINT_PREFIX).removesuffix(
+                "/mint-token"
+            )
+            assert remote_cache_ref
+            assert path == f"{REMOTE_CACHE_MINT_PREFIX}{remote_cache_ref}/mint-token"
+            namespace = "o" if remote_cache_ref == "pypiorg" else "c"
             return _JsonResponse(
                 {
                     "access_token": "rvs_sltBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBA",
-                    "native_path": f"/{namespace}/{json['remote_cache_ref']}",
+                    "token_type": "Bearer",
+                    "expires_in": 14400,
+                    "account_ref": "ac_23456789",
+                    "remote_cache_ref": remote_cache_ref,
+                    "format": "pypi",
+                    "native_path": f"/{namespace}/{remote_cache_ref}",
+                    "operations": ["read"],
                 }
             )
-        assert path == "/package-credentials"
+        assert path == REPOSITORY_MINT_PATH
         assert json is not None
-        assert json["operations"] in (["download"], ["upload"], ["download", "upload"])
+        assert set(json) == {"formats", "operations", "duration_seconds", "expected_target"}
+        assert json["operations"] in (["read"], ["publish"], ["read", "publish"])
+        assert json["expected_target"] == EXPECTED_REPOSITORY_TARGET
         return _JsonResponse(
             {
                 "access_token": "rvs_sltAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+                "token_type": "Bearer",
+                "expires_in": 14400,
+                "account_ref": "ac_23456789",
+                "target": dict(EXPECTED_REPOSITORY_TARGET),
+                "formats": list(json["formats"]),
+                "operations": list(json["operations"]),
                 "native_realm": "in",
                 "native_paths": {kind: "/in/ar_xyzabcde" for kind in json["formats"]},
-                "namespace_name": "staging",
-                "namespace_realm": "internal",
-                "repository_name": "repo",
-                "repository_unique_ref": "ar_xyzabcde",
             }
         )
 
@@ -246,33 +274,33 @@ def test_native_wrapper_rejects_wrong_type_before_starting_child(
 
 
 def test_native_commands_request_only_the_operations_they_need() -> None:
-    assert native_runner._operations_for("pip", ["install", "demo"]) == ("download",)
-    assert native_runner._operations_for("uv", ["publish", "dist/demo.whl"]) == ("upload",)
-    assert native_runner._operations_for("twine", ["upload", "dist/*"]) == ("upload",)
-    assert native_runner._operations_for("npm", ["ci"]) == ("download",)
-    assert native_runner._operations_for("npm", ["publish"]) == ("upload",)
+    assert native_runner._operations_for("pip", ["install", "demo"]) == ("read",)
+    assert native_runner._operations_for("uv", ["publish", "dist/demo.whl"]) == ("publish",)
+    assert native_runner._operations_for("twine", ["upload", "dist/*"]) == ("publish",)
+    assert native_runner._operations_for("npm", ["ci"]) == ("read",)
+    assert native_runner._operations_for("npm", ["publish"]) == ("publish",)
     assert native_runner._operations_for("npm", ["unpublish", "demo@1.0.0"]) == (
-        "download",
-        "upload",
+        "read",
+        "publish",
     )
     assert native_runner._operations_for("npm", ["deprecate", "demo@1", "old"]) == (
-        "download",
-        "upload",
+        "read",
+        "publish",
     )
     assert native_runner._operations_for("npm", ["dist-tag", "add", "demo@1", "next"]) == (
-        "download",
-        "upload",
+        "read",
+        "publish",
     )
     assert native_runner._operations_for("npm", ["dist-tag", "ls", "demo"]) == (
-        "download",
-        "upload",
+        "read",
+        "publish",
     )
-    assert native_runner._operations_for("mvn", ["test"]) == ("download",)
-    assert native_runner._operations_for("mvn", ["deploy"]) == ("download", "upload")
+    assert native_runner._operations_for("mvn", ["test"]) == ("read",)
+    assert native_runner._operations_for("mvn", ["deploy"]) == ("read", "publish")
     assert native_runner._operations_for(
         "mvn",
         ["org.apache.maven.plugins:maven-deploy-plugin:3.1.3:deploy-file"],
-    ) == ("download", "upload")
+    ) == ("read", "publish")
 
 
 def test_native_npm_respects_project_npmrc_and_injects_path_scoped_auth(
@@ -338,7 +366,7 @@ def test_native_detected_registry_confirms_resolved_account(
     class OrgApi(_FakeDevApi):
         def get(self, path, params=None):
             payload = super().get(path, params).json()
-            payload["account"].update(account_type="organization", account_label="YYYY")
+            payload["account"].update(type="organization")
             return _JsonResponse(payload)
 
     monkeypatch.setattr(ApiClient, "from_profile", staticmethod(lambda profile=None: OrgApi()))

@@ -109,7 +109,7 @@ def test_registry_config_is_source_not_native_override(tmp_path):
     assert helm.expand(invocation, ROOT) == ["pull", f"oci://{ROOT}/api"]
 
 
-def test_release_and_flag_values_do_not_request_upload_permission():
-    assert _operations_for("helm", ["install", "push", "api"]) == ("download",)
-    assert _operations_for("helm", ["show", "values", "api", "--version", "push"]) == ("download",)
-    assert _operations_for("helm", ["push", "--help"]) == ("download",)
+def test_release_and_flag_values_do_not_request_publish_permission():
+    assert _operations_for("helm", ["install", "push", "api"]) == ("read",)
+    assert _operations_for("helm", ["show", "values", "api", "--version", "push"]) == ("read",)
+    assert _operations_for("helm", ["push", "--help"]) == ("read",)

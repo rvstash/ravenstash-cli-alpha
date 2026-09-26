@@ -15,11 +15,19 @@ import typer
 from .. import output
 from ..auth.token_format import validate_public_token
 from ..client import ApiClient, ApiError
+from ..devapi import remote_cache_mint_token_path, repository_mint_token_path
 from .discovery import discover
 from .formats import flatten_formats
+from .targets import expected_repository_target
 
 
 app = typer.Typer(help="Create short-lived tokens for package tools.", no_args_is_help=True)
+
+ACCESS_OPERATIONS: dict[str, list[str]] = {
+    "read": ["read"],
+    "publish": ["read", "publish"],
+    "admin": ["read", "publish", "delete"],
+}
 
 
 def duration_seconds(value: str) -> int:
@@ -73,41 +81,44 @@ def mint(
             if any(item not in found.formats for item in requested):
                 raise ValueError("Every requested format must be enabled on the exact target.")
             client = ApiClient.from_profile(found.profile)
-            operations = {
-                "read": ["download"],
-                "publish": ["download", "upload"],
-                "admin": ["download", "upload", "delete"],
-            }[access]
+            operations = ACCESS_OPERATIONS[access]
             if selected.target_type == "repository":
+                if not selected.repository_unique_ref:
+                    raise ValueError("The selected repository has no permanent ID.")
+                selection: dict[str, object] = (
+                    {"all_formats": True} if all_formats else {"formats": requested}
+                )
                 response = client.issue_native(
-                    "/package-credentials",
+                    repository_mint_token_path(selected.repository_unique_ref),
                     {
-                        "repository_unique_ref": selected.repository_unique_ref,
-                        "formats": requested or None,
-                        "all_formats": all_formats,
+                        **selection,
                         "operations": operations,
                         "duration_seconds": seconds,
-                        "expected_target": {
-                            "namespace_unique_ref": selected.namespace_unique_ref,
-                            "namespace_name": selected.namespace_name_cache,
-                            "namespace_realm": selected.namespace_realm,
-                            "repository_unique_ref": selected.repository_unique_ref,
-                            "repository_name": selected.repository_name_cache,
-                        },
+                        "expected_target": expected_repository_target(selected),
                     },
                 ).json()
+                minted_formats = response["formats"]
             else:
                 if access != "read":
                     raise ValueError("Private mirrors support read credentials only.")
+                if not selected.remote_unique_ref:
+                    raise ValueError("The selected private mirror has no permanent ID.")
+                mirror_format = found.select_format(requested[0] if requested else None)
                 response = client.issue_native(
-                    "/remote-package-credentials",
-                    {
-                        "account_ref": selected.customer_id,
-                        "remote_cache_ref": selected.remote_unique_ref,
-                        "format": found.select_format(requested[0] if requested else None),
-                        "duration_seconds": seconds,
-                    },
+                    remote_cache_mint_token_path(selected.remote_unique_ref),
+                    {"duration_seconds": seconds},
                 ).json()
+                native_parts = str(response["native_path"]).strip("/").split("/")
+                if (
+                    response["format"] != mirror_format
+                    or response["remote_cache_ref"] != selected.remote_unique_ref
+                    or len(native_parts) != 2
+                    or not all(native_parts)
+                ):
+                    raise ValueError(
+                        "Ravenstash returned a credential for a different private mirror."
+                    )
+                minted_formats = [mirror_format]
         if selected.target_type == "repository":
             expected_path = f"/in/{selected.repository_unique_ref}"
             native_paths = response.get("native_paths")
@@ -128,7 +139,7 @@ def mint(
         if output.is_json():
             result = {
                 "target": selected.display_selector,
-                "formats": response.get("formats", [response.get("format")]),
+                "formats": minted_formats,
                 "access": access,
                 "access_token": secret,
                 "token_type": response["token_type"],

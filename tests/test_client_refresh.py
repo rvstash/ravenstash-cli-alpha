@@ -7,7 +7,17 @@ import pytest
 from rvs import auth as auth_mod
 from rvs import config as cfg_mod
 from rvs.client import ApiClient, ApiError
-from rvs.devapi import api_path
+from rvs.devapi import (
+    api_path,
+    api_url,
+    artifacts_path,
+    is_mint_token_path,
+    platform_path,
+    remote_cache_mint_token_path,
+    repository_mint_token_path,
+    retired_route_message,
+    segment,
+)
 
 
 class _FakeHttpClient:
@@ -58,7 +68,7 @@ def test_api_client_refreshes_and_retries_once(monkeypatch) -> None:
         "https://api.ravenstash.com",
         "old-access",
         profile="default",
-    ).get("/webapp/repository")
+    ).get(artifacts_path("repositories"))
 
     assert response.json() == {"ok": True}
     assert [request[2]["Authorization"] for request in _FakeHttpClient.requests] == [
@@ -88,7 +98,7 @@ def test_api_client_preemptive_refresh_reuses_request_connection(monkeypatch) ->
         "old-access",
         profile="default",
         refresh_before_request=True,
-    ).get("/accounts")
+    ).get(platform_path("accounts"))
 
     assert response.json() == {"ok": True}
     assert refresh_clients == _FakeHttpClient.instances
@@ -97,7 +107,7 @@ def test_api_client_preemptive_refresh_reuses_request_connection(monkeypatch) ->
 
 def test_api_client_retries_idempotent_get_transport_failures(monkeypatch) -> None:
     _FakeHttpClient.requests = []
-    request = httpx.Request("GET", "https://api.ravenstash.com/repositories/resolve")
+    request = httpx.Request("GET", "https://api.ravenstash.com/v0/artifacts/repositories/resolve")
     _FakeHttpClient.responses = [
         httpx.ReadTimeout("timed out", request=request),
         httpx.Response(200, json={"ok": True}),
@@ -106,7 +116,9 @@ def test_api_client_retries_idempotent_get_transport_failures(monkeypatch) -> No
     monkeypatch.setattr(httpx, "Client", _FakeHttpClient)
     monkeypatch.setattr("rvs.client.time.sleep", lambda _seconds: None)
 
-    response = ApiClient("https://api.ravenstash.com", "access").get("/repositories/resolve")
+    response = ApiClient("https://api.ravenstash.com", "access").get(
+        artifacts_path("repositories/resolve")
+    )
 
     assert response.json() == {"ok": True}
     assert len(_FakeHttpClient.requests) == 2
@@ -114,15 +126,17 @@ def test_api_client_retries_idempotent_get_transport_failures(monkeypatch) -> No
 
 def test_api_client_does_not_retry_post_transport_failures(monkeypatch) -> None:
     _FakeHttpClient.requests = []
-    request = httpx.Request("POST", "https://api.ravenstash.com/package-credentials")
+    request = httpx.Request(
+        "POST", "https://api.ravenstash.com/v0/artifacts/repositories/ar_xyzabcde/mint-token"
+    )
     _FakeHttpClient.responses = [httpx.ReadTimeout("timed out", request=request)]
 
     monkeypatch.setattr(httpx, "Client", _FakeHttpClient)
 
     with pytest.raises(httpx.ReadTimeout):
         ApiClient("https://api.ravenstash.com", "access").post(
-            "/package-credentials",
-            json={"repository_unique_ref": "repo-1"},
+            repository_mint_token_path("ar_xyzabcde"),
+            json={"formats": ["pypi"], "operations": ["read"]},
         )
 
     assert len(_FakeHttpClient.requests) == 1
@@ -147,7 +161,7 @@ def test_api_client_without_profile_does_not_refresh(monkeypatch) -> None:
             "https://api.ravenstash.com",
             "env-access",
             profile=None,
-        ).get("/webapp/repository")
+        ).get(artifacts_path("repositories"))
 
     assert exc_info.value.status_code == 401
     assert refresh_calls == []
@@ -164,15 +178,15 @@ def test_repository_target_conflict_has_an_actionable_message() -> None:
                 "namespace_name": "old-namespace",
                 "namespace_realm": "internal",
                 "repository_name": "old-repository",
-                "namespace_unique_ref": "in_abcdefgh",
-                "repository_unique_ref": "ar_xyzabcde",
+                "namespace_ref": "in_abcdefgh",
+                "repository_ref": "ar_xyzabcde",
             },
             "current": {
                 "namespace_name": "new-namespace",
                 "namespace_realm": "internal",
                 "repository_name": "new-repository",
-                "namespace_unique_ref": "in_abcdefgh",
-                "repository_unique_ref": "ar_xyzabcde",
+                "namespace_ref": "in_abcdefgh",
+                "repository_ref": "ar_xyzabcde",
             },
         },
     )
@@ -266,7 +280,7 @@ pkg_api_url = "https://app.example/api"
     )
 
     with pytest.raises(ApiError):
-        ApiClient.from_profile().get("/items")
+        ApiClient.from_profile().get(platform_path("me"))
 
     assert refresh_calls == []
     assert len(_FakeHttpClient.requests) == 1
@@ -284,26 +298,127 @@ def test_api_client_request_methods_pass_paths_payloads_and_params(monkeypatch) 
     monkeypatch.setattr(httpx, "Client", _FakeHttpClient)
     client = ApiClient("https://api.example/", "token")
 
-    client.get("/items", params={"customer_id": "cus_123"})
-    client.post("items", json={"name": "repo"})
-    client.patch("/items/repo", json={"name": "new"})
-    client.delete("/items/repo")
+    client.get(platform_path("namespaces"), params={"account_ref": "ac_23456789"})
+    client.post(artifacts_path("repositories"), json={"name": "repo"})
+    client.patch(artifacts_path("repositories/ar_xyzabcde"), json={"name": "new"})
+    client.delete(artifacts_path("repositories/ar_xyzabcde"))
 
     assert [(method, url) for method, url, _headers, _kwargs in _FakeHttpClient.requests] == [
-        ("GET", "https://api.example/v0/items"),
-        ("POST", "https://api.example/v0/items"),
-        ("PATCH", "https://api.example/v0/items/repo"),
-        ("DELETE", "https://api.example/v0/items/repo"),
+        ("GET", "https://api.example/v0/platform/namespaces"),
+        ("POST", "https://api.example/v0/artifacts/repositories"),
+        ("PATCH", "https://api.example/v0/artifacts/repositories/ar_xyzabcde"),
+        ("DELETE", "https://api.example/v0/artifacts/repositories/ar_xyzabcde"),
     ]
-    assert _FakeHttpClient.requests[0][3]["params"] == {"customer_id": "cus_123"}
+    assert _FakeHttpClient.requests[0][3]["params"] == {"account_ref": "ac_23456789"}
     assert _FakeHttpClient.requests[1][3]["json"] == {"name": "repo"}
     assert _FakeHttpClient.requests[2][3]["json"] == {"name": "new"}
 
 
-def test_devapi_version_is_centralized_and_embedded_versions_are_rejected() -> None:
-    assert api_path("repositories") == "/v0/repositories"
+def test_devapi_version_and_groups_are_centralized_in_path_builders() -> None:
+    assert api_path("meta") == "/v0/meta"
+    assert platform_path("auth/device/code") == "/v0/platform/auth/device/code"
+    assert platform_path("/me") == "/v0/platform/me"
+    assert artifacts_path("repositories") == "/v0/artifacts/repositories"
+    assert artifacts_path("repositories/ar_xyzabcde/formats/pypi/packages") == (
+        "/v0/artifacts/repositories/ar_xyzabcde/formats/pypi/packages"
+    )
+    assert segment("sha256:abc/def") == "sha256%3Aabc%2Fdef"
+
+
+@pytest.mark.parametrize("builder", [api_path, platform_path, artifacts_path])
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/v0/repositories",
+        "v0",
+        "v1/platform/me",
+        "v1beta1/meta",
+        "/platform/me",
+        "platform",
+        "artifacts/repositories",
+        "/artifacts",
+    ],
+)
+def test_path_builders_reject_pre_versioned_or_pre_grouped_input(builder, path: str) -> None:
     with pytest.raises(ValueError, match="must not embed"):
-        api_path("/v0/repositories")
+        builder(path)
+
+
+def test_grouped_path_builders_require_a_resource() -> None:
+    with pytest.raises(ValueError, match="resource path is required"):
+        platform_path("")
+    with pytest.raises(ValueError, match="resource path is required"):
+        artifacts_path("/")
+
+
+@pytest.mark.parametrize(
+    "path",
+    ["repositories", "/repositories", "/v0/repositories", "/v0/me", "/v0/artifacts", "/v1/meta"],
+)
+def test_api_url_rejects_paths_not_built_by_a_group_builder(path: str) -> None:
+    with pytest.raises(ValueError, match="Build DevAPI paths"):
+        api_url("https://api.example", path)
+
+
+def test_api_url_joins_built_paths() -> None:
+    assert api_url("https://api.example/", api_path("meta")) == "https://api.example/v0/meta"
+    assert (
+        api_url("https://api.example", artifacts_path("meta"))
+        == "https://api.example/v0/artifacts/meta"
+    )
+
+
+def test_mint_token_paths_are_the_only_native_issuance_routes() -> None:
+    assert repository_mint_token_path("ar_xyzabcde") == (
+        "/v0/artifacts/repositories/ar_xyzabcde/mint-token"
+    )
+    assert remote_cache_mint_token_path("rc_abcdefgh") == (
+        "/v0/artifacts/remote-caches/rc_abcdefgh/mint-token"
+    )
+    assert is_mint_token_path(repository_mint_token_path("ar_xyzabcde"))
+    assert is_mint_token_path(remote_cache_mint_token_path("rc_abcdefgh"))
+    assert not is_mint_token_path("/package-credentials")
+    assert not is_mint_token_path("/v0/package-credentials")
+    assert not is_mint_token_path(artifacts_path("repositories/ar_xyzabcde"))
+    assert not is_mint_token_path(artifacts_path("repositories/ar_xyzabcde/formats/oci/mint-token"))
+
+
+def test_issue_native_rejects_non_mint_paths() -> None:
+    with pytest.raises(ValueError, match="mint-token"):
+        ApiClient("https://api.example", "token").issue_native(
+            artifacts_path("repositories"), {"operations": ["read"]}
+        )
+
+
+_RETIRED = {
+    "error": {
+        "code": "ApiRouteRetired",
+        "message": "This rvs release uses a retired API route. Upgrade rvs.",
+        "details": None,
+    },
+    "request_id": "req_1",
+}
+
+
+def test_api_client_surfaces_retired_route_message(monkeypatch) -> None:
+    _FakeHttpClient.requests = []
+    _FakeHttpClient.responses = [httpx.Response(410, json=_RETIRED)]
+    monkeypatch.setattr(httpx, "Client", _FakeHttpClient)
+
+    with pytest.raises(ApiError) as exc_info:
+        ApiClient("https://api.example", "token").get(artifacts_path("repositories"))
+
+    assert exc_info.value.status_code == 410
+    assert str(exc_info.value) == "This rvs release uses a retired API route. Upgrade rvs."
+
+
+def test_retired_route_message_recognizes_only_the_retired_code() -> None:
+    assert retired_route_message(httpx.Response(410, json=_RETIRED)) == (
+        "This rvs release uses a retired API route. Upgrade rvs."
+    )
+    assert retired_route_message(httpx.Response(410, json={"error": {"code": "Gone"}})) is None
+    assert retired_route_message(httpx.Response(404, json=_RETIRED)) is None
+    assert retired_route_message(httpx.Response(410, text="gone")) is None
 
 
 def test_api_client_rejects_a_different_reported_contract(monkeypatch) -> None:
@@ -318,7 +433,7 @@ def test_api_client_rejects_a_different_reported_contract(monkeypatch) -> None:
     monkeypatch.setattr(httpx, "Client", _FakeHttpClient)
 
     with pytest.raises(ApiError, match="expects 'v0'") as exc_info:
-        ApiClient("https://api.example", "token").get("/repositories")
+        ApiClient("https://api.example", "token").get(artifacts_path("repositories"))
 
     assert exc_info.value.status_code == 502
 
@@ -329,7 +444,7 @@ def test_api_client_error_uses_json_detail(monkeypatch) -> None:
     monkeypatch.setattr(httpx, "Client", _FakeHttpClient)
 
     with pytest.raises(ApiError) as exc_info:
-        ApiClient("https://api.example", "token").get("/private")
+        ApiClient("https://api.example", "token").get(platform_path("me"))
 
     assert exc_info.value.status_code == 403
     assert exc_info.value.detail == "forbidden"

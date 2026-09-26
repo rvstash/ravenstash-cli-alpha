@@ -19,9 +19,10 @@ import typer
 from .. import config as cfg_mod
 from .. import output
 from ..account.commands import resolve_account
-from ..artifacts.targets import resolve_target
+from ..artifacts.targets import expected_repository_target, resolve_target
 from ..auth.token_format import STATIC_NATIVE_DURATION_SECONDS, validate_public_token
 from ..client import ApiClient, ApiError
+from ..devapi import repository_mint_token_path
 from ..publishing import confirm_publish, oci_artifacts
 from ..runtime import tools
 from ..subprocesses import child_environment
@@ -32,7 +33,7 @@ from .registry import normalized_registry_host
 
 OciTool = Literal["docker", "helm", "oras"]
 OciRegistryKind = Literal["oci"]
-PackageOperation = Literal["download", "upload", "delete"]
+PackageOperation = Literal["read", "publish", "delete"]
 _OCI_COMPONENT = re.compile(r"^[a-z0-9]+(?:(?:[._]|__|-+)[a-z0-9]+)*$")
 _UNIQUE_ID = re.compile(r"^[23456789abcdefghijkmnpqrstuvwxyz]{8}$")
 
@@ -113,14 +114,14 @@ def _registry_url(profile: cfg_mod.ProfileConfig) -> tuple[str, str]:
 def resolve_route(
     tool: OciTool,
     options: OciOptions,
-    operations: tuple[PackageOperation, ...] = ("download",),
+    operations: tuple[PackageOperation, ...] = ("read",),
 ) -> OciRoute:
     kind: OciRegistryKind = "oci"
     config = cfg_mod.load()
     profile_name = options.profile or cfg_mod.current_profile_name(config)
     customer_id = options.customer_id
     if customer_id is None and options.account is not None:
-        customer_id = str(resolve_account(options.account, profile_name)["account_ref"])
+        customer_id = str(resolve_account(options.account, profile_name)["ref"])
     customer_id = customer_id or cfg_mod.current_customer_id(profile_name)
     selected = cfg_mod.selected_artifact_target(profile_name, customer_id)
     repo_ref = options.target
@@ -141,41 +142,40 @@ def resolve_route(
     try:
         client = ApiClient.from_profile(profile_name)
         credential_body: dict[str, object] = {
-            "repository_unique_ref": target.repository_unique_ref,
             "formats": [kind],
             "operations": list(operations),
             "duration_seconds": STATIC_NATIVE_DURATION_SECONDS,
-            "expected_target": {
-                "namespace_unique_ref": target.namespace_unique_ref,
-                "namespace_name": target.namespace_name_cache,
-                "namespace_realm": target.namespace_realm,
-                "repository_unique_ref": target.repository_unique_ref,
-                "repository_name": target.repository_name_cache,
-            },
+            "expected_target": expected_repository_target(target),
         }
         credential = client.issue_native(
-            "/package-credentials",
+            repository_mint_token_path(target.repository_unique_ref),
             credential_body,
         ).json()
         token = validate_public_token(credential["access_token"], native=True)
         native_path = credential["native_paths"][kind]
+        minted_target = credential["target"]
     except ApiError as exc:
         output.fatal(str(exc))
     except (KeyError, TypeError, ValueError) as exc:
         output.fatal(f"Invalid OCI capability response: {exc}")
     if not isinstance(native_path, str) or _native_route_parts(native_path) is None:
         output.fatal("Invalid OCI capability response: native_path is not canonical.")
-    registry_url, registry_host = _registry_url(config.active_profile(profile_name))
+    # Minting may refresh the session and its registry discovery; read the profile
+    # afterwards so this invocation uses the current OCI host.
+    registry_url, registry_host = _registry_url(cfg_mod.load().active_profile(profile_name))
     response_root = native_path.strip("/")
     friendly_root = _friendly_oci_root(
-        credential.get("namespace_name"),
-        credential.get("repository_name"),
+        minted_target.get("namespace_name"),
+        minted_target.get("repository_name"),
     )
     stable_root = _stable_oci_root(
         credential.get("native_realm"),
-        credential.get("repository_unique_ref"),
+        target.repository_unique_ref,
     )
-    if response_root != stable_root:
+    if (
+        minted_target.get("repository_ref") != target.repository_unique_ref
+        or response_root != stable_root
+    ):
         output.fatal("Invalid OCI capability response: native_path is not canonical.")
     return OciRoute(
         kind=kind,
@@ -323,14 +323,14 @@ def _operations_for(
     argv: list[str],
 ) -> tuple[PackageOperation, ...]:
     if tool == "docker":
-        return ("download", "upload") if docker.parse(argv).publishing else ("download",)
+        return ("read", "publish") if docker.parse(argv).publishing else ("read",)
     if tool == "helm" and helm.parse(argv).publishing:
-        return ("download", "upload")
+        return ("read", "publish")
     if tool == "oras" and oras.parse(argv).deleting:
-        return ("download", "delete")
+        return ("read", "delete")
     if tool == "oras" and oras.parse(argv).publishing:
-        return ("download", "upload")
-    return ("download",)
+        return ("read", "publish")
+    return ("read",)
 
 
 def run(tool: OciTool, argv: list[str], options: OciOptions) -> None:

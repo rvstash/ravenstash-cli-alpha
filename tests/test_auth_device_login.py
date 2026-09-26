@@ -386,6 +386,12 @@ class _FakeResponse:
             raise AssertionError(f"unexpected HTTP failure: {self.payload}")
 
 
+ARTIFACTS_META = _FakeResponse(
+    200, {"formats": ["pypi", "npm", "maven", "oci"], "native_registries": NATIVE_REGISTRIES}
+)
+META_URL = "https://api.ravenstash.com/v0/artifacts/meta"
+
+
 class _FakeClient:
     responses: ClassVar[list[_FakeResponse]] = []
     requests: ClassVar[list[tuple[str, dict[str, Any] | None, dict[str, str] | None]]] = []
@@ -408,6 +414,18 @@ class _FakeClient:
         timeout: float | None = None,
     ) -> _FakeResponse:
         self.requests.append((url, json, headers))
+        return self.responses.pop(0)
+
+    def get(
+        self,
+        url: str,
+        *,
+        headers: dict[str, str] | None = None,
+        timeout: float | None = None,
+    ) -> _FakeResponse:
+        assert headers is not None
+        assert "Authorization" not in headers
+        self.requests.append((url, None, headers))
         return self.responses.pop(0)
 
 
@@ -442,9 +460,9 @@ def test_device_login_handles_slow_down_and_stores_expiring_jwt(
                 "expires_in": 900,
                 "refresh_expires_in": 14400,
                 "account_ref": "ac_23456789",
-                "native_registries": NATIVE_REGISTRIES,
             },
         ),
+        ARTIFACTS_META,
     ]
     stored_tokens: list[tuple[str, str]] = []
     stored_refresh_tokens: list[tuple[str, str]] = []
@@ -485,22 +503,23 @@ def test_device_login_handles_slow_down_and_stores_expiring_jwt(
     assert metadata_writes[0]["profile"] == "default"
     assert metadata_writes[0]["api_url"] == "https://api.ravenstash.com"
     assert metadata_writes[0]["customer_id"] == "ac_23456789"
-    assert metadata_writes[0]["native_registries"] == NATIVE_REGISTRIES
+    assert "native_registries" not in metadata_writes[0]
     assert metadata_writes[0]["credential_type"] == "expiring"
     assert metadata_writes[0]["expires_at"]
     assert metadata_writes[0]["refresh_expires_at"]
     assert sleeps == [5, 10]
     assert [url for url, _payload, _headers in _FakeClient.requests] == [
-        "https://api.ravenstash.com/v0/auth/device/code",
-        "https://api.ravenstash.com/v0/auth/device/token",
-        "https://api.ravenstash.com/v0/auth/device/token",
-        "https://api.ravenstash.com/v0/auth/device/token",
+        "https://api.ravenstash.com/v0/platform/auth/device/code",
+        "https://api.ravenstash.com/v0/platform/auth/device/token",
+        "https://api.ravenstash.com/v0/platform/auth/device/token",
+        "https://api.ravenstash.com/v0/platform/auth/device/token",
+        META_URL,
     ]
     first_payload = _FakeClient.requests[0][1]
     assert first_payload is not None
     assert first_payload["platform"] == "linux"
     assert first_payload["requested_duration_seconds"] == 12 * 60 * 60
-    assert [headers for _url, _payload, headers in _FakeClient.requests] == [
+    assert [headers for _url, _payload, headers in _FakeClient.requests[:4]] == [
         {"User-Agent": "rvs/0.14.3"},
         {"User-Agent": "rvs/0.14.3"},
         {"User-Agent": "rvs/0.14.3"},
@@ -541,9 +560,9 @@ def test_device_login_replaces_active_profile_and_revokes_previous_refresh(
                 "expires_in": 900,
                 "refresh_expires_in": 14400,
                 "account_ref": "ac_23456789",
-                "native_registries": NATIVE_REGISTRIES,
             },
         ),
+        ARTIFACTS_META,
     ]
     stored_tokens: list[tuple[str, str]] = []
     stored_refresh_tokens: list[tuple[str, str]] = []
@@ -583,6 +602,10 @@ def test_device_login_replaces_active_profile_and_revokes_previous_refresh(
     profile = cfg_mod.load().profiles["default"]
     assert profile.api_url == "https://api.redirect.example.test"
     assert profile.refresh_expires_at is not None
+    assert _FakeClient.requests[-1][0] == "https://api.redirect.example.test/v0/artifacts/meta"
+    assert profile.native_registries.pypi.read_base_url == "https://pypi.rvsta.sh"
+    assert profile.native_registries.npm.push_base_url == "https://push.npm.rvsta.sh"
+    assert profile.native_registries.oci_registry_base_url == "https://oci.rvsta.sh"
 
 
 def test_device_login_start_failure_does_not_replace_stored_api_origin(
@@ -643,7 +666,6 @@ def test_device_login_does_not_revoke_expired_previous_refresh(
                 "expires_in": 900,
                 "refresh_expires_in": 14400,
                 "account_ref": "ac_23456789",
-                "native_registries": NATIVE_REGISTRIES,
             },
         ),
     ]
@@ -701,7 +723,6 @@ def test_store_expiring_credential_rolls_back_when_metadata_cannot_be_saved(
             token="access",
             refresh_token="refresh",
             customer_id="cus_123",
-            native_registries=NATIVE_REGISTRIES,
             expires_in=900,
             refresh_expires_in=14400,
             credential_store="pass",
@@ -737,9 +758,9 @@ def test_refresh_expiring_credential_rotates_tokens(
                 "expires_in": 900,
                 "refresh_expires_in": 14400,
                 "account_ref": "ac_23456789",
-                "native_registries": NATIVE_REGISTRIES,
             },
-        )
+        ),
+        ARTIFACTS_META,
     ]
 
     monkeypatch.setattr(auth_mod.httpx, "Client", _FakeClient)
@@ -755,10 +776,11 @@ def test_refresh_expiring_credential_rotates_tokens(
     ]
     assert _FakeClient.requests == [
         (
-            "https://api.ravenstash.com/v0/auth/device/refresh",
+            "https://api.ravenstash.com/v0/platform/auth/device/refresh",
             {"refresh_token": "old-refresh", "platform": "linux", "operation_id": ANY},
             {"User-Agent": "rvs/0.14.3"},
-        )
+        ),
+        (META_URL, None, ANY),
     ]
     profile = cfg_mod.load().profiles["default"]
     assert profile.credential_type == "expiring"
@@ -788,7 +810,7 @@ def test_revoke_device_refresh_token_posts_to_devapi(monkeypatch) -> None:
     )
     assert _FakeClient.requests == [
         (
-            "https://api.ravenstash.com/v0/auth/device/revoke",
+            "https://api.ravenstash.com/v0/platform/auth/device/revoke",
             {"refresh_token": "old-refresh"},
             {"User-Agent": "rvs/0.14.3"},
         )
@@ -878,7 +900,7 @@ def test_refresh_expiring_credential_failure_clears_profile(monkeypatch, tmp_pat
     assert deleted == ["default"]
     assert _FakeClient.requests == [
         (
-            "https://api.ravenstash.com/v0/auth/device/refresh",
+            "https://api.ravenstash.com/v0/platform/auth/device/refresh",
             {"refresh_token": "old-refresh", "platform": "linux", "operation_id": ANY},
             {"User-Agent": "rvs/0.14.3"},
         )
@@ -989,6 +1011,10 @@ def test_concurrent_refresh_reuses_rotated_pair(monkeypatch, tmp_path: Path) -> 
                 },
             )
 
+        def get(self, _url, *, headers, timeout=None):
+            del headers, timeout
+            return _FakeResponse(503, {})
+
     monkeypatch.setattr(auth_mod, "_kr_get", credential_get)
     monkeypatch.setattr(auth_mod, "_kr_set", credential_set)
     monkeypatch.setattr(auth_mod, "_profile_refresh_lock", tracked_refresh_lock)
@@ -1013,3 +1039,197 @@ def test_concurrent_refresh_reuses_rotated_pair(monkeypatch, tmp_path: Path) -> 
     assert not second.is_alive()
     assert results == {"refresh-one": "new-access", "refresh-two": "new-access"}
     assert http_calls == ["old-refresh"]
+
+
+_DEVICE_SESSION = {
+    "device_code": "device-code",
+    "user_code": "ABCD-1234",
+    "verification_uri": "https://api.ravenstash.com/login/device",
+    "verification_uri_complete": "https://api.ravenstash.com/login/device",
+    "expires_in": 600,
+    "interval": 5,
+}
+_DEVICE_TOKEN = {
+    "access_token": "jwt-token",
+    "refresh_token": "new-refresh-token",
+    "token_type": "bearer",
+    "expires_in": 900,
+    "refresh_expires_in": 14400,
+    "account_ref": "ac_23456789",
+}
+_RETIRED = {
+    "error": {
+        "code": "ApiRouteRetired",
+        "message": "This rvs release uses a retired API route. Upgrade rvs.",
+        "details": None,
+    },
+    "request_id": "req_1",
+}
+
+
+def _isolated_login(monkeypatch, tmp_path: Path) -> Path:
+    config_dir = tmp_path / ".rvs"
+    _write_profiles_config(config_dir)
+    monkeypatch.setattr(cfg_mod, "CONFIG_DIR", config_dir)
+    monkeypatch.setattr(cfg_mod, "CONFIG_FILE", config_dir / "config.toml")
+    monkeypatch.delenv("RVS_REPOSITORY_DOMAIN", raising=False)
+    monkeypatch.delenv("RVS_API_URL", raising=False)
+    monkeypatch.setattr(login_mod.auth_mod, "has_active_expiring_session", lambda profile: False)
+    monkeypatch.setattr(login_mod.auth_mod, "set_token", lambda _profile, _token: None)
+    monkeypatch.setattr(login_mod.auth_mod, "set_refresh_token", lambda _profile, _token: None)
+    monkeypatch.setattr(login_mod.httpx, "Client", _FakeClient)
+    monkeypatch.setattr(login_mod, "_rvs_version", lambda: "0.14.8")
+    monkeypatch.setattr(login_mod, "_device_platform", lambda: "linux")
+    _FakeClient.requests = []
+    return config_dir
+
+
+@pytest.mark.parametrize(
+    "meta_response",
+    [
+        _FakeResponse(503, {"error": {"code": "ServiceUnavailable", "message": "down"}}),
+        _FakeResponse(200, {"formats": ["pypi"]}),
+        _FakeResponse(200, {"native_registries": {"pypi": {"read_base_url": "ftp://x"}}}),
+    ],
+)
+def test_device_login_keeps_stored_registries_when_artifacts_discovery_fails(
+    monkeypatch, tmp_path: Path, meta_response: _FakeResponse, capsys
+) -> None:
+    _isolated_login(monkeypatch, tmp_path)
+    before = cfg_mod.load().profiles["default"].native_registries
+    _FakeClient.responses = [
+        _FakeResponse(200, _DEVICE_SESSION),
+        _FakeResponse(200, _DEVICE_TOKEN),
+        meta_response,
+    ]
+
+    login_mod.perform_device_login(profile="default", api_url=None, no_browser=True)
+
+    profile = cfg_mod.load().profiles["default"]
+    assert profile.credential_type == "expiring"
+    assert profile.native_registries == before
+    assert [url for url, _payload, _headers in _FakeClient.requests][-1] == META_URL
+    assert "Could not refresh native registry endpoints" in " ".join(
+        capsys.readouterr().err.split()
+    )
+
+
+def test_device_login_surfaces_retired_route_message(monkeypatch, tmp_path: Path, capsys) -> None:
+    _isolated_login(monkeypatch, tmp_path)
+    _FakeClient.responses = [_FakeResponse(410, _RETIRED)]
+
+    with pytest.raises(SystemExit):
+        login_mod.perform_device_login(profile="default", api_url=None, no_browser=True)
+
+    assert "retired API route. Upgrade rvs." in " ".join(capsys.readouterr().err.split())
+
+
+def test_device_token_poll_surfaces_retired_route_message(
+    monkeypatch, tmp_path: Path, capsys
+) -> None:
+    _isolated_login(monkeypatch, tmp_path)
+    _FakeClient.responses = [_FakeResponse(200, _DEVICE_SESSION), _FakeResponse(410, _RETIRED)]
+
+    with pytest.raises(SystemExit):
+        login_mod.perform_device_login(profile="default", api_url=None, no_browser=True)
+
+    assert "retired API route. Upgrade rvs." in " ".join(capsys.readouterr().err.split())
+
+
+def _isolated_refresh(monkeypatch, tmp_path: Path) -> None:
+    config_dir = tmp_path / ".rvs"
+    _write_profiles_config(config_dir)
+    monkeypatch.setattr(cfg_mod, "CONFIG_DIR", config_dir)
+    monkeypatch.setattr(cfg_mod, "CONFIG_FILE", config_dir / "config.toml")
+    monkeypatch.delenv("RVS_REPOSITORY_DOMAIN", raising=False)
+    monkeypatch.setattr(auth_mod, "_keyring_available", lambda: True)
+    monkeypatch.setattr(
+        auth_mod,
+        "_kr_get",
+        lambda profile: "old-refresh" if profile == "default:refresh" else None,
+    )
+    monkeypatch.setattr(auth_mod, "_kr_set", lambda _profile, _token: None)
+    monkeypatch.setattr(auth_mod.httpx, "Client", _FakeClient)
+    _FakeClient.requests = []
+
+
+def test_refresh_updates_changed_native_registries_from_artifacts_meta(
+    monkeypatch, tmp_path: Path
+) -> None:
+    _isolated_refresh(monkeypatch, tmp_path)
+    moved = json.loads(json.dumps(NATIVE_REGISTRIES).replace("rvsta.sh", "packages.example.net"))
+    _FakeClient.responses = [
+        _FakeResponse(200, _DEVICE_TOKEN),
+        _FakeResponse(
+            200, {"formats": ["pypi", "npm", "maven", "oci"], "native_registries": moved}
+        ),
+    ]
+
+    assert auth_mod.refresh_expiring_credential("default") == "jwt-token"
+
+    registries = cfg_mod.load().profiles["default"].native_registries
+    assert registries.pypi.read_base_url == "https://pypi.packages.example.net"
+    assert registries.maven.mirror_base_url == "https://mirror.maven.packages.example.net"
+    assert registries.oci_registry_base_url == "https://oci.packages.example.net"
+    assert [url for url, _payload, _headers in _FakeClient.requests] == [
+        "https://api.ravenstash.com/v0/platform/auth/device/refresh",
+        META_URL,
+    ]
+
+
+def test_refresh_does_not_rewrite_config_when_registries_are_unchanged(
+    monkeypatch, tmp_path: Path
+) -> None:
+    _isolated_refresh(monkeypatch, tmp_path)
+    _FakeClient.responses = [_FakeResponse(200, _DEVICE_TOKEN), ARTIFACTS_META]
+    assert auth_mod.refresh_expiring_credential("default") == "jwt-token"
+    writes: list[dict[str, Any]] = []
+    monkeypatch.setattr(
+        cfg_mod, "set_profile_metadata", lambda profile, **kwargs: writes.append(kwargs)
+    )
+    _FakeClient.requests = []
+    _FakeClient.responses = [ARTIFACTS_META]
+
+    from rvs.artifacts.meta import sync_native_registries
+
+    assert sync_native_registries("default", "https://api.ravenstash.com") == "unchanged"
+    assert writes == []
+
+
+@pytest.mark.parametrize(
+    "meta_response",
+    [
+        _FakeResponse(503, {}),
+        _FakeResponse(410, _RETIRED),
+        _FakeResponse(200, ["not", "an", "object"]),  # type: ignore[arg-type]
+    ],
+)
+def test_refresh_keeps_stored_registries_when_artifacts_meta_fails(
+    monkeypatch, tmp_path: Path, meta_response: _FakeResponse
+) -> None:
+    _isolated_refresh(monkeypatch, tmp_path)
+    before = cfg_mod.load().profiles["default"].native_registries
+    _FakeClient.responses = [_FakeResponse(200, _DEVICE_TOKEN), meta_response]
+
+    assert auth_mod.refresh_expiring_credential("default") == "jwt-token"
+
+    profile = cfg_mod.load().profiles["default"]
+    assert profile.native_registries == before
+    assert profile.credential_type == "expiring"
+
+
+def test_refresh_keeps_stored_registries_when_artifacts_meta_transport_fails(
+    monkeypatch, tmp_path: Path
+) -> None:
+    _isolated_refresh(monkeypatch, tmp_path)
+    before = cfg_mod.load().profiles["default"].native_registries
+
+    class _BrokenMetaClient(_FakeClient):
+        def get(self, url: str, **_kwargs: Any) -> _FakeResponse:
+            raise auth_mod.httpx.ConnectError("offline")
+
+    monkeypatch.setattr(auth_mod.httpx, "Client", _BrokenMetaClient)
+    _FakeClient.responses = [_FakeResponse(200, _DEVICE_TOKEN)]
+
+    assert auth_mod.refresh_expiring_credential("default") == "jwt-token"
+    assert cfg_mod.load().profiles["default"].native_registries == before

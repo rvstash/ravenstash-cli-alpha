@@ -32,13 +32,19 @@ def customer(
     account_type: str = "organization",
 ) -> dict[str, Any]:
     return {
-        "account_ref": customer_id,
-        "account_handle": label,
-        "account_type": account_type,
-        "account_label": label,
-        "organization_role": "member" if account_type == "organization" else "owner",
+        "ref": customer_id,
+        "handle": label,
+        "type": account_type,
+        "label": label,
+        "is_admin": False,
+        "organization_role": "member" if account_type == "organization" else None,
         "authority_revision": 4,
     }
+
+
+def summary(account: dict[str, Any]) -> dict[str, Any]:
+    """Return the embedded ``AccountSummary`` for one wire ``Account``."""
+    return {"ref": account["ref"], "handle": account["handle"], "type": account["type"]}
 
 
 def remote(
@@ -50,19 +56,19 @@ def remote(
     suffix: str,
 ) -> dict[str, Any]:
     return {
-        "account": owner,
-        "remote_cache": {
-            "id": f"remote-{suffix}",
-            "public_id": name,
-            "unique_id": f"unique-{suffix}",
-            "remote_cache_ref": f"rc_{suffix.ljust(8, '2')}",
-            "source_type": family,
-            "source_id": f"source-{suffix}",
-            "official_slug": name if family == "official" else None,
-            "remote_name": name if family == "custom" else None,
-            "format": kind,
-            "created_at": "2026-01-01T00:00:00Z",
-        },
+        "ref": f"rc_{suffix.ljust(8, '2')}",
+        "account": summary(owner),
+        "format": kind,
+        "source_type": family,
+        "remote_name": name if family == "custom" else None,
+        "official_slug": name if family == "official" else None,
+        "min_age_hours": None,
+        "max_age_hours": None,
+        "consumer_repository_count": 0,
+        "package_count": 0,
+        "storage_bytes": 0,
+        "last_accessed_at": None,
+        "created_at": "2026-01-01T00:00:00Z",
     }
 
 
@@ -74,9 +80,9 @@ class FakeApi:
 
     def get(self, path: str, params: dict[str, Any] | None = None) -> Response:
         self.calls.append(("GET", path, params))
-        if path == "/accounts":
+        if path == "/v0/platform/accounts":
             return Response({"items": self.customers, "next_cursor": None})
-        if path == "/remote-caches":
+        if path == "/v0/artifacts/remote-caches":
             selected = [
                 item
                 for item in self.remotes
@@ -84,12 +90,9 @@ class FakeApi:
                 or (
                     (
                         not params.get("account_ref")
-                        or item["account"]["account_ref"] == params["account_ref"]
+                        or item["account"]["ref"] == params["account_ref"]
                     )
-                    and (
-                        not params.get("format")
-                        or item["remote_cache"]["format"] == params["format"]
-                    )
+                    and (not params.get("format") or item["format"] == params["format"])
                 )
             ]
             return Response({"items": selected, "next_cursor": None})
@@ -101,15 +104,24 @@ class FakeApi:
 
     def post(self, path: str, json: dict[str, Any] | None = None) -> Response:
         self.calls.append(("POST", path, json))
-        if path == "/remote-package-credentials":
-            assert json is not None
-            name = str(json["remote_cache_ref"])
-            prefix = "o" if name == "rc_py222222" else "c"
-            public_name = "pypiorg" if prefix == "o" else "piwheels"
+        for item in self.remotes:
+            if path != f"/v0/artifacts/remote-caches/{item['ref']}/mint-token":
+                continue
+            # The cache ref travels in the path; the body carries only the duration.
+            assert json == {"duration_seconds": 14400}
+            official = item["source_type"] == "official"
+            prefix = "o" if official else "c"
+            public_name = item["official_slug"] if official else item["remote_name"]
             return Response(
                 {
                     "access_token": "rvs_sltEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEA",
+                    "token_type": "bearer",
+                    "expires_in": 14400,
+                    "account_ref": item["account"]["ref"],
+                    "remote_cache_ref": item["ref"],
+                    "format": item["format"],
                     "native_path": f"/{prefix}/{public_name}",
+                    "operations": ["read"],
                 }
             )
         raise AssertionError(path)
@@ -206,8 +218,8 @@ def test_account_and_official_cache_selection_are_visible_and_clearable(
 
 def test_handle_selection_preserves_customer_id_and_canonical_case(monkeypatch, tmp_path):
     isolate(monkeypatch, tmp_path)
-    owner = {**customer("acme-id", "Acme"), "account_handle": "acmeHQ"}
-    other = {**customer("other-id", "acmeHQ"), "account_handle": "other-hq"}
+    owner = {**customer("acme-id", "Acme"), "handle": "acmeHQ"}
+    other = {**customer("other-id", "acmeHQ"), "handle": "other-hq"}
     fake = FakeApi([owner, other], [])
     monkeypatch.setattr(ApiClient, "from_profile", staticmethod(lambda profile=None: fake))
     selected = runner.invoke(app, ["account", "switch", "ACMEHQ"])
@@ -217,7 +229,7 @@ def test_handle_selection_preserves_customer_id_and_canonical_case(monkeypatch, 
     cached = cfg_mod.cached_account("alice", "acme-id")
     assert cached is not None
     assert cached.customer_handle == "acmeHQ"
-    assert cached.customer_unique_ref == owner["account_ref"]
+    assert cached.customer_unique_ref == owner["ref"]
 
 
 def test_typed_handle_selectors_disambiguate_user_and_organization(monkeypatch, tmp_path):
@@ -245,7 +257,7 @@ def test_repository_resolution_rejects_cross_customer_response(monkeypatch, tmp_
     class ForeignRepositoryApi:
         def get(self, path, params):
             calls.append((path, params))
-            return Response({"account": customer("foreign", "Foreign")})
+            return Response({"account": summary(customer("foreign", "Foreign"))})
 
     monkeypatch.setattr(
         ApiClient, "from_profile", staticmethod(lambda profile=None: ForeignRepositoryApi())
@@ -254,7 +266,7 @@ def test_repository_resolution_rejects_cross_customer_response(monkeypatch, tmp_
         resolve_target("main/packages", profile="alice", customer_id="selected")
     assert calls == [
         (
-            "/repositories/resolve",
+            "/v0/artifacts/repositories/resolve",
             {
                 "selector": "main/packages",
                 "account_ref": "selected",
@@ -383,25 +395,43 @@ def test_native_wrapper_uses_selected_cache_and_one_shot_does_not_mutate_it(
     )
 
 
+EXPECTED_TARGET = {
+    "namespace_ref": "in_23456789",
+    "namespace_name": "engineering",
+    "namespace_realm": "internal",
+    "repository_ref": "ar_abcdefgh",
+    "repository_name": "packages",
+}
+
+
 class CrossAccountApi:
     def __init__(self):
         self.calls = []
-        self.owner = customer("org-foreign", "OtherOrg")
+        self.owner = summary(customer("org-foreign", "OtherOrg"))
 
     def get(self, path, params=None):
         self.calls.append((path, params))
-        assert path == "/repositories/resolve"
+        assert path == "/v0/artifacts/repositories/resolve"
         return Response(
             {
+                "ref": "ar_abcdefgh",
+                "name": "packages",
                 "account": self.owner,
-                "repository": {
-                    "namespace_unique_ref": "in_23456789",
-                    "namespace_name": "engineering",
-                    "namespace_realm": "internal",
-                    "repository_unique_ref": "ar_abcdefgh",
-                    "repository_name": "packages",
-                    "formats": [{"format": "pypi", "upstream_config_revision": 1}],
+                "namespace": {"ref": "in_23456789", "name": "engineering", "realm": "internal"},
+                "formats": [{"format": "pypi", "upstream_config_revision": 1}],
+                "allowed_actions": ["read"],
+                "totals": {
+                    "package_count": 0,
+                    "version_count": 0,
+                    "oci_path_count": 0,
+                    "manifest_count": 0,
+                    "storage_bytes": 0,
                 },
+                "is_deleted": False,
+                "deleted_at": None,
+                "latest_uploaded_at": None,
+                "created_at": "2026-01-01T00:00:00Z",
+                "updated_at": "2026-01-01T00:00:00Z",
             }
         )
 
@@ -411,17 +441,22 @@ class CrossAccountApi:
 
     def post(self, path, json=None):
         self.calls.append((path, json))
-        assert path == "/package-credentials"
-        assert json["repository_unique_ref"] == "ar_abcdefgh"
+        assert path == "/v0/artifacts/repositories/ar_abcdefgh/mint-token"
+        assert "repository_unique_ref" not in json
         assert json["formats"] == ["pypi"]
+        assert json["operations"] == ["read"]
+        assert json["expected_target"] == EXPECTED_TARGET
         return Response(
             {
                 "access_token": "rvs_sltCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCA",
-                "native_realm": "in",
-                "native_paths": {"pypi": "/in/ar_abcdefgh"},
-                "formats": ["pypi"],
                 "token_type": "bearer",
                 "expires_in": 14400,
+                "account_ref": "org-foreign",
+                "target": EXPECTED_TARGET,
+                "formats": ["pypi"],
+                "operations": ["read"],
+                "native_realm": "in",
+                "native_paths": {"pypi": "/in/ar_abcdefgh"},
             }
         )
 
@@ -433,7 +468,7 @@ def test_stable_cross_account_target_reports_owner_without_switching(monkeypatch
     _, owner, target = resolve_target("in/ar_abcdefgh", profile="alice", kind="pypi")
     assert fake.calls == [
         (
-            "/repositories/resolve",
+            "/v0/artifacts/repositories/resolve",
             {
                 "selector": "in/ar_abcdefgh",
                 "format": "pypi",
@@ -487,8 +522,8 @@ def test_management_stable_reference_crosses_account_with_json_hint(
         entry = _resolve_repository_entry(selector, "alice")
     finally:
         output.set_json(False)
-    assert entry["account"]["account_ref"] == "org-foreign"
-    assert fake.calls == [("/repositories/resolve", {"selector": selector})]
+    assert entry["account"]["ref"] == "org-foreign"
+    assert fake.calls == [("/v0/artifacts/repositories/resolve", {"selector": selector})]
     assert messages[0]["event"] == "cross_account_resource"
     assert messages[0]["selected_account_ref"] == "personal-alice"
     assert messages[0]["owner_account_ref"] == "org-foreign"
@@ -559,5 +594,8 @@ def test_cross_account_issuance_denial_does_not_fallback_or_switch(monkeypatch, 
     monkeypatch.setattr(ApiClient, "from_profile", staticmethod(lambda profile=None: fake))
     with pytest.raises(SystemExit):
         registry_context(kind="pypi", target="in/ar_abcdefgh", profile="alice")
-    assert [path for path, _ in fake.calls] == ["/repositories/resolve", "/package-credentials"]
+    assert [path for path, _ in fake.calls] == [
+        "/v0/artifacts/repositories/resolve",
+        "/v0/artifacts/repositories/ar_abcdefgh/mint-token",
+    ]
     assert cfg_mod.current_customer_id("alice") == "personal-alice"

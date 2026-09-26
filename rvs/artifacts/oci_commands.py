@@ -6,7 +6,6 @@ import contextlib
 import json
 import sys
 from typing import Literal
-from urllib.parse import quote
 
 import click
 import httpx2 as httpx
@@ -14,6 +13,7 @@ import typer
 
 from .. import output
 from ..client import ApiClient, ApiError
+from ..devapi import artifacts_path, collection_items, segment
 from ..oci.reference import qualify_reference
 from .discovery import discover
 
@@ -53,6 +53,7 @@ def _request(
     params: dict | None = None,
     body: dict | None = None,
     yes: bool = False,
+    subject: str = "",
 ) -> None:
     try:
         with contextlib.redirect_stdout(sys.stderr):
@@ -64,9 +65,9 @@ def _request(
             if not reference:
                 raise ValueError("The selected repository has no permanent ID.")
             client = ApiClient.from_profile(found.profile)
-            url = f"/repositories/{quote(reference, safe='')}/oci/{suffix}"
+            url = artifacts_path(f"repositories/{segment(reference)}/formats/oci/{suffix}")
             if method == "DELETE" and not yes:
-                typer.confirm(f"Delete {params} from {found.target.display_selector}?", abort=True)
+                typer.confirm(f"Delete {subject} from {found.target.display_selector}?", abort=True)
             if method == "GET":
                 response = client.get(
                     url,
@@ -81,8 +82,8 @@ def _request(
             payload = response.json()
         if output.is_json():
             click.echo(json.dumps(payload))
-        elif "items" in payload:
-            rows = payload["items"]
+        elif method == "GET" and (suffix in _COLLECTIONS or suffix.endswith("/referrers")):
+            rows = collection_items(payload)
             columns = [
                 key
                 for key in ("path", "content_type", "digest", "tag", "manifest_kind", "tag_count")
@@ -100,6 +101,9 @@ def _request(
             )
     except (ApiError, httpx.HTTPError, ValueError, KeyError, TypeError) as exc:
         output.fatal(str(exc))
+
+
+_COLLECTIONS = frozenset({"paths", "manifests", "tags"})
 
 
 def _validated(call, *args):
@@ -140,7 +144,7 @@ def show_path(
 ) -> None:
     _request(
         "GET",
-        "paths/detail",
+        "path",
         target=target,
         account=account,
         profile=profile,
@@ -178,7 +182,7 @@ def manifest_app_show(
     path, digest = _validated(_reference, reference, "digest")
     _request(
         "GET",
-        f"manifests/{quote(digest, safe='')}",
+        f"manifests/{segment(digest)}",
         target=target,
         account=account,
         profile=profile,
@@ -197,12 +201,13 @@ def manifest_app_delete(
     path, digest = _validated(_reference, reference, "digest")
     _request(
         "DELETE",
-        f"manifests/{quote(digest, safe='')}",
+        f"manifests/{segment(digest)}",
         target=target,
         account=account,
         profile=profile,
         params={"path": path},
         yes=yes,
+        subject=reference,
     )
 
 
@@ -237,12 +242,13 @@ def tag_app_delete(
     path, tag = _validated(_reference, reference, "tag")
     _request(
         "DELETE",
-        "tags",
+        f"tags/{segment(tag)}",
         target=target,
         account=account,
         profile=profile,
-        params={"path": path, "tag": tag},
+        params={"path": path},
         yes=yes,
+        subject=reference,
     )
 
 
@@ -258,11 +264,11 @@ def referrer_app_list(
     path, digest = _validated(_reference, reference, "digest")
     _request(
         "GET",
-        "referrers",
+        f"manifests/{segment(digest)}/referrers",
         target=target,
         account=account,
         profile=profile,
-        params={"path": path, "limit": limit, "cursor": cursor, "digest": digest},
+        params={"path": path, "limit": limit, "cursor": cursor},
     )
 
 
