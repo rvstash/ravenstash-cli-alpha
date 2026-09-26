@@ -418,7 +418,7 @@ class CrossAccountApi:
                 "name": "packages",
                 "account": self.owner,
                 "namespace": {"ref": "in_23456789", "name": "engineering", "realm": "internal"},
-                "formats": [{"format": "pypi", "upstream_config_revision": 1}],
+                "formats": [{"format": "pypi"}],
                 "allowed_actions": ["read"],
                 "totals": {
                     "package_count": 0,

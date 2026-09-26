@@ -364,7 +364,7 @@ def test_evidence_target_resolves_friendly_selector_to_repository_ref(
                     "name": "packages",
                     "account": {"ref": "ac_23456789", "handle": "space", "type": "personal"},
                     "namespace": {"ref": "in_23456789", "name": "space", "realm": "internal"},
-                    "formats": [{"format": "pypi", "upstream_config_revision": 1}],
+                    "formats": [{"format": "pypi"}],
                     "allowed_actions": ["content.read", "content.publish"],
                 }
             )

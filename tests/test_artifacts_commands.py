@@ -127,9 +127,7 @@ def _repository_entry(name: str = "repo", **overrides: Any) -> dict[str, Any]:
         "name": name,
         "account": dict(_ACCOUNT_SUMMARY),
         "namespace": {"ref": "in_abcdefgh", "name": "test-account", "realm": "internal"},
-        "formats": [
-            {"format": kind, "upstream_config_revision": 7} for kind in ("pypi", "npm", "maven")
-        ],
+        "formats": [{"format": kind} for kind in ("pypi", "npm", "maven")],
         "allowed_actions": ["content.read", "content.publish", "repository.write"],
         "totals": {
             "package_count": 0,
@@ -193,8 +191,8 @@ def test_artifacts_repo_list_filters_by_kind_and_uses_profile_customer(
                 _repository_entry(
                     "repo-pypi",
                     formats=[
-                        {"format": "pypi", "upstream_config_revision": 1},
-                        {"format": "npm", "upstream_config_revision": 1},
+                        {"format": "pypi"},
+                        {"format": "npm"},
                     ],
                 ),
             ]
@@ -427,30 +425,6 @@ def test_artifacts_repo_show_renders_repository_details(monkeypatch, tmp_path: P
     assert "4096" in result.output
 
 
-@pytest.mark.parametrize("new_name", ["renamed", "Repo-PyPI"])
-def test_artifacts_repo_rename(monkeypatch, tmp_path: Path, new_name) -> None:
-    _isolate_config(monkeypatch, tmp_path)
-    fake = _FakeApiClient([_repository_entry("repo-pypi"), _repository_entry(new_name)])
-    _use_fake_client(monkeypatch, fake)
-
-    result = runner.invoke(artifacts_cmd.app, ["repo", "rename", "repo-pypi", new_name])
-
-    assert result.exit_code == 0
-    assert fake.calls == [
-        (
-            "GET",
-            "/v0/artifacts/repositories/resolve",
-            {"selector": "repo-pypi", "account_ref": "ac_23456789"},
-        ),
-        (
-            "PATCH",
-            "/v0/artifacts/repositories/ar_xyzabcde",
-            {"name": new_name},
-        ),
-    ]
-    assert f"to '{new_name}'" in result.output
-
-
 def _remote_cache(**overrides: Any) -> dict[str, Any]:
     return {
         "ref": "rc_abcdefgh",
@@ -489,42 +463,19 @@ def _upstream(position: int, **source: Any) -> dict[str, Any]:
     }
 
 
-def test_artifacts_remote_management_and_upstream_configuration(
+def test_artifacts_mirror_create_uses_the_default_official_source(
     monkeypatch, tmp_path: Path
 ) -> None:
     _isolate_config(monkeypatch, tmp_path)
     fake = _FakeApiClient(
-        [
-            [{"ref": "pypiorg", "format": "pypi", "display_name": "PyPI"}],
-            _remote_cache(),
-            _repository_entry("repo-pypi"),
-            _remote_cache(),
-            _upstream(1),
-        ]
+        [[{"ref": "pypiorg", "format": "pypi", "display_name": "PyPI"}], _remote_cache()]
     )
     _use_fake_client(monkeypatch, fake)
 
     create_result = runner.invoke(artifacts_cmd.app, ["mirror", "create", "--format", "pypi"])
-    upstream_result = runner.invoke(
-        artifacts_cmd.app,
-        [
-            "repo",
-            "upstream",
-            "add",
-            "repo-pypi",
-            "pypi",
-            "--remote-cache",
-            "rc_abcdefgh",
-            "--position",
-            "1",
-            "--min-age-hours",
-            "5",
-        ],
-    )
 
     assert create_result.exit_code == 0, create_result.output
     assert "mirror:pypiorg" in create_result.output
-    assert upstream_result.exit_code == 0, upstream_result.output
     assert fake.calls == [
         (
             "GET",
@@ -536,54 +487,7 @@ def test_artifacts_remote_management_and_upstream_configuration(
             "/v0/artifacts/remote-caches",
             {"account_ref": "ac_23456789", "source_ref": "pypiorg"},
         ),
-        (
-            "GET",
-            "/v0/artifacts/repositories/resolve",
-            {
-                "selector": "repo-pypi",
-                "account_ref": "ac_23456789",
-                "format": "pypi",
-            },
-        ),
-        ("GET", "/v0/artifacts/remote-caches/rc_abcdefgh", None),
-        (
-            "POST",
-            "/v0/artifacts/repositories/ar_xyzabcde/formats/pypi/upstreams",
-            {
-                "position": 1,
-                "source": {"kind": "remote_cache", "ref": "rc_abcdefgh"},
-                "expected_revision": 7,
-                "min_age_hours": 5.0,
-            },
-        ),
     ]
-
-
-def test_artifacts_upstream_add_rejects_remote_cache_of_another_format(
-    monkeypatch, tmp_path: Path
-) -> None:
-    _isolate_config(monkeypatch, tmp_path)
-    fake = _FakeApiClient([_repository_entry("repo-npm"), _remote_cache(format="pypi")])
-    _use_fake_client(monkeypatch, fake)
-
-    result = runner.invoke(
-        artifacts_cmd.app,
-        [
-            "repo",
-            "upstream",
-            "add",
-            "repo-npm",
-            "npm",
-            "--remote-cache",
-            "rc_abcdefgh",
-            "--position",
-            "1",
-        ],
-    )
-
-    assert result.exit_code == 1
-    assert "is for pypi" in result.output
-    assert [call[0] for call in fake.calls] == ["GET", "GET"]
 
 
 def test_artifacts_official_remote_add_uses_public_source_ref(monkeypatch, tmp_path: Path) -> None:
@@ -676,257 +580,13 @@ def test_artifacts_mirror_show_formats_absent_age_bounds(monkeypatch, tmp_path: 
     assert "ac_23456789" in result.output
 
 
-def test_artifacts_mirror_set_age_and_delete_address_the_cache_by_ref_only(
-    monkeypatch, tmp_path: Path
-) -> None:
-    _isolate_config(monkeypatch, tmp_path)
-    fake = _FakeApiClient(
-        [
-            _JsonResponse(_remote_cache(), headers={"ETag": '"rev-1"'}),
-            _remote_cache(min_age_hours=12.0),
-            _JsonResponse(_remote_cache(min_age_hours=12.0), headers={"ETag": '"rev-2"'}),
-        ]
-    )
-    _use_fake_client(monkeypatch, fake)
-
-    updated = runner.invoke(
-        artifacts_cmd.app,
-        ["mirror", "set-age", "rc_abcdefgh", "--min-age-hours", "12", "--format", "pypi"],
-    )
-    deleted = runner.invoke(artifacts_cmd.app, ["mirror", "delete", "rc_abcdefgh", "--yes"])
-
-    assert updated.exit_code == 0, updated.output
-    assert deleted.exit_code == 0, deleted.output
-    assert fake.calls == [
-        ("GET", "/v0/artifacts/remote-caches/rc_abcdefgh", None),
-        ("PATCH", "/v0/artifacts/remote-caches/rc_abcdefgh", {"min_age_hours": 12.0}),
-        ("GET", "/v0/artifacts/remote-caches/rc_abcdefgh", None),
-        ("DELETE", "/v0/artifacts/remote-caches/rc_abcdefgh", None),
-    ]
-    # Each write is conditional on the ETag this same command read.
-    assert fake.request_headers == [
-        ("PATCH", "/v0/artifacts/remote-caches/rc_abcdefgh", {"If-Match": '"rev-1"'}),
-        ("DELETE", "/v0/artifacts/remote-caches/rc_abcdefgh", {"If-Match": '"rev-2"'}),
-    ]
-
-
-def test_artifacts_mirror_set_age_rejects_a_mirror_of_another_format(
-    monkeypatch, tmp_path: Path
-) -> None:
-    _isolate_config(monkeypatch, tmp_path)
-    fake = _FakeApiClient([_JsonResponse(_remote_cache(), headers={"ETag": '"rev-1"'})])
-    _use_fake_client(monkeypatch, fake)
-
-    result = runner.invoke(
-        artifacts_cmd.app,
-        ["mirror", "set-age", "rc_abcdefgh", "--min-age-hours", "1", "--format", "npm"],
-    )
-
-    assert result.exit_code == 1
-    assert "is for pypi, not npm" in result.output
-    assert [call[0] for call in fake.calls] == ["GET"]
-
-
-class _PreconditionFailingClient(_FakeApiClient):
-    def _fail(self) -> None:
-        from rvs.client import ApiError
-
-        raise ApiError(
-            412,
-            {"code": "PreconditionFailed", "message": "If-Match does not match the ETag"},
-        )
-
-    def patch(self, path: str, json: Any = None, params: Any = None, headers: Any = None):
-        super().patch(path, json=json, params=params, headers=headers)
-        self._fail()
-
-    def delete(self, path: str, params: Any = None, headers: Any = None):
-        super().delete(path, params=params, headers=headers)
-        self._fail()
-
-
-@pytest.mark.parametrize(
-    ("argv", "subject", "outcome"),
-    [
-        (
-            ["mirror", "set-age", "rc_abcdefgh", "--min-age-hours", "3"],
-            "Private mirror 'rc_abcdefgh'",
-            "nothing was updated",
-        ),
-        (
-            ["mirror", "delete", "rc_abcdefgh", "--yes"],
-            "Private mirror 'rc_abcdefgh'",
-            "nothing was deleted",
-        ),
-        (["repo", "rename", "in/ar_xyzabcde", "renamed"], "Repository", "nothing was renamed"),
-        (["repo", "delete", "in/ar_xyzabcde", "--yes"], "Repository", "nothing was deleted"),
-    ],
-)
-def test_conditional_writes_explain_a_concurrent_change(
-    monkeypatch, tmp_path: Path, argv: list[str], subject: str, outcome: str
-) -> None:
-    _isolate_config(monkeypatch, tmp_path)
-    etagged = (
-        _JsonResponse(_repository_entry(), headers={"ETag": '"rev-9"'})
-        if argv[0] == "repo"
-        else _JsonResponse(_remote_cache(), headers={"ETag": '"rev-9"'})
-    )
-    fake = _PreconditionFailingClient([etagged])
-    _use_fake_client(monkeypatch, fake)
-
-    result = runner.invoke(artifacts_cmd.app, argv)
-
-    assert result.exit_code == 1
-    message = " ".join(result.output.split())
-    assert subject in message
-    assert "changed since it was read" in message
-    assert outcome in message
-    assert "to review it, then run the command again" in message
-    assert fake.request_headers[0][2] == {"If-Match": '"rev-9"'}
-
-
-@pytest.mark.parametrize(
-    "argv",
-    [
-        ["mirror", "set-age", "rc_abcdefgh", "--min-age-hours", "3"],
-        ["mirror", "delete", "rc_abcdefgh", "--yes"],
-        ["repo", "rename", "in/ar_xyzabcde", "renamed"],
-        ["repo", "delete", "in/ar_xyzabcde", "--yes"],
-    ],
-)
-def test_conditional_writes_without_an_etag_send_no_if_match(
-    monkeypatch, tmp_path: Path, argv: list[str]
-) -> None:
-    _isolate_config(monkeypatch, tmp_path)
-    resource = _repository_entry() if argv[0] == "repo" else _remote_cache()
-    fake = _FakeApiClient([resource, resource])
-    _use_fake_client(monkeypatch, fake)
-
-    result = runner.invoke(artifacts_cmd.app, argv)
-
-    assert result.exit_code == 0, result.output
-    assert [headers for _method, _path, headers in fake.request_headers] == [None]
-
-
-def test_repo_delete_confirms_what_it_read(monkeypatch, tmp_path: Path) -> None:
-    _isolate_config(monkeypatch, tmp_path)
-    fake = _FakeApiClient([_JsonResponse(_repository_entry(), headers={"ETag": '"rev-9"'})])
-    _use_fake_client(monkeypatch, fake)
-
-    result = runner.invoke(artifacts_cmd.app, ["repo", "delete", "in/ar_xyzabcde"], input="n\n")
-
-    assert result.exit_code == 1
-    assert "(in/ar_xyzabcde)" in result.output
-    assert [call[0] for call in fake.calls] == ["GET"]
-
-
-def test_repo_rename_sends_the_etag_of_its_resolve_read(monkeypatch, tmp_path: Path) -> None:
-    _isolate_config(monkeypatch, tmp_path)
-    fake = _FakeApiClient(
-        [
-            _JsonResponse(_repository_entry(), headers={"ETag": '"rev-3"'}),
-            _repository_entry("renamed"),
-        ]
-    )
-    _use_fake_client(monkeypatch, fake)
-
-    result = runner.invoke(artifacts_cmd.app, ["repo", "rename", "in/ar_xyzabcde", "renamed"])
-
-    assert result.exit_code == 0, result.output
-    assert fake.calls[-1] == (
-        "PATCH",
-        "/v0/artifacts/repositories/ar_xyzabcde",
-        {"name": "renamed"},
-    )
-    assert fake.request_headers == [
-        ("PATCH", "/v0/artifacts/repositories/ar_xyzabcde", {"If-Match": '"rev-3"'})
-    ]
-    assert "renamed" in result.output
-
-
 def _private_source() -> dict[str, Any]:
     return _repository_entry(
         "shared",
         ref="ar_shared23",
         namespace={"ref": "in_libs2345", "name": "libraries", "realm": "internal"},
-        formats=[{"format": "pypi", "upstream_config_revision": 1}],
+        formats=[{"format": "pypi"}],
     )
-
-
-def test_artifacts_repo_upstream_add_private_uses_source_lane_and_zero_age_default(
-    monkeypatch,
-    tmp_path: Path,
-) -> None:
-    _isolate_config(monkeypatch, tmp_path)
-    attachment = _upstream(
-        1,
-        kind="repository",
-        ref="ar_shared23",
-        display_name="shared",
-        namespace_ref="in_libs2345",
-        namespace_name="libraries",
-        remote_source_type=None,
-    )
-    fake = _FakeApiClient([_repository_entry("application"), _private_source(), attachment])
-    _use_fake_client(monkeypatch, fake)
-
-    result = runner.invoke(
-        artifacts_cmd.app,
-        [
-            "repo",
-            "upstream",
-            "add",
-            "application",
-            "pypi",
-            "--private-repository",
-            "libraries/shared",
-            "--position",
-            "1",
-        ],
-    )
-
-    assert result.exit_code == 0, result.output
-    assert fake.calls[-1] == (
-        "POST",
-        "/v0/artifacts/repositories/ar_xyzabcde/formats/pypi/upstreams",
-        {
-            "position": 1,
-            "source": {"kind": "repository", "ref": "ar_shared23"},
-            "expected_revision": 7,
-            "min_age_hours": 0.0,
-        },
-    )
-
-
-def test_artifacts_repo_upstream_add_uses_explicit_sparse_position(
-    monkeypatch,
-    tmp_path: Path,
-) -> None:
-    _isolate_config(monkeypatch, tmp_path)
-    attachment = _upstream(3, kind="repository", ref="ar_shared23", display_name="shared")
-    fake = _FakeApiClient([_repository_entry("application"), _private_source(), attachment])
-    _use_fake_client(monkeypatch, fake)
-
-    result = runner.invoke(
-        artifacts_cmd.app,
-        [
-            "repo",
-            "upstream",
-            "add",
-            "application",
-            "pypi",
-            "--private-repository",
-            "libraries/shared",
-            "--position",
-            "3",
-            "--max-age-hours",
-            "48",
-        ],
-    )
-
-    assert result.exit_code == 0
-    assert fake.calls[-1][2]["position"] == 3
-    assert fake.calls[-1][2]["max_age_hours"] == 48.0
 
 
 def test_artifacts_repo_upstream_list_is_addressed_by_position(monkeypatch, tmp_path: Path) -> None:
@@ -971,160 +631,30 @@ def test_artifacts_repo_upstream_list_is_addressed_by_position(monkeypatch, tmp_
     assert "id" not in rows[0]
 
 
-def test_artifacts_repo_upstream_update_addresses_current_position(
-    monkeypatch, tmp_path: Path
-) -> None:
-    _isolate_config(monkeypatch, tmp_path)
-    fake = _FakeApiClient([_repository_entry("application"), _upstream(4)])
-    _use_fake_client(monkeypatch, fake)
-
-    result = runner.invoke(
-        artifacts_cmd.app,
-        [
-            "repo",
-            "upstream",
-            "update",
-            "application",
-            "pypi",
-            "2",
-            "--position",
-            "4",
-            "--min-age-hours",
-            "5",
-        ],
-    )
-
-    assert result.exit_code == 0, result.output
-    assert fake.calls[-1] == (
-        "PATCH",
-        "/v0/artifacts/repositories/ar_xyzabcde/formats/pypi/upstreams/2",
-        {"position": 4, "min_age_hours": 5.0, "expected_revision": 7},
-    )
-
-
-@pytest.mark.parametrize("position", ["0", "5", "attachment-b"])
-def test_artifacts_repo_upstream_update_and_remove_reject_non_positions(
-    monkeypatch, tmp_path: Path, position: str
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["repo", "delete", "platform/app", "--yes"],
+        ["repo", "rename", "platform/app", "renamed"],
+        ["repo", "upstream", "add", "platform/app", "pypi"],
+        ["repo", "upstream", "update", "platform/app", "pypi", "1"],
+        ["repo", "upstream", "remove", "platform/app", "pypi", "1"],
+        ["repo", "upstream", "reorder", "platform/app", "npm", "1", "2"],
+        ["mirror", "set-age", "rc_abcdefgh", "--min-age-hours", "1"],
+        ["mirror", "delete", "rc_abcdefgh", "--yes"],
+    ],
+)
+def test_danger_zone_operations_are_browser_only(
+    monkeypatch, tmp_path: Path, argv: list[str]
 ) -> None:
     _isolate_config(monkeypatch, tmp_path)
     fake = _FakeApiClient()
     _use_fake_client(monkeypatch, fake)
 
-    updated = runner.invoke(
-        artifacts_cmd.app,
-        ["repo", "upstream", "update", "application", "pypi", position, "--min-age-hours", "1"],
-    )
-    removed = runner.invoke(
-        artifacts_cmd.app, ["repo", "upstream", "remove", "application", "pypi", position]
-    )
-
-    assert updated.exit_code == 2
-    assert removed.exit_code == 2
-    assert fake.calls == []
-
-
-def test_artifacts_repo_upstream_reorder_is_removed_and_remove_uses_format_route(
-    monkeypatch,
-    tmp_path: Path,
-) -> None:
-    _isolate_config(monkeypatch, tmp_path)
-    fake = _FakeApiClient([_repository_entry("application")])
-    _use_fake_client(monkeypatch, fake)
-
-    reordered = runner.invoke(
-        artifacts_cmd.app,
-        [
-            "repo",
-            "upstream",
-            "reorder",
-            "application",
-            "npm",
-            "1",
-            "2",
-        ],
-    )
-    removed = runner.invoke(
-        artifacts_cmd.app,
-        [
-            "repo",
-            "upstream",
-            "remove",
-            "application",
-            "npm",
-            "2",
-        ],
-    )
-
-    assert reordered.exit_code == 2
-    assert removed.exit_code == 0, removed.output
-    assert "position 2" in removed.output
-    assert (
-        "DELETE",
-        "/v0/artifacts/repositories/ar_xyzabcde/formats/npm/upstreams/2",
-        {"expected_revision": 7},
-    ) in fake.calls
-
-
-def test_artifacts_repo_upstream_add_requires_exactly_one_source(
-    monkeypatch,
-    tmp_path: Path,
-) -> None:
-    _isolate_config(monkeypatch, tmp_path)
-    _use_fake_client(monkeypatch, _FakeApiClient())
-
-    neither = runner.invoke(
-        artifacts_cmd.app,
-        [
-            "repo",
-            "upstream",
-            "add",
-            "application",
-            "pypi",
-            "--position",
-            "1",
-        ],
-    )
-    both = runner.invoke(
-        artifacts_cmd.app,
-        [
-            "repo",
-            "upstream",
-            "add",
-            "application",
-            "pypi",
-            "--private-repository",
-            "shared",
-            "--remote-cache",
-            "pypi",
-            "--position",
-            "1",
-        ],
-    )
-
-    assert neither.exit_code == 1
-    assert both.exit_code == 1
-    assert "exactly one" in neither.output
-    assert "exactly one" in both.output
-
-
-def test_artifacts_repo_upstream_position_is_limited_to_four_slots() -> None:
-    result = runner.invoke(
-        artifacts_cmd.app,
-        [
-            "repo",
-            "upstream",
-            "add",
-            "application",
-            "pypi",
-            "--private-repository",
-            "shared",
-            "--position",
-            "5",
-        ],
-    )
+    result = runner.invoke(artifacts_cmd.app, argv)
 
     assert result.exit_code == 2
-    assert "1<=x<=4" in result.output
+    assert fake.calls == []
 
 
 def _package_summary(**overrides: Any) -> dict[str, Any]:
@@ -1476,16 +1006,7 @@ def test_artifacts_package_mutations_call_expected_api_paths(monkeypatch, tmp_pa
 
     delete_result = runner.invoke(
         artifacts_cmd.app,
-        [
-            "package",
-            "delete",
-            "demo",
-            "--target",
-            "repo-pypi",
-            "--format",
-            "pypi",
-            "--yes",
-        ],
+        ["package", "delete", "demo", "--target", "repo-pypi", "--format", "pypi"],
     )
     delete_version_result = runner.invoke(
         artifacts_cmd.app,
@@ -1558,27 +1079,14 @@ def test_artifacts_package_mutations_call_expected_api_paths(monkeypatch, tmp_pa
         ],
     )
 
-    assert delete_result.exit_code == 0
+    # Deleting a whole package is browser-only.
+    assert delete_result.exit_code == 2
     assert delete_version_result.exit_code == 0
     assert yank_result.exit_code == 0
     assert unyank_result.exit_code == 0
     assert deprecate_result.exit_code == 0
     assert undeprecate_result.exit_code == 0
     assert fake.calls == [
-        (
-            "GET",
-            "/v0/artifacts/repositories/resolve",
-            {
-                "selector": "repo-pypi",
-                "account_ref": "ac_23456789",
-                "format": "pypi",
-            },
-        ),
-        (
-            "DELETE",
-            "/v0/artifacts/repositories/ar_xyzabcde/formats/pypi/package",
-            {"package_name": "demo"},
-        ),
         (
             "GET",
             "/v0/artifacts/repositories/resolve",
@@ -1820,8 +1328,8 @@ def test_unknown_open_enum_values_are_displayed_as_is(monkeypatch, tmp_path: Pat
     repository = _repository_entry(
         "future",
         formats=[
-            {"format": "pypi", "upstream_config_revision": 1},
-            {"format": "cargo", "upstream_config_revision": 1},
+            {"format": "pypi"},
+            {"format": "cargo"},
         ],
         allowed_actions=["content.read", "repository.audit"],
     )
@@ -1859,7 +1367,7 @@ def test_unknown_open_enum_values_are_displayed_as_is(monkeypatch, tmp_path: Pat
 def test_a_target_with_values_rvs_cannot_store_is_refused() -> None:
     from rvs.artifacts import targets
 
-    single_unknown = _repository_entry(formats=[{"format": "cargo", "upstream_config_revision": 1}])
+    single_unknown = _repository_entry(formats=[{"format": "cargo"}])
     assert targets._repository_target(single_unknown).registry_kind is None
     with pytest.raises(ValueError, match="namespace realm"):
         targets._repository_target(
@@ -1867,3 +1375,86 @@ def test_a_target_with_values_rvs_cannot_store_is_refused() -> None:
         )
     with pytest.raises(ValueError, match="cargo"):
         targets._remote_target(_remote_cache(format="cargo"), "official_cache")
+
+
+_SELECTED_REPOSITORY_CONFIG = """
+config_version = 6
+default_profile = "default"
+
+[profiles.default]
+api_url = "https://api.ravenstash.com"
+account_ref = "ac_23456789"
+active_account_ref = "ac_23456789"
+
+[profiles.default.accounts.ac_23456789]
+account_type = "personal"
+account_label = "personal"
+organization_role = "owner"
+
+[profiles.default.accounts.ac_23456789.selected_target]
+target_type = "repository"
+stable_selector = "in/ar_xyzabcde"
+display_selector = "test-account/repo"
+namespace_realm = "internal"
+namespace_unique_ref = "in_abcdefgh"
+namespace_name_cache = "test-account"
+repository_unique_ref = "ar_xyzabcde"
+repository_name_cache = "repo"
+account_ref = "ac_23456789"
+""".strip()
+
+
+def _formats(*kinds: str) -> list[dict[str, Any]]:
+    return [{"format": kind} for kind in kinds]
+
+
+def test_package_commands_use_the_selected_repository_and_its_one_package_format(
+    monkeypatch, tmp_path: Path
+) -> None:
+    _isolate_config(monkeypatch, tmp_path, _SELECTED_REPOSITORY_CONFIG)
+    fake = _FakeApiClient([_repository_entry(formats=_formats("pypi", "oci")), [{"name": "demo"}]])
+    _use_fake_client(monkeypatch, fake)
+
+    result = runner.invoke(artifacts_cmd.app, ["package", "list"])
+
+    assert result.exit_code == 0, result.output
+    assert fake.calls[0][2]["selector"] == "in/ar_xyzabcde"
+    assert fake.calls[1][1] == "/v0/artifacts/repositories/ar_xyzabcde/formats/pypi/packages"
+    assert "demo" in result.output
+
+
+def test_package_commands_ask_for_a_format_when_several_apply(monkeypatch, tmp_path: Path) -> None:
+    _isolate_config(monkeypatch, tmp_path, _SELECTED_REPOSITORY_CONFIG)
+    fake = _FakeApiClient([_repository_entry(formats=_formats("pypi", "npm", "oci"))])
+    _use_fake_client(monkeypatch, fake)
+
+    result = runner.invoke(artifacts_cmd.app, ["package", "list"])
+
+    assert result.exit_code == 1
+    assert "--format pypi | npm" in " ".join(result.output.split())
+    assert [call[0] for call in fake.calls] == ["GET"]
+
+
+def test_yank_needs_neither_target_nor_format(monkeypatch, tmp_path: Path) -> None:
+    _isolate_config(monkeypatch, tmp_path, _SELECTED_REPOSITORY_CONFIG)
+    fake = _FakeApiClient([_repository_entry(formats=_formats("pypi", "npm")), {}])
+    _use_fake_client(monkeypatch, fake)
+
+    result = runner.invoke(artifacts_cmd.app, ["package", "yank", "demo", "1.0"])
+
+    assert result.exit_code == 0, result.output
+    assert fake.calls[-1][1] == (
+        "/v0/artifacts/repositories/ar_xyzabcde/formats/pypi/package/version"
+    )
+
+
+def test_package_commands_need_a_selection_or_target(monkeypatch, tmp_path: Path) -> None:
+    _isolate_config(monkeypatch, tmp_path)
+    fake = _FakeApiClient()
+    _use_fake_client(monkeypatch, fake)
+
+    result = runner.invoke(artifacts_cmd.app, ["package", "list", "--format", "pypi"])
+
+    assert result.exit_code == 1
+    assert "rvs art select" in result.output
+    assert fake.calls == []

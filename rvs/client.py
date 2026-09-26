@@ -23,7 +23,6 @@ from . import auth as auth_mod
 from . import config as cfg_mod
 from .devapi import (
     API_ROUTE_RETIRED,
-    PRECONDITION_FAILED,
     ApiVersionMismatchError,
     api_url,
     is_mint_token_path,
@@ -48,18 +47,6 @@ _READ_STATUS_BACKOFF_SECONDS = (0.5, 2.0)
 MAX_RETRY_AFTER_SECONDS = 30.0
 
 
-def response_etag(response: Any) -> str | None:
-    """Return a response's ``ETag`` exactly as sent, for a later ``If-Match``."""
-    headers = getattr(response, "headers", None)
-    value = headers.get("ETag") if headers is not None else None
-    return value if isinstance(value, str) and value else None
-
-
-def if_match(etag: str | None) -> dict[str, str] | None:
-    """Return the conditional-write header for an ETag the command read."""
-    return {"If-Match": etag} if etag else None
-
-
 def rvs_user_agent() -> str:
     try:
         return f"rvs/{importlib.metadata.version('ravenstash-cli')}"
@@ -81,13 +68,7 @@ class ApiError(Exception):
         code = self.detail.get("code") if isinstance(self.detail, dict) else None
         return code if isinstance(code, str) else None
 
-    @property
-    def precondition_failed(self) -> bool:
-        return self.status_code == 412 or self.code == PRECONDITION_FAILED
-
     def _message(self) -> str:
-        if self.precondition_failed:
-            return "The resource changed since it was read; review its current state, then run the command again."
         if self.status_code in _RETRYABLE_READ_STATUSES and self.retry_after is not None:
             return f"{self._http_message()} (retry after {self.retry_after:g}s)"
         if isinstance(self.detail, dict) and self.detail.get("code") == API_ROUTE_RETIRED:
@@ -249,7 +230,6 @@ class ApiClient:
         path: str,
         *,
         retry: bool = True,
-        headers: dict[str, str] | None = None,
         **kwargs: Any,
     ) -> httpx.Response:
         import httpx2 as httpx
@@ -264,7 +244,7 @@ class ApiClient:
                         return hx.request(
                             method,
                             self._url(path),
-                            headers={**self._headers(), **(headers or {})},
+                            headers=self._headers(),
                             **kwargs,
                         )
                     except httpx.TransportError:
@@ -358,14 +338,8 @@ class ApiClient:
         path: str,
         json: Any = None,
         params: dict | None = None,
-        headers: dict[str, str] | None = None,
     ) -> httpx.Response:
-        return self._request("PATCH", path, json=json, params=params, headers=headers)
+        return self._request("PATCH", path, json=json, params=params)
 
-    def delete(
-        self,
-        path: str,
-        params: dict | None = None,
-        headers: dict[str, str] | None = None,
-    ) -> httpx.Response:
-        return self._request("DELETE", path, params=params, headers=headers)
+    def delete(self, path: str, params: dict | None = None) -> httpx.Response:
+        return self._request("DELETE", path, params=params)

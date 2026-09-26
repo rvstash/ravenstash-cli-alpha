@@ -52,8 +52,6 @@ repository target can be name-based (`NAMESPACE/REPOSITORY`) or ID-based
 | `rvs art repo list` | Lists repositories. |
 | `rvs art repo create NAME --format FORMAT` | Creates a repository for one or more package formats. |
 | `rvs art repo show TARGET` | Shows repository details. |
-| `rvs art repo rename TARGET NEW` | Renames a repository if it is unchanged since the command read it. |
-| `rvs art repo delete TARGET` | Deletes a repository after confirmation if it is unchanged since the command read it. |
 
 Supported formats are `pypi`, `npm`, `maven`, and `oci`. Container images and
 Helm charts are content types within OCI. Use commas or repeat `--format` to
@@ -64,16 +62,10 @@ enable more than one format.
 | Command | What it does |
 | --- | --- |
 | `rvs art repo upstream list REPOSITORY FORMAT` | Lists the package sources used by a repository, addressed by position. |
-| `rvs art repo upstream add REPOSITORY FORMAT --position N --private-repository NAMESPACE/REPOSITORY` | Adds another private repository at fixed position 1–4. |
-| `rvs art repo upstream add REPOSITORY FORMAT --position N --remote-cache rc_...` | Adds a remote cache at fixed position 1–4. |
-| `rvs art repo upstream update REPOSITORY FORMAT POSITION --position N` | Moves the source at `POSITION` into an empty fixed position or changes its package-age settings. |
-| `rvs art repo upstream remove REPOSITORY FORMAT POSITION` | Removes the source at `POSITION`. |
 
 The repository's own packages are always checked first and have no stored
-position. Configured upstream positions are `1` through `4`; gaps are retained,
-and adding or moving a source never shifts another source. `update` and `remove`
-address a source by the position shown in `upstream list`; a concurrent change to
-the repository's sources makes them fail instead of changing another source.
+position. Configured upstream positions are `1` through `4`, and gaps are
+retained.
 
 ## Private mirrors
 
@@ -83,32 +75,36 @@ the repository's sources makes them fail instead of changing another source.
 | `rvs art mirror create SOURCE` | Adds a Ravenstash-provided mirror. |
 | `rvs art mirror create --format FORMAT` | Adds the default mirror for a package format. |
 | `rvs art mirror show REMOTE_CACHE_ID` | Shows a private mirror through its owning remote-cache permanent ID. |
-| `rvs art mirror set-age REMOTE_CACHE_ID --min-age-hours HOURS` | Changes the direct private-mirror age policy. |
-| `rvs art mirror delete REMOTE_CACHE_ID` | Deletes the remote cache and its private-mirror surface after confirmation. |
 | `rvs art mirror select SOURCE` | Chooses a Ravenstash-provided mirror. |
 | `rvs art mirror select --custom NAME` | Chooses a custom mirror. |
 
-`repo rename`, `repo delete`, `mirror set-age`, and `mirror delete` read the
-resource and then change it only if nobody else changed it in between. Deletions
-ask for confirmation after that read. When the resource did change, nothing is
-written and the command asks you to review its current state with `show` before
-running it again.
+## Browser-only operations
+
+Renaming or deleting a repository, changing a repository's package sources,
+changing a private mirror's package-age policy, deleting a private mirror, and
+deleting a whole package are managed in the Ravenstash web app only. `rvs` can
+list and show these resources, delete single package versions and OCI content,
+and yank or deprecate versions.
 
 ## Packages
 
 | Command | What it does |
 | --- | --- |
-| `rvs art package list --target NAME --format FORMAT` | Lists packages. |
-| `rvs art package show PACKAGE --target NAME --format FORMAT` | Shows a package summary and its newest 50 versions. |
-| `rvs art package show PACKAGE --target NAME --format FORMAT --limit N` | Shows the newest `N` (1–100) versions. |
-| `rvs art package show PACKAGE --target NAME --format FORMAT --all-versions` | Shows every version. |
-| `rvs art package show PACKAGE --target NAME --format FORMAT --version VERSION` | Shows one version with its files and their digests. |
-| `rvs art package yank PACKAGE VERSION --target NAME --format pypi` | Yanks a PyPI version, optionally with `--reason`. |
-| `rvs art package unyank PACKAGE VERSION --target NAME --format pypi` | Makes a yanked PyPI version selectable again. |
-| `rvs art package deprecate PACKAGE VERSION --target NAME --format npm --message TEXT` | Adds an npm deprecation warning. |
-| `rvs art package undeprecate PACKAGE VERSION --target NAME --format npm` | Clears an npm deprecation warning. |
-| `rvs art package delete-version PACKAGE VERSION --target NAME --format FORMAT` | Deletes one version. |
-| `rvs art package delete PACKAGE --target NAME --format FORMAT` | Deletes a package and all its versions. |
+| `rvs art package list` | Lists packages. |
+| `rvs art package show PACKAGE` | Shows a package summary and its newest 50 versions. |
+| `rvs art package show PACKAGE --limit N` | Shows the newest `N` (1–100) versions. |
+| `rvs art package show PACKAGE --all-versions` | Shows every version. |
+| `rvs art package show PACKAGE --version VERSION` | Shows one version with its files and their digests. |
+| `rvs art package yank PACKAGE VERSION` | Yanks a PyPI version, optionally with `--reason`. |
+| `rvs art package unyank PACKAGE VERSION` | Makes a yanked PyPI version selectable again. |
+| `rvs art package deprecate PACKAGE VERSION --message TEXT` | Adds an npm deprecation warning. |
+| `rvs art package undeprecate PACKAGE VERSION` | Clears an npm deprecation warning. |
+| `rvs art package delete-version PACKAGE VERSION` | Deletes one version. |
+
+Package commands act on the repository chosen with `rvs art select` unless you
+pass `--target NAMESPACE/REPOSITORY` (or `in/ar_...`). `--format` is needed only
+when that repository has more than one of pypi, npm, and maven; yank and unyank
+always use pypi, and deprecate and undeprecate always use npm.
 
 Versions are listed newest first. When more versions exist than are shown,
 `package show` says so on stderr. With root `--json`, `package show` prints one

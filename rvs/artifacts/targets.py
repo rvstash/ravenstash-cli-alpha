@@ -10,7 +10,7 @@ from .. import config as cfg_mod
 from .. import output
 from ..account.commands import ensure_active_account
 from ..auth.token_format import STATIC_NATIVE_DURATION_SECONDS, validate_public_token
-from ..client import ApiClient, ApiError, response_etag
+from ..client import ApiClient, ApiError
 from ..devapi import (
     artifacts_path,
     collection_all,
@@ -226,13 +226,7 @@ def is_stable_repository_selector(selector: str) -> bool:
 def resolve_repository_entry(
     client: ApiClient, selector: str, customer_id: str, kind: str | None = None
 ) -> dict:
-    return resolve_repository(client, selector, customer_id, kind)[0]
-
-
-def resolve_repository(
-    client: ApiClient, selector: str, customer_id: str, kind: str | None = None
-) -> tuple[dict, str | None]:
-    """Resolve a repository selector; also return the ETag of the read."""
+    """Resolve a repository selector to its DevAPI ``Repository``."""
     stable = is_stable_repository_selector(selector)
     params = {"selector": selector}
     if not stable:
@@ -240,8 +234,7 @@ def resolve_repository(
     if kind is not None:
         params["format"] = kind
     try:
-        response = client.get(artifacts_path("repositories/resolve"), params=params)
-        repository = response.json()
+        repository = client.get(artifacts_path("repositories/resolve"), params=params).json()
     except ApiError as exc:
         hint = token_scope_hint(kind) if kind is not None else ""
         if exc.status_code != 404 or not hint or not isinstance(exc.detail, str):
@@ -252,7 +245,7 @@ def resolve_repository(
         if not stable:
             output.fatal("The repository belongs to a different account.")
         output.resource_account_hint(selector, customer_id, owner)
-    return repository, response_etag(response)
+    return repository
 
 
 def resolve_target(

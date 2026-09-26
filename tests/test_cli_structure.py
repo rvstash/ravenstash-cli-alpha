@@ -154,7 +154,7 @@ def test_repo_commands_are_registered(alias: str) -> None:
     repo_result = runner.invoke(app, [alias, "repo", "--help"])
 
     assert repo_result.exit_code == 0
-    for command in ("list", "create", "show", "rename", "delete"):
+    for command in ("list", "create", "show"):
         assert command in repo_result.output
 
 
@@ -185,15 +185,6 @@ def test_registry_kind_has_no_ecosystem_alias() -> None:
     help_output = unstyle(result.output)
     assert "--format" in help_output
     assert "--ecosystem" not in help_output
-
-
-def test_upstream_commands_call_the_public_positional_argument_format() -> None:
-    result = runner.invoke(app, ["art", "repo", "upstream", "add", "--help"])
-
-    assert result.exit_code == 0
-    help_output = unstyle(result.output)
-    assert "{repository} {FORMAT}" in help_output
-    assert " KIND" not in help_output
 
 
 def test_repository_group_rejects_removed_upstream_commands() -> None:

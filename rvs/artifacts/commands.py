@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from typing import NoReturn, cast
+from typing import cast
 
 import click
 import typer
@@ -12,7 +12,7 @@ from .. import config as cfg_mod
 from .. import output
 from ..account.commands import display_name as account_display_name
 from ..account.commands import ensure_active_account, payload_display_name, resolve_account
-from ..client import ApiClient, ApiError, if_match, response_etag
+from ..client import ApiClient, ApiError
 from ..devapi import (
     artifacts_path,
     collection_all,
@@ -32,7 +32,7 @@ from .targets import (
     remote_target_name,
     repository_display_name,
     repository_formats,
-    resolve_repository,
+    resolve_repository_entry,
     resolve_target,
 )
 
@@ -63,6 +63,13 @@ app.command("reference")(reference)
 _PACKAGE_KINDS = ("pypi", "npm", "maven")
 _MAX_UPSTREAM_POSITION = 4
 _REPOSITORY_NAME_HELP = "Name-based target (namespace/repository) or ID-based target (in/ar_...)."
+_PACKAGE_TARGET_HELP = (
+    "Repository (namespace/repository or in/ar_...); defaults to the target chosen "
+    "with `rvs art select`."
+)
+_PACKAGE_FORMAT_HELP = (
+    "Package format: pypi | npm | maven; needed only when the repository has more than one of them."
+)
 _ACCOUNT_HELP = "Typed account handle (user:USERNAME or org:HANDLE). Bare handles remain supported."
 
 
@@ -203,18 +210,6 @@ def _require_package_kind(kind: str) -> cfg_mod.RegistryKind:
     return cast("cfg_mod.RegistryKind", kind)
 
 
-def _require_lifecycle_kind(
-    kind: str,
-    *,
-    expected: str,
-    operation: str,
-) -> cfg_mod.RegistryKind:
-    registry_kind = _require_package_kind(kind)
-    if registry_kind != expected:
-        output.fatal(f"{operation} is supported only for {expected} packages.")
-    return registry_kind
-
-
 def _yes_no(value: object) -> str:
     return "yes" if value else "no"
 
@@ -280,17 +275,7 @@ def _resolve_repository_entry(
     kind: str | None = None,
     customer_id: str | None = None,
 ) -> dict:
-    return _resolve_repository(repo, profile, kind=kind, customer_id=customer_id)[0]
-
-
-def _resolve_repository(
-    repo: str,
-    profile: str | None,
-    *,
-    kind: str | None = None,
-    customer_id: str | None = None,
-) -> tuple[dict, str | None]:
-    """Resolve a repository and return it with the ETag of that read."""
+    """Resolve a repository selector to its DevAPI ``Repository``."""
     candidate = repo.strip().strip("/")
     if not candidate:
         output.fatal("Repository selector cannot be empty.")
@@ -306,20 +291,66 @@ def _resolve_repository(
     options = _root_package_options()
     profile = profile or options.get("profile")
     try:
-        return resolve_repository(
+        return resolve_repository_entry(
             _client(profile), selector, _customer_id(profile, customer_id), kind
         )
     except ApiError as exc:
         output.fatal(str(exc))
 
 
-def _resolved_repository_unique_ref(
-    repo: str,
+def _package_lane(
+    repo: str | None,
+    kind: str | None,
     profile: str | None,
     *,
-    kind: str,
-) -> str:
-    return _resolve_repository_entry(repo, profile, kind=kind)["ref"]
+    only: str | None = None,
+    operation: str | None = None,
+) -> tuple[str, cfg_mod.RegistryKind, str]:
+    """Return the repository ref, package format, and display name to act on.
+
+    Without ``--target`` the target chosen with ``rvs art select`` is used. The
+    format comes from ``--format``, the selection, the only format a command
+    supports (``only``), or the repository's single package format.
+    """
+    if kind is not None:
+        _require_package_kind(kind)
+    if only is not None:
+        if kind is not None and kind != only:
+            output.fatal(f"{operation} is supported only for {only} packages.")
+        kind = only
+    if repo is None:
+        profile_name = profile or _root_package_options().get("profile")
+        profile_name, _ = _profile(profile_name)
+        customer_id = _customer_id(profile_name)
+        saved = cfg_mod.selected_artifact_target(profile_name, customer_id)
+        if saved is None:
+            output.fatal("No repository is selected. Pass --target or run `rvs art select`.")
+        if saved.target_type != "repository":
+            output.fatal(
+                f"'{saved.display_selector}' is a private mirror; package commands need "
+                "a private repository. Pass --target."
+            )
+        repo = saved.stable_selector
+        if kind is None and saved.registry_kind in _PACKAGE_KINDS:
+            kind = saved.registry_kind
+    try:
+        repository = _resolve_repository_entry(repo, profile, kind=kind)
+    except ApiError as exc:
+        output.fatal(str(exc))
+    display = repository_display_name(repository)
+    if kind is None:
+        choices = [item for item in repository_formats(repository) if item in _PACKAGE_KINDS]
+        if not choices:
+            output.fatal(
+                f"'{display}' has no pypi, npm, or maven format. Use rvs docker, rvs helm, "
+                "or rvs oras for OCI content."
+            )
+        if len(choices) > 1:
+            output.fatal(
+                f"'{display}' has several package formats; pass --format {' | '.join(choices)}."
+            )
+        kind = choices[0]
+    return repository["ref"], cast("cfg_mod.RegistryKind", kind), display
 
 
 def _repository_path(repository_ref: str, suffix: str = "") -> str:
@@ -562,76 +593,8 @@ def repo_show(
     )
 
 
-def _repository_write_failed(exc: ApiError, repo: str, outcome: str) -> NoReturn:
-    if exc.precondition_failed:
-        output.fatal(
-            f"Repository '{repo}' changed since it was read; {outcome}. "
-            f"Run `rvs art repo show {repo}` to review it, then run the command again."
-        )
-    output.fatal(str(exc))
-
-
-@repo_app.command("delete")
-def repo_delete(
-    account: str | None = typer.Option(None, "--account"),
-    repo: str = typer.Argument(..., help=_REPOSITORY_NAME_HELP),
-    profile: str | None = typer.Option(None, "--profile", "-p"),
-    yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation prompt."),
-) -> None:
-    """Delete a repository.
-
-    The deletion applies only if the repository is unchanged since this command
-    read it; otherwise nothing is deleted.
-    """
-    client = _client(profile)
-    try:
-        # Read before confirming so If-Match guards what the user confirmed.
-        repository, etag = _resolve_repository(repo, profile)
-        if not yes:
-            typer.confirm(
-                f"Delete repository '{repository_display_name(repository)}' "
-                f"(in/{repository['ref']}) and all its content?",
-                abort=True,
-            )
-        client.delete(_repository_path(repository["ref"]), headers=if_match(etag))
-    except ApiError as exc:
-        _repository_write_failed(exc, repo, "nothing was deleted")
-    output.success(f"Deleted repository '{repo}'.")
-
-
-@repo_app.command("rename")
-def repo_rename(
-    account: str | None = typer.Option(None, "--account"),
-    repo: str = typer.Argument(..., help="Current repository name."),
-    new_name: str = typer.Argument(..., help="New repository name."),
-    profile: str | None = typer.Option(None, "--profile", "-p"),
-) -> None:
-    """Rename a repository.
-
-    The rename applies only if the repository is unchanged since this command
-    read it; otherwise nothing is renamed.
-    """
-    client = _client(profile)
-    try:
-        repository, etag = _resolve_repository(repo, profile)
-        updated = client.patch(
-            _repository_path(repository["ref"]),
-            json={"name": new_name},
-            headers=if_match(etag),
-        ).json()
-    except ApiError as exc:
-        _repository_write_failed(exc, repo, "nothing was renamed")
-    output.success(f"Renamed repository '{repo}' to '{updated['name']}'.")
-
-
-def _upstream_path(repository_ref: str, registry_kind: str, position: int | None = None) -> str:
-    suffix = "upstreams" if position is None else f"upstreams/{position}"
-    return _format_path(repository_ref, registry_kind, suffix)
-
-
-def _upstream_revision(repository: dict, registry_kind: str) -> int:
-    detail = next(item for item in repository["formats"] if item["format"] == registry_kind)
-    return int(detail["upstream_config_revision"])
+def _upstream_path(repository_ref: str, registry_kind: str) -> str:
+    return _format_path(repository_ref, registry_kind, "upstreams")
 
 
 def _upstream_source_label(source: dict) -> str:
@@ -676,129 +639,6 @@ def upstream_list(
     except (ApiError, KeyError, TypeError, ValueError) as exc:
         output.fatal(str(exc))
     _print_upstreams(items)
-
-
-@upstream_app.command("add")
-def upstream_add(
-    account: str | None = typer.Option(None, "--account"),
-    repository: str = typer.Argument(...),
-    format: str = typer.Argument(..., metavar="FORMAT"),
-    private_repository: str | None = typer.Option(None, "--private-repository"),
-    remote_cache: str | None = typer.Option(
-        None, "--remote-cache", help="Remote-cache permanent ID (rc_...)."
-    ),
-    position: int = typer.Option(..., "--position", min=1, max=_MAX_UPSTREAM_POSITION),
-    min_age_hours: float | None = typer.Option(None, "--min-age-hours", min=0),
-    max_age_hours: float | None = typer.Option(None, "--max-age-hours", min=0),
-    profile: str | None = typer.Option(None, "--profile", "-p"),
-) -> None:
-    """Add a private repository or remote cache as a package source."""
-    if (private_repository is None) == (remote_cache is None):
-        output.fatal("Pass exactly one of --private-repository or --remote-cache.")
-    registry_kind = _require_package_kind(format)
-    client = _client(profile)
-    try:
-        destination = _resolve_repository_entry(repository, profile, kind=registry_kind)
-        if private_repository is not None:
-            source_repository = _resolve_repository_entry(
-                private_repository, profile, kind=registry_kind
-            )
-            source = {"kind": "repository", "ref": source_repository["ref"]}
-        else:
-            remote = client.get(_remote_cache_path(cast("str", remote_cache))).json()
-            if remote["format"] != registry_kind:
-                output.fatal(f"Remote cache '{remote_cache}' is for {remote['format']}.")
-            source = {"kind": "remote_cache", "ref": remote["ref"]}
-        body: dict[str, object] = {
-            "position": position,
-            "source": source,
-            "expected_revision": _upstream_revision(destination, registry_kind),
-        }
-        if max_age_hours is not None:
-            body["max_age_hours"] = max_age_hours
-        if min_age_hours is not None:
-            body["min_age_hours"] = min_age_hours
-        elif source["kind"] == "repository":
-            body["min_age_hours"] = 0.0
-        item = client.post(_upstream_path(destination["ref"], registry_kind), json=body).json()
-    except (ApiError, KeyError, TypeError) as exc:
-        output.fatal(str(exc))
-    _print_upstreams([item])
-
-
-@upstream_app.command("update")
-def upstream_update(
-    account: str | None = typer.Option(None, "--account"),
-    repository: str = typer.Argument(...),
-    format: str = typer.Argument(..., metavar="FORMAT"),
-    current_position: int = typer.Argument(
-        ...,
-        metavar="POSITION",
-        min=1,
-        max=_MAX_UPSTREAM_POSITION,
-        help="Current position of the source, as shown by `upstream list`.",
-    ),
-    position: int | None = typer.Option(
-        None, "--position", min=1, max=_MAX_UPSTREAM_POSITION, help="Move to this position."
-    ),
-    min_age_hours: float | None = typer.Option(None, "--min-age-hours", min=0),
-    max_age_hours: float | None = typer.Option(None, "--max-age-hours", min=0),
-    profile: str | None = typer.Option(None, "--profile", "-p"),
-) -> None:
-    """Change the fixed position or package-age settings for one source."""
-    body: dict[str, object] = {
-        key: value
-        for key, value in {
-            "position": position,
-            "min_age_hours": min_age_hours,
-            "max_age_hours": max_age_hours,
-        }.items()
-        if value is not None
-    }
-    if not body:
-        output.fatal("Pass at least one field to update.")
-    registry_kind = _require_package_kind(format)
-    client = _client(profile)
-    try:
-        destination = _resolve_repository_entry(repository, profile, kind=registry_kind)
-        body["expected_revision"] = _upstream_revision(destination, registry_kind)
-        item = client.patch(
-            _upstream_path(destination["ref"], registry_kind, current_position),
-            json=body,
-        ).json()
-    except (ApiError, KeyError, TypeError) as exc:
-        output.fatal(str(exc))
-    _print_upstreams([item])
-
-
-@upstream_app.command("remove")
-def upstream_remove(
-    account: str | None = typer.Option(None, "--account"),
-    repository: str = typer.Argument(...),
-    format: str = typer.Argument(..., metavar="FORMAT"),
-    position: int = typer.Argument(
-        ...,
-        metavar="POSITION",
-        min=1,
-        max=_MAX_UPSTREAM_POSITION,
-        help="Position of the source, as shown by `upstream list`.",
-    ),
-    profile: str | None = typer.Option(None, "--profile", "-p"),
-) -> None:
-    """Remove the package source at one position."""
-    registry_kind = _require_package_kind(format)
-    client = _client(profile)
-    try:
-        destination = _resolve_repository_entry(repository, profile, kind=registry_kind)
-        client.delete(
-            _upstream_path(destination["ref"], registry_kind, position),
-            params={"expected_revision": _upstream_revision(destination, registry_kind)},
-        )
-    except (ApiError, KeyError, TypeError) as exc:
-        output.fatal(str(exc))
-    output.success(
-        f"Removed the upstream at position {position} from '{repository}' ({registry_kind})."
-    )
 
 
 # ── private mirrors and their remote caches ──────────────────────────────────
@@ -947,7 +787,7 @@ def remote_show(
         _require_package_kind(kind)
     client = _client(profile)
     try:
-        item, _ = _read_remote_cache(client, remote, kind)
+        item = _read_remote_cache(client, remote, kind)
     except ApiError as exc:
         output.fatal(str(exc))
     output.kv(
@@ -979,82 +819,11 @@ def remote_show(
     )
 
 
-def _read_remote_cache(client: ApiClient, remote: str, kind: str | None) -> tuple[dict, str | None]:
-    """Read a remote cache before a conditional write; return it and its ETag."""
-    response = client.get(_remote_cache_path(remote))
-    item = response.json()
+def _read_remote_cache(client: ApiClient, remote: str, kind: str | None) -> dict:
+    item = client.get(_remote_cache_path(remote)).json()
     if kind and item.get("format") != kind:
         output.fatal(f"Private mirror '{remote}' is for {item.get('format')}, not {kind}.")
-    return item, response_etag(response)
-
-
-def _remote_cache_write_failed(exc: ApiError, remote: str, outcome: str) -> NoReturn:
-    if exc.precondition_failed:
-        output.fatal(
-            f"Private mirror '{remote}' changed since it was read; {outcome}. "
-            f"Run `rvs art mirror show {remote}` to review it, then run the command again."
-        )
-    output.fatal(str(exc))
-
-
-@remote_app.command("set-age")
-def remote_set_age(
-    remote: str = typer.Argument(
-        ..., help="Remote-cache permanent ID (rc_...).", metavar="REMOTE_CACHE_ID"
-    ),
-    min_age_hours: float = typer.Option(..., "--min-age-hours", min=0),
-    profile: str | None = typer.Option(None, "--profile", "-p"),
-    account: str | None = typer.Option(None, "--account", hidden=True),
-    customer_id: str | None = typer.Option(None, "--account-ref", hidden=True),
-    kind: str | None = typer.Option(None, "--format", "-f", hidden=True),
-) -> None:
-    """Update the private mirror minimum package age."""
-    # A remote-cache reference already identifies its owner; the hidden account
-    # options remain accepted for existing scripts but are not sent.
-    del account, customer_id
-    if kind:
-        _require_package_kind(kind)
-    client = _client(profile)
-    try:
-        _, etag = _read_remote_cache(client, remote, kind)
-        client.patch(
-            _remote_cache_path(remote),
-            json={"min_age_hours": min_age_hours},
-            headers=if_match(etag),
-        )
-    except ApiError as exc:
-        _remote_cache_write_failed(exc, remote, "nothing was updated")
-    output.success(f"Updated private mirror minimum package age for '{remote}'.")
-
-
-@remote_app.command("delete")
-def remote_delete(
-    remote: str = typer.Argument(
-        ..., help="Remote-cache permanent ID (rc_...).", metavar="REMOTE_CACHE_ID"
-    ),
-    profile: str | None = typer.Option(None, "--profile", "-p"),
-    customer_id: str | None = typer.Option(None, "--account-ref", hidden=True),
-    account: str | None = typer.Option(None, "--account", hidden=True),
-    kind: str | None = typer.Option(None, "--format", "-f", hidden=True),
-    yes: bool = typer.Option(False, "--yes", "-y"),
-) -> None:
-    """Delete a private mirror."""
-    # A remote-cache reference already identifies its owner; the hidden account
-    # options remain accepted for existing scripts but are not sent.
-    del account, customer_id
-    if kind:
-        _require_package_kind(kind)
-    client = _client(profile)
-    try:
-        item, etag = _read_remote_cache(client, remote, kind)
-        if not yes:
-            typer.confirm(
-                f"Delete private mirror '{remote}' ({remote_target_name(item)})?", abort=True
-            )
-        client.delete(_remote_cache_path(remote), headers=if_match(etag))
-    except ApiError as exc:
-        _remote_cache_write_failed(exc, remote, "nothing was deleted")
-    output.success(f"Deleted private mirror '{remote}'.")
+    return item
 
 
 # ── package ──────────────────────────────────────────────────────────────────
@@ -1063,20 +832,14 @@ def remote_delete(
 @package_app.command("list")
 def package_list(
     account: str | None = typer.Option(None, "--account"),
-    repo: str = typer.Option(..., "--target", "-t", help=_REPOSITORY_NAME_HELP),
-    kind: str = typer.Option(
-        ...,
-        "--format",
-        "-f",
-        help="Package format: pypi | npm | maven.",
-    ),
+    repo: str | None = typer.Option(None, "--target", "-t", help=_PACKAGE_TARGET_HELP),
+    kind: str | None = typer.Option(None, "--format", "-f", help=_PACKAGE_FORMAT_HELP),
     profile: str | None = typer.Option(None, "--profile", "-p"),
 ) -> None:
     """List packages hosted in a package repository."""
-    registry_kind = _require_package_kind(kind)
+    repository_unique_ref, registry_kind, display = _package_lane(repo, kind, profile)
     client = _client(profile)
     try:
-        repository_unique_ref = _resolved_repository_unique_ref(repo, profile, kind=registry_kind)
         items = collection_all(
             client, _format_path(repository_unique_ref, registry_kind, "packages")
         )
@@ -1084,7 +847,7 @@ def package_list(
         output.fatal(str(exc))
 
     if not items:
-        output.info(f"No packages found in '{repo}'.")
+        output.info(f"No {registry_kind} packages found in '{display}'.")
         return
 
     output.table(
@@ -1100,7 +863,7 @@ def package_list(
             ]
             for item in items
         ],
-        title=f"Packages in {repo}",
+        title=f"{registry_kind} packages in {display}",
         json_keys=["name", "latest", "versions", "size", "downloads", "bandwidth"],
     )
 
@@ -1127,13 +890,8 @@ def _digests_label(digests: object) -> str:
 def package_show(
     account: str | None = typer.Option(None, "--account"),
     name: str = typer.Argument(..., help="Package name."),
-    repo: str = typer.Option(..., "--target", "-t", help=_REPOSITORY_NAME_HELP),
-    kind: str = typer.Option(
-        ...,
-        "--format",
-        "-f",
-        help="Package format: pypi | npm | maven.",
-    ),
+    repo: str | None = typer.Option(None, "--target", "-t", help=_PACKAGE_TARGET_HELP),
+    kind: str | None = typer.Option(None, "--format", "-f", help=_PACKAGE_FORMAT_HELP),
     version: str | None = typer.Option(
         None, "--version", help="Show one version with its files and digests."
     ),
@@ -1154,10 +912,9 @@ def package_show(
         output.fatal("--version cannot be combined with --limit or --all-versions.")
     if limit is not None and all_versions:
         output.fatal("--limit and --all-versions are mutually exclusive.")
-    registry_kind = _require_package_kind(kind)
+    repository_unique_ref, registry_kind, _ = _package_lane(repo, kind, profile)
     client = _client(profile)
     try:
-        repository_unique_ref = _resolved_repository_unique_ref(repo, profile, kind=registry_kind)
         if version is not None:
             detail = client.get(
                 _format_path(repository_unique_ref, registry_kind, "package/version"),
@@ -1293,65 +1050,32 @@ def _print_package_version(
         )
 
 
-@package_app.command("delete")
-def package_delete(
-    account: str | None = typer.Option(None, "--account"),
-    name: str = typer.Argument(..., help="Package name."),
-    repo: str = typer.Option(..., "--target", "-t", help=_REPOSITORY_NAME_HELP),
-    kind: str = typer.Option(
-        ...,
-        "--format",
-        "-f",
-        help="Package format: pypi | npm | maven.",
-    ),
-    profile: str | None = typer.Option(None, "--profile", "-p"),
-    yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation prompt."),
-) -> None:
-    """Delete a package and all of its versions."""
-    if not yes:
-        typer.confirm(f"Delete package '{name}' from '{repo}'?", abort=True)
-    registry_kind = _require_package_kind(kind)
-    client = _client(profile)
-    try:
-        repository_unique_ref = _resolved_repository_unique_ref(repo, profile, kind=registry_kind)
-        client.delete(
-            _format_path(repository_unique_ref, registry_kind, "package"),
-            params={"package_name": name},
-        )
-    except ApiError as exc:
-        output.fatal(str(exc))
-    output.success(f"Deleted package '{name}' from '{repo}'.")
-
-
 @package_app.command("delete-version")
 def package_delete_version(
     account: str | None = typer.Option(None, "--account"),
     name: str = typer.Argument(..., help="Package name."),
     version: str = typer.Argument(..., help="Version to delete."),
-    repo: str = typer.Option(..., "--target", "-t", help=_REPOSITORY_NAME_HELP),
-    kind: str = typer.Option(
-        ...,
-        "--format",
-        "-f",
-        help="Package format: pypi | npm | maven.",
-    ),
+    repo: str | None = typer.Option(None, "--target", "-t", help=_PACKAGE_TARGET_HELP),
+    kind: str | None = typer.Option(None, "--format", "-f", help=_PACKAGE_FORMAT_HELP),
     profile: str | None = typer.Option(None, "--profile", "-p"),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation prompt."),
 ) -> None:
     """Delete one package version."""
+    repository_unique_ref, registry_kind, display = _package_lane(repo, kind, profile)
     if not yes:
-        typer.confirm(f"Delete {name}@{version} from '{repo}'?", abort=True)
-    registry_kind = _require_package_kind(kind)
+        typer.confirm(
+            f"Delete {registry_kind} package version {name}@{version} from '{display}'?",
+            abort=True,
+        )
     client = _client(profile)
     try:
-        repository_unique_ref = _resolved_repository_unique_ref(repo, profile, kind=registry_kind)
         client.delete(
             _format_path(repository_unique_ref, registry_kind, "package/version"),
             params={"package_name": name, "version": version},
         )
     except ApiError as exc:
         output.fatal(str(exc))
-    output.success(f"Deleted {name}@{version} from '{repo}'.")
+    output.success(f"Deleted {name}@{version} from '{display}'.")
 
 
 def _update_package_version(
@@ -1374,32 +1098,24 @@ def package_yank(
     account: str | None = typer.Option(None, "--account"),
     name: str = typer.Argument(..., help="Package name."),
     version: str = typer.Argument(..., help="Version to yank."),
-    repo: str = typer.Option(..., "--target", "-t", help=_REPOSITORY_NAME_HELP),
-    kind: str = typer.Option(
-        ...,
-        "--format",
-        "-f",
-        help="Package format: pypi | npm | maven.",
-    ),
+    repo: str | None = typer.Option(None, "--target", "-t", help=_PACKAGE_TARGET_HELP),
+    kind: str | None = typer.Option(None, "--format", "-f", hidden=True),
     reason: str | None = typer.Option(None, "--reason", "-m", help="Yank reason."),
     profile: str | None = typer.Option(None, "--profile", "-p"),
 ) -> None:
     """Mark a package version as yanked."""
-    registry_kind = _require_lifecycle_kind(
-        kind,
-        expected="pypi",
-        operation="Yanking a package version",
+    repository_unique_ref, registry_kind, display = _package_lane(
+        repo, kind, profile, only="pypi", operation="Yanking a package version"
     )
     client = _client(profile)
     body: dict[str, object] = {"yanked": True}
     if reason is not None:
         body["yanked_reason"] = reason
     try:
-        repository_unique_ref = _resolved_repository_unique_ref(repo, profile, kind=registry_kind)
         _update_package_version(client, repository_unique_ref, registry_kind, name, version, body)
     except ApiError as exc:
         output.fatal(str(exc))
-    output.success(f"Yanked {name}@{version} in '{repo}'.")
+    output.success(f"Yanked {name}@{version} in '{display}'.")
 
 
 @package_app.command("unyank")
@@ -1407,25 +1123,22 @@ def package_unyank(
     account: str | None = typer.Option(None, "--account"),
     name: str = typer.Argument(..., help="Package name."),
     version: str = typer.Argument(..., help="Version to unyank."),
-    repo: str = typer.Option(..., "--target", "-t", help=_REPOSITORY_NAME_HELP),
-    kind: str = typer.Option(..., "--format", "-f", help="Package format: pypi."),
+    repo: str | None = typer.Option(None, "--target", "-t", help=_PACKAGE_TARGET_HELP),
+    kind: str | None = typer.Option(None, "--format", "-f", hidden=True),
     profile: str | None = typer.Option(None, "--profile", "-p"),
 ) -> None:
     """Make a yanked PyPI package version selectable again."""
-    registry_kind = _require_lifecycle_kind(
-        kind,
-        expected="pypi",
-        operation="Unyanking a package version",
+    repository_unique_ref, registry_kind, display = _package_lane(
+        repo, kind, profile, only="pypi", operation="Unyanking a package version"
     )
     client = _client(profile)
     try:
-        repository_unique_ref = _resolved_repository_unique_ref(repo, profile, kind=registry_kind)
         _update_package_version(
             client, repository_unique_ref, registry_kind, name, version, {"yanked": False}
         )
     except ApiError as exc:
         output.fatal(str(exc))
-    output.success(f"Unyanked {name}@{version} in '{repo}'.")
+    output.success(f"Unyanked {name}@{version} in '{display}'.")
 
 
 @package_app.command("deprecate")
@@ -1433,8 +1146,8 @@ def package_deprecate(
     account: str | None = typer.Option(None, "--account"),
     name: str = typer.Argument(..., help="Package name."),
     version: str = typer.Argument(..., help="Version to deprecate."),
-    repo: str = typer.Option(..., "--target", "-t", help=_REPOSITORY_NAME_HELP),
-    kind: str = typer.Option(..., "--format", "-f", help="Package format: npm."),
+    repo: str | None = typer.Option(None, "--target", "-t", help=_PACKAGE_TARGET_HELP),
+    kind: str | None = typer.Option(None, "--format", "-f", hidden=True),
     message: str = typer.Option(
         ...,
         "--message",
@@ -1444,17 +1157,14 @@ def package_deprecate(
     profile: str | None = typer.Option(None, "--profile", "-p"),
 ) -> None:
     """Attach a warning message to an npm package version."""
-    registry_kind = _require_lifecycle_kind(
-        kind,
-        expected="npm",
-        operation="Deprecating a package version",
-    )
     normalized_message = message.strip()
     if not normalized_message:
         output.fatal("--message cannot be empty. Use undeprecate to clear the message.")
+    repository_unique_ref, registry_kind, display = _package_lane(
+        repo, kind, profile, only="npm", operation="Deprecating a package version"
+    )
     client = _client(profile)
     try:
-        repository_unique_ref = _resolved_repository_unique_ref(repo, profile, kind=registry_kind)
         _update_package_version(
             client,
             repository_unique_ref,
@@ -1465,7 +1175,7 @@ def package_deprecate(
         )
     except ApiError as exc:
         output.fatal(str(exc))
-    output.success(f"Deprecated {name}@{version} in '{repo}'.")
+    output.success(f"Deprecated {name}@{version} in '{display}'.")
 
 
 @package_app.command("undeprecate")
@@ -1473,22 +1183,19 @@ def package_undeprecate(
     account: str | None = typer.Option(None, "--account"),
     name: str = typer.Argument(..., help="Package name."),
     version: str = typer.Argument(..., help="Version to undeprecate."),
-    repo: str = typer.Option(..., "--target", "-t", help=_REPOSITORY_NAME_HELP),
-    kind: str = typer.Option(..., "--format", "-f", help="Package format: npm."),
+    repo: str | None = typer.Option(None, "--target", "-t", help=_PACKAGE_TARGET_HELP),
+    kind: str | None = typer.Option(None, "--format", "-f", hidden=True),
     profile: str | None = typer.Option(None, "--profile", "-p"),
 ) -> None:
     """Clear the warning message from an npm package version."""
-    registry_kind = _require_lifecycle_kind(
-        kind,
-        expected="npm",
-        operation="Undeprecating a package version",
+    repository_unique_ref, registry_kind, display = _package_lane(
+        repo, kind, profile, only="npm", operation="Undeprecating a package version"
     )
     client = _client(profile)
     try:
-        repository_unique_ref = _resolved_repository_unique_ref(repo, profile, kind=registry_kind)
         _update_package_version(
             client, repository_unique_ref, registry_kind, name, version, {"deprecated": False}
         )
     except ApiError as exc:
         output.fatal(str(exc))
-    output.success(f"Undeprecated {name}@{version} in '{repo}'.")
+    output.success(f"Undeprecated {name}@{version} in '{display}'.")

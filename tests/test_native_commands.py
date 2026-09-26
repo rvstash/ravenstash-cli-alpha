@@ -93,9 +93,9 @@ class _FakeDevApi:
                 "account": {"ref": "ac_23456789", "handle": "staging", "type": "personal"},
                 "namespace": {"ref": "in_abcdefgh", "name": "staging", "realm": "internal"},
                 "formats": [
-                    {"format": "pypi", "upstream_config_revision": 1},
-                    {"format": "npm", "upstream_config_revision": 1},
-                    {"format": "maven", "upstream_config_revision": 1},
+                    {"format": "pypi"},
+                    {"format": "npm"},
+                    {"format": "maven"},
                 ],
                 "allowed_actions": [],
                 "totals": {

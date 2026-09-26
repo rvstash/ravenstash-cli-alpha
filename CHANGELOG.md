@@ -6,8 +6,22 @@ All notable user-facing changes to `rvs` are recorded here. The format follows
 
 ## [Unreleased]
 
+### Removed
+
+- `rvs art repo rename`, `rvs art repo delete`, `rvs art repo upstream add`,
+  `update`, and `remove`, `rvs art mirror set-age`, `rvs art mirror delete`, and
+  `rvs art package delete` are removed. These operations are managed in the
+  Ravenstash web app only. Listing and showing repositories, upstreams, and
+  mirrors, deleting single package versions and OCI content, and yanking or
+  deprecating versions stay in `rvs`.
+
 ### Changed
 
+- `rvs art package` commands use the repository chosen with `rvs art select`
+  when `--target` is omitted, and need `--format` only when the repository has
+  more than one package format. Yank, unyank, deprecate, and undeprecate no
+  longer ask for a format. `package delete-version` resolves the repository
+  before asking for confirmation and names it in the prompt.
 - `rvs art package show` now shows the package summary with its newest 50
   versions, newest first, and says on stderr when more versions exist. Use
   `--limit N` (1–100) to show fewer or more, `--all-versions` to list every
@@ -24,11 +38,6 @@ All notable user-facing changes to `rvs` are recorded here. The format follows
   Ravenstash instead of only the first. Commands with `--limit` and `--cursor`
   (`rvs art oci ...` lists and `rvs art evidence list`) still return exactly one
   page.
-- `rvs art repo rename`, `rvs art repo delete`, `rvs art mirror set-age`, and
-  `rvs art mirror delete` change the resource only if it is unchanged since the
-  command read it. If it changed, nothing is written and the command tells you
-  how to review the current state. `repo delete` and `mirror delete` read the
-  resource before asking for confirmation and name it in the prompt.
 - `rvs art oci tag create` sets the tag with the new tag route and reports
   whether the tag was created or already existed; with `--json` it prints the
   tag, digest, and `created`. OCI tag and manifest deletions print a confirmation instead of

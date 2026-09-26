@@ -66,7 +66,7 @@ class _Api:
                 "account": {"ref": "ac_23456789", "handle": "personal", "type": "personal"},
                 "namespace": {"ref": "in_abcdefgh", "name": "main", "realm": "internal"},
                 "formats": [
-                    {"format": "oci", "upstream_config_revision": 1},
+                    {"format": "oci"},
                 ],
                 "allowed_actions": [],
                 "totals": {

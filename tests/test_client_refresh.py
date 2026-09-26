@@ -6,7 +6,7 @@ import httpx2 as httpx
 import pytest
 from rvs import auth as auth_mod
 from rvs import config as cfg_mod
-from rvs.client import ApiClient, ApiError, if_match, response_etag
+from rvs.client import ApiClient, ApiError
 from rvs.devapi import (
     api_path,
     api_url,
@@ -549,45 +549,6 @@ def test_api_client_does_not_retry_rate_limited_writes(monkeypatch) -> None:
     assert len(_FakeHttpClient.requests) == 1
 
 
-def test_api_client_sends_if_match_and_explains_a_failed_precondition(monkeypatch) -> None:
-    _FakeHttpClient.requests = []
-    _FakeHttpClient.responses = [
-        httpx.Response(200, headers={"ETag": '"rev-1"'}, json={"ref": "rc_abcdefgh"}),
-        httpx.Response(
-            412,
-            json={
-                "error": {
-                    "code": "PreconditionFailed",
-                    "message": "If-Match does not match",
-                    "details": None,
-                }
-            },
-        ),
-        httpx.Response(201, json={"tag": "v1", "digest": "sha256:" + "a" * 64}),
-    ]
-    monkeypatch.setattr(httpx, "Client", _FakeHttpClient)
-    client = ApiClient("https://api.example", "token")
-
-    etag = response_etag(client.get(artifacts_path("remote-caches/rc_abcdefgh")))
-    with pytest.raises(ApiError) as exc_info:
-        client.delete(artifacts_path("remote-caches/rc_abcdefgh"), headers=if_match(etag))
-    put = client.put(
-        artifacts_path("repositories/ar_xyzabcde/formats/oci/tags/v1"),
-        json={"digest": "sha256:" + "a" * 64},
-        params={"path": "images/api"},
-    )
-
-    assert etag == '"rev-1"'
-    assert _FakeHttpClient.requests[1][2]["If-Match"] == '"rev-1"'
-    assert "If-Match" not in _FakeHttpClient.requests[0][2]
-    assert exc_info.value.precondition_failed
-    assert "changed since it was read" in str(exc_info.value)
-    assert _FakeHttpClient.requests[2][0] == "PUT"
-    assert _FakeHttpClient.requests[2][3]["params"] == {"path": "images/api"}
-    assert put.status_code == 201
-    assert if_match(None) is None
-
-
 def test_retry_after_accepts_seconds_and_http_dates() -> None:
     assert retry_after_seconds({"Retry-After": "7"}) == 7.0
     assert retry_after_seconds({"Retry-After": "Wed, 21 Oct 2015 07:28:00 GMT"}) == 0.0
@@ -711,3 +672,21 @@ def test_a_rejected_cursor_is_surfaced() -> None:
         collection_all(client, "/v0/x")
 
     assert exc_info.value.status_code == 422
+
+
+def test_api_client_puts_with_query_parameters(monkeypatch) -> None:
+    _FakeHttpClient.requests = []
+    _FakeHttpClient.responses = [
+        httpx.Response(201, json={"tag": "v1", "digest": "sha256:" + "a" * 64})
+    ]
+    monkeypatch.setattr(httpx, "Client", _FakeHttpClient)
+
+    put = ApiClient("https://api.example", "token").put(
+        artifacts_path("repositories/ar_xyzabcde/formats/oci/tags/v1"),
+        json={"digest": "sha256:" + "a" * 64},
+        params={"path": "images/api"},
+    )
+
+    assert _FakeHttpClient.requests[0][0] == "PUT"
+    assert _FakeHttpClient.requests[0][3]["params"] == {"path": "images/api"}
+    assert put.status_code == 201
