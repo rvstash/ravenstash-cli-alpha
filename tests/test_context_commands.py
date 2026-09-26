@@ -401,3 +401,15 @@ def test_removed_profile_aliases_are_rejected(
 
     assert profile_result.exit_code == 2
     assert top_level_profile_result.exit_code == 2
+
+
+def test_an_unknown_account_type_is_selectable_by_its_shown_handle(monkeypatch) -> None:
+    team = {"ref": "ac_teamteam", "type": "team", "handle": "Platform"}
+    monkeypatch.setattr(
+        account_cmd,
+        "accounts",
+        lambda profile=None: [{"ref": "ac_23456789", "type": "personal", "handle": "me"}, team],
+    )
+    monkeypatch.setattr(account_cmd.cfg_mod, "cache_account", lambda **kwargs: None)
+
+    assert account_cmd.resolve_account("team:platform") == team

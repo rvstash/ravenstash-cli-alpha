@@ -472,6 +472,29 @@ def test_api_client_retries_reads_after_the_servers_retry_after(monkeypatch, sta
     assert len(_FakeHttpClient.requests) == 3
 
 
+def test_api_client_refreshes_a_session_that_expired_while_waiting_to_retry(
+    monkeypatch,
+) -> None:
+    _FakeHttpClient.requests = []
+    _FakeHttpClient.responses = [
+        httpx.Response(429, headers={"Retry-After": "30"}, json={"error": {"code": "x"}}),
+        httpx.Response(401, json={"error": {"code": "Unauthorized"}}),
+        httpx.Response(200, json={"ok": True}),
+    ]
+    monkeypatch.setattr(httpx, "Client", _FakeHttpClient)
+    monkeypatch.setattr("rvs.client.time.sleep", lambda _seconds: None)
+    monkeypatch.setattr(
+        auth_mod, "refresh_expiring_credential", lambda profile, **kwargs: "new-access"
+    )
+
+    response = ApiClient("https://api.example", "old-access", profile="default").get(
+        platform_path("me")
+    )
+
+    assert response.json() == {"ok": True}
+    assert _FakeHttpClient.requests[2][2]["Authorization"] == "Bearer new-access"
+
+
 def test_api_client_reports_a_retry_after_longer_than_it_waits(monkeypatch) -> None:
     _FakeHttpClient.requests = []
     _FakeHttpClient.responses = [
@@ -622,7 +645,6 @@ def test_bounded_collection_reads_stop_early_and_keep_the_resume_cursor() -> Non
 
     assert page.items == [{"n": 1}, {"n": 2}, {"n": 3}]
     assert page.next_cursor == "c3"
-    assert page.envelope() == {"items": page.items, "next_cursor": "c3"}
     assert client.calls == [
         ("/v0/x", {"limit": 3, "cursor": "c0"}),
         ("/v0/x", {"limit": 2, "cursor": "c1"}),
@@ -636,12 +658,45 @@ def test_bounded_collection_reads_stop_early_and_keep_the_resume_cursor() -> Non
         [{"items": [], "next_cursor": ""}],
         [{"items": [{}, {}], "next_cursor": None}],
         [{"items": [], "next_cursor": "same"}, {"items": [], "next_cursor": "same"}],
+        [{"items": [], "next_cursor": cursor} for cursor in ("a", "b", "a")],
+        [{"items": [], "next_cursor": "c0"}],
         [[{"n": 1}]],
     ],
 )
 def test_collections_reject_invalid_pages(pages) -> None:
     with pytest.raises(ValueError):
-        read_collection(_PagedClient(pages), "/v0/x", page_size=1)
+        read_collection(_PagedClient(pages), "/v0/x", max_items=1, cursor="c0")
+
+
+def test_collections_stop_reading_an_unending_listing(monkeypatch) -> None:
+    monkeypatch.setattr("rvs.devapi._MAX_COLLECTION_PAGES", 3)
+    client = _PagedClient([{"items": [], "next_cursor": f"c{n}"} for n in range(3)])
+
+    with pytest.raises(ValueError, match="did not end"):
+        collection_all(client, "/v0/x")
+
+
+def test_api_errors_read_as_code_and_message() -> None:
+    assert str(ApiError(409, {"code": "Conflict", "message": "Name taken"})) == (
+        "HTTP 409 Conflict: Name taken"
+    )
+    assert "without --cursor" in str(
+        ApiError(422, {"code": "InvalidCursor", "message": "Invalid cursor"})
+    )
+    validation = ApiError(
+        422,
+        {
+            "code": "ValidationFailed",
+            "message": "Request validation failed",
+            "errors": [{"location": ["query", "limit"], "message": "too large", "type": "x"}],
+        },
+    )
+    assert str(validation) == (
+        "HTTP 422 ValidationFailed: Request validation failed (query.limit: too large)"
+    )
+    assert str(ApiError(429, {"code": "RateLimited", "message": "Slow down"}, retry_after=42)) == (
+        "HTTP 429 RateLimited: Slow down (retry after 42s)"
+    )
 
 
 def test_a_rejected_cursor_is_surfaced() -> None:

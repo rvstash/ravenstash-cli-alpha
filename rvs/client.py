@@ -6,9 +6,10 @@ handling are consistent everywhere.
 Usage
 -----
     client = ApiClient.from_profile("default")
-    repos = client.get(artifacts_path("repositories")).json()
+    repos = collection_all(client, artifacts_path("repositories"))
 
-Resource paths are built with the group-aware builders in :mod:`rvs.devapi`.
+Resource paths are built with the group-aware builders in :mod:`rvs.devapi`,
+which also follows collection pages.
 """
 
 from __future__ import annotations
@@ -36,6 +37,8 @@ if TYPE_CHECKING:
 
     from .config import ProfileConfig
 
+
+INVALID_CURSOR = "InvalidCursor"
 
 # Idempotent reads are retried when the server asks the client to back off.
 _RETRYABLE_READ_STATUSES = frozenset({429, 503})
@@ -84,9 +87,9 @@ class ApiError(Exception):
 
     def _message(self) -> str:
         if self.precondition_failed:
-            return "The resource changed since it was read; re-run the command to review it."
+            return "The resource changed since it was read; review its current state, then run the command again."
         if self.status_code in _RETRYABLE_READ_STATUSES and self.retry_after is not None:
-            return f"HTTP {self.status_code}: {self.detail} (retry after {self.retry_after:g}s)"
+            return f"{self._http_message()} (retry after {self.retry_after:g}s)"
         if isinstance(self.detail, dict) and self.detail.get("code") == API_ROUTE_RETIRED:
             message = self.detail.get("message")
             return message if isinstance(message, str) and message else API_ROUTE_RETIRED
@@ -118,7 +121,32 @@ class ApiError(Exception):
                     "Use `rvs art select` to select the ID-based target or the repository "
                     "currently using the former name."
                 )
-        return f"HTTP {self.status_code}: {self.detail}"
+        if self.code == INVALID_CURSOR:
+            return (
+                "The --cursor value is invalid or belongs to a different listing; "
+                "run the command again without --cursor."
+            )
+        return self._http_message()
+
+    def _http_message(self) -> str:
+        """Render a DevAPI error envelope as ``HTTP status Code: message``."""
+        if not isinstance(self.detail, dict):
+            return f"HTTP {self.status_code}: {self.detail}"
+        message = self.detail.get("message")
+        if not isinstance(message, str) or not message:
+            return f"HTTP {self.status_code}: {self.detail}"
+        code = f" {self.code}" if self.code else ""
+        errors = self.detail.get("errors")
+        if isinstance(errors, list):
+            problems = [
+                f"{'.'.join(str(part) for part in item.get('location') or [])}: "
+                f"{item.get('message')}"
+                for item in errors[:3]
+                if isinstance(item, dict)
+            ]
+            if problems:
+                message = f"{message} ({'; '.join(problems)})"
+        return f"HTTP {self.status_code}{code}: {message}"
 
 
 class ApiClient:
@@ -253,14 +281,18 @@ class ApiClient:
             if resp.status_code == 401 and retry and self._refresh(hx):
                 resp = send()
             if idempotent_read:
-                resp = self._retry_read(resp, send)
+                resp = self._retry_read(resp, send, lambda: retry and self._refresh(hx))
         self._raise(resp)
         self._validate_contract(resp)
         return resp
 
     @staticmethod
-    def _retry_read(resp: httpx.Response, send: Any) -> httpx.Response:
-        """Retry a rate-limited or unavailable read, honoring ``Retry-After``."""
+    def _retry_read(resp: httpx.Response, send: Any, refresh: Any) -> httpx.Response:
+        """Retry a rate-limited or unavailable read, honoring ``Retry-After``.
+
+        The session can expire while waiting, so a retried read that gets 401
+        refreshes once and is sent again.
+        """
         for attempt in range(_READ_STATUS_ATTEMPTS - 1):
             if resp.status_code not in _RETRYABLE_READ_STATUSES:
                 break
@@ -271,6 +303,8 @@ class ApiClient:
                 break
             time.sleep(delay)
             resp = send()
+            if resp.status_code == 401 and refresh():
+                resp = send()
         return resp
 
     # ── request methods ───────────────────────────────────────────────────────

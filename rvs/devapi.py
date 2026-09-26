@@ -160,15 +160,16 @@ class _PageReader(Protocol):
     def get(self, path: str, params: dict | None = None) -> Any: ...
 
 
+# A listing that yields this many pages without ending is treated as broken.
+_MAX_COLLECTION_PAGES = 10_000
+
+
 @dataclass
 class Collection:
     """Items read from a collection and the cursor where reading stopped."""
 
     items: list[dict[str, Any]] = field(default_factory=list)
     next_cursor: str | None = None
-
-    def envelope(self) -> dict[str, Any]:
-        return {"items": self.items, "next_cursor": self.next_cursor}
 
 
 def read_collection(
@@ -178,7 +179,6 @@ def read_collection(
     *,
     max_items: int | None = None,
     cursor: str | None = None,
-    page_size: int = COLLECTION_PAGE_LIMIT,
 ) -> Collection:
     """Read a DevAPI collection by following ``next_cursor``.
 
@@ -186,15 +186,16 @@ def read_collection(
     previous page returned. Reading stops when the server returns a null cursor
     or, when ``max_items`` is set, once that many items were read; the returned
     ``next_cursor`` then resumes the collection after the last returned item.
-    Request errors, including a rejected cursor, propagate unchanged.
+    A repeated cursor or an unending listing raises ``ValueError``; request
+    errors, including a rejected cursor, propagate unchanged.
     """
     if max_items is not None and max_items < 1:
         raise ValueError("max_items must be positive")
     query = {key: value for key, value in (params or {}).items() if value is not None}
     result = Collection(next_cursor=cursor)
-    seen: set[str] = set()
-    while True:
-        limit = page_size
+    seen: set[str] = {cursor} if cursor is not None else set()
+    for _ in range(_MAX_COLLECTION_PAGES):
+        limit = COLLECTION_PAGE_LIMIT
         if max_items is not None:
             limit = min(limit, max_items - len(result.items))
         page_query = {**query, "limit": limit}
@@ -210,6 +211,7 @@ def read_collection(
         if next_cursor in seen:
             raise ValueError("DevAPI collection repeated a cursor")
         seen.add(next_cursor)
+    raise ValueError("DevAPI collection did not end")
 
 
 def collection_all(

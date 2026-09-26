@@ -44,6 +44,13 @@ def payload_display_name(account: dict) -> str:
         output.fatal("Ravenstash returned an account without a valid type and public handle.")
 
 
+def _folded_typed_handle(account: dict) -> str | None:
+    try:
+        return typed_handle(account.get("type"), account.get("handle")).casefold()
+    except ValueError:
+        return None
+
+
 def resolve_account(selector: str, profile: str | None = None) -> dict:
     items = accounts(profile)
     value = selector.strip()
@@ -75,7 +82,12 @@ def resolve_account(selector: str, profile: str | None = None) -> dict:
     elif lowered == "personal":
         matches = [item for item in items if item.get("type") == "personal"]
     else:
-        matches = [item for item in items if value == item.get("ref")]
+        # Also accept the typed handle shown for an account type rvs does not know yet.
+        matches = [
+            item
+            for item in items
+            if value == item.get("ref") or _folded_typed_handle(item) == lowered
+        ]
     if not matches:
         output.fatal(f"Account '{selector}' was not found for this profile.")
     if len(matches) > 1:

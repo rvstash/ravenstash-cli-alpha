@@ -303,15 +303,17 @@ def perform_device_login(
                     interval += 5
                     poll_display.sleep(interval)
                     continue
-                if poll_resp.status_code == 429:
-                    # Rate limited: wait at least as long as the server asks.
+                if poll_resp.status_code in (429, 503):
+                    # Back off once, as long as the server asks, without outliving
+                    # the session; later polls return to the normal interval.
                     retry_after = retry_after_seconds(poll_resp.headers)
-                    interval = (
+                    wait = (
                         max(interval, math.ceil(retry_after))
                         if retry_after is not None
                         else interval + 5
                     )
-                    poll_display.sleep(interval)
+                    remaining = math.ceil(deadline - time.monotonic())
+                    poll_display.sleep(max(1, min(wait, remaining)))
                     continue
                 if error == "access_denied":
                     output.fatal("Login was denied.")

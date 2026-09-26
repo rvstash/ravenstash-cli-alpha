@@ -86,15 +86,15 @@ def _request(
             return
         payload = response.json()
         if method == "PUT":
-            # 201 when the tag was created, 200 when an existing tag moved.
+            # 201 when the tag was created, 200 when an existing tag was set
+            # (moved, or already pointing at the digest).
             created = response.status_code == 201
             if output.is_json():
                 click.echo(json.dumps({**payload, "created": created}))
+            elif created:
+                output.success(f"Created tag '{payload['tag']}' at {payload['digest']}.")
             else:
-                output.success(
-                    f"{'Created' if created else 'Moved'} tag '{payload['tag']}' "
-                    f"at {payload['digest']}."
-                )
+                output.success(f"Tag '{payload['tag']}' now points at {payload['digest']}.")
         elif output.is_json():
             click.echo(json.dumps(payload))
         elif method == "GET" and (suffix in _COLLECTIONS or suffix.endswith("/referrers")):

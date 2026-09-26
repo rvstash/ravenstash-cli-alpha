@@ -17,6 +17,7 @@ from ..devapi import (
     remote_cache_mint_token_path,
     repository_mint_token_path,
 )
+from .formats import FORMATS
 
 
 PackageKind = Literal["pypi", "npm", "maven"]
@@ -146,10 +147,20 @@ def remote_target_name(remote: dict) -> str:
     return f"{prefix}:{remote_public_name(remote)}"
 
 
+_NAMESPACE_REALMS = ("internal", "global")
+
+
 def _repository_target(repository: dict) -> cfg_mod.ArtifactTarget:
     namespace = repository["namespace"]
+    # The server's value sets are open; never persist a value config loading rejects.
+    if namespace["realm"] not in _NAMESPACE_REALMS:
+        raise ValueError(f"rvs does not support namespace realm {namespace['realm']!r} yet")
     repository_kinds = repository_formats(repository)
-    inferred_kind = repository_kinds[0] if len(repository_kinds) == 1 else None
+    inferred_kind = (
+        repository_kinds[0]
+        if len(repository_kinds) == 1 and repository_kinds[0] in FORMATS
+        else None
+    )
     return cfg_mod.ArtifactTarget(
         target_type="repository",
         customer_id=repository["account"]["ref"],
@@ -170,6 +181,8 @@ def _remote_target(remote: dict, target_type: cfg_mod.ArtifactTargetType) -> cfg
     expected_family = "official" if target_type == "official_cache" else "custom"
     if family != expected_family:
         raise ValueError(f"Remote cache is {family}, not {expected_family}")
+    if remote["format"] not in FORMATS:
+        raise ValueError(f"rvs does not support the {remote['format']!r} format yet")
     public_name = remote_public_name(remote)
     prefix = "mirror" if target_type == "official_cache" else "custom-mirror"
     unique_ref = remote["ref"]
@@ -341,6 +354,20 @@ def expected_repository_target(selected: cfg_mod.ArtifactTarget) -> dict[str, ob
     }
 
 
+def repository_native_route(credential: dict, repository_ref: str) -> tuple[str, str]:
+    """Return the ``("in", ref)`` route of a repository credential, or raise."""
+    # Every format of a repository shares one canonical ID-based route.
+    native_path = credential.get("native_path")
+    if not isinstance(native_path, str) or native_path.strip("/").split("/") != [
+        "in",
+        repository_ref,
+    ]:
+        raise ValueError(
+            "Ravenstash returned a credential for a different native repository route."
+        )
+    return "in", repository_ref
+
+
 def registry_context(
     *,
     kind: str,
@@ -375,14 +402,9 @@ def registry_context(
                     "expected_target": expected_repository_target(selected),
                 },
             ).json()
-            native_path = credential.get("native_path")
-            if not isinstance(native_path, str):
-                raise ValueError("Private repository resolution omitted its native path")
-            # Every format of a repository shares one canonical ID-based route.
-            native_parts = native_path.strip("/").split("/")
-            if native_parts != ["in", selected.repository_unique_ref]:
-                raise ValueError("Private repository resolution returned an invalid native path")
-            route_coordinate, repository_reference = native_parts
+            route_coordinate, repository_reference = repository_native_route(
+                credential, selected.repository_unique_ref
+            )
             route_realm: Literal["in"] | None = "in"
         else:
             if not selected.remote_unique_ref:

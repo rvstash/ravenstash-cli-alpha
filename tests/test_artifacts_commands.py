@@ -781,8 +781,43 @@ def test_conditional_writes_explain_a_concurrent_change(
     assert subject in message
     assert "changed since it was read" in message
     assert outcome in message
-    assert "Re-run to review" in message
+    assert "to review it, then run the command again" in message
     assert fake.request_headers[0][2] == {"If-Match": '"rev-9"'}
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["mirror", "set-age", "rc_abcdefgh", "--min-age-hours", "3"],
+        ["mirror", "delete", "rc_abcdefgh", "--yes"],
+        ["repo", "rename", "in/ar_xyzabcde", "renamed"],
+        ["repo", "delete", "in/ar_xyzabcde", "--yes"],
+    ],
+)
+def test_conditional_writes_without_an_etag_send_no_if_match(
+    monkeypatch, tmp_path: Path, argv: list[str]
+) -> None:
+    _isolate_config(monkeypatch, tmp_path)
+    resource = _repository_entry() if argv[0] == "repo" else _remote_cache()
+    fake = _FakeApiClient([resource, resource])
+    _use_fake_client(monkeypatch, fake)
+
+    result = runner.invoke(artifacts_cmd.app, argv)
+
+    assert result.exit_code == 0, result.output
+    assert [headers for _method, _path, headers in fake.request_headers] == [None]
+
+
+def test_repo_delete_confirms_what_it_read(monkeypatch, tmp_path: Path) -> None:
+    _isolate_config(monkeypatch, tmp_path)
+    fake = _FakeApiClient([_JsonResponse(_repository_entry(), headers={"ETag": '"rev-9"'})])
+    _use_fake_client(monkeypatch, fake)
+
+    result = runner.invoke(artifacts_cmd.app, ["repo", "delete", "in/ar_xyzabcde"], input="n\n")
+
+    assert result.exit_code == 1
+    assert "(in/ar_xyzabcde)" in result.output
+    assert [call[0] for call in fake.calls] == ["GET"]
 
 
 def test_repo_rename_sends_the_etag_of_its_resolve_read(monkeypatch, tmp_path: Path) -> None:
@@ -1247,18 +1282,62 @@ def test_artifacts_package_show_all_versions_follows_every_page_as_json(
         ("GET", versions_path, {"package_name": "demo", "limit": 100}),
         ("GET", versions_path, {"package_name": "demo", "limit": 100, "cursor": "v1"}),
     ]
-    summary, table = (json.loads(line) for line in result.stdout.splitlines())
-    assert summary["values"]["dist_tags"] == "latest=1.2.3, next=2.0.0-rc.1"
-    assert summary["values"]["latest_stable"] == "1.2.3"
-    assert [item["version"] for item in table["items"]] == ["2.0.0-rc.1", "1.2.3", "1.0.0"]
-    assert table["items"][2] == {
-        "version": "1.0.0",
-        "deprecated": "yes",
-        "published_at": "2026-09-01T00:00:00Z",
-        "files": "1",
-        "size": "1000",
-        "downloads": "4",
-    }
+    (document,) = (json.loads(line) for line in result.stdout.splitlines())
+    assert document["repository"] == "ar_xyzabcde"
+    assert document["package"]["dist_tags"] == {"latest": "1.2.3", "next": "2.0.0-rc.1"}
+    assert document["package"]["latest_stable_version"] == "1.2.3"
+    assert [item["version"] for item in document["versions"]] == ["2.0.0-rc.1", "1.2.3", "1.0.0"]
+    assert document["versions"][2] == _version_summary("1.0.0", deprecated=True)
+    assert document["versions_next_cursor"] is None
+
+
+def test_artifacts_package_show_json_reports_where_a_truncated_listing_resumes(
+    monkeypatch, tmp_path: Path
+) -> None:
+    _isolate_config(monkeypatch, tmp_path)
+    fake = _FakeApiClient(
+        [
+            _repository_entry("repo-pypi"),
+            _package_summary(),
+            {"items": [_version_summary("1.2.3")], "next_cursor": "v1"},
+        ]
+    )
+    _use_fake_client(monkeypatch, fake)
+
+    output.set_json(True)
+    try:
+        result = runner.invoke(
+            artifacts_cmd.app,
+            ["package", "show", "demo", "-t", "repo-pypi", "-f", "pypi", "--limit", "1"],
+        )
+    finally:
+        output.set_json(False)
+
+    assert result.exit_code == 0, result.output
+    (document,) = (json.loads(line) for line in result.stdout.splitlines())
+    assert document["versions_next_cursor"] == "v1"
+
+
+def test_artifacts_package_show_ignores_a_cursor_once_every_version_is_listed(
+    monkeypatch, tmp_path: Path
+) -> None:
+    _isolate_config(monkeypatch, tmp_path)
+    fake = _FakeApiClient(
+        [
+            _repository_entry("repo-pypi"),
+            _package_summary(version_count=1),
+            {"items": [_version_summary("1.2.3")], "next_cursor": "v1"},
+        ]
+    )
+    _use_fake_client(monkeypatch, fake)
+
+    result = runner.invoke(
+        artifacts_cmd.app,
+        ["package", "show", "demo", "-t", "repo-pypi", "-f", "pypi", "--limit", "1"],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "Showing the newest" not in result.stderr
 
 
 def _version_detail() -> dict[str, Any]:
@@ -1381,15 +1460,13 @@ def test_artifacts_package_show_rejects_conflicting_version_options(
 def test_package_lifecycle_columns_follow_format_semantics() -> None:
     assert artifacts_cmd._package_lifecycle_columns("npm", {"deprecated": True}) == (
         ["Deprecated"],
-        ["deprecated"],
         ["yes"],
     )
     assert artifacts_cmd._package_lifecycle_columns("pypi", {"yanked": False}) == (
         ["Yanked"],
-        ["yanked"],
         ["no"],
     )
-    assert artifacts_cmd._package_lifecycle_columns("maven", {}) == ([], [], [])
+    assert artifacts_cmd._package_lifecycle_columns("maven", {}) == ([], [])
 
 
 def test_artifacts_package_mutations_call_expected_api_paths(monkeypatch, tmp_path: Path) -> None:
@@ -1777,3 +1854,16 @@ def test_unknown_open_enum_values_are_displayed_as_is(monkeypatch, tmp_path: Pat
     assert "partner_feed" in upstreams.output
     assert mirrors.exit_code == 0, mirrors.output
     assert "partner" in mirrors.output
+
+
+def test_a_target_with_values_rvs_cannot_store_is_refused() -> None:
+    from rvs.artifacts import targets
+
+    single_unknown = _repository_entry(formats=[{"format": "cargo", "upstream_config_revision": 1}])
+    assert targets._repository_target(single_unknown).registry_kind is None
+    with pytest.raises(ValueError, match="namespace realm"):
+        targets._repository_target(
+            _repository_entry(namespace={"ref": "pb_abcdefgh", "name": "x", "realm": "public"})
+        )
+    with pytest.raises(ValueError, match="cargo"):
+        targets._remote_target(_remote_cache(format="cargo"), "official_cache")

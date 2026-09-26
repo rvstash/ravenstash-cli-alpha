@@ -15,7 +15,9 @@ All notable user-facing changes to `rvs` are recorded here. The format follows
   file digest. The versions table now has a published time and file count
   instead of per-version reasons and bandwidth; the separate artifacts table is
   replaced by `--version`. The summary adds status reason, latest stable
-  version, last upload, and npm distribution tags. With `--json`, `--version`
+  version, last upload, and npm distribution tags. With `--json`, it prints one
+  document with the `package` summary, the listed `versions`, and
+  `versions_next_cursor` (null once every version is listed); `--version`
   prints one document whose files carry a `digests` object keyed by algorithm.
 - Listings such as `rvs art repo list`, `rvs art package list`,
   `rvs art mirror list`, and `rvs account list` read every page from
@@ -24,19 +26,25 @@ All notable user-facing changes to `rvs` are recorded here. The format follows
   page.
 - `rvs art repo rename`, `rvs art repo delete`, `rvs art mirror set-age`, and
   `rvs art mirror delete` change the resource only if it is unchanged since the
-  command read it. If it changed, nothing is written and the command asks you to
-  re-run it to review the current state. `mirror delete` now names the mirror in its confirmation.
+  command read it. If it changed, nothing is written and the command tells you
+  how to review the current state. `repo delete` and `mirror delete` read the
+  resource before asking for confirmation and name it in the prompt.
 - `rvs art oci tag create` sets the tag with the new tag route and reports
-  whether the tag was created or moved; with `--json` it prints the tag, digest,
-  and `created`. OCI tag and manifest deletions print a confirmation instead of
+  whether the tag was created or already existed; with `--json` it prints the
+  tag, digest, and `created`. OCI tag and manifest deletions print a confirmation instead of
   the former response object.
 - Read commands retry when Ravenstash rate-limits them or is briefly
   unavailable, waiting as long as the server's `Retry-After` asks (up to 30
-  seconds). Sign-in polling also honors `Retry-After`. Errors for longer waits
-  say when to retry.
+  seconds), and refresh the session if it expired meanwhile. Sign-in polling
+  also backs off when rate-limited or briefly unavailable, without waiting past
+  the sign-in deadline. Errors for longer waits say when to retry. API errors
+  are shown as their code and message instead of a raw object.
 - New formats, statuses, account types, and other values that `rvs` does not
   yet recognize are displayed as Ravenstash reports them instead of stopping the
-  command.
+  command. `rvs art select` refuses a target whose format or namespace realm it
+  cannot store, `rvs account switch` accepts the shown `type:handle` of a new
+  account type, and `rvs art evidence --wait` stops at an intent state it does
+  not know.
 - `rvs` requires the final Ravenstash `v0` developer API: temporary tokens use
   one native repository path, evidence uploads follow the typed upload
   instruction, and `rvs art evidence retire` uses the dedicated retire route.

@@ -136,8 +136,10 @@ def test_oci_exact_references_reach_typed_routes(transport, args, method, suffix
     )
 
 
-@pytest.mark.parametrize(("status", "verb"), [(201, "Created"), (200, "Moved")])
-def test_oci_tag_create_puts_the_tag_with_its_digest(transport, status, verb):
+@pytest.mark.parametrize(
+    ("status", "message"), [(201, "Created tag 'stable'"), (200, "Tag 'stable' now points at")]
+)
+def test_oci_tag_create_puts_the_tag_with_its_digest(transport, status, message):
     transport.put.return_value.status_code = status
     transport.put.return_value.json.return_value = {"tag": "stable", "digest": DIGEST}
     result = runner.invoke(app, ["art", "oci", "tag", "create", "images/api@" + DIGEST, "stable"])
@@ -148,7 +150,7 @@ def test_oci_tag_create_puts_the_tag_with_its_digest(transport, status, verb):
         params={"path": "images/api"},
     )
     transport.post.assert_not_called()
-    assert f"{verb} tag 'stable'" in result.stdout
+    assert message in " ".join(result.stdout.split())
 
 
 @pytest.mark.parametrize(("status", "created"), [(201, True), (200, False)])

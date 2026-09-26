@@ -18,7 +18,7 @@ from ..client import ApiClient, ApiError
 from ..devapi import remote_cache_mint_token_path, repository_mint_token_path
 from .discovery import discover
 from .formats import flatten_formats
-from .targets import expected_repository_target, token_scope_hint
+from .targets import expected_repository_target, repository_native_route, token_scope_hint
 
 
 app = typer.Typer(help="Create short-lived tokens for package tools.", no_args_is_help=True)
@@ -100,6 +100,7 @@ def mint(
                         "expected_target": expected_repository_target(selected),
                     },
                 ).json()
+                repository_native_route(response, selected.repository_unique_ref)
                 minted_formats = response["formats"]
             else:
                 if access != "read":
@@ -122,16 +123,6 @@ def mint(
                         "Ravenstash returned a credential for a different private mirror."
                     )
                 minted_formats = [mirror_format]
-        if selected.target_type == "repository":
-            # Every format of a repository shares one canonical ID-based route.
-            native_path = response.get("native_path")
-            if not isinstance(native_path, str) or native_path.strip("/").split("/") != [
-                "in",
-                selected.repository_unique_ref,
-            ]:
-                raise ValueError(
-                    "Ravenstash returned a credential for a different native repository route."
-                )
         secret = response.get("access_token")
         if not isinstance(secret, str):
             raise ValueError("Ravenstash returned an invalid temporary token.")

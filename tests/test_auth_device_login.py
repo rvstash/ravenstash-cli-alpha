@@ -554,6 +554,16 @@ def test_device_login_waits_for_retry_after_when_rate_limited(
             {"Retry-After": "12"},
         ),
         _FakeResponse(
+            503,
+            {"error": {"code": "CentralUnavailable", "message": "Try again"}},
+        ),
+        _FakeResponse(400, {"error": "authorization_pending"}),
+        _FakeResponse(
+            429,
+            {"error": {"code": "RateLimited", "message": "Too many requests"}},
+            {"Retry-After": "86400"},
+        ),
+        _FakeResponse(
             200,
             {
                 "access_token": "jwt-token",
@@ -583,7 +593,11 @@ def test_device_login_waits_for_retry_after_when_rate_limited(
         duration="12h",
     )
 
-    assert sleeps == [12]
+    # Each backoff applies once: a 429 waits as asked, a 503 without Retry-After
+    # waits a little longer than usual, the next poll returns to the normal interval,
+    # and no wait outlives the device session.
+    assert sleeps[:3] == [12, 10, 5]
+    assert 590 <= sleeps[3] <= 600
 
 
 def test_device_login_replaces_active_profile_and_revokes_previous_refresh(

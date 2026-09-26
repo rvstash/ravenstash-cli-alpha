@@ -53,7 +53,7 @@ repository target can be name-based (`NAMESPACE/REPOSITORY`) or ID-based
 | `rvs art repo create NAME --format FORMAT` | Creates a repository for one or more package formats. |
 | `rvs art repo show TARGET` | Shows repository details. |
 | `rvs art repo rename TARGET NEW` | Renames a repository if it is unchanged since the command read it. |
-| `rvs art repo delete TARGET` | Deletes a repository after confirmation. |
+| `rvs art repo delete TARGET` | Deletes a repository after confirmation if it is unchanged since the command read it. |
 
 Supported formats are `pypi`, `npm`, `maven`, and `oci`. Container images and
 Helm charts are content types within OCI. Use commas or repeat `--format` to
@@ -85,12 +85,14 @@ the repository's sources makes them fail instead of changing another source.
 | `rvs art mirror show REMOTE_CACHE_ID` | Shows a private mirror through its owning remote-cache permanent ID. |
 | `rvs art mirror set-age REMOTE_CACHE_ID --min-age-hours HOURS` | Changes the direct private-mirror age policy. |
 | `rvs art mirror delete REMOTE_CACHE_ID` | Deletes the remote cache and its private-mirror surface after confirmation. |
-
-`repo rename`, `mirror set-age`, and `mirror delete` read the resource and then
-change it only if nobody else changed it in between. When it did change, nothing
-is written and the command asks you to run it again to review the current state.
 | `rvs art mirror select SOURCE` | Chooses a Ravenstash-provided mirror. |
 | `rvs art mirror select --custom NAME` | Chooses a custom mirror. |
+
+`repo rename`, `repo delete`, `mirror set-age`, and `mirror delete` read the
+resource and then change it only if nobody else changed it in between. Deletions
+ask for confirmation after that read. When the resource did change, nothing is
+written and the command asks you to review its current state with `show` before
+running it again.
 
 ## Packages
 
@@ -109,10 +111,12 @@ is written and the command asks you to run it again to review the current state.
 | `rvs art package delete PACKAGE --target NAME --format FORMAT` | Deletes a package and all its versions. |
 
 Versions are listed newest first. When more versions exist than are shown,
-`package show` says so on stderr. With root `--json`, `package show` prints the
-package summary and then the listed versions; `--version` prints one document
-with the version's metadata and `files`, each carrying a `digests` object keyed
-by algorithm (such as `sha256`, `sha512`, `md5`, or `blake2b_256`).
+`package show` says so on stderr. With root `--json`, `package show` prints one
+document with the `package` summary, the listed `versions`, and
+`versions_next_cursor`, which is null once every version is listed; `--version`
+prints one document with the version's metadata and `files`, each carrying a
+`digests` object keyed by algorithm (such as `sha256`, `sha512`, `md5`, or
+`blake2b_256`).
 
 Yanking is a PyPI resolver control. npm deprecation is warning metadata and does
 not prevent installation. Maven has no corresponding lifecycle operation.

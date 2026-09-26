@@ -44,7 +44,15 @@ app = typer.Typer(
 )
 
 _EVIDENCE_TYPES = {"cyclonedx", "pypi_lock", "npm_lock", "maven_dependency_graph"}
-_TERMINAL_STATES = {"active", "expired", "cancelled", "failed"}
+# Intent states are an open set; wait only while the intent is known to progress.
+_PENDING_STATES = {
+    "prepared",
+    "uploading",
+    "evidence_ready",
+    "partially_bound",
+    "subject_bound",
+    "processing",
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -336,7 +344,7 @@ def _show_intent(intent: dict[str, object]) -> None:
 
 def _wait(client: ApiClient, intent: dict[str, object], timeout: float) -> dict[str, object]:
     deadline = time.monotonic() + timeout
-    while str(intent.get("state")) not in _TERMINAL_STATES:
+    while str(intent.get("state")) in _PENDING_STATES:
         if time.monotonic() >= deadline:
             output.fatal("Timed out waiting for the durable evidence intent; check it with status.")
         time.sleep(min(5.0, max(0.1, deadline - time.monotonic())))

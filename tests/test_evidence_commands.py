@@ -568,3 +568,13 @@ def test_status_retire_and_documents_use_flat_evidence_routes(
         ("POST", "/v0/artifacts/package-evidence/intents/pe_23456789abcdefghijkmn/retire"),
         ("GET", "/v0/artifacts/package-evidence/artifacts/pa_23456789abcdefghijkmn/report"),
     ]
+
+
+def test_waiting_stops_at_a_state_it_does_not_know(monkeypatch) -> None:
+    class _Client:
+        def get(self, path: str) -> Any:
+            raise AssertionError("an unknown state must not be polled")
+
+    intent = {"ref": "ei_abcdefgh", "state": "archived"}
+
+    assert evidence_commands._wait(_Client(), intent, timeout=60) == intent

@@ -215,16 +215,20 @@ def _require_lifecycle_kind(
     return registry_kind
 
 
+def _yes_no(value: object) -> str:
+    return "yes" if value else "no"
+
+
 def _package_lifecycle_columns(
     registry_kind: str,
     version: dict,
-) -> tuple[list[str], list[str], list[str]]:
-    """Return the lifecycle column of a version summary for its format."""
+) -> tuple[list[str], list[str]]:
+    """Return the lifecycle column heading and value of a version for its format."""
     if registry_kind == "pypi":
-        return ["Yanked"], ["yanked"], ["yes" if version.get("yanked") else "no"]
+        return ["Yanked"], [_yes_no(version.get("yanked"))]
     if registry_kind == "npm":
-        return ["Deprecated"], ["deprecated"], ["yes" if version.get("deprecated") else "no"]
-    return [], [], []
+        return ["Deprecated"], [_yes_no(version.get("deprecated"))]
+    return [], []
 
 
 def _split_repo_ref(repo_ref: str) -> tuple[str | None, str]:
@@ -558,6 +562,15 @@ def repo_show(
     )
 
 
+def _repository_write_failed(exc: ApiError, repo: str, outcome: str) -> NoReturn:
+    if exc.precondition_failed:
+        output.fatal(
+            f"Repository '{repo}' changed since it was read; {outcome}. "
+            f"Run `rvs art repo show {repo}` to review it, then run the command again."
+        )
+    output.fatal(str(exc))
+
+
 @repo_app.command("delete")
 def repo_delete(
     account: str | None = typer.Option(None, "--account"),
@@ -570,19 +583,19 @@ def repo_delete(
     The deletion applies only if the repository is unchanged since this command
     read it; otherwise nothing is deleted.
     """
-    if not yes:
-        typer.confirm(f"Delete repository '{repo}' and all its content?", abort=True)
     client = _client(profile)
     try:
+        # Read before confirming so If-Match guards what the user confirmed.
         repository, etag = _resolve_repository(repo, profile)
+        if not yes:
+            typer.confirm(
+                f"Delete repository '{repository_display_name(repository)}' "
+                f"(in/{repository['ref']}) and all its content?",
+                abort=True,
+            )
         client.delete(_repository_path(repository["ref"]), headers=if_match(etag))
     except ApiError as exc:
-        if exc.precondition_failed:
-            output.fatal(
-                f"Repository '{repo}' changed since it was read; nothing was deleted. "
-                "Re-run to review the current repository."
-            )
-        output.fatal(str(exc))
+        _repository_write_failed(exc, repo, "nothing was deleted")
     output.success(f"Deleted repository '{repo}'.")
 
 
@@ -607,12 +620,7 @@ def repo_rename(
             headers=if_match(etag),
         ).json()
     except ApiError as exc:
-        if exc.precondition_failed:
-            output.fatal(
-                f"Repository '{repo}' changed since it was read; nothing was renamed. "
-                "Re-run to review the current repository."
-            )
-        output.fatal(str(exc))
+        _repository_write_failed(exc, repo, "nothing was renamed")
     output.success(f"Renamed repository '{repo}' to '{updated['name']}'.")
 
 
@@ -939,11 +947,9 @@ def remote_show(
         _require_package_kind(kind)
     client = _client(profile)
     try:
-        item = client.get(_remote_cache_path(remote)).json()
-    except (ApiError, KeyError, TypeError) as exc:
+        item, _ = _read_remote_cache(client, remote, kind)
+    except ApiError as exc:
         output.fatal(str(exc))
-    if kind and item["format"] != kind:
-        output.fatal(f"Private mirror '{remote}' is for {item['format']}, not {kind}.")
     output.kv(
         {
             "Remote-cache ref": item["ref"],
@@ -977,8 +983,8 @@ def _read_remote_cache(client: ApiClient, remote: str, kind: str | None) -> tupl
     """Read a remote cache before a conditional write; return it and its ETag."""
     response = client.get(_remote_cache_path(remote))
     item = response.json()
-    if kind and item["format"] != kind:
-        output.fatal(f"Private mirror '{remote}' is for {item['format']}, not {kind}.")
+    if kind and item.get("format") != kind:
+        output.fatal(f"Private mirror '{remote}' is for {item.get('format')}, not {kind}.")
     return item, response_etag(response)
 
 
@@ -986,7 +992,7 @@ def _remote_cache_write_failed(exc: ApiError, remote: str, outcome: str) -> NoRe
     if exc.precondition_failed:
         output.fatal(
             f"Private mirror '{remote}' changed since it was read; {outcome}. "
-            "Re-run to review the current mirror."
+            f"Run `rvs art mirror show {remote}` to review it, then run the command again."
         )
     output.fatal(str(exc))
 
@@ -1103,10 +1109,6 @@ _DEFAULT_VERSION_LIMIT = 50
 _MAX_VERSION_LIMIT = 100
 
 
-def _yes_no(value: object) -> str:
-    return "yes" if value else "no"
-
-
 def _dist_tags_label(tags: object) -> str:
     if not isinstance(tags, dict):
         return ""
@@ -1179,6 +1181,25 @@ def package_show(
         _print_package_version(repository_unique_ref, name, registry_kind, detail)
         return
 
+    # A cursor may be returned even when no version follows; the count settles it.
+    version_count = item.get("version_count")
+    more_versions = versions.next_cursor is not None and not (
+        isinstance(version_count, int) and len(versions.items) >= version_count
+    )
+    if output.is_json():
+        # One document with the wire fields; the cursor is null once every version is listed.
+        click.echo(
+            json.dumps(
+                {
+                    "repository": repository_unique_ref,
+                    "package": item,
+                    "versions": versions.items,
+                    "versions_next_cursor": versions.next_cursor if more_versions else None,
+                }
+            )
+        )
+        return
+
     output.kv(
         {
             "Repository": repository_unique_ref,
@@ -1193,30 +1214,16 @@ def package_show(
             "Distribution tags": _dist_tags_label(item.get("dist_tags")),
         },
         title=name,
-        json_keys=[
-            "repository",
-            "name",
-            "status",
-            "status_reason",
-            "latest",
-            "latest_stable",
-            "versions",
-            "size",
-            "latest_uploaded_at",
-            "dist_tags",
-        ],
     )
 
     if versions.items:
-        lifecycle_headings, lifecycle_keys, _ = _package_lifecycle_columns(
-            registry_kind, versions.items[0]
-        )
+        lifecycle_headings, _ = _package_lifecycle_columns(registry_kind, versions.items[0])
         output.table(
             ["Version", *lifecycle_headings, "Published", "Files", "Size", "Downloads"],
             [
                 [
                     str(entry.get("version", "")),
-                    *_package_lifecycle_columns(registry_kind, entry)[2],
+                    *_package_lifecycle_columns(registry_kind, entry)[1],
                     str(entry.get("published_at") or ""),
                     str(entry.get("file_count", "")),
                     str(entry.get("size_bytes", "")),
@@ -1225,14 +1232,11 @@ def package_show(
                 for entry in versions.items
             ],
             title="Versions (newest first)",
-            json_keys=["version", *lifecycle_keys, "published_at", "files", "size", "downloads"],
         )
-    if versions.next_cursor is not None:
-        click.echo(
-            f"Showing the newest {len(versions.items)} of {item.get('version_count', 'more')} "
-            "versions. Pass --all-versions to list every version or --version VERSION "
-            "for one version.",
-            err=True,
+    if more_versions:
+        output.warn(
+            f"Showing the newest {len(versions.items)} of {version_count} versions. "
+            "Pass --all-versions to list every version or --version VERSION for one version."
         )
 
 
