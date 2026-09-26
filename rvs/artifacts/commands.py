@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import cast
+import json
+from typing import NoReturn, cast
 
 import click
 import typer
@@ -11,8 +12,14 @@ from .. import config as cfg_mod
 from .. import output
 from ..account.commands import display_name as account_display_name
 from ..account.commands import ensure_active_account, payload_display_name, resolve_account
-from ..client import ApiClient, ApiError
-from ..devapi import artifacts_path, collection_items, platform_path, segment
+from ..client import ApiClient, ApiError, if_match, response_etag
+from ..devapi import (
+    artifacts_path,
+    collection_all,
+    platform_path,
+    read_collection,
+    segment,
+)
 from .auth_commands import app as native_auth_app
 from .evidence_commands import app as evidence_app
 from .formats import FORMATS, flatten_formats
@@ -25,7 +32,7 @@ from .targets import (
     remote_target_name,
     repository_display_name,
     repository_formats,
-    resolve_repository_entry,
+    resolve_repository,
     resolve_target,
 )
 
@@ -212,24 +219,11 @@ def _package_lifecycle_columns(
     registry_kind: str,
     version: dict,
 ) -> tuple[list[str], list[str], list[str]]:
+    """Return the lifecycle column of a version summary for its format."""
     if registry_kind == "pypi":
-        return (
-            ["Yanked", "Yank reason"],
-            ["yanked", "yanked_reason"],
-            [
-                "yes" if version.get("yanked") else "no",
-                str(version.get("yanked_reason") or ""),
-            ],
-        )
+        return ["Yanked"], ["yanked"], ["yes" if version.get("yanked") else "no"]
     if registry_kind == "npm":
-        return (
-            ["Deprecated", "Deprecation message"],
-            ["deprecated", "deprecated_reason"],
-            [
-                "yes" if version.get("deprecated") else "no",
-                str(version.get("deprecated_reason") or ""),
-            ],
-        )
+        return ["Deprecated"], ["deprecated"], ["yes" if version.get("deprecated") else "no"]
     return [], [], []
 
 
@@ -282,6 +276,17 @@ def _resolve_repository_entry(
     kind: str | None = None,
     customer_id: str | None = None,
 ) -> dict:
+    return _resolve_repository(repo, profile, kind=kind, customer_id=customer_id)[0]
+
+
+def _resolve_repository(
+    repo: str,
+    profile: str | None,
+    *,
+    kind: str | None = None,
+    customer_id: str | None = None,
+) -> tuple[dict, str | None]:
+    """Resolve a repository and return it with the ETag of that read."""
     candidate = repo.strip().strip("/")
     if not candidate:
         output.fatal("Repository selector cannot be empty.")
@@ -297,7 +302,7 @@ def _resolve_repository_entry(
     options = _root_package_options()
     profile = profile or options.get("profile")
     try:
-        return resolve_repository_entry(
+        return resolve_repository(
             _client(profile), selector, _customer_id(profile, customer_id), kind
         )
     except ApiError as exc:
@@ -367,7 +372,7 @@ def repo_list(
         if value is not None
     }
     try:
-        items = collection_items(client.get(artifacts_path("repositories"), params=params).json())
+        items = collection_all(client, artifacts_path("repositories"), params)
     except (ApiError, ValueError) as exc:
         output.fatal(str(exc))
 
@@ -445,10 +450,8 @@ def repo_create(
     client = _client(profile)
     try:
         selected_customer_id = _customer_id(profile, customer_id)
-        namespaces = collection_items(
-            client.get(
-                platform_path("namespaces"), params={"account_ref": selected_customer_id}
-            ).json()
+        namespaces = collection_all(
+            client, platform_path("namespaces"), {"account_ref": selected_customer_id}
         )
         matches = [
             namespace
@@ -562,14 +565,23 @@ def repo_delete(
     profile: str | None = typer.Option(None, "--profile", "-p"),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation prompt."),
 ) -> None:
-    """Delete a repository."""
+    """Delete a repository.
+
+    The deletion applies only if the repository is unchanged since this command
+    read it; otherwise nothing is deleted.
+    """
     if not yes:
         typer.confirm(f"Delete repository '{repo}' and all its content?", abort=True)
     client = _client(profile)
     try:
-        repository = _resolve_repository_entry(repo, profile)
-        client.delete(_repository_path(repository["ref"]))
+        repository, etag = _resolve_repository(repo, profile)
+        client.delete(_repository_path(repository["ref"]), headers=if_match(etag))
     except ApiError as exc:
+        if exc.precondition_failed:
+            output.fatal(
+                f"Repository '{repo}' changed since it was read; nothing was deleted. "
+                "Re-run to review the current repository."
+            )
         output.fatal(str(exc))
     output.success(f"Deleted repository '{repo}'.")
 
@@ -581,12 +593,25 @@ def repo_rename(
     new_name: str = typer.Argument(..., help="New repository name."),
     profile: str | None = typer.Option(None, "--profile", "-p"),
 ) -> None:
-    """Rename a repository."""
+    """Rename a repository.
+
+    The rename applies only if the repository is unchanged since this command
+    read it; otherwise nothing is renamed.
+    """
     client = _client(profile)
     try:
-        repository = _resolve_repository_entry(repo, profile)
-        updated = client.patch(_repository_path(repository["ref"]), json={"name": new_name}).json()
+        repository, etag = _resolve_repository(repo, profile)
+        updated = client.patch(
+            _repository_path(repository["ref"]),
+            json={"name": new_name},
+            headers=if_match(etag),
+        ).json()
     except ApiError as exc:
+        if exc.precondition_failed:
+            output.fatal(
+                f"Repository '{repo}' changed since it was read; nothing was renamed. "
+                "Re-run to review the current repository."
+            )
         output.fatal(str(exc))
     output.success(f"Renamed repository '{repo}' to '{updated['name']}'.")
 
@@ -639,8 +664,7 @@ def upstream_list(
     client = _client(profile)
     try:
         destination = _resolve_repository_entry(repository, profile, kind=registry_kind)
-        payload = client.get(_upstream_path(destination["ref"], registry_kind)).json()
-        items = collection_items(payload)
+        items = collection_all(client, _upstream_path(destination["ref"], registry_kind))
     except (ApiError, KeyError, TypeError, ValueError) as exc:
         output.fatal(str(exc))
     _print_upstreams(items)
@@ -803,7 +827,7 @@ def remote_list(
     if kind:
         params["format"] = kind
     try:
-        items = collection_items(client.get(artifacts_path("remote-caches"), params=params).json())
+        items = collection_all(client, artifacts_path("remote-caches"), params)
     except (ApiError, ValueError) as exc:
         output.fatal(str(exc))
     if not items:
@@ -863,11 +887,8 @@ def remote_create(
         _require_package_kind(kind)
     client = _client(profile)
     try:
-        sources = collection_items(
-            client.get(
-                artifacts_path("official-sources"),
-                params={"account_ref": customer_id},
-            ).json()
+        sources = collection_all(
+            client, artifacts_path("official-sources"), {"account_ref": customer_id}
         )
         matches = [
             item
@@ -952,6 +973,24 @@ def remote_show(
     )
 
 
+def _read_remote_cache(client: ApiClient, remote: str, kind: str | None) -> tuple[dict, str | None]:
+    """Read a remote cache before a conditional write; return it and its ETag."""
+    response = client.get(_remote_cache_path(remote))
+    item = response.json()
+    if kind and item["format"] != kind:
+        output.fatal(f"Private mirror '{remote}' is for {item['format']}, not {kind}.")
+    return item, response_etag(response)
+
+
+def _remote_cache_write_failed(exc: ApiError, remote: str, outcome: str) -> NoReturn:
+    if exc.precondition_failed:
+        output.fatal(
+            f"Private mirror '{remote}' changed since it was read; {outcome}. "
+            "Re-run to review the current mirror."
+        )
+    output.fatal(str(exc))
+
+
 @remote_app.command("set-age")
 def remote_set_age(
     remote: str = typer.Argument(
@@ -971,9 +1010,14 @@ def remote_set_age(
         _require_package_kind(kind)
     client = _client(profile)
     try:
-        client.patch(_remote_cache_path(remote), json={"min_age_hours": min_age_hours})
+        _, etag = _read_remote_cache(client, remote, kind)
+        client.patch(
+            _remote_cache_path(remote),
+            json={"min_age_hours": min_age_hours},
+            headers=if_match(etag),
+        )
     except ApiError as exc:
-        output.fatal(str(exc))
+        _remote_cache_write_failed(exc, remote, "nothing was updated")
     output.success(f"Updated private mirror minimum package age for '{remote}'.")
 
 
@@ -994,13 +1038,16 @@ def remote_delete(
     del account, customer_id
     if kind:
         _require_package_kind(kind)
-    if not yes:
-        typer.confirm(f"Delete private mirror '{remote}'?", abort=True)
     client = _client(profile)
     try:
-        client.delete(_remote_cache_path(remote))
+        item, etag = _read_remote_cache(client, remote, kind)
+        if not yes:
+            typer.confirm(
+                f"Delete private mirror '{remote}' ({remote_target_name(item)})?", abort=True
+            )
+        client.delete(_remote_cache_path(remote), headers=if_match(etag))
     except ApiError as exc:
-        output.fatal(str(exc))
+        _remote_cache_write_failed(exc, remote, "nothing was deleted")
     output.success(f"Deleted private mirror '{remote}'.")
 
 
@@ -1024,8 +1071,8 @@ def package_list(
     client = _client(profile)
     try:
         repository_unique_ref = _resolved_repository_unique_ref(repo, profile, kind=registry_kind)
-        items = collection_items(
-            client.get(_format_path(repository_unique_ref, registry_kind, "packages")).json()
+        items = collection_all(
+            client, _format_path(repository_unique_ref, registry_kind, "packages")
         )
     except (ApiError, ValueError) as exc:
         output.fatal(str(exc))
@@ -1052,6 +1099,28 @@ def package_list(
     )
 
 
+_DEFAULT_VERSION_LIMIT = 50
+_MAX_VERSION_LIMIT = 100
+
+
+def _yes_no(value: object) -> str:
+    return "yes" if value else "no"
+
+
+def _dist_tags_label(tags: object) -> str:
+    if not isinstance(tags, dict):
+        return ""
+    return ", ".join(f"{tag}={version}" for tag, version in sorted(tags.items()))
+
+
+def _digests_label(digests: object) -> str:
+    """Show every digest as ``algorithm:hex``; algorithms are an open set."""
+    if not isinstance(digests, dict):
+        return ""
+    order = sorted(digests, key=lambda algorithm: (algorithm != "sha256", str(algorithm)))
+    return "\n".join(f"{algorithm}:{digests[algorithm]}" for algorithm in order)
+
+
 @package_app.command("show")
 def package_show(
     account: str | None = typer.Option(None, "--account"),
@@ -1063,77 +1132,161 @@ def package_show(
         "-f",
         help="Package format: pypi | npm | maven.",
     ),
+    version: str | None = typer.Option(
+        None, "--version", help="Show one version with its files and digests."
+    ),
+    limit: int | None = typer.Option(
+        None,
+        "--limit",
+        min=1,
+        max=_MAX_VERSION_LIMIT,
+        help=f"Newest versions to list (default {_DEFAULT_VERSION_LIMIT}).",
+    ),
+    all_versions: bool = typer.Option(
+        False, "--all-versions", help="List every version instead of only the newest."
+    ),
     profile: str | None = typer.Option(None, "--profile", "-p"),
 ) -> None:
-    """Show package metadata and versions."""
+    """Show a package summary and its newest versions, or one version in detail."""
+    if version is not None and (limit is not None or all_versions):
+        output.fatal("--version cannot be combined with --limit or --all-versions.")
+    if limit is not None and all_versions:
+        output.fatal("--limit and --all-versions are mutually exclusive.")
     registry_kind = _require_package_kind(kind)
     client = _client(profile)
     try:
         repository_unique_ref = _resolved_repository_unique_ref(repo, profile, kind=registry_kind)
-        item = client.get(
-            _format_path(repository_unique_ref, registry_kind, "package"),
-            params={"package_name": name},
-        ).json()
-    except ApiError as exc:
+        if version is not None:
+            detail = client.get(
+                _format_path(repository_unique_ref, registry_kind, "package/version"),
+                params={"package_name": name, "version": version},
+            ).json()
+        else:
+            item = client.get(
+                _format_path(repository_unique_ref, registry_kind, "package"),
+                params={"package_name": name},
+            ).json()
+            versions = read_collection(
+                client,
+                _format_path(repository_unique_ref, registry_kind, "package/versions"),
+                {"package_name": name},
+                max_items=None if all_versions else limit or _DEFAULT_VERSION_LIMIT,
+            )
+    except (ApiError, ValueError) as exc:
         output.fatal(str(exc))
+
+    if version is not None:
+        _print_package_version(repository_unique_ref, name, registry_kind, detail)
+        return
 
     output.kv(
         {
             "Repository": repository_unique_ref,
             "Name": item["name"],
-            "Status": item.get("status") or "active",
+            "Status": str(item.get("status") or "active"),
+            "Status reason": item.get("status_reason") or "",
             "Latest": item.get("latest_version") or "",
+            "Latest stable": item.get("latest_stable_version") or "",
             "Versions": str(item.get("version_count", "")),
             "Size": str(item.get("total_size_bytes", "")),
+            "Last upload": str(item.get("latest_uploaded_at") or ""),
+            "Distribution tags": _dist_tags_label(item.get("dist_tags")),
         },
         title=name,
-        json_keys=["repository", "name", "status", "latest", "versions", "size"],
+        json_keys=[
+            "repository",
+            "name",
+            "status",
+            "status_reason",
+            "latest",
+            "latest_stable",
+            "versions",
+            "size",
+            "latest_uploaded_at",
+            "dist_tags",
+        ],
     )
 
-    versions = item.get("versions") or []
-    if versions:
+    if versions.items:
         lifecycle_headings, lifecycle_keys, _ = _package_lifecycle_columns(
-            registry_kind, versions[0]
+            registry_kind, versions.items[0]
         )
         output.table(
-            ["Version", *lifecycle_headings, "Files", "Size", "Downloads", "Bandwidth"],
+            ["Version", *lifecycle_headings, "Published", "Files", "Size", "Downloads"],
             [
                 [
-                    version.get("version", ""),
-                    *_package_lifecycle_columns(registry_kind, version)[2],
-                    str(len(version.get("files") or [])),
-                    str(version.get("total_size_bytes", "")),
-                    str(version.get("downloads", "0")),
-                    str(version.get("bandwidth_bytes", "0")),
+                    str(entry.get("version", "")),
+                    *_package_lifecycle_columns(registry_kind, entry)[2],
+                    str(entry.get("published_at") or ""),
+                    str(entry.get("file_count", "")),
+                    str(entry.get("size_bytes", "")),
+                    str(entry.get("downloads", "0")),
                 ]
-                for version in versions
+                for entry in versions.items
             ],
-            json_keys=[
-                "version",
-                *lifecycle_keys,
-                "files",
-                "size",
-                "downloads",
-                "bandwidth",
-            ],
+            title="Versions (newest first)",
+            json_keys=["version", *lifecycle_keys, "published_at", "files", "size", "downloads"],
         )
-        artifacts = [
+    if versions.next_cursor is not None:
+        click.echo(
+            f"Showing the newest {len(versions.items)} of {item.get('version_count', 'more')} "
+            "versions. Pass --all-versions to list every version or --version VERSION "
+            "for one version.",
+            err=True,
+        )
+
+
+def _print_package_version(
+    repository_ref: str, name: str, registry_kind: str, detail: dict
+) -> None:
+    if output.is_json():
+        click.echo(json.dumps({"repository": repository_ref, "package": name, **detail}))
+        return
+    lifecycle: dict[str, str | None] = {}
+    if registry_kind == "pypi":
+        lifecycle = {
+            "Yanked": _yes_no(detail.get("yanked")),
+            "Yank reason": detail.get("yanked_reason") or "",
+        }
+    elif registry_kind == "npm":
+        lifecycle = {
+            "Deprecated": _yes_no(detail.get("deprecated")),
+            "Deprecation message": detail.get("deprecated_reason") or "",
+        }
+    keywords = detail.get("keywords")
+    output.kv(
+        {
+            "Repository": repository_ref,
+            "Package": name,
+            "Version": str(detail.get("version", "")),
+            "Published": str(detail.get("published_at") or ""),
+            **lifecycle,
+            "Summary": detail.get("summary") or "",
+            "License": detail.get("license") or "",
+            "Home page": detail.get("home_page") or "",
+            "Keywords": ", ".join(str(word) for word in keywords)
+            if isinstance(keywords, list)
+            else "",
+            "Size": str(detail.get("size_bytes", "")),
+            "Downloads": str(detail.get("downloads", "0")),
+        },
+        title=f"{name} {detail.get('version', '')}",
+    )
+    files = detail.get("files") or []
+    if files:
+        output.table(
+            ["File", "Size", "Published", "Digests"],
             [
-                str(version.get("version", "")),
-                str(artifact.get("filename", "")),
-                str(artifact.get("size", "")),
-                str(artifact.get("sha256_digest") or ""),
-            ]
-            for version in versions
-            for artifact in version.get("files") or []
-        ]
-        if artifacts:
-            output.table(
-                ["Version", "Artifact", "Size", "SHA256"],
-                artifacts,
-                title="Artifacts",
-                json_keys=["version", "artifact", "size", "sha256"],
-            )
+                [
+                    str(entry.get("filename", "")),
+                    str(entry.get("size_bytes", "")),
+                    str(entry.get("published_at") or ""),
+                    _digests_label(entry.get("digests")),
+                ]
+                for entry in files
+            ],
+            title="Files",
+        )
 
 
 @package_app.command("delete")

@@ -27,8 +27,12 @@ MAVEN_PUSH_URL = "https://push.maven.packages.example.test"
 
 
 class _JsonResponse:
-    def __init__(self, payload: Any) -> None:
+    def __init__(
+        self, payload: Any, *, headers: dict[str, str] | None = None, status_code: int = 200
+    ) -> None:
         self._payload = payload
+        self.headers = headers or {}
+        self.status_code = status_code
 
     def json(self) -> Any:
         return self._payload
@@ -38,15 +42,21 @@ class _FakeApiClient:
     def __init__(self, responses: list[Any] | None = None) -> None:
         self.responses = responses or []
         self.calls: list[tuple[str, str, Any]] = []
+        self.request_headers: list[tuple[str, str, dict[str, str] | None]] = []
+
+    def _next(self, default: Any = None) -> _JsonResponse:
+        payload = self.responses.pop(0) if self.responses else default
+        if isinstance(payload, _JsonResponse):
+            return payload
+        if isinstance(payload, list):
+            payload = {"items": payload, "next_cursor": None}
+        return _JsonResponse(payload)
 
     def get(self, path: str, params: dict[str, Any] | None = None) -> _JsonResponse:
         self.calls.append(("GET", path, params))
         if path == "/v0/artifacts/repositories/resolve" and not self.responses:
             return _JsonResponse(_repository_entry())
-        payload = self.responses.pop(0)
-        if isinstance(payload, list):
-            payload = {"items": payload, "next_cursor": None}
-        return _JsonResponse(payload)
+        return self._next()
 
     def issue_native(self, path: str, payload: dict):
         assert payload["duration_seconds"] == 14400
@@ -60,8 +70,7 @@ class _FakeApiClient:
             return _JsonResponse(
                 {
                     "access_token": "rvs_sltAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
-                    "native_realm": "in",
-                    "native_paths": {kind: "/in/ar_xyzabcde" for kind in json["formats"]},
+                    "native_path": "/in/ar_xyzabcde",
                 }
             )
         return _JsonResponse(self.responses.pop(0) if self.responses else {})
@@ -71,18 +80,26 @@ class _FakeApiClient:
         path: str,
         json: Any = None,
         params: dict[str, Any] | None = None,
+        headers: dict[str, str] | None = None,
     ) -> _JsonResponse:
         payload = {"json": json, "params": params} if params is not None else json
         self.calls.append(("PATCH", path, payload))
-        return _JsonResponse(self.responses.pop(0) if self.responses else {})
+        self.request_headers.append(("PATCH", path, headers))
+        return self._next({})
 
     def put(self, path: str, json: Any = None) -> _JsonResponse:
         self.calls.append(("PUT", path, json))
-        return _JsonResponse(self.responses.pop(0) if self.responses else {})
+        return self._next({})
 
-    def delete(self, path: str, params: dict[str, Any] | None = None) -> _JsonResponse:
+    def delete(
+        self,
+        path: str,
+        params: dict[str, Any] | None = None,
+        headers: dict[str, str] | None = None,
+    ) -> _JsonResponse:
         self.calls.append(("DELETE", path, params))
-        return _JsonResponse(self.responses.pop(0) if self.responses else {})
+        self.request_headers.append(("DELETE", path, headers))
+        return self._next(None)
 
 
 _ACCOUNT_SUMMARY = {"ref": "ac_23456789", "handle": "test-account", "type": "organization"}
@@ -121,8 +138,6 @@ def _repository_entry(name: str = "repo", **overrides: Any) -> dict[str, Any]:
             "manifest_count": 0,
             "storage_bytes": 0,
         },
-        "is_deleted": False,
-        "deleted_at": None,
         "latest_uploaded_at": None,
         "created_at": "2026-09-01T00:00:00Z",
         "updated_at": "2026-09-01T00:00:00Z",
@@ -196,7 +211,7 @@ def test_artifacts_repo_list_filters_by_kind_and_uses_profile_customer(
         (
             "GET",
             "/v0/artifacts/repositories",
-            {"account_ref": "ac_23456789", "format": "pypi"},
+            {"account_ref": "ac_23456789", "format": "pypi", "limit": 100},
         )
     ]
     assert "repo-pypi" in result.output
@@ -222,8 +237,8 @@ def test_artifacts_repo_list_omits_unset_query_filters(
 
     assert result.exit_code == 0
     assert fake.calls == [
-        ("GET", "/v0/artifacts/repositories", {"account_ref": "ac_23456789"}),
-        ("GET", "/v0/platform/accounts", None),
+        ("GET", "/v0/artifacts/repositories", {"account_ref": "ac_23456789", "limit": 100}),
+        ("GET", "/v0/platform/accounts", {"limit": 100}),
     ]
     assert "Account" in result.output
     assert "test-account" in result.output
@@ -320,7 +335,7 @@ def test_create_resolves_namespace_inside_selected_customer(
     )
     assert result.exit_code == 0, result.output
     assert fake.calls == [
-        ("GET", "/v0/platform/namespaces", {"account_ref": "ac_23456789"}),
+        ("GET", "/v0/platform/namespaces", {"account_ref": "ac_23456789", "limit": 100}),
         (
             "POST",
             "/v0/artifacts/repositories",
@@ -341,7 +356,9 @@ def test_create_with_deferred_personal_namespace_requests_onboarding(monkeypatch
     result = runner.invoke(artifacts_cmd.app, ["repo", "create", "new-node", "-f", "npm"])
     assert result.exit_code != 0
     assert "finish onboarding" in result.output
-    assert fake.calls == [("GET", "/v0/platform/namespaces", {"account_ref": "ac_23456789"})]
+    assert fake.calls == [
+        ("GET", "/v0/platform/namespaces", {"account_ref": "ac_23456789", "limit": 100})
+    ]
 
 
 @pytest.mark.parametrize("flags", [["--public"], ["--scope", "public"]])
@@ -512,7 +529,7 @@ def test_artifacts_remote_management_and_upstream_configuration(
         (
             "GET",
             "/v0/artifacts/official-sources",
-            {"account_ref": "ac_23456789"},
+            {"account_ref": "ac_23456789", "limit": 100},
         ),
         (
             "POST",
@@ -599,7 +616,7 @@ def test_artifacts_official_remote_add_uses_public_source_ref(monkeypatch, tmp_p
         (
             "GET",
             "/v0/artifacts/official-sources",
-            {"account_ref": "ac_23456789"},
+            {"account_ref": "ac_23456789", "limit": 100},
         ),
         (
             "POST",
@@ -626,7 +643,11 @@ def test_artifacts_official_remote_list_reports_external_publication_control(
 
     assert result.exit_code == 0
     assert fake.calls == [
-        ("GET", "/v0/artifacts/remote-caches", {"account_ref": "ac_23456789", "format": "pypi"})
+        (
+            "GET",
+            "/v0/artifacts/remote-caches",
+            {"account_ref": "ac_23456789", "format": "pypi", "limit": 100},
+        )
     ]
     assert tables[0][1][0][0] == "org:test-account"
     assert tables[0][0][1] == "Remote-cache ref"
@@ -659,7 +680,13 @@ def test_artifacts_mirror_set_age_and_delete_address_the_cache_by_ref_only(
     monkeypatch, tmp_path: Path
 ) -> None:
     _isolate_config(monkeypatch, tmp_path)
-    fake = _FakeApiClient([_remote_cache(min_age_hours=12.0), {}])
+    fake = _FakeApiClient(
+        [
+            _JsonResponse(_remote_cache(), headers={"ETag": '"rev-1"'}),
+            _remote_cache(min_age_hours=12.0),
+            _JsonResponse(_remote_cache(min_age_hours=12.0), headers={"ETag": '"rev-2"'}),
+        ]
+    )
     _use_fake_client(monkeypatch, fake)
 
     updated = runner.invoke(
@@ -671,9 +698,115 @@ def test_artifacts_mirror_set_age_and_delete_address_the_cache_by_ref_only(
     assert updated.exit_code == 0, updated.output
     assert deleted.exit_code == 0, deleted.output
     assert fake.calls == [
+        ("GET", "/v0/artifacts/remote-caches/rc_abcdefgh", None),
         ("PATCH", "/v0/artifacts/remote-caches/rc_abcdefgh", {"min_age_hours": 12.0}),
+        ("GET", "/v0/artifacts/remote-caches/rc_abcdefgh", None),
         ("DELETE", "/v0/artifacts/remote-caches/rc_abcdefgh", None),
     ]
+    # Each write is conditional on the ETag this same command read.
+    assert fake.request_headers == [
+        ("PATCH", "/v0/artifacts/remote-caches/rc_abcdefgh", {"If-Match": '"rev-1"'}),
+        ("DELETE", "/v0/artifacts/remote-caches/rc_abcdefgh", {"If-Match": '"rev-2"'}),
+    ]
+
+
+def test_artifacts_mirror_set_age_rejects_a_mirror_of_another_format(
+    monkeypatch, tmp_path: Path
+) -> None:
+    _isolate_config(monkeypatch, tmp_path)
+    fake = _FakeApiClient([_JsonResponse(_remote_cache(), headers={"ETag": '"rev-1"'})])
+    _use_fake_client(monkeypatch, fake)
+
+    result = runner.invoke(
+        artifacts_cmd.app,
+        ["mirror", "set-age", "rc_abcdefgh", "--min-age-hours", "1", "--format", "npm"],
+    )
+
+    assert result.exit_code == 1
+    assert "is for pypi, not npm" in result.output
+    assert [call[0] for call in fake.calls] == ["GET"]
+
+
+class _PreconditionFailingClient(_FakeApiClient):
+    def _fail(self) -> None:
+        from rvs.client import ApiError
+
+        raise ApiError(
+            412,
+            {"code": "PreconditionFailed", "message": "If-Match does not match the ETag"},
+        )
+
+    def patch(self, path: str, json: Any = None, params: Any = None, headers: Any = None):
+        super().patch(path, json=json, params=params, headers=headers)
+        self._fail()
+
+    def delete(self, path: str, params: Any = None, headers: Any = None):
+        super().delete(path, params=params, headers=headers)
+        self._fail()
+
+
+@pytest.mark.parametrize(
+    ("argv", "subject", "outcome"),
+    [
+        (
+            ["mirror", "set-age", "rc_abcdefgh", "--min-age-hours", "3"],
+            "Private mirror 'rc_abcdefgh'",
+            "nothing was updated",
+        ),
+        (
+            ["mirror", "delete", "rc_abcdefgh", "--yes"],
+            "Private mirror 'rc_abcdefgh'",
+            "nothing was deleted",
+        ),
+        (["repo", "rename", "in/ar_xyzabcde", "renamed"], "Repository", "nothing was renamed"),
+        (["repo", "delete", "in/ar_xyzabcde", "--yes"], "Repository", "nothing was deleted"),
+    ],
+)
+def test_conditional_writes_explain_a_concurrent_change(
+    monkeypatch, tmp_path: Path, argv: list[str], subject: str, outcome: str
+) -> None:
+    _isolate_config(monkeypatch, tmp_path)
+    etagged = (
+        _JsonResponse(_repository_entry(), headers={"ETag": '"rev-9"'})
+        if argv[0] == "repo"
+        else _JsonResponse(_remote_cache(), headers={"ETag": '"rev-9"'})
+    )
+    fake = _PreconditionFailingClient([etagged])
+    _use_fake_client(monkeypatch, fake)
+
+    result = runner.invoke(artifacts_cmd.app, argv)
+
+    assert result.exit_code == 1
+    message = " ".join(result.output.split())
+    assert subject in message
+    assert "changed since it was read" in message
+    assert outcome in message
+    assert "Re-run to review" in message
+    assert fake.request_headers[0][2] == {"If-Match": '"rev-9"'}
+
+
+def test_repo_rename_sends_the_etag_of_its_resolve_read(monkeypatch, tmp_path: Path) -> None:
+    _isolate_config(monkeypatch, tmp_path)
+    fake = _FakeApiClient(
+        [
+            _JsonResponse(_repository_entry(), headers={"ETag": '"rev-3"'}),
+            _repository_entry("renamed"),
+        ]
+    )
+    _use_fake_client(monkeypatch, fake)
+
+    result = runner.invoke(artifacts_cmd.app, ["repo", "rename", "in/ar_xyzabcde", "renamed"])
+
+    assert result.exit_code == 0, result.output
+    assert fake.calls[-1] == (
+        "PATCH",
+        "/v0/artifacts/repositories/ar_xyzabcde",
+        {"name": "renamed"},
+    )
+    assert fake.request_headers == [
+        ("PATCH", "/v0/artifacts/repositories/ar_xyzabcde", {"If-Match": '"rev-3"'})
+    ]
+    assert "renamed" in result.output
 
 
 def _private_source() -> dict[str, Any]:
@@ -792,7 +925,7 @@ def test_artifacts_repo_upstream_list_is_addressed_by_position(monkeypatch, tmp_
     assert fake.calls[-1] == (
         "GET",
         "/v0/artifacts/repositories/ar_xyzabcde/formats/pypi/upstreams",
-        None,
+        {"limit": 100},
     )
     rows = json.loads(result.output)["items"]
     assert [row["position"] for row in rows] == ["1", "3"]
@@ -959,104 +1092,302 @@ def test_artifacts_repo_upstream_position_is_limited_to_four_slots() -> None:
     assert "1<=x<=4" in result.output
 
 
-def test_artifacts_package_list_and_show_use_repository_package_paths(
-    monkeypatch,
-    tmp_path: Path,
+def _package_summary(**overrides: Any) -> dict[str, Any]:
+    return {
+        "name": "demo",
+        "normalized_name": "demo",
+        "status": "quarantined",
+        "status_reason": None,
+        "latest_version": "1.2.3",
+        "latest_stable_version": "1.2.3",
+        "version_count": 3,
+        "total_size_bytes": 1234,
+        "latest_uploaded_at": "2026-09-01T00:00:00Z",
+        "dist_tags": {},
+        **overrides,
+    }
+
+
+def _version_summary(version: str, **overrides: Any) -> dict[str, Any]:
+    return {
+        "version": version,
+        "published_at": "2026-09-01T00:00:00Z",
+        "yanked": False,
+        "deprecated": False,
+        "file_count": 1,
+        "size_bytes": 1000,
+        "downloads": 4,
+        **overrides,
+    }
+
+
+def test_artifacts_package_list_follows_every_page(monkeypatch, tmp_path: Path) -> None:
+    _isolate_config(monkeypatch, tmp_path)
+    fake = _FakeApiClient(
+        [
+            _repository_entry("repo-pypi"),
+            {"items": [{"name": "alpha", "version_count": 1}], "next_cursor": "c1"},
+            {"items": [{"name": "beta", "version_count": 2}], "next_cursor": "c2"},
+            {"items": [{"name": "gamma", "version_count": 3}], "next_cursor": None},
+        ]
+    )
+    _use_fake_client(monkeypatch, fake)
+
+    result = runner.invoke(
+        artifacts_cmd.app, ["package", "list", "--target", "repo-pypi", "--format", "pypi"]
+    )
+
+    assert result.exit_code == 0, result.output
+    path = "/v0/artifacts/repositories/ar_xyzabcde/formats/pypi/packages"
+    assert fake.calls[1:] == [
+        ("GET", path, {"limit": 100}),
+        ("GET", path, {"limit": 100, "cursor": "c1"}),
+        ("GET", path, {"limit": 100, "cursor": "c2"}),
+    ]
+    for name in ("alpha", "beta", "gamma"):
+        assert name in result.output
+
+
+def test_artifacts_package_show_lists_the_newest_versions_and_says_when_more_exist(
+    monkeypatch, tmp_path: Path
 ) -> None:
     _isolate_config(monkeypatch, tmp_path)
     fake = _FakeApiClient(
         [
             _repository_entry("repo-pypi"),
+            _package_summary(),
             {
-                "items": [
-                    {
-                        "name": "demo",
-                        "normalized_name": "demo",
-                        "latest_version": "1.2.3",
-                        "version_count": 2,
-                        "total_size_bytes": 1234,
-                    }
-                ],
-                "next_cursor": None,
-            },
-            _repository_entry("repo-pypi"),
-            {
-                "name": "demo",
-                "normalized_name": "demo",
-                "status": "quarantined",
-                "status_reason": None,
-                "latest_version": "1.2.3",
-                "version_count": 2,
-                "total_size_bytes": 1234,
-                "versions": [
-                    {
-                        "version": "1.2.3",
-                        "yanked": False,
-                        "files": [{"filename": "demo.whl"}],
-                        "total_size_bytes": 1000,
-                    }
-                ],
+                "items": [_version_summary("1.2.3"), _version_summary("1.2.2", yanked=True)],
+                "next_cursor": "v2",
             },
         ]
     )
     _use_fake_client(monkeypatch, fake)
 
-    list_result = runner.invoke(
-        artifacts_cmd.app, ["package", "list", "--target", "repo-pypi", "--format", "pypi"]
-    )
-    show_result = runner.invoke(
+    result = runner.invoke(
         artifacts_cmd.app,
-        ["package", "show", "demo", "--target", "repo-pypi", "--format", "pypi"],
+        ["package", "show", "demo", "--target", "repo-pypi", "--format", "pypi", "--limit", "2"],
     )
 
-    assert list_result.exit_code == 0
-    assert show_result.exit_code == 0
-    assert fake.calls == [
-        (
-            "GET",
-            "/v0/artifacts/repositories/resolve",
-            {
-                "selector": "repo-pypi",
-                "account_ref": "ac_23456789",
-                "format": "pypi",
-            },
-        ),
-        (
-            "GET",
-            "/v0/artifacts/repositories/ar_xyzabcde/formats/pypi/packages",
-            None,
-        ),
-        (
-            "GET",
-            "/v0/artifacts/repositories/resolve",
-            {
-                "selector": "repo-pypi",
-                "account_ref": "ac_23456789",
-                "format": "pypi",
-            },
-        ),
+    assert result.exit_code == 0, result.output
+    assert fake.calls[1:] == [
         (
             "GET",
             "/v0/artifacts/repositories/ar_xyzabcde/formats/pypi/package",
             {"package_name": "demo"},
         ),
+        (
+            "GET",
+            "/v0/artifacts/repositories/ar_xyzabcde/formats/pypi/package/versions",
+            {"package_name": "demo", "limit": 2},
+        ),
     ]
-    assert "demo" in list_result.output
-    assert "1.2.3" in show_result.output
-    assert "Status" in show_result.output
-    assert "quarantined" in show_result.output
-    assert "ar_xyzabcde" in show_result.output
-    assert "Yank reason" in show_result.output
+    assert "quarantined" in result.stdout
+    assert "1.2.3" in result.stdout
+    assert "1.2.2" in result.stdout
+    assert "Yanked" in result.stdout
+    assert "ar_xyzabcde" in result.stdout
+    note = " ".join(result.stderr.split())
+    assert "Showing the newest 2 of 3 versions" in note
+    assert "--all-versions" in note
+
+
+def test_artifacts_package_show_default_reads_one_page_of_versions(
+    monkeypatch, tmp_path: Path
+) -> None:
+    _isolate_config(monkeypatch, tmp_path)
+    fake = _FakeApiClient(
+        [
+            _repository_entry("repo-pypi"),
+            _package_summary(version_count=1),
+            {"items": [_version_summary("1.2.3")], "next_cursor": None},
+        ]
+    )
+    _use_fake_client(monkeypatch, fake)
+
+    result = runner.invoke(
+        artifacts_cmd.app,
+        ["package", "show", "demo", "--target", "repo-pypi", "--format", "pypi"],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert fake.calls[-1][2] == {"package_name": "demo", "limit": 50}
+    assert "Showing the newest" not in result.stderr
+
+
+def test_artifacts_package_show_all_versions_follows_every_page_as_json(
+    monkeypatch, tmp_path: Path
+) -> None:
+    _isolate_config(monkeypatch, tmp_path)
+    fake = _FakeApiClient(
+        [
+            _repository_entry("repo-npm"),
+            _package_summary(dist_tags={"latest": "1.2.3", "next": "2.0.0-rc.1"}),
+            {"items": [_version_summary("2.0.0-rc.1")], "next_cursor": "v1"},
+            {
+                "items": [_version_summary("1.2.3"), _version_summary("1.0.0", deprecated=True)],
+                "next_cursor": None,
+            },
+        ]
+    )
+    _use_fake_client(monkeypatch, fake)
+
+    output.set_json(True)
+    try:
+        result = runner.invoke(
+            artifacts_cmd.app,
+            ["package", "show", "demo", "-t", "repo-npm", "-f", "npm", "--all-versions"],
+        )
+    finally:
+        output.set_json(False)
+
+    assert result.exit_code == 0, result.output
+    versions_path = "/v0/artifacts/repositories/ar_xyzabcde/formats/npm/package/versions"
+    assert [call for call in fake.calls if call[1] == versions_path] == [
+        ("GET", versions_path, {"package_name": "demo", "limit": 100}),
+        ("GET", versions_path, {"package_name": "demo", "limit": 100, "cursor": "v1"}),
+    ]
+    summary, table = (json.loads(line) for line in result.stdout.splitlines())
+    assert summary["values"]["dist_tags"] == "latest=1.2.3, next=2.0.0-rc.1"
+    assert summary["values"]["latest_stable"] == "1.2.3"
+    assert [item["version"] for item in table["items"]] == ["2.0.0-rc.1", "1.2.3", "1.0.0"]
+    assert table["items"][2] == {
+        "version": "1.0.0",
+        "deprecated": "yes",
+        "published_at": "2026-09-01T00:00:00Z",
+        "files": "1",
+        "size": "1000",
+        "downloads": "4",
+    }
+
+
+def _version_detail() -> dict[str, Any]:
+    return {
+        "version": "1.2.3",
+        "published_at": "2026-09-01T00:00:00Z",
+        "yanked": True,
+        "yanked_reason": "broken wheel",
+        "deprecated": False,
+        "deprecated_reason": None,
+        "summary": "Demo package",
+        "description": "Long description",
+        "license": "MIT",
+        "home_page": "https://example.test/demo",
+        "keywords": ["demo", "example"],
+        "size_bytes": 2000,
+        "downloads": 9,
+        "files": [
+            {
+                "filename": "demo-1.2.3-py3-none-any.whl",
+                "size_bytes": 1500,
+                "published_at": "2026-09-01T00:00:00Z",
+                "digests": {"md5": "d" * 32, "sha256": "a" * 64, "blake3_256": "b" * 64},
+            },
+            {
+                "filename": "demo-1.2.3.tar.gz",
+                "size_bytes": 500,
+                "published_at": None,
+                "digests": {"sha256": "c" * 64},
+            },
+        ],
+    }
+
+
+def test_artifacts_package_show_version_prints_files_and_every_digest(
+    monkeypatch, tmp_path: Path
+) -> None:
+    _isolate_config(monkeypatch, tmp_path)
+    fake = _FakeApiClient([_repository_entry("repo-pypi"), _version_detail()])
+    _use_fake_client(monkeypatch, fake)
+    tables: list[tuple[list[str], list[list[str]]]] = []
+    monkeypatch.setattr(
+        artifacts_cmd.output,
+        "table",
+        lambda headers, rows, **_kwargs: tables.append((headers, rows)),
+    )
+
+    result = runner.invoke(
+        artifacts_cmd.app,
+        ["package", "show", "demo", "-t", "repo-pypi", "-f", "pypi", "--version", "1.2.3"],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert fake.calls[1:] == [
+        (
+            "GET",
+            "/v0/artifacts/repositories/ar_xyzabcde/formats/pypi/package/version",
+            {"package_name": "demo", "version": "1.2.3"},
+        )
+    ]
+    assert "broken wheel" in result.stdout
+    assert "MIT" in result.stdout
+    assert "demo, example" in result.stdout
+    assert tables == [
+        (
+            ["File", "Size", "Published", "Digests"],
+            [
+                [
+                    "demo-1.2.3-py3-none-any.whl",
+                    "1500",
+                    "2026-09-01T00:00:00Z",
+                    f"sha256:{'a' * 64}\nblake3_256:{'b' * 64}\nmd5:{'d' * 32}",
+                ],
+                ["demo-1.2.3.tar.gz", "500", "", f"sha256:{'c' * 64}"],
+            ],
+        )
+    ]
+
+
+def test_artifacts_package_show_version_json_keeps_the_digest_map(
+    monkeypatch, tmp_path: Path
+) -> None:
+    _isolate_config(monkeypatch, tmp_path)
+    fake = _FakeApiClient([_repository_entry("repo-pypi"), _version_detail()])
+    _use_fake_client(monkeypatch, fake)
+    output.set_json(True)
+    try:
+        result = runner.invoke(
+            artifacts_cmd.app,
+            ["package", "show", "demo", "-t", "repo-pypi", "-f", "pypi", "--version", "1.2.3"],
+        )
+    finally:
+        output.set_json(False)
+
+    assert result.exit_code == 0, result.output
+    document = json.loads(result.stdout)
+    assert document["repository"] == "ar_xyzabcde"
+    assert document["package"] == "demo"
+    assert document["files"][0]["digests"]["blake3_256"] == "b" * 64
+
+
+@pytest.mark.parametrize(
+    "extra", [["--version", "1.0", "--limit", "2"], ["--limit", "2", "--all-versions"]]
+)
+def test_artifacts_package_show_rejects_conflicting_version_options(
+    monkeypatch, tmp_path: Path, extra: list[str]
+) -> None:
+    _isolate_config(monkeypatch, tmp_path)
+    fake = _FakeApiClient()
+    _use_fake_client(monkeypatch, fake)
+
+    result = runner.invoke(
+        artifacts_cmd.app, ["package", "show", "demo", "-t", "repo-pypi", "-f", "pypi", *extra]
+    )
+
+    assert result.exit_code == 1
+    assert fake.calls == []
 
 
 def test_package_lifecycle_columns_follow_format_semantics() -> None:
-    assert artifacts_cmd._package_lifecycle_columns(
-        "npm",
-        {"deprecated": True, "deprecated_reason": "use version 3"},
-    ) == (
-        ["Deprecated", "Deprecation message"],
-        ["deprecated", "deprecated_reason"],
-        ["yes", "use version 3"],
+    assert artifacts_cmd._package_lifecycle_columns("npm", {"deprecated": True}) == (
+        ["Deprecated"],
+        ["deprecated"],
+        ["yes"],
+    )
+    assert artifacts_cmd._package_lifecycle_columns("pypi", {"yanked": False}) == (
+        ["Yanked"],
+        ["yanked"],
+        ["no"],
     )
     assert artifacts_cmd._package_lifecycle_columns("maven", {}) == ([], [], [])
 
@@ -1366,12 +1697,8 @@ def test_scoped_npm_package_names_stay_in_the_query(monkeypatch, tmp_path: Path)
     fake = _FakeApiClient(
         [
             _repository_entry("repo-npm"),
-            {
-                "name": "@scope/pkg",
-                "normalized_name": "@scope/pkg",
-                "status": "active",
-                "versions": [],
-            },
+            _package_summary(name="@scope/pkg", normalized_name="@scope/pkg", status="active"),
+            {"items": [], "next_cursor": None},
             _repository_entry("repo-npm"),
             {"version": "2.0.0", "deprecated": True, "files": []},
         ]
@@ -1403,7 +1730,50 @@ def test_scoped_npm_package_names_stay_in_the_query(monkeypatch, tmp_path: Path)
     package_calls = [call for call in fake.calls if "/formats/npm/" in call[1]]
     assert [call[1] for call in package_calls] == [
         "/v0/artifacts/repositories/ar_xyzabcde/formats/npm/package",
+        "/v0/artifacts/repositories/ar_xyzabcde/formats/npm/package/versions",
         "/v0/artifacts/repositories/ar_xyzabcde/formats/npm/package/version",
     ]
     assert package_calls[0][2] == {"package_name": "@scope/pkg"}
-    assert package_calls[1][2]["params"] == {"package_name": "@scope/pkg", "version": "2.0.0"}
+    assert package_calls[1][2] == {"package_name": "@scope/pkg", "limit": 50}
+    assert package_calls[2][2]["params"] == {"package_name": "@scope/pkg", "version": "2.0.0"}
+
+
+def test_unknown_open_enum_values_are_displayed_as_is(monkeypatch, tmp_path: Path) -> None:
+    _isolate_config(monkeypatch, tmp_path)
+    repository = _repository_entry(
+        "future",
+        formats=[
+            {"format": "pypi", "upstream_config_revision": 1},
+            {"format": "cargo", "upstream_config_revision": 1},
+        ],
+        allowed_actions=["content.read", "repository.audit"],
+    )
+    fake = _FakeApiClient(
+        [
+            [repository],
+            repository,
+            [
+                _upstream(
+                    1,
+                    kind="partner_feed",
+                    ref=None,
+                    display_name="partner",
+                    remote_source_type="partner",
+                )
+                | {"resolution_tier": "partner_tier", "publication_control": "partner_signed"}
+            ],
+            [_remote_cache(source_type="partner", remote_name="vendor", official_slug=None)],
+        ]
+    )
+    _use_fake_client(monkeypatch, fake)
+
+    repos = runner.invoke(artifacts_cmd.app, ["repo", "list"])
+    upstreams = runner.invoke(artifacts_cmd.app, ["repo", "upstream", "list", "future", "pypi"])
+    mirrors = runner.invoke(artifacts_cmd.app, ["mirror", "list"])
+
+    assert repos.exit_code == 0, repos.output
+    assert "pypi, cargo" in repos.output
+    assert upstreams.exit_code == 0, upstreams.output
+    assert "partner_feed" in upstreams.output
+    assert mirrors.exit_code == 0, mirrors.output
+    assert "partner" in mirrors.output

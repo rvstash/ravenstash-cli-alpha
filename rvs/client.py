@@ -16,17 +16,17 @@ from __future__ import annotations
 import importlib.metadata
 import random
 import time
-from datetime import UTC, datetime
-from email.utils import parsedate_to_datetime
 from typing import TYPE_CHECKING, Any
 
 from . import auth as auth_mod
 from . import config as cfg_mod
 from .devapi import (
     API_ROUTE_RETIRED,
+    PRECONDITION_FAILED,
     ApiVersionMismatchError,
     api_url,
     is_mint_token_path,
+    retry_after_seconds,
     validate_api_version,
 )
 
@@ -35,6 +35,26 @@ if TYPE_CHECKING:
     import httpx2 as httpx
 
     from .config import ProfileConfig
+
+
+# Idempotent reads are retried when the server asks the client to back off.
+_RETRYABLE_READ_STATUSES = frozenset({429, 503})
+_READ_STATUS_ATTEMPTS = 3
+_READ_STATUS_BACKOFF_SECONDS = (0.5, 2.0)
+# A longer Retry-After is reported to the user instead of blocking the command.
+MAX_RETRY_AFTER_SECONDS = 30.0
+
+
+def response_etag(response: Any) -> str | None:
+    """Return a response's ``ETag`` exactly as sent, for a later ``If-Match``."""
+    headers = getattr(response, "headers", None)
+    value = headers.get("ETag") if headers is not None else None
+    return value if isinstance(value, str) and value else None
+
+
+def if_match(etag: str | None) -> dict[str, str] | None:
+    """Return the conditional-write header for an ETag the command read."""
+    return {"If-Match": etag} if etag else None
 
 
 def rvs_user_agent() -> str:
@@ -53,7 +73,20 @@ class ApiError(Exception):
         self.retry_after = retry_after
         super().__init__(self._message())
 
+    @property
+    def code(self) -> str | None:
+        code = self.detail.get("code") if isinstance(self.detail, dict) else None
+        return code if isinstance(code, str) else None
+
+    @property
+    def precondition_failed(self) -> bool:
+        return self.status_code == 412 or self.code == PRECONDITION_FAILED
+
     def _message(self) -> str:
+        if self.precondition_failed:
+            return "The resource changed since it was read; re-run the command to review it."
+        if self.status_code in _RETRYABLE_READ_STATUSES and self.retry_after is not None:
+            return f"HTTP {self.status_code}: {self.detail} (retry after {self.retry_after:g}s)"
         if isinstance(self.detail, dict) and self.detail.get("code") == API_ROUTE_RETIRED:
             message = self.detail.get("message")
             return message if isinstance(message, str) and message else API_ROUTE_RETIRED
@@ -161,22 +194,7 @@ class ApiClient:
                 detail = payload.get("detail", resp.text)
         except Exception:
             detail = resp.text or resp.reason_phrase
-        retry_after = None
-        raw_retry_after = resp.headers.get("Retry-After")
-        if raw_retry_after:
-            try:
-                retry_after = max(0.0, float(raw_retry_after))
-            except ValueError:
-                try:
-                    retry_after = max(
-                        0.0,
-                        (
-                            parsedate_to_datetime(raw_retry_after) - datetime.now(UTC)
-                        ).total_seconds(),
-                    )
-                except TypeError, ValueError, OverflowError:
-                    pass
-        raise ApiError(resp.status_code, detail, retry_after=retry_after)
+        raise ApiError(resp.status_code, detail, retry_after=retry_after_seconds(resp.headers))
 
     def _validate_contract(self, resp: httpx.Response) -> None:
         try:
@@ -198,11 +216,18 @@ class ApiClient:
         return True
 
     def _request(
-        self, method: str, path: str, *, retry: bool = True, **kwargs: Any
+        self,
+        method: str,
+        path: str,
+        *,
+        retry: bool = True,
+        headers: dict[str, str] | None = None,
+        **kwargs: Any,
     ) -> httpx.Response:
         import httpx2 as httpx
 
-        transport_attempts = 3 if method.upper() == "GET" else 1
+        idempotent_read = method.upper() == "GET"
+        transport_attempts = 3 if idempotent_read else 1
         with httpx.Client(timeout=self._timeout) as hx:
 
             def send() -> httpx.Response:
@@ -211,7 +236,7 @@ class ApiClient:
                         return hx.request(
                             method,
                             self._url(path),
-                            headers=self._headers(),
+                            headers={**self._headers(), **(headers or {})},
                             **kwargs,
                         )
                     except httpx.TransportError:
@@ -227,14 +252,34 @@ class ApiClient:
             resp = send()
             if resp.status_code == 401 and retry and self._refresh(hx):
                 resp = send()
+            if idempotent_read:
+                resp = self._retry_read(resp, send)
         self._raise(resp)
         self._validate_contract(resp)
+        return resp
+
+    @staticmethod
+    def _retry_read(resp: httpx.Response, send: Any) -> httpx.Response:
+        """Retry a rate-limited or unavailable read, honoring ``Retry-After``."""
+        for attempt in range(_READ_STATUS_ATTEMPTS - 1):
+            if resp.status_code not in _RETRYABLE_READ_STATUSES:
+                break
+            delay = retry_after_seconds(resp.headers)
+            if delay is None:
+                delay = _READ_STATUS_BACKOFF_SECONDS[attempt] + random.uniform(0, 0.1)
+            if delay > MAX_RETRY_AFTER_SECONDS:
+                break
+            time.sleep(delay)
+            resp = send()
         return resp
 
     # ── request methods ───────────────────────────────────────────────────────
 
     def get(self, path: str, params: dict | None = None) -> httpx.Response:
         return self._request("GET", path, params=params)
+
+    def put(self, path: str, json: Any = None, params: dict | None = None) -> httpx.Response:
+        return self._request("PUT", path, json=json, params=params)
 
     def post(self, path: str, json: Any = None, **kwargs: Any) -> httpx.Response:
         return self._request("POST", path, json=json, **kwargs)
@@ -279,8 +324,14 @@ class ApiClient:
         path: str,
         json: Any = None,
         params: dict | None = None,
+        headers: dict[str, str] | None = None,
     ) -> httpx.Response:
-        return self._request("PATCH", path, json=json, params=params)
+        return self._request("PATCH", path, json=json, params=params, headers=headers)
 
-    def delete(self, path: str, params: dict | None = None) -> httpx.Response:
-        return self._request("DELETE", path, params=params)
+    def delete(
+        self,
+        path: str,
+        params: dict | None = None,
+        headers: dict[str, str] | None = None,
+    ) -> httpx.Response:
+        return self._request("DELETE", path, params=params, headers=headers)

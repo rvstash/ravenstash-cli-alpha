@@ -30,7 +30,7 @@ from .. import config as cfg_mod
 from .. import output
 from ..account.commands import ensure_active_account, resolve_account
 from ..client import ApiClient, ApiError
-from ..devapi import artifacts_path, collection_items, segment
+from ..devapi import artifacts_path, collection_all, collection_page, segment
 from .targets import resolve_target
 
 
@@ -297,9 +297,10 @@ def _upload_evidence(
                 local.path.open("rb") as stream,
                 httpx2.Client(timeout=httpx2.Timeout(60.0), follow_redirects=False) as http,
             ):
-                response = http.put(
+                response = http.request(
+                    str(request.get("method") or "PUT"),
                     str(request["url"]),
-                    headers=cast("dict[str, str]", request.get("headers", {})),
+                    headers=cast("dict[str, str]", request.get("headers") or {}),
                     content=stream,
                 )
                 response.raise_for_status()
@@ -422,16 +423,15 @@ def upload(
     )
     evidence_digest = _hash_file(evidence_file, max_bytes=50 * 1024**2)
     try:
-        candidates = collection_items(
-            client.get(
-                _evidence_path("artifacts"),
-                params={
-                    "repository_ref": repository_ref,
-                    "format": format,
-                    "package_name": package,
-                    "version": version,
-                },
-            ).json()
+        candidates = collection_all(
+            client,
+            _evidence_path("artifacts"),
+            {
+                "repository_ref": repository_ref,
+                "format": format,
+                "package_name": package,
+                "version": version,
+            },
         )
         by_digest = {item["sha256_digest"]: item for item in candidates}
         selected = [by_digest[digest] for digest in artifact_sha256]
@@ -520,9 +520,7 @@ def list_intents(
                 if value is not None
             },
         ).json()
-        items = collection_items(payload)
-        if not isinstance(payload, dict):
-            raise TypeError("Evidence intent page is invalid.")
+        items, next_cursor = collection_page(payload)
     except (ApiError, httpx2.HTTPError, TypeError, ValueError) as exc:
         output.fatal(str(exc))
     if output.is_json():
@@ -553,8 +551,8 @@ def list_intents(
             "analysis_state",
         ],
     )
-    if payload.get("next_cursor"):
-        click.echo(f"Next page: --cursor {payload['next_cursor']}", err=True)
+    if next_cursor:
+        click.echo(f"Next page: --cursor {next_cursor}", err=True)
 
 
 @app.command("retire")
@@ -573,7 +571,11 @@ def retire(
             err=True,
         )
     try:
-        intent = ApiClient.from_profile(profile).delete(_intent_path(evidence_intent_ref)).json()
+        intent = (
+            ApiClient.from_profile(profile)
+            .post(_intent_path(evidence_intent_ref, "/retire"))
+            .json()
+        )
     except (ApiError, httpx2.HTTPError, TypeError, ValueError) as exc:
         output.fatal(str(exc))
     _show_intent(intent)

@@ -8,7 +8,7 @@ from typing import cast
 from .. import config as cfg
 from ..account.commands import resolve_account
 from ..client import ApiClient
-from ..devapi import artifacts_path, collection_items
+from ..devapi import artifacts_path, collection_all
 from ..oci.registry import normalized_registry_host
 from ..oci.runner import _friendly_oci_root
 from .formats import FORMATS
@@ -129,9 +129,7 @@ def discover(
         params = {"account_ref": customer_id}
         if kind is not None:
             params["format"] = kind
-        remotes = collection_items(
-            client.get(artifacts_path("remote-caches"), params=params).json()
-        )
+        remotes = collection_all(client, artifacts_path("remote-caches"), params)
         matches = matching_remote_caches(remotes, spec.target_type, spec.selector)
         if len(matches) != 1:
             raise ValueError(

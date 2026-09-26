@@ -105,8 +105,6 @@ class _FakeDevApi:
                     "manifest_count": 0,
                     "storage_bytes": 0,
                 },
-                "is_deleted": False,
-                "deleted_at": None,
                 "latest_uploaded_at": None,
                 "created_at": "2026-01-01T00:00:00Z",
                 "updated_at": "2026-01-01T00:00:00Z",
@@ -152,8 +150,7 @@ class _FakeDevApi:
                 "target": dict(EXPECTED_REPOSITORY_TARGET),
                 "formats": list(json["formats"]),
                 "operations": list(json["operations"]),
-                "native_realm": "in",
-                "native_paths": {kind: "/in/ar_xyzabcde" for kind in json["formats"]},
+                "native_path": "/in/ar_xyzabcde",
             }
         )
 

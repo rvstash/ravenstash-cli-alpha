@@ -68,6 +68,7 @@ def _request(
             url = artifacts_path(f"repositories/{segment(reference)}/formats/oci/{suffix}")
             if method == "DELETE" and not yes:
                 typer.confirm(f"Delete {subject} from {found.target.display_selector}?", abort=True)
+            response = None
             if method == "GET":
                 response = client.get(
                     url,
@@ -75,12 +76,26 @@ def _request(
                         key: value for key, value in (params or {}).items() if value is not None
                     },
                 )
-            elif method == "POST":
-                response = client.post(url, json=body)
+            elif method == "PUT":
+                response = client.put(url, json=body, params=params)
             else:
-                response = client.delete(url, params=params)
-            payload = response.json()
-        if output.is_json():
+                # Deletions answer 204 without a body; an absent object is a 404.
+                client.delete(url, params=params)
+        if response is None:
+            output.success(f"Deleted {subject} from {found.target.display_selector}.")
+            return
+        payload = response.json()
+        if method == "PUT":
+            # 201 when the tag was created, 200 when an existing tag moved.
+            created = response.status_code == 201
+            if output.is_json():
+                click.echo(json.dumps({**payload, "created": created}))
+            else:
+                output.success(
+                    f"{'Created' if created else 'Moved'} tag '{payload['tag']}' "
+                    f"at {payload['digest']}."
+                )
+        elif output.is_json():
             click.echo(json.dumps(payload))
         elif method == "GET" and (suffix in _COLLECTIONS or suffix.endswith("/referrers")):
             rows = collection_items(payload)
@@ -280,13 +295,15 @@ def create_tag(
     account: str | None = typer.Option(None, "--account"),
     profile: str | None = typer.Option(None, "--profile", "-p"),
 ) -> None:
+    """Point TAG at a manifest; an existing tag is moved to the digest."""
     path, digest = _validated(_reference, reference, "digest")
     _validated(qualify_reference, "unused", f"{path}:{tag}")
     _request(
-        "POST",
-        "tags",
+        "PUT",
+        f"tags/{segment(tag)}",
         target=target,
         account=account,
         profile=profile,
-        body={"path": path, "digest": digest, "tag": tag},
+        params={"path": path},
+        body={"digest": digest},
     )

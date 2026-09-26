@@ -65,7 +65,7 @@ def transport(monkeypatch):
     )
     monkeypatch.setattr(oci_commands, "discover", Mock(return_value=found))
     client = Mock()
-    for method in ("get", "post", "delete"):
+    for method in ("get", "post", "put", "delete"):
         getattr(client, method).return_value.json.return_value = {
             "items": [],
             "next_cursor": "next",
@@ -136,15 +136,82 @@ def test_oci_exact_references_reach_typed_routes(transport, args, method, suffix
     )
 
 
-def test_oci_tag_create_posts_path_tag_and_digest(transport):
-    transport.post.return_value.json.return_value = {"tag": "stable", "created": True}
+@pytest.mark.parametrize(("status", "verb"), [(201, "Created"), (200, "Moved")])
+def test_oci_tag_create_puts_the_tag_with_its_digest(transport, status, verb):
+    transport.put.return_value.status_code = status
+    transport.put.return_value.json.return_value = {"tag": "stable", "digest": DIGEST}
     result = runner.invoke(app, ["art", "oci", "tag", "create", "images/api@" + DIGEST, "stable"])
     assert result.exit_code == 0, result.output
-    transport.post.assert_called_once_with(
-        "/v0/artifacts/repositories/ar_23456789/formats/oci/tags",
-        json={"path": "images/api", "digest": DIGEST, "tag": "stable"},
+    transport.put.assert_called_once_with(
+        "/v0/artifacts/repositories/ar_23456789/formats/oci/tags/stable",
+        json={"digest": DIGEST},
+        params={"path": "images/api"},
     )
-    assert "stable" in result.stdout
+    transport.post.assert_not_called()
+    assert f"{verb} tag 'stable'" in result.stdout
+
+
+@pytest.mark.parametrize(("status", "created"), [(201, True), (200, False)])
+def test_oci_tag_create_json_reports_whether_the_tag_was_created(transport, status, created):
+    transport.put.return_value.status_code = status
+    transport.put.return_value.json.return_value = {"tag": "v1", "digest": DIGEST}
+    result = runner.invoke(
+        app, ["--json", "art", "oci", "tag", "create", "images/api@" + DIGEST, "v1"]
+    )
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.stdout) == {"tag": "v1", "digest": DIGEST, "created": created}
+
+
+@pytest.mark.parametrize(
+    ("args", "suffix"),
+    [
+        (["tag", "delete", "images/api:1.2.3", "--yes"], "tags/1.2.3"),
+        (["manifest", "delete", "images/api@" + DIGEST, "--yes"], "manifests/sha256%3A" + "a" * 64),
+    ],
+)
+def test_oci_deletes_accept_an_empty_204(transport, args, suffix):
+    # A 204 has no body; the CLI must not try to decode one.
+    transport.delete.return_value.json.side_effect = ValueError("no body")
+    result = runner.invoke(app, ["art", "oci", *args])
+    assert result.exit_code == 0, result.output
+    transport.delete.assert_called_once_with(
+        "/v0/artifacts/repositories/ar_23456789/formats/oci/" + suffix,
+        params={"path": "images/api"},
+    )
+    assert "Deleted" in result.stdout
+
+
+def test_oci_delete_reports_an_absent_object(transport):
+    from rvs.client import ApiError
+
+    transport.delete.side_effect = ApiError(404, {"code": "NotFound", "message": "Not found"})
+    result = runner.invoke(app, ["art", "oci", "tag", "delete", "images/api:gone", "--yes"])
+    assert result.exit_code == 1
+    assert "404" in result.stderr
+
+
+def test_oci_explicit_limit_returns_exactly_one_page(transport):
+    transport.get.return_value.json.return_value = {
+        "items": [{"path": "images/api", "recent_tags": ["v2", "v1"], "tag_count": 7}],
+        "next_cursor": "c2",
+    }
+    result = runner.invoke(app, ["--json", "art", "oci", "list", "--limit", "1", "--cursor", "c1"])
+    assert result.exit_code == 0, result.output
+    transport.get.assert_called_once_with(
+        "/v0/artifacts/repositories/ar_23456789/formats/oci/paths",
+        params={"limit": 1, "cursor": "c1"},
+    )
+    assert json.loads(result.stdout)["next_cursor"] == "c2"
+
+
+def test_oci_tables_show_unknown_content_types_as_is(transport):
+    transport.get.return_value.json.return_value = {
+        "items": [{"path": "models/llm", "content_type": "ml_model", "tag_count": 1}],
+        "next_cursor": None,
+    }
+    result = runner.invoke(app, ["art", "oci", "list"])
+    assert result.exit_code == 0, result.output
+    assert "ml_model" in result.stdout
 
 
 def test_oci_list_rejects_a_non_envelope_collection(transport):

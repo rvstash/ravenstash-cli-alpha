@@ -6,16 +6,19 @@ import httpx2 as httpx
 import pytest
 from rvs import auth as auth_mod
 from rvs import config as cfg_mod
-from rvs.client import ApiClient, ApiError
+from rvs.client import ApiClient, ApiError, if_match, response_etag
 from rvs.devapi import (
     api_path,
     api_url,
     artifacts_path,
+    collection_all,
     is_mint_token_path,
     platform_path,
+    read_collection,
     remote_cache_mint_token_path,
     repository_mint_token_path,
     retired_route_message,
+    retry_after_seconds,
     segment,
 )
 
@@ -448,3 +451,208 @@ def test_api_client_error_uses_json_detail(monkeypatch) -> None:
 
     assert exc_info.value.status_code == 403
     assert exc_info.value.detail == "forbidden"
+
+
+@pytest.mark.parametrize("status", [429, 503])
+def test_api_client_retries_reads_after_the_servers_retry_after(monkeypatch, status) -> None:
+    _FakeHttpClient.requests = []
+    _FakeHttpClient.responses = [
+        httpx.Response(status, headers={"Retry-After": "3"}, json={"error": {"code": "x"}}),
+        httpx.Response(status, headers={"Retry-After": "1"}, json={"error": {"code": "x"}}),
+        httpx.Response(200, json={"ok": True}),
+    ]
+    sleeps: list[float] = []
+    monkeypatch.setattr(httpx, "Client", _FakeHttpClient)
+    monkeypatch.setattr("rvs.client.time.sleep", sleeps.append)
+
+    response = ApiClient("https://api.example", "token").get(platform_path("me"))
+
+    assert response.json() == {"ok": True}
+    assert sleeps == [3.0, 1.0]
+    assert len(_FakeHttpClient.requests) == 3
+
+
+def test_api_client_reports_a_retry_after_longer_than_it_waits(monkeypatch) -> None:
+    _FakeHttpClient.requests = []
+    _FakeHttpClient.responses = [
+        httpx.Response(
+            429,
+            headers={"Retry-After": "120"},
+            json={"error": {"code": "RateLimited", "message": "Too many requests"}},
+        )
+    ]
+    sleeps: list[float] = []
+    monkeypatch.setattr(httpx, "Client", _FakeHttpClient)
+    monkeypatch.setattr("rvs.client.time.sleep", sleeps.append)
+
+    with pytest.raises(ApiError) as exc_info:
+        ApiClient("https://api.example", "token").get(platform_path("me"))
+
+    assert sleeps == []
+    assert exc_info.value.retry_after == 120.0
+    assert "retry after 120s" in str(exc_info.value)
+
+
+def test_api_client_gives_up_after_bounded_read_retries(monkeypatch) -> None:
+    _FakeHttpClient.requests = []
+    _FakeHttpClient.responses = [
+        httpx.Response(503, json={"error": {"code": "ServiceUnavailable", "message": "down"}})
+        for _ in range(3)
+    ]
+    monkeypatch.setattr(httpx, "Client", _FakeHttpClient)
+    monkeypatch.setattr("rvs.client.time.sleep", lambda _seconds: None)
+
+    with pytest.raises(ApiError) as exc_info:
+        ApiClient("https://api.example", "token").get(platform_path("me"))
+
+    assert exc_info.value.status_code == 503
+    assert len(_FakeHttpClient.requests) == 3
+
+
+def test_api_client_does_not_retry_rate_limited_writes(monkeypatch) -> None:
+    _FakeHttpClient.requests = []
+    _FakeHttpClient.responses = [
+        httpx.Response(429, headers={"Retry-After": "1"}, json={"error": {"code": "RateLimited"}})
+    ]
+    monkeypatch.setattr(httpx, "Client", _FakeHttpClient)
+    monkeypatch.setattr("rvs.client.time.sleep", lambda _seconds: None)
+
+    with pytest.raises(ApiError) as exc_info:
+        ApiClient("https://api.example", "token").patch(
+            artifacts_path("repositories/ar_xyzabcde"), json={"name": "new"}
+        )
+
+    assert exc_info.value.retry_after == 1.0
+    assert len(_FakeHttpClient.requests) == 1
+
+
+def test_api_client_sends_if_match_and_explains_a_failed_precondition(monkeypatch) -> None:
+    _FakeHttpClient.requests = []
+    _FakeHttpClient.responses = [
+        httpx.Response(200, headers={"ETag": '"rev-1"'}, json={"ref": "rc_abcdefgh"}),
+        httpx.Response(
+            412,
+            json={
+                "error": {
+                    "code": "PreconditionFailed",
+                    "message": "If-Match does not match",
+                    "details": None,
+                }
+            },
+        ),
+        httpx.Response(201, json={"tag": "v1", "digest": "sha256:" + "a" * 64}),
+    ]
+    monkeypatch.setattr(httpx, "Client", _FakeHttpClient)
+    client = ApiClient("https://api.example", "token")
+
+    etag = response_etag(client.get(artifacts_path("remote-caches/rc_abcdefgh")))
+    with pytest.raises(ApiError) as exc_info:
+        client.delete(artifacts_path("remote-caches/rc_abcdefgh"), headers=if_match(etag))
+    put = client.put(
+        artifacts_path("repositories/ar_xyzabcde/formats/oci/tags/v1"),
+        json={"digest": "sha256:" + "a" * 64},
+        params={"path": "images/api"},
+    )
+
+    assert etag == '"rev-1"'
+    assert _FakeHttpClient.requests[1][2]["If-Match"] == '"rev-1"'
+    assert "If-Match" not in _FakeHttpClient.requests[0][2]
+    assert exc_info.value.precondition_failed
+    assert "changed since it was read" in str(exc_info.value)
+    assert _FakeHttpClient.requests[2][0] == "PUT"
+    assert _FakeHttpClient.requests[2][3]["params"] == {"path": "images/api"}
+    assert put.status_code == 201
+    assert if_match(None) is None
+
+
+def test_retry_after_accepts_seconds_and_http_dates() -> None:
+    assert retry_after_seconds({"Retry-After": "7"}) == 7.0
+    assert retry_after_seconds({"Retry-After": "Wed, 21 Oct 2015 07:28:00 GMT"}) == 0.0
+    assert retry_after_seconds({"Retry-After": "soon"}) is None
+    assert retry_after_seconds({}) is None
+
+
+class _PagedClient:
+    def __init__(self, pages: list[Any]) -> None:
+        self.pages = pages
+        self.calls: list[tuple[str, dict | None]] = []
+
+    def get(self, path: str, params: dict | None = None) -> Any:
+        self.calls.append((path, params))
+        payload = self.pages.pop(0)
+        if isinstance(payload, Exception):
+            raise payload
+
+        class _Response:
+            @staticmethod
+            def json() -> Any:
+                return payload
+
+        return _Response()
+
+
+def test_collections_follow_next_cursor_until_null() -> None:
+    client = _PagedClient(
+        [
+            {"items": [{"n": 1}, {"n": 2}], "next_cursor": "c1"},
+            {"items": [], "next_cursor": "c2"},
+            {"items": [{"n": 3}], "next_cursor": None},
+        ]
+    )
+
+    items = collection_all(client, "/v0/platform/accounts", {"account_ref": None, "x": "y"})
+
+    assert items == [{"n": 1}, {"n": 2}, {"n": 3}]
+    assert client.calls == [
+        ("/v0/platform/accounts", {"x": "y", "limit": 100}),
+        ("/v0/platform/accounts", {"x": "y", "limit": 100, "cursor": "c1"}),
+        ("/v0/platform/accounts", {"x": "y", "limit": 100, "cursor": "c2"}),
+    ]
+
+
+def test_bounded_collection_reads_stop_early_and_keep_the_resume_cursor() -> None:
+    client = _PagedClient(
+        [
+            {"items": [{"n": 1}], "next_cursor": "c1"},
+            {"items": [{"n": 2}, {"n": 3}], "next_cursor": "c3"},
+        ]
+    )
+
+    page = read_collection(client, "/v0/x", max_items=3, cursor="c0")
+
+    assert page.items == [{"n": 1}, {"n": 2}, {"n": 3}]
+    assert page.next_cursor == "c3"
+    assert page.envelope() == {"items": page.items, "next_cursor": "c3"}
+    assert client.calls == [
+        ("/v0/x", {"limit": 3, "cursor": "c0"}),
+        ("/v0/x", {"limit": 2, "cursor": "c1"}),
+    ]
+
+
+@pytest.mark.parametrize(
+    "pages",
+    [
+        [{"items": [], "next_cursor": 5}],
+        [{"items": [], "next_cursor": ""}],
+        [{"items": [{}, {}], "next_cursor": None}],
+        [{"items": [], "next_cursor": "same"}, {"items": [], "next_cursor": "same"}],
+        [[{"n": 1}]],
+    ],
+)
+def test_collections_reject_invalid_pages(pages) -> None:
+    with pytest.raises(ValueError):
+        read_collection(_PagedClient(pages), "/v0/x", page_size=1)
+
+
+def test_a_rejected_cursor_is_surfaced() -> None:
+    client = _PagedClient(
+        [
+            {"items": [{"n": 1}], "next_cursor": "bad"},
+            ApiError(422, {"code": "ValidationFailed", "message": "Invalid cursor"}),
+        ]
+    )
+
+    with pytest.raises(ApiError) as exc_info:
+        collection_all(client, "/v0/x")
+
+    assert exc_info.value.status_code == 422

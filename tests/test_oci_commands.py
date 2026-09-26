@@ -24,7 +24,7 @@ def test_friendly_oci_root_normalizes_display_case_without_changing_identity() -
     assert oci_runner._friendly_oci_root("Acme-HQ", "images") == "acme-hq/images"
     assert oci_runner._friendly_oci_root("Engineering", "Images") == "engineering/images"
     assert oci_runner._friendly_oci_root("Engineering", "IMAGES") == "engineering/images"
-    assert oci_runner._stable_oci_root("in", "ar_xyzabcde") == "in/ar_xyzabcde"
+    assert oci_runner._stable_oci_root("ar_xyzabcde") == "in/ar_xyzabcde"
 
 
 class _Response:
@@ -76,8 +76,6 @@ class _Api:
                     "manifest_count": 0,
                     "storage_bytes": 0,
                 },
-                "is_deleted": False,
-                "deleted_at": None,
                 "latest_uploaded_at": None,
                 "created_at": "2026-01-01T00:00:00Z",
                 "updated_at": "2026-01-01T00:00:00Z",
@@ -104,8 +102,7 @@ class _Api:
                 "target": dict(EXPECTED_TARGET),
                 "formats": ["oci"],
                 "operations": list(json["operations"]),
-                "native_realm": "in",
-                "native_paths": {"oci": "/in/ar_xyzabcde"},
+                "native_path": "/in/ar_xyzabcde",
             }
         )
 
@@ -233,9 +230,7 @@ def test_namespace_target_accepts_current_friendly_native_root(monkeypatch, tmp_
     class StablePathApi(_Api):
         def post(self, path: str, json=None) -> _Response:
             response = super().post(path, json)
-            response.value["native_paths"] = {
-                "oci": "/in/ar_xyzabcde",
-            }
+            response.value["native_path"] = "/in/ar_xyzabcde"
             return response
 
     api = StablePathApi()
@@ -280,7 +275,7 @@ def test_oci_route_rejects_a_token_minted_for_another_repository(
     class OtherRepositoryApi(_Api):
         def post(self, path: str, json=None) -> _Response:
             response = super().post(path, json)
-            response.value["native_paths"] = {"oci": "/in/ar_23456789"}
+            response.value["native_path"] = "/in/ar_23456789"
             response.value["target"] = response.value["target"] | {"repository_ref": "ar_23456789"}
             return response
 
@@ -459,9 +454,7 @@ def test_oci_reference_prints_stable_root_without_v2(monkeypatch, tmp_path: Path
     class StablePathApi(_Api):
         def post(self, path: str, json=None) -> _Response:
             response = super().post(path, json)
-            response.value["native_paths"] = {
-                "oci": "/in/ar_xyzabcde",
-            }
+            response.value["native_path"] = "/in/ar_xyzabcde"
             return response
 
     monkeypatch.setattr(
@@ -492,7 +485,7 @@ def test_oci_capability_rejects_noncanonical_native_path(monkeypatch, tmp_path: 
     class InvalidPathApi(_Api):
         def post(self, path: str, json=None) -> _Response:
             response = super().post(path, json)
-            response.value["native_paths"] = {"oci": "/in_abcdefgh/images"}
+            response.value["native_path"] = "/in_abcdefgh/images"
             return response
 
     monkeypatch.setattr(

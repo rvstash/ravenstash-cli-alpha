@@ -37,8 +37,7 @@ def issuer(monkeypatch):
                 "repository_name": "packages",
             },
             "formats": ["pypi"],
-            "native_realm": "in",
-            "native_paths": {"pypi": "/in/ar_abcdefgh"},
+            "native_path": "/in/ar_abcdefgh",
         },
     )
     target = SimpleNamespace(
@@ -60,6 +59,25 @@ def issuer(monkeypatch):
     monkeypatch.setattr(ApiClient, "from_profile", lambda *args, **kwargs: client)
     yield client
     output.set_json(False)
+
+
+@pytest.mark.parametrize(
+    "native_path",
+    ["/in/ar_zzzzzzzz", "/space/packages", "/in/ar_abcdefgh/pypi", None],
+)
+def test_manual_rejects_a_native_path_other_than_the_selected_repository(issuer, native_path):
+    payload = issuer.issue_native.return_value.json()
+    if native_path is None:
+        del payload["native_path"]
+    else:
+        payload["native_path"] = native_path
+    issuer.issue_native.return_value = httpx.Response(200, json=payload)
+
+    result = runner.invoke(app, ["art", "token", "mint", "--target", "space/packages"])
+
+    assert result.exit_code == 1
+    assert SECRET not in result.stdout
+    assert "different native repository route" in result.stderr
 
 
 def test_manual_default_prints_only_the_secret_to_stdout(issuer):
@@ -282,8 +300,7 @@ def _multi_lane_issuer(monkeypatch, issuer, formats):
                 "repository_name": "packages",
             },
             "formats": list(formats),
-            "native_realm": "in",
-            "native_paths": {kind: "/in/ar_abcdefgh" for kind in formats},
+            "native_path": "/in/ar_abcdefgh",
         },
     )
 

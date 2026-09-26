@@ -210,7 +210,8 @@ class ArtifactTarget:
 class AccountContext:
     customer_id: str
     customer_unique_ref: str
-    account_type: Literal["personal", "organization"]
+    # Account types are an open value set; personal and organization are known.
+    account_type: str
     account_label: str
     organization_role: str | None = None
     authority_revision: int | None = None
@@ -639,7 +640,7 @@ def _account_contexts_from_mapping(value: object) -> dict[str, AccountContext]:
             continue
         account_type = raw.get("account_type")
         label = raw.get("account_label")
-        if account_type not in {"personal", "organization"}:
+        if not isinstance(account_type, str) or not account_type:
             continue
         if not account_ref or not isinstance(label, str):
             continue
@@ -1028,7 +1029,7 @@ def cache_account(
     account = AccountContext(
         customer_id=customer_id,
         customer_unique_ref=customer_id,
-        account_type=cast("Literal['personal', 'organization']", customer["type"]),
+        account_type=str(customer["type"]),
         account_label=label,
         customer_handle=handle
         if handle is not None

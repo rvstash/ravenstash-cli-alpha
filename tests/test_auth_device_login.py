@@ -4,7 +4,7 @@ import json
 import os
 import threading
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, ClassVar
 from unittest.mock import ANY
 from uuid import UUID
@@ -373,6 +373,7 @@ def test_auth_delete_all_profiles_resets_config_before_v5(monkeypatch, tmp_path:
 class _FakeResponse:
     status_code: int
     payload: dict[str, Any]
+    headers: dict[str, str] = field(default_factory=dict)
 
     @property
     def is_success(self) -> bool:
@@ -525,6 +526,64 @@ def test_device_login_handles_slow_down_and_stores_expiring_jwt(
         {"User-Agent": "rvs/0.14.3"},
         {"User-Agent": "rvs/0.14.3"},
     ]
+
+
+def test_device_login_waits_for_retry_after_when_rate_limited(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    config_dir = tmp_path / ".rvs"
+    monkeypatch.setattr(cfg_mod, "CONFIG_DIR", config_dir)
+    monkeypatch.setattr(cfg_mod, "CONFIG_FILE", config_dir / "config.toml")
+    _FakeClient.requests = []
+    _FakeClient.responses = [
+        _FakeResponse(
+            200,
+            {
+                "device_code": "device-code",
+                "user_code": "ABCD-1234",
+                "verification_uri": "https://api.ravenstash.com/login/device",
+                "verification_uri_complete": "https://api.ravenstash.com/login/device",
+                "expires_in": 600,
+                "interval": 5,
+            },
+        ),
+        _FakeResponse(
+            429,
+            {"error": {"code": "RateLimited", "message": "Too many requests"}},
+            {"Retry-After": "12"},
+        ),
+        _FakeResponse(
+            200,
+            {
+                "access_token": "jwt-token",
+                "refresh_token": "refresh-token",
+                "token_type": "Bearer",
+                "expires_in": 900,
+                "refresh_expires_in": 14400,
+                "account_ref": "ac_23456789",
+            },
+        ),
+        ARTIFACTS_META,
+    ]
+    sleeps: list[int] = []
+    monkeypatch.setattr(login_mod.httpx, "Client", _FakeClient)
+    monkeypatch.setattr(login_mod.auth_mod, "set_token", lambda profile, token: None)
+    monkeypatch.setattr(login_mod.auth_mod, "set_refresh_token", lambda profile, token: None)
+    monkeypatch.setattr(login_mod.cfg_mod, "set_profile_metadata", lambda profile, **kwargs: None)
+    monkeypatch.setattr(login_mod.auth_mod, "has_active_expiring_session", lambda profile: False)
+    monkeypatch.setattr(login_mod, "_rvs_version", lambda: "0.14.3")
+    monkeypatch.setattr(login_mod, "_device_platform", lambda: "linux")
+    monkeypatch.setattr(login_mod.time, "sleep", lambda seconds: sleeps.append(seconds))
+
+    login_mod.perform_device_login(
+        profile="default",
+        api_url="https://api.ravenstash.com",
+        no_browser=False,
+        duration="12h",
+    )
+
+    assert sleeps == [12]
 
 
 def test_device_login_replaces_active_profile_and_revokes_previous_refresh(

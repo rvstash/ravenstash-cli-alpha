@@ -10,7 +10,7 @@ from rich.markup import escape
 from .. import config as cfg_mod
 from .. import output
 from ..client import ApiClient, ApiError
-from ..devapi import collection_items, platform_path
+from ..devapi import collection_all, platform_path
 from ..interactive import select_index
 from .handles import typed_handle
 
@@ -28,9 +28,7 @@ def _profile_name(profile: str | None) -> str:
 
 def accounts(profile: str | None = None) -> list[dict]:
     try:
-        items = collection_items(
-            ApiClient.from_profile(profile).get(platform_path("accounts")).json()
-        )
+        items = collection_all(ApiClient.from_profile(profile), platform_path("accounts"))
     except ApiError as exc:
         output.fatal(str(exc))
     except ValueError:
@@ -213,7 +211,9 @@ def _render_account_selector(
         account_ref = str(item.get("ref", ""))
         account_type = item.get("type")
         role = str(item.get("organization_role") or "")
-        kind = "Personal" if account_type == "personal" else "Organization"
+        kind = {"personal": "Personal", "organization": "Organization"}.get(
+            str(account_type), str(account_type)
+        )
         detail = f"{kind} · {role}" if role else kind
         active = " [dim](active)[/]" if account_ref == active_account_ref else ""
         pointer = ">" if index == selected_index else " "

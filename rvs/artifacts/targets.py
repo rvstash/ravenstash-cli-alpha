@@ -10,10 +10,10 @@ from .. import config as cfg_mod
 from .. import output
 from ..account.commands import ensure_active_account
 from ..auth.token_format import STATIC_NATIVE_DURATION_SECONDS, validate_public_token
-from ..client import ApiClient, ApiError
+from ..client import ApiClient, ApiError, response_etag
 from ..devapi import (
     artifacts_path,
-    collection_items,
+    collection_all,
     remote_cache_mint_token_path,
     repository_mint_token_path,
 )
@@ -213,6 +213,13 @@ def is_stable_repository_selector(selector: str) -> bool:
 def resolve_repository_entry(
     client: ApiClient, selector: str, customer_id: str, kind: str | None = None
 ) -> dict:
+    return resolve_repository(client, selector, customer_id, kind)[0]
+
+
+def resolve_repository(
+    client: ApiClient, selector: str, customer_id: str, kind: str | None = None
+) -> tuple[dict, str | None]:
+    """Resolve a repository selector; also return the ETag of the read."""
     stable = is_stable_repository_selector(selector)
     params = {"selector": selector}
     if not stable:
@@ -220,7 +227,8 @@ def resolve_repository_entry(
     if kind is not None:
         params["format"] = kind
     try:
-        repository = client.get(artifacts_path("repositories/resolve"), params=params).json()
+        response = client.get(artifacts_path("repositories/resolve"), params=params)
+        repository = response.json()
     except ApiError as exc:
         hint = token_scope_hint(kind) if kind is not None else ""
         if exc.status_code != 404 or not hint or not isinstance(exc.detail, str):
@@ -231,7 +239,7 @@ def resolve_repository_entry(
         if not stable:
             output.fatal("The repository belongs to a different account.")
         output.resource_account_hint(selector, customer_id, owner)
-    return repository
+    return repository, response_etag(response)
 
 
 def resolve_target(
@@ -266,18 +274,10 @@ def resolve_target(
             target = _repository_target(repository)
         else:
             profile_name, account = ensure_active_account(profile_name, customer_id)
-            remotes = collection_items(
-                client.get(
-                    artifacts_path("remote-caches"),
-                    params={
-                        key: value
-                        for key, value in {
-                            "account_ref": account.customer_id,
-                            "format": registry_kind,
-                        }.items()
-                        if value is not None
-                    },
-                ).json()
+            remotes = collection_all(
+                client,
+                artifacts_path("remote-caches"),
+                {"account_ref": account.customer_id, "format": registry_kind},
             )
             matches = matching_remote_caches(remotes, spec.target_type, spec.selector)
             if not matches:
@@ -375,15 +375,12 @@ def registry_context(
                     "expected_target": expected_repository_target(selected),
                 },
             ).json()
-            native_path = credential["native_paths"].get(kind)
+            native_path = credential.get("native_path")
             if not isinstance(native_path, str):
                 raise ValueError("Private repository resolution omitted its native path")
+            # Every format of a repository shares one canonical ID-based route.
             native_parts = native_path.strip("/").split("/")
-            if (
-                credential.get("native_realm") != "in"
-                or len(native_parts) != 2
-                or native_parts != ["in", selected.repository_unique_ref]
-            ):
+            if native_parts != ["in", selected.repository_unique_ref]:
                 raise ValueError("Private repository resolution returned an invalid native path")
             route_coordinate, repository_reference = native_parts
             route_realm: Literal["in"] | None = "in"

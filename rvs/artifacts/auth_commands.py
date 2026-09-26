@@ -123,15 +123,12 @@ def mint(
                     )
                 minted_formats = [mirror_format]
         if selected.target_type == "repository":
-            expected_path = f"/in/{selected.repository_unique_ref}"
-            native_paths = response.get("native_paths")
-            if (
-                response.get("native_realm") != "in"
-                or not isinstance(native_paths, dict)
-                or not native_paths
-                or any(path != expected_path for path in native_paths.values())
-                or any(native_paths.get(item) != expected_path for item in requested)
-            ):
+            # Every format of a repository shares one canonical ID-based route.
+            native_path = response.get("native_path")
+            if not isinstance(native_path, str) or native_path.strip("/").split("/") != [
+                "in",
+                selected.repository_unique_ref,
+            ]:
                 raise ValueError(
                     "Ravenstash returned a credential for a different native repository route."
                 )

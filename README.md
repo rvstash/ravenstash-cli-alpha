@@ -172,9 +172,13 @@ rvs art oci list --content-type helm_chart --target platform/packages
 rvs art oci manifest list charts/api
 rvs art oci manifest show charts/api@sha256:YOUR_DIGEST
 rvs art oci tag list charts/api
+rvs art oci tag create charts/api@sha256:YOUR_DIGEST stable
 ```
 
-Lists expose `--limit` and `--cursor`; root `--json` retains pagination metadata.
+These lists return one page: they expose `--limit` and `--cursor`, and root
+`--json` returns the page with its `next_cursor`. `tag create` points a tag at a
+manifest and moves the tag when it already exists. Other listings, such as
+`rvs art repo list` and `rvs art package list`, read every page.
 Use `rvs docker`, `rvs helm`, or `rvs oras` to transfer native content. ORAS needs
 no Ravenstash format flag. Wrapper credentials and logout changes stay in temporary
 configuration, including independent ORAS copy source/destination configs.

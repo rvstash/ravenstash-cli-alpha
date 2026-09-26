@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.metadata
+import math
 import platform as platform_mod
 import re
 import time
@@ -17,7 +18,12 @@ from .. import config as cfg_mod
 from .. import output
 from ..artifacts.meta import sync_native_registries
 from ..devapi import api_url as devapi_url
-from ..devapi import platform_path, retired_route_message, validate_api_version
+from ..devapi import (
+    platform_path,
+    retired_route_message,
+    retry_after_seconds,
+    validate_api_version,
+)
 
 
 _POLL_FRAMES = ("🔄", "🔃")
@@ -295,6 +301,16 @@ def perform_device_login(
                     continue
                 if error == "slow_down":
                     interval += 5
+                    poll_display.sleep(interval)
+                    continue
+                if poll_resp.status_code == 429:
+                    # Rate limited: wait at least as long as the server asks.
+                    retry_after = retry_after_seconds(poll_resp.headers)
+                    interval = (
+                        max(interval, math.ceil(retry_after))
+                        if retry_after is not None
+                        else interval + 5
+                    )
                     poll_display.sleep(interval)
                     continue
                 if error == "access_denied":

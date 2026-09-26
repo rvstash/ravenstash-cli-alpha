@@ -65,7 +65,7 @@ def test_context_current_shows_distinct_user_profile_account_and_target(
 
     class _Client:
         @staticmethod
-        def get(path: str) -> _Response:
+        def get(path: str, params: dict | None = None) -> _Response:
             calls.append(path)
             if path == "/v0/platform/me":
                 return _Response(_identity())
@@ -134,7 +134,7 @@ def test_context_current_shows_account_scoped_selected_target(monkeypatch, tmp_p
 
     class _Client:
         @staticmethod
-        def get(path: str) -> _Response:
+        def get(path: str, params: dict | None = None) -> _Response:
             assert path == "/v0/platform/me"
             return _Response(_identity())
 
@@ -185,7 +185,7 @@ def test_account_switch_warns_when_environment_still_overrides_selection(
 
     class _Client:
         @staticmethod
-        def get(path: str) -> _Response:
+        def get(path: str, params: dict | None = None) -> _Response:
             assert path == "/v0/platform/accounts"
             return _Response(
                 {
@@ -226,7 +226,7 @@ def test_account_list_displays_typed_user_and_organization_handles(
 
     class _Client:
         @staticmethod
-        def get(path: str) -> _Response:
+        def get(path: str, params: dict | None = None) -> _Response:
             assert path == "/v0/platform/accounts"
             return _Response(
                 {
@@ -267,6 +267,65 @@ def test_account_list_displays_typed_user_and_organization_handles(
     assert "org:acme" in result.output
 
 
+def test_account_list_follows_pages_and_shows_unknown_account_types(
+    monkeypatch, tmp_path: Path
+) -> None:
+    _isolate_config(monkeypatch, tmp_path)
+    calls: list[dict | None] = []
+    pages = [
+        {
+            "items": [
+                {
+                    "ref": "personal-user",
+                    "handle": "avery",
+                    "type": "personal",
+                    "label": "Avery Example",
+                    "is_admin": True,
+                    "organization_role": None,
+                    "authority_revision": 1,
+                }
+            ],
+            "next_cursor": "page-2",
+        },
+        {
+            "items": [
+                {
+                    "ref": "ac_23456789",
+                    "handle": "ops",
+                    "type": "enterprise",
+                    "label": "Ops",
+                    "is_admin": False,
+                    "organization_role": "auditor",
+                    "authority_revision": 4,
+                }
+            ],
+            "next_cursor": None,
+        },
+    ]
+
+    class _Client:
+        @staticmethod
+        def get(path: str, params: dict | None = None) -> _Response:
+            assert path == "/v0/platform/accounts"
+            calls.append(params)
+            return _Response(pages.pop(0))
+
+    monkeypatch.setattr(
+        account_cmd.ApiClient,
+        "from_profile",
+        staticmethod(lambda profile=None: _Client()),
+    )
+
+    result = runner.invoke(app, ["account", "list"])
+
+    assert result.exit_code == 0, result.output
+    assert calls == [{"limit": 100}, {"limit": 100, "cursor": "page-2"}]
+    assert "user:avery" in result.output
+    # Account types and roles are open value sets: unknown values display as-is.
+    assert "enterprise:ops" in result.output
+    assert "auditor" in result.output
+
+
 def test_account_switch_without_selector_opens_account_picker(monkeypatch, tmp_path: Path) -> None:
     _isolate_config(monkeypatch, tmp_path)
     account_items = [
@@ -292,7 +351,7 @@ def test_account_switch_without_selector_opens_account_picker(monkeypatch, tmp_p
 
     class _Client:
         @staticmethod
-        def get(path: str) -> _Response:
+        def get(path: str, params: dict | None = None) -> _Response:
             assert path == "/v0/platform/accounts"
             return _Response({"items": account_items, "next_cursor": None})
 

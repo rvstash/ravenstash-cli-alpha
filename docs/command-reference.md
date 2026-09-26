@@ -52,7 +52,7 @@ repository target can be name-based (`NAMESPACE/REPOSITORY`) or ID-based
 | `rvs art repo list` | Lists repositories. |
 | `rvs art repo create NAME --format FORMAT` | Creates a repository for one or more package formats. |
 | `rvs art repo show TARGET` | Shows repository details. |
-| `rvs art repo rename TARGET NEW` | Renames a repository. |
+| `rvs art repo rename TARGET NEW` | Renames a repository if it is unchanged since the command read it. |
 | `rvs art repo delete TARGET` | Deletes a repository after confirmation. |
 
 Supported formats are `pypi`, `npm`, `maven`, and `oci`. Container images and
@@ -85,6 +85,10 @@ the repository's sources makes them fail instead of changing another source.
 | `rvs art mirror show REMOTE_CACHE_ID` | Shows a private mirror through its owning remote-cache permanent ID. |
 | `rvs art mirror set-age REMOTE_CACHE_ID --min-age-hours HOURS` | Changes the direct private-mirror age policy. |
 | `rvs art mirror delete REMOTE_CACHE_ID` | Deletes the remote cache and its private-mirror surface after confirmation. |
+
+`repo rename`, `mirror set-age`, and `mirror delete` read the resource and then
+change it only if nobody else changed it in between. When it did change, nothing
+is written and the command asks you to run it again to review the current state.
 | `rvs art mirror select SOURCE` | Chooses a Ravenstash-provided mirror. |
 | `rvs art mirror select --custom NAME` | Chooses a custom mirror. |
 
@@ -93,7 +97,10 @@ the repository's sources makes them fail instead of changing another source.
 | Command | What it does |
 | --- | --- |
 | `rvs art package list --target NAME --format FORMAT` | Lists packages. |
-| `rvs art package show PACKAGE --target NAME --format FORMAT` | Shows a package and its versions. |
+| `rvs art package show PACKAGE --target NAME --format FORMAT` | Shows a package summary and its newest 50 versions. |
+| `rvs art package show PACKAGE --target NAME --format FORMAT --limit N` | Shows the newest `N` (1–100) versions. |
+| `rvs art package show PACKAGE --target NAME --format FORMAT --all-versions` | Shows every version. |
+| `rvs art package show PACKAGE --target NAME --format FORMAT --version VERSION` | Shows one version with its files and their digests. |
 | `rvs art package yank PACKAGE VERSION --target NAME --format pypi` | Yanks a PyPI version, optionally with `--reason`. |
 | `rvs art package unyank PACKAGE VERSION --target NAME --format pypi` | Makes a yanked PyPI version selectable again. |
 | `rvs art package deprecate PACKAGE VERSION --target NAME --format npm --message TEXT` | Adds an npm deprecation warning. |
@@ -101,8 +108,27 @@ the repository's sources makes them fail instead of changing another source.
 | `rvs art package delete-version PACKAGE VERSION --target NAME --format FORMAT` | Deletes one version. |
 | `rvs art package delete PACKAGE --target NAME --format FORMAT` | Deletes a package and all its versions. |
 
+Versions are listed newest first. When more versions exist than are shown,
+`package show` says so on stderr. With root `--json`, `package show` prints the
+package summary and then the listed versions; `--version` prints one document
+with the version's metadata and `files`, each carrying a `digests` object keyed
+by algorithm (such as `sha256`, `sha512`, `md5`, or `blake2b_256`).
+
 Yanking is a PyPI resolver control. npm deprecation is warning metadata and does
 not prevent installation. Maven has no corresponding lifecycle operation.
+
+## Listings and limits
+
+Listings such as `repo list`, `mirror list`, `package list`, and `account list`
+read every page from Ravenstash. Commands that take `--limit` and `--cursor`,
+such as `rvs art oci list` and `rvs art evidence list`, return exactly one page
+and print the cursor for the next page; with root `--json` they return the page
+unchanged with its `next_cursor`.
+
+When Ravenstash asks `rvs` to slow down or is briefly unavailable, read commands
+wait for the time the server asks for (up to 30 seconds) and retry a limited
+number of times. Values `rvs` does not yet recognize, such as a new format,
+status, or account type, are shown as Ravenstash reports them.
 
 ## Package-tool commands
 

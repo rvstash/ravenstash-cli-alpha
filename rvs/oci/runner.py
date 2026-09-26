@@ -78,8 +78,8 @@ def _native_route_parts(native_path: str) -> tuple[str, str] | None:
     return namespace, repository
 
 
-def _stable_oci_root(native_realm: object, repository_unique_ref: object) -> str:
-    if native_realm != "in" or not isinstance(repository_unique_ref, str):
+def _stable_oci_root(repository_unique_ref: object) -> str:
+    if not isinstance(repository_unique_ref, str):
         output.fatal("Invalid OCI capability response: repository permanent ID is missing.")
     if not repository_unique_ref.startswith("ar_"):
         output.fatal("Invalid OCI capability response: repository permanent ID is invalid.")
@@ -152,7 +152,7 @@ def resolve_route(
             credential_body,
         ).json()
         token = validate_public_token(credential["access_token"], native=True)
-        native_path = credential["native_paths"][kind]
+        native_path = credential["native_path"]
         minted_target = credential["target"]
     except ApiError as exc:
         output.fatal(str(exc))
@@ -168,10 +168,7 @@ def resolve_route(
         minted_target.get("namespace_name"),
         minted_target.get("repository_name"),
     )
-    stable_root = _stable_oci_root(
-        credential.get("native_realm"),
-        target.repository_unique_ref,
-    )
+    stable_root = _stable_oci_root(target.repository_unique_ref)
     if (
         minted_target.get("repository_ref") != target.repository_unique_ref
         or response_root != stable_root

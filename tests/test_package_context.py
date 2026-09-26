@@ -427,8 +427,6 @@ class CrossAccountApi:
                     "manifest_count": 0,
                     "storage_bytes": 0,
                 },
-                "is_deleted": False,
-                "deleted_at": None,
                 "latest_uploaded_at": None,
                 "created_at": "2026-01-01T00:00:00Z",
                 "updated_at": "2026-01-01T00:00:00Z",
@@ -455,8 +453,7 @@ class CrossAccountApi:
                 "target": EXPECTED_TARGET,
                 "formats": ["pypi"],
                 "operations": ["read"],
-                "native_realm": "in",
-                "native_paths": {"pypi": "/in/ar_abcdefgh"},
+                "native_path": "/in/ar_abcdefgh",
             }
         )
 
@@ -499,6 +496,24 @@ def test_cross_account_selection_stays_in_current_context_and_uses_owner_credent
     assert context.customer_id == "org-foreign"
     assert context.token == "rvs_sltCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCA"
     assert cfg_mod.current_customer_id("alice") == "personal-alice"
+
+
+@pytest.mark.parametrize("native_path", ["/in/ar_zzzzzzzz", "/engineering/packages", 7])
+def test_registry_context_requires_the_selected_repositorys_native_path(
+    monkeypatch, tmp_path, native_path
+):
+    from rvs.artifacts.targets import registry_context
+
+    class _OtherRoute(CrossAccountApi):
+        def post(self, path, json=None):
+            response = super().post(path, json)
+            return Response({**response.json(), "native_path": native_path})
+
+    isolate(monkeypatch, tmp_path)
+    fake = _OtherRoute()
+    monkeypatch.setattr(ApiClient, "from_profile", staticmethod(lambda profile=None: fake))
+    with pytest.raises(SystemExit):
+        registry_context(kind="pypi", target="in/ar_abcdefgh", profile="alice")
 
 
 @pytest.mark.parametrize("selector", ["ar_abcdefgh", "in/ar_abcdefgh"])

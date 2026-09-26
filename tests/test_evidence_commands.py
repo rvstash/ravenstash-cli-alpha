@@ -429,7 +429,12 @@ def test_upload_resolves_release_artifacts_and_completes_uploads_by_ref(
                         "uploads": [
                             {
                                 "upload_ref": "pu_23456789abcdefghijkmn",
-                                "request": {"url": "https://uploads.example.test/x"},
+                                "request": {
+                                    "method": "PUT",
+                                    "url": "https://uploads.example.test/x",
+                                    "headers": {"Content-MD5": "ignored"},
+                                    "expires_at": "2026-09-26T12:00:00Z",
+                                },
                             }
                         ]
                     }
@@ -448,8 +453,8 @@ def test_upload_resolves_release_artifacts_and_completes_uploads_by_ref(
         def __exit__(self, *args: object) -> None:
             return None
 
-        def put(self, url: str, **_kwargs: object) -> Any:
-            calls.append(("PUT", url, None))
+        def request(self, method: str, url: str, **kwargs: object) -> Any:
+            calls.append((method, url, kwargs["headers"]))
 
             class _Ok:
                 def raise_for_status(self) -> None:
@@ -493,6 +498,7 @@ def test_upload_resolves_release_artifacts_and_completes_uploads_by_ref(
             "format": "pypi",
             "package_name": "demo",
             "version": "1.0.0",
+            "limit": 100,
         },
     )
     assert calls[1][:2] == ("POST", "/v0/artifacts/package-evidence/intents")
@@ -515,6 +521,8 @@ def test_upload_resolves_release_artifacts_and_completes_uploads_by_ref(
     assert calls[2][2] == {
         "uploads": [{"upload_ref": "pu_23456789abcdefghijkmn", "content_md5": ANY}]
     }
+    # The typed upload instruction supplies the method and headers.
+    assert calls[3][2] == {"Content-MD5": "ignored"}
     assert "pe_23456789abcdefghijkmn" in result.output
 
 
@@ -531,8 +539,9 @@ def test_status_retire_and_documents_use_flat_evidence_routes(
                 return _DocumentResponse(b"{}", "")
             return _Response(intent)
 
-        def delete(self, path: str) -> _Response:
-            paths.append(("DELETE", path))
+        def post(self, path: str, json: object = None) -> _Response:
+            assert json is None
+            paths.append(("POST", path))
             return _Response({**intent, "state": "cancelled"})
 
     monkeypatch.setattr(evidence_commands.ApiClient, "from_profile", lambda _profile: RefClient())
@@ -556,6 +565,6 @@ def test_status_retire_and_documents_use_flat_evidence_routes(
     )
     assert paths == [
         ("GET", "/v0/artifacts/package-evidence/intents/pe_23456789abcdefghijkmn"),
-        ("DELETE", "/v0/artifacts/package-evidence/intents/pe_23456789abcdefghijkmn"),
+        ("POST", "/v0/artifacts/package-evidence/intents/pe_23456789abcdefghijkmn/retire"),
         ("GET", "/v0/artifacts/package-evidence/artifacts/pa_23456789abcdefghijkmn/report"),
     ]
