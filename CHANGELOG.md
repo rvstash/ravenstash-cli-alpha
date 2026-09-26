@@ -6,6 +6,8 @@ All notable user-facing changes to `rvs` are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.14.11] - 2026-09-26
+
 ### Removed
 
 - `rvs art repo rename`, `rvs art repo delete`, `rvs art repo upstream add`,
@@ -40,8 +42,8 @@ All notable user-facing changes to `rvs` are recorded here. The format follows
   page.
 - `rvs art oci tag create` sets the tag with the new tag route and reports
   whether the tag was created or already existed; with `--json` it prints the
-  tag, digest, and `created`. OCI tag and manifest deletions print a confirmation instead of
-  the former response object.
+  tag, digest, and `created`. OCI tag and manifest deletions print a
+  confirmation instead of the former response object.
 - Read commands retry when Ravenstash rate-limits them or is briefly
   unavailable, waiting as long as the server's `Retry-After` asks (up to 30
   seconds), and refresh the session if it expired meanwhile. Sign-in polling
@@ -57,6 +59,8 @@ All notable user-facing changes to `rvs` are recorded here. The format follows
 - `rvs` requires the final Ravenstash `v0` developer API: temporary tokens use
   one native repository path, evidence uploads follow the typed upload
   instruction, and `rvs art evidence retire` uses the dedicated retire route.
+
+Detailed release notes: [RVS 0.14.11](docs/releases/0.14.11.md).
 
 ## [0.14.10] - 2026-09-26
 
@@ -202,7 +206,8 @@ Detailed release notes: [RVS 0.14.4](docs/releases/0.14.4.md).
 
 Detailed release notes: [RVS 0.14.3](docs/releases/0.14.3.md).
 
-[Unreleased]: https://github.com/rvstash/ravenstash-cli-alpha/compare/v0.14.10...HEAD
+[Unreleased]: https://github.com/rvstash/ravenstash-cli-alpha/compare/v0.14.11...HEAD
+[0.14.11]: https://github.com/rvstash/ravenstash-cli-alpha/compare/v0.14.10...v0.14.11
 [0.14.10]: https://github.com/rvstash/ravenstash-cli-alpha/compare/v0.14.9...v0.14.10
 [0.14.9]: https://github.com/rvstash/ravenstash-cli-alpha/compare/v0.14.8...v0.14.9
 [0.14.8]: https://github.com/rvstash/ravenstash-cli-alpha/compare/v0.14.7...v0.14.8
