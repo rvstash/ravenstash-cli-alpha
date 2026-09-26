@@ -18,7 +18,7 @@ from ..client import ApiClient, ApiError
 from ..devapi import remote_cache_mint_token_path, repository_mint_token_path
 from .discovery import discover
 from .formats import flatten_formats
-from .targets import expected_repository_target
+from .targets import expected_repository_target, token_scope_hint
 
 
 app = typer.Typer(help="Create short-lived tokens for package tools.", no_args_is_help=True)
@@ -79,7 +79,10 @@ def mint(
             if not requested and not all_formats:
                 requested = [found.select_format(None)]
             if any(item not in found.formats for item in requested):
-                raise ValueError("Every requested format must be enabled on the exact target.")
+                raise ValueError(
+                    "Every requested format must be enabled on the exact target."
+                    + (token_scope_hint() if selected.target_type == "repository" else "")
+                )
             client = ApiClient.from_profile(found.profile)
             operations = ACCESS_OPERATIONS[access]
             if selected.target_type == "repository":

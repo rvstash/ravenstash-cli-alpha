@@ -22,6 +22,7 @@ from .targets import (
     remote_public_name,
     repository_formats,
     resolve_repository_entry,
+    token_scope_hint,
 )
 
 
@@ -43,7 +44,12 @@ class Discovery:
         choices = tuple(item for item in self.formats if item in applicable)
         if value is not None:
             if value not in choices:
-                raise ValueError(f"Format '{value}' is not enabled or applicable to this target.")
+                # Only a repository format can be hidden by the token's scope.
+                hidden = value in applicable and self.target.target_type == "repository"
+                raise ValueError(
+                    f"Format '{value}' is not enabled or applicable to this target."
+                    + (token_scope_hint(value) if hidden else "")
+                )
             return value
         if len(choices) != 1:
             raise ValueError("Select one enabled format with --format.")

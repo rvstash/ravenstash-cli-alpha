@@ -599,3 +599,55 @@ def test_cross_account_issuance_denial_does_not_fallback_or_switch(monkeypatch, 
         "/v0/artifacts/repositories/ar_abcdefgh/mint-token",
     ]
     assert cfg_mod.current_customer_id("alice") == "personal-alice"
+
+
+@pytest.mark.parametrize("automation", [False, True])
+def test_hidden_repository_format_explains_automation_token_scope(
+    monkeypatch, tmp_path, capsys, automation
+):
+    from rvs.client import ApiError
+
+    isolate(monkeypatch, tmp_path)
+    if automation:
+        monkeypatch.setenv("RVS_TOKEN", "rvs_ust" + "A" * 43)
+    else:
+        monkeypatch.delenv("RVS_TOKEN", raising=False)
+
+    class HiddenFormatApi:
+        def get(self, path, params):
+            assert params["format"] == "pypi"
+            raise ApiError(404, "Repository not found")
+
+    monkeypatch.setattr(
+        ApiClient, "from_profile", staticmethod(lambda profile=None: HiddenFormatApi())
+    )
+    with pytest.raises(SystemExit):
+        resolve_target("in/ar_abcdefgh", profile="alice", kind="pypi")
+    message = " ".join(capsys.readouterr().err.split())
+    assert "Repository not found" in message
+    hint = (
+        "Repository not found. Check that RVS_TOKEN includes this repository and the pypi format."
+    )
+    assert (hint in message) is automation
+
+
+def test_unselected_format_explains_automation_token_scope(monkeypatch):
+    from types import SimpleNamespace
+
+    from rvs.artifacts.discovery import Discovery
+
+    monkeypatch.setenv("RVS_TOKEN", "rvs_ust" + "A" * 43)
+
+    def discovery(target_type: str) -> Discovery:
+        target = SimpleNamespace(target_type=target_type)
+        return Discovery("alice", target, ("npm",), ("in", "ar_abcdefgh"))  # type: ignore[arg-type]
+
+    with pytest.raises(
+        ValueError, match="Check that RVS_TOKEN includes this repository and the pypi format"
+    ):
+        discovery("repository").select_format("pypi")
+    # A mirror, or a format the command cannot use, is not a token-scope problem.
+    for target_type, applicable in (("official_cache", ("pypi", "npm")), ("repository", ("oci",))):
+        with pytest.raises(ValueError) as raised:
+            discovery(target_type).select_format("pypi", applicable)
+        assert "RVS_TOKEN" not in str(raised.value)

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass, field
 from typing import Literal, cast
 
@@ -112,6 +113,18 @@ def _package_kind(kind: str | None) -> PackageKind | None:
     return cast("PackageKind", kind)
 
 
+def token_scope_hint(kind: str | None = None) -> str:
+    """Explain a hidden format without revealing whether the repository exists.
+
+    An automation token can be limited to selected formats, and Ravenstash hides
+    repositories and formats a token does not cover.
+    """
+    if "RVS_TOKEN" not in os.environ:
+        return ""
+    subject = f"the {kind} format" if kind else "these formats"
+    return f" Check that RVS_TOKEN includes this repository and {subject}."
+
+
 def repository_formats(repository: dict) -> tuple[str, ...]:
     """Return the enabled formats of a DevAPI ``Repository``."""
     return tuple(item["format"] for item in repository["formats"])
@@ -206,7 +219,13 @@ def resolve_repository_entry(
         params["account_ref"] = customer_id
     if kind is not None:
         params["format"] = kind
-    repository = client.get(artifacts_path("repositories/resolve"), params=params).json()
+    try:
+        repository = client.get(artifacts_path("repositories/resolve"), params=params).json()
+    except ApiError as exc:
+        hint = token_scope_hint(kind) if kind is not None else ""
+        if exc.status_code != 404 or not hint or not isinstance(exc.detail, str):
+            raise
+        raise ApiError(exc.status_code, exc.detail.rstrip(".") + "." + hint) from exc
     owner = repository["account"]
     if owner["ref"] != customer_id:
         if not stable:
