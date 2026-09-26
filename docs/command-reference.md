@@ -212,7 +212,8 @@ is one value; plain template output is a labelled document. Native wrappers keep
 the native tool's output. Diagnostics go to stderr for these capture-friendly commands.
 
 Custom mirror creation is available in the webapp. Existing custom mirrors remain
-available to CLI listing, selection, age changes, deletion, and upstream attachment.
+available to CLI listing, showing, and selection; age changes, deletion, and
+upstream attachment are managed in the webapp.
 
 `rvs update --to 0.MINOR` previews the latest stable patch in that minor line
 without changing the active installation or its rolling `v0` channel. Add

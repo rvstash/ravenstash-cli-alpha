@@ -642,6 +642,7 @@ def test_artifacts_repo_upstream_list_is_addressed_by_position(monkeypatch, tmp_
         ["repo", "upstream", "reorder", "platform/app", "npm", "1", "2"],
         ["mirror", "set-age", "rc_abcdefgh", "--min-age-hours", "1"],
         ["mirror", "delete", "rc_abcdefgh", "--yes"],
+        ["package", "delete", "demo", "--yes"],
     ],
 )
 def test_danger_zone_operations_are_browser_only(
@@ -1458,3 +1459,58 @@ def test_package_commands_need_a_selection_or_target(monkeypatch, tmp_path: Path
     assert result.exit_code == 1
     assert "rvs art select" in result.output
     assert fake.calls == []
+
+
+_SELECTED_MIRROR_CONFIG = _SELECTED_REPOSITORY_CONFIG.replace(
+    'target_type = "repository"', 'target_type = "official_cache"'
+).replace('display_selector = "test-account/repo"', 'display_selector = "mirror:pypiorg"')
+
+
+@pytest.mark.parametrize(
+    ("config", "argv", "responses", "message"),
+    [
+        (
+            _SELECTED_MIRROR_CONFIG,
+            ["package", "list"],
+            [],
+            "is a private mirror",
+        ),
+        (
+            _SELECTED_REPOSITORY_CONFIG,
+            ["package", "list"],
+            [_repository_entry(formats=_formats("oci"))],
+            "has no pypi, npm, or maven format",
+        ),
+        (
+            _SELECTED_REPOSITORY_CONFIG,
+            ["package", "list", "--format", "oci"],
+            [],
+            "support only pypi, npm",
+        ),
+        (
+            _SELECTED_REPOSITORY_CONFIG,
+            ["package", "yank", "demo", "1.0", "--format", "npm"],
+            [],
+            "supported only for pypi packages",
+        ),
+        (
+            _SELECTED_REPOSITORY_CONFIG,
+            ["package", "yank", "demo", "1.0"],
+            [_repository_entry(formats=_formats("npm"))],
+            "has no pypi format",
+        ),
+    ],
+)
+def test_package_commands_explain_a_target_or_format_they_cannot_use(
+    monkeypatch, tmp_path: Path, config, argv, responses, message
+) -> None:
+    _isolate_config(monkeypatch, tmp_path, config)
+    fake = _FakeApiClient(list(responses))
+    _use_fake_client(monkeypatch, fake)
+
+    result = runner.invoke(artifacts_cmd.app, argv)
+
+    assert result.exit_code == 1
+    assert message in " ".join(result.output.split())
+    # Nothing beyond the repository lookup is attempted.
+    assert all(call[1].endswith("/resolve") for call in fake.calls)

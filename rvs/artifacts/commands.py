@@ -45,7 +45,7 @@ app = typer.Typer(
 
 repo_app = typer.Typer(help="Manage Ravenstash repositories.", no_args_is_help=True)
 upstream_app = typer.Typer(
-    help="Manage the package sources used by a repository.", no_args_is_help=True
+    help="List the package sources used by a repository.", no_args_is_help=True
 )
 remote_app = typer.Typer(help="Manage private mirrors.", no_args_is_help=True)
 package_app = typer.Typer(help="Manage packages hosted in a repository.", no_args_is_help=True)
@@ -61,7 +61,6 @@ app.command("endpoint")(endpoint)
 app.command("reference")(reference)
 
 _PACKAGE_KINDS = ("pypi", "npm", "maven")
-_MAX_UPSTREAM_POSITION = 4
 _REPOSITORY_NAME_HELP = "Name-based target (namespace/repository) or ID-based target (in/ar_...)."
 _PACKAGE_TARGET_HELP = (
     "Repository (namespace/repository or in/ar_...); defaults to the target chosen "
@@ -309,18 +308,17 @@ def _package_lane(
     """Return the repository ref, package format, and display name to act on.
 
     Without ``--target`` the target chosen with ``rvs art select`` is used. The
-    format comes from ``--format``, the selection, the only format a command
-    supports (``only``), or the repository's single package format.
+    format comes from ``--format``, the only format a command supports
+    (``only``), the selection, or the repository's single package format.
     """
     if kind is not None:
         _require_package_kind(kind)
-    if only is not None:
-        if kind is not None and kind != only:
+        if only is not None and kind != only:
             output.fatal(f"{operation} is supported only for {only} packages.")
-        kind = only
+    customer_id: str | None = None
+    saved_kind: str | None = None
     if repo is None:
-        profile_name = profile or _root_package_options().get("profile")
-        profile_name, _ = _profile(profile_name)
+        profile_name, _ = _profile(profile or _root_package_options().get("profile"))
         customer_id = _customer_id(profile_name)
         saved = cfg_mod.selected_artifact_target(profile_name, customer_id)
         if saved is None:
@@ -331,34 +329,36 @@ def _package_lane(
                 "a private repository. Pass --target."
             )
         repo = saved.stable_selector
-        if kind is None and saved.registry_kind in _PACKAGE_KINDS:
-            kind = saved.registry_kind
-    try:
-        repository = _resolve_repository_entry(repo, profile, kind=kind)
-    except ApiError as exc:
-        output.fatal(str(exc))
+        saved_kind = saved.registry_kind
+    # Only an explicit --format filters the lookup, so a repository without the
+    # format a command implies is reported as such rather than as not found.
+    repository = _resolve_repository_entry(repo, profile, kind=kind, customer_id=customer_id)
     display = repository_display_name(repository)
-    if kind is None:
-        choices = [item for item in repository_formats(repository) if item in _PACKAGE_KINDS]
-        if not choices:
-            output.fatal(
-                f"'{display}' has no pypi, npm, or maven format. Use rvs docker, rvs helm, "
-                "or rvs oras for OCI content."
-            )
-        if len(choices) > 1:
-            output.fatal(
-                f"'{display}' has several package formats; pass --format {' | '.join(choices)}."
-            )
-        kind = choices[0]
-    return repository["ref"], cast("cfg_mod.RegistryKind", kind), display
-
-
-def _repository_path(repository_ref: str, suffix: str = "") -> str:
-    return artifacts_path(f"repositories/{segment(repository_ref)}{suffix}")
+    formats = [item for item in repository_formats(repository) if item in _PACKAGE_KINDS]
+    wanted = kind or only
+    if wanted is not None:
+        if wanted not in formats:
+            reason = f" {operation} applies only to {only} packages." if only else ""
+            output.fatal(f"'{display}' has no {wanted} format.{reason}")
+        return repository["ref"], cast("cfg_mod.RegistryKind", wanted), display
+    if saved_kind in formats:
+        return repository["ref"], cast("cfg_mod.RegistryKind", saved_kind), display
+    if not formats:
+        output.fatal(
+            f"'{display}' has no pypi, npm, or maven format. Use rvs docker, rvs helm, "
+            "or rvs oras for OCI content."
+        )
+    if len(formats) > 1:
+        output.fatal(
+            f"'{display}' has several package formats; pass --format {' | '.join(formats)}."
+        )
+    return repository["ref"], cast("cfg_mod.RegistryKind", formats[0]), display
 
 
 def _format_path(repository_ref: str, registry_kind: str, suffix: str) -> str:
-    return _repository_path(repository_ref, f"/formats/{registry_kind}/{suffix}")
+    return artifacts_path(
+        f"repositories/{segment(repository_ref)}/formats/{registry_kind}/{suffix}"
+    )
 
 
 def _remote_cache_path(remote_cache_ref: str) -> str:
@@ -787,9 +787,11 @@ def remote_show(
         _require_package_kind(kind)
     client = _client(profile)
     try:
-        item = _read_remote_cache(client, remote, kind)
+        item = client.get(_remote_cache_path(remote)).json()
     except ApiError as exc:
         output.fatal(str(exc))
+    if kind and item.get("format") != kind:
+        output.fatal(f"Private mirror '{remote}' is for {item.get('format')}, not {kind}.")
     output.kv(
         {
             "Remote-cache ref": item["ref"],
@@ -817,13 +819,6 @@ def remote_show(
             "max_age_hours",
         ],
     )
-
-
-def _read_remote_cache(client: ApiClient, remote: str, kind: str | None) -> dict:
-    item = client.get(_remote_cache_path(remote)).json()
-    if kind and item.get("format") != kind:
-        output.fatal(f"Private mirror '{remote}' is for {item.get('format')}, not {kind}.")
-    return item
 
 
 # ── package ──────────────────────────────────────────────────────────────────
