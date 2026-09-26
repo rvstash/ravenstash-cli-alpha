@@ -201,11 +201,37 @@ def _channel_manifest() -> dict[str, Any] | None:
     return payload
 
 
-def _announce_new_channel(current_channel: str | None) -> None:
-    if current_channel is None:
-        return
-    manifest = _channel_manifest()
-    if manifest is None:
+def _refresh_ravenstash_source() -> bool:
+    """Refresh APT metadata for the Ravenstash source only.
+
+    Other sources keep their cached indexes, so a broken or slow third-party
+    repository cannot block an rvs update. A missing Ravenstash source falls back
+    to a full refresh, which reports the configuration problem through APT.
+    """
+    command = [str(_APT_GET), "update"]
+    if _APT_SOURCE.is_file():
+        command += [
+            "-o",
+            f"Dir::Etc::sourcelist={_APT_SOURCE}",
+            "-o",
+            "Dir::Etc::sourceparts=-",
+            "-o",
+            "APT::Get::List-Cleanup=0",
+        ]
+    return _run_visible(command).returncode == 0
+
+
+def _channel_latest(manifest: dict[str, Any] | None, channel: str | None) -> str | None:
+    if manifest is None or channel is None:
+        return None
+    try:
+        return latest_for_channel(manifest, channel)
+    except UpdateError, ValueError:
+        return None
+
+
+def _announce_new_channel(current_channel: str | None, manifest: dict[str, Any] | None) -> None:
+    if current_channel is None or manifest is None:
         return
     recommended = manifest["recommended"]
     if channel_order(recommended) <= channel_order(current_channel):
@@ -605,54 +631,75 @@ def update(
     if installed is None:
         _portable_update(to=None, candidate=None, apply=apply, yes=yes)
         return
-    if candidate is None:
+
+    current_channel = _current_channel()
+    # The signed channel manifest is current even when the local APT indexes are
+    # not; APT stays the authority for what is installed.
+    manifest = _channel_manifest() if current_channel else None
+    latest = _channel_latest(manifest, current_channel)
+    target = latest or candidate
+    if target is None:
         output.fatal(
             "APT has no rvs candidate. Check that the Ravenstash source is configured, "
             "then run `sudo apt-get update`."
         )
 
-    current_channel = _current_channel()
-    if not _upgrade_available(installed, candidate):
+    if not _upgrade_available(installed, target):
         if current_channel:
             output.success(
                 f"Installed: rvs {installed}. Latest in release channel "
-                f"{current_channel}: rvs {candidate}. You are up to date."
+                f"{current_channel}: rvs {target}. You are up to date."
             )
         else:
             output.success(
-                f"Installed: rvs {installed}. Latest available: rvs {candidate}. "
-                "You are up to date."
+                f"Installed: rvs {installed}. Latest available: rvs {target}. You are up to date."
             )
-        _announce_new_channel(current_channel)
+        if latest is None:
+            output.info(
+                "This check used APT's local package list because the signed release "
+                "channel could not be read. Run `sudo apt-get update` to refresh it."
+            )
+        _announce_new_channel(current_channel, manifest)
         return
 
-    if current_channel and not version_matches_channel(candidate, current_channel):
+    if current_channel and not version_matches_channel(target, current_channel):
         output.fatal(
-            f"APT candidate {candidate} does not belong to configured release channel {current_channel}."
+            f"APT candidate {target} does not belong to configured release channel "
+            f"{current_channel}."
         )
-    output.info(f"rvs {candidate} is available (installed: {installed}).")
+    output.info(f"rvs {target} is available (installed: {installed}).")
     if not apply:
         output.info("Install it with: rvs update --apply")
-        _announce_new_channel(current_channel)
+        _announce_new_channel(current_channel, manifest)
         return
     if not _APT_GET.is_file():
         output.fatal("Cannot update because /usr/bin/apt-get is unavailable.")
     if not yes:
-        typer.confirm(f"Install signed rvs package {candidate}?", abort=True)
+        typer.confirm(f"Install signed rvs package {target}?", abort=True)
 
-    if _run_visible([str(_APT_GET), "update"]).returncode != 0:
-        output.fatal("APT metadata refresh failed.")
+    if not _refresh_ravenstash_source():
+        output.fatal("APT metadata refresh for the Ravenstash source failed.")
     refreshed_installed, refreshed_candidate = _apt_versions()
-    if refreshed_candidate != candidate or refreshed_installed != installed:
-        output.fatal("APT candidate changed during refresh; run rvs update again to review it.")
+    if refreshed_installed != installed:
+        output.fatal("The installed package changed during refresh; run rvs update again.")
+    if refreshed_candidate is None or _upgrade_available(refreshed_candidate, target):
+        output.fatal(
+            f"APT does not offer rvs {target} after refreshing the Ravenstash source. "
+            "Check for an APT pin or hold on rvs, or retry later if you use a mirror."
+        )
+    if refreshed_candidate != target:
+        output.fatal(
+            f"APT now offers rvs {refreshed_candidate} instead of {target}; "
+            "run rvs update again to review it."
+        )
     if (
         _run_visible(
-            [str(_APT_GET), "install", "--only-upgrade", "--yes", f"rvs={candidate}"]
+            [str(_APT_GET), "install", "--only-upgrade", "--yes", f"rvs={target}"]
         ).returncode
         != 0
     ):
         output.fatal("APT could not install the rvs update.")
-    output.success(f"Updated rvs to {candidate}.")
+    output.success(f"Updated rvs to {target}.")
 
 
 def _update_series(
@@ -680,8 +727,8 @@ def _update_series(
         return
     if not yes:
         typer.confirm(f"Install rvs {target_version} from {target_label}?", abort=True)
-    if _run_visible([str(_APT_GET), "update"]).returncode != 0:
-        output.fatal("APT metadata refresh failed.")
+    if not _refresh_ravenstash_source():
+        output.fatal("APT metadata refresh for the Ravenstash source failed.")
 
     installed_after_refresh, _candidate = _apt_versions()
     if installed_after_refresh != installed:

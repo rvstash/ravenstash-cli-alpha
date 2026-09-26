@@ -191,8 +191,10 @@ available to CLI listing, selection, age changes, deletion, and upstream attachm
 `rvs update --to 0.MINOR` previews the latest stable patch in that minor line
 without changing the active installation or its rolling `v0` channel. Add
 `--apply` to install. A later plain `rvs update` resumes at the newest `v0`
-release. APT installations
-delegate to APT; portable Linux, Alpine/musl, macOS, and Windows installations
+release. APT installations check the signed `v0` release channel, so a new
+release is reported even before the local APT package list is refreshed; `--apply`
+then refreshes only the Ravenstash APT source and installs that exact version
+through APT. Portable Linux, Alpine/musl, macOS, and Windows installations
 download, authenticate, stage, health-check, and atomically activate the matching
 native bundle. Nix, Homebrew, and WinGet installations delegate replacement to
 their package manager. Homebrew and WinGet upgrade their rolling major package.

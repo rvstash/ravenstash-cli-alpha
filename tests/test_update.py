@@ -5,6 +5,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
+import pytest
 from rvs import portable_update as portable_update_mod
 from rvs import update as update_mod
 from rvs.cli import app
@@ -17,6 +18,29 @@ runner = CliRunner()
 
 def _completed(returncode: int = 0, stdout: str = "") -> Any:
     return SimpleNamespace(returncode=returncode, stdout=stdout, stderr="")
+
+
+def _newer(installed: str, candidate: str) -> bool:
+    """Portable stand-in for `dpkg --compare-versions candidate gt installed`."""
+    return tuple(map(int, candidate.split("."))) > tuple(map(int, installed.split(".")))
+
+
+def _manifest(latest: str) -> dict[str, Any]:
+    minor = latest.rpartition(".")[0]
+    return {
+        "schema": 1,
+        "recommended": "v0",
+        "channels": {
+            "v0": {"latest": latest, "minor_targets": {minor: latest}, "status": "supported"}
+        },
+    }
+
+
+@pytest.fixture(autouse=True)
+def _isolated_apt(monkeypatch: Any, tmp_path: Path) -> None:
+    # Never read the host's APT source or fetch the real signed channel manifest.
+    monkeypatch.setattr(update_mod, "_APT_SOURCE", tmp_path / "missing-ravenstash-rvs.list")
+    monkeypatch.setattr(update_mod, "_channel_manifest", lambda: None)
 
 
 def test_update_reports_new_apt_candidate(monkeypatch: Any) -> None:
@@ -35,7 +59,7 @@ def test_update_reports_installed_and_latest_versions_when_current(monkeypatch: 
     monkeypatch.setattr(update_mod, "_apt_versions", lambda: ("0.14.3", "0.14.3"))
     monkeypatch.setattr(update_mod, "_upgrade_available", lambda installed, candidate: False)
     monkeypatch.setattr(update_mod, "_current_channel", lambda: "v0")
-    monkeypatch.setattr(update_mod, "_announce_new_channel", lambda channel: None)
+    monkeypatch.setattr(update_mod, "_announce_new_channel", lambda channel, manifest: None)
 
     result = runner.invoke(app, ["update"])
     output = " ".join(result.output.split())
@@ -382,7 +406,7 @@ def test_update_apply_uses_fixed_apt_paths(monkeypatch: Any, tmp_path: Path) -> 
     apt_get.touch()
     monkeypatch.setattr(update_mod, "_APT_GET", apt_get)
     monkeypatch.setattr(update_mod, "_apt_versions", lambda: ("0.14.3", "0.14.4"))
-    monkeypatch.setattr(update_mod, "_upgrade_available", lambda installed, candidate: True)
+    monkeypatch.setattr(update_mod, "_upgrade_available", _newer)
     monkeypatch.setattr(update_mod, "_current_channel", lambda: "v0")
     monkeypatch.setattr(update_mod.os, "geteuid", lambda: 0, raising=False)
     calls: list[list[str]] = []
@@ -602,3 +626,135 @@ def test_update_to_stops_if_installed_package_changes(monkeypatch):
     result = runner.invoke(app, ["update", "--to", "0.15", "--apply", "--yes"])
     assert result.exit_code == 1
     assert calls == [[str(update_mod._APT_GET), "update"]]
+
+
+def test_update_reports_a_release_the_local_apt_list_does_not_know_yet(
+    monkeypatch: Any,
+) -> None:
+    monkeypatch.setattr(update_mod, "_apt_versions", lambda: ("0.14.7", "0.14.7"))
+    monkeypatch.setattr(update_mod, "_upgrade_available", _newer)
+    monkeypatch.setattr(update_mod, "_current_channel", lambda: "v0")
+    monkeypatch.setattr(update_mod, "_channel_manifest", lambda: _manifest("0.14.8"))
+    monkeypatch.setattr(update_mod, "_run_visible", lambda command: _completed(1))
+
+    result = runner.invoke(app, ["update"])
+    output = " ".join(result.output.split())
+
+    assert result.exit_code == 0
+    assert "rvs 0.14.8 is available (installed: 0.14.7)" in output
+    assert "rvs update --apply" in output
+    assert "up to date" not in output
+
+
+def test_update_apply_refreshes_only_the_ravenstash_source_then_installs(
+    monkeypatch: Any, tmp_path: Path
+) -> None:
+    apt_get = tmp_path / "apt-get"
+    apt_get.touch()
+    source = tmp_path / "ravenstash-rvs.list"
+    source.write_text("deb [arch=amd64] https://releases.ravenstash.com/rvs/apt v0 main\n")
+    versions = iter((("0.14.7", "0.14.7"), ("0.14.7", "0.14.8")))
+    monkeypatch.setattr(update_mod, "_APT_GET", apt_get)
+    monkeypatch.setattr(update_mod, "_APT_SOURCE", source)
+    monkeypatch.setattr(update_mod, "_apt_versions", lambda: next(versions))
+    monkeypatch.setattr(update_mod, "_upgrade_available", _newer)
+    monkeypatch.setattr(update_mod, "_current_channel", lambda: "v0")
+    monkeypatch.setattr(update_mod, "_channel_manifest", lambda: _manifest("0.14.8"))
+    calls: list[list[str]] = []
+
+    def fake_run(command: list[str]) -> Any:
+        calls.append(command)
+        return _completed()
+
+    monkeypatch.setattr(update_mod, "_run_visible", fake_run)
+
+    result = runner.invoke(app, ["update", "--apply", "--yes"])
+
+    assert result.exit_code == 0, result.output
+    assert calls == [
+        [
+            str(apt_get),
+            "update",
+            "-o",
+            f"Dir::Etc::sourcelist={source}",
+            "-o",
+            "Dir::Etc::sourceparts=-",
+            "-o",
+            "APT::Get::List-Cleanup=0",
+        ],
+        [str(apt_get), "install", "--only-upgrade", "--yes", "rvs=0.14.8"],
+    ]
+    assert "Updated rvs to 0.14.8" in result.output
+
+
+def test_update_apply_stops_when_apt_still_lacks_the_signed_release(
+    monkeypatch: Any, tmp_path: Path
+) -> None:
+    apt_get = tmp_path / "apt-get"
+    apt_get.touch()
+    monkeypatch.setattr(update_mod, "_APT_GET", apt_get)
+    monkeypatch.setattr(update_mod, "_apt_versions", lambda: ("0.14.7", "0.14.7"))
+    monkeypatch.setattr(update_mod, "_upgrade_available", _newer)
+    monkeypatch.setattr(update_mod, "_current_channel", lambda: "v0")
+    monkeypatch.setattr(update_mod, "_channel_manifest", lambda: _manifest("0.14.8"))
+    calls: list[list[str]] = []
+
+    def fake_run(command: list[str]) -> Any:
+        calls.append(command)
+        return _completed()
+
+    monkeypatch.setattr(update_mod, "_run_visible", fake_run)
+
+    result = runner.invoke(app, ["update", "--apply", "--yes"])
+    output = " ".join(result.output.split())
+
+    assert result.exit_code == 1
+    assert "APT does not offer rvs 0.14.8" in output
+    assert [command[1] for command in calls] == ["update"]
+
+
+def test_update_apply_reports_a_failed_ravenstash_refresh(monkeypatch: Any, tmp_path: Path) -> None:
+    apt_get = tmp_path / "apt-get"
+    apt_get.touch()
+    monkeypatch.setattr(update_mod, "_APT_GET", apt_get)
+    monkeypatch.setattr(update_mod, "_apt_versions", lambda: ("0.14.7", "0.14.7"))
+    monkeypatch.setattr(update_mod, "_upgrade_available", _newer)
+    monkeypatch.setattr(update_mod, "_current_channel", lambda: "v0")
+    monkeypatch.setattr(update_mod, "_channel_manifest", lambda: _manifest("0.14.8"))
+    monkeypatch.setattr(update_mod, "_run_visible", lambda command: _completed(100))
+
+    result = runner.invoke(app, ["update", "--apply", "--yes"])
+
+    assert result.exit_code == 1
+    assert "refresh for the Ravenstash source failed" in " ".join(result.output.split())
+
+
+def test_update_without_signed_channel_says_the_check_used_local_apt(
+    monkeypatch: Any,
+) -> None:
+    monkeypatch.setattr(update_mod, "_apt_versions", lambda: ("0.14.7", "0.14.7"))
+    monkeypatch.setattr(update_mod, "_upgrade_available", _newer)
+    monkeypatch.setattr(update_mod, "_current_channel", lambda: "v0")
+
+    result = runner.invoke(app, ["update"])
+    output = " ".join(result.output.split())
+
+    assert result.exit_code == 0
+    assert "You are up to date" in output
+    assert "sudo apt-get update" in output
+
+
+def test_update_with_signed_channel_confirms_up_to_date_without_apt_hint(
+    monkeypatch: Any,
+) -> None:
+    monkeypatch.setattr(update_mod, "_apt_versions", lambda: ("0.14.8", "0.14.7"))
+    monkeypatch.setattr(update_mod, "_upgrade_available", _newer)
+    monkeypatch.setattr(update_mod, "_current_channel", lambda: "v0")
+    monkeypatch.setattr(update_mod, "_channel_manifest", lambda: _manifest("0.14.8"))
+
+    result = runner.invoke(app, ["update"])
+    output = " ".join(result.output.split())
+
+    assert result.exit_code == 0
+    assert "Latest in release channel v0: rvs 0.14.8. You are up to date" in output
+    assert "apt-get update" not in output

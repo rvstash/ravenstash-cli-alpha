@@ -6,6 +6,16 @@ All notable user-facing changes to `rvs` are recorded here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- `rvs update` on APT installations now checks the signed release channel, so it
+  reports a new release even when the local APT package list is out of date.
+  Previously it reported "You are up to date" until `sudo apt-get update` ran.
+- `rvs update --apply` refreshes only the Ravenstash APT source before
+  installing, so an unrelated broken or slow APT source no longer blocks an rvs
+  update, and it stops with a clear message when APT still does not offer the
+  signed release (for example because of a pin, hold, or mirror delay).
+
 ## [0.14.8] - 2026-09-26
 
 ### Changed
