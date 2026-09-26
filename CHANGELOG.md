@@ -6,6 +6,18 @@ All notable user-facing changes to `rvs` are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.14.10] - 2026-09-26
+
+### Changed
+
+- When `RVS_TOKEN` is set, a repository or format that Ravenstash reports as
+  missing now includes a hint to check that the token covers that repository and
+  format. Automation tokens can be limited to selected formats, and Ravenstash
+  hides what a token does not cover. Private mirrors and formats that do not
+  apply to the target get no hint.
+
+Detailed release notes: [RVS 0.14.10](docs/releases/0.14.10.md).
+
 ## [0.14.9] - 2026-09-26
 
 ### Fixed
@@ -138,7 +150,8 @@ Detailed release notes: [RVS 0.14.4](docs/releases/0.14.4.md).
 
 Detailed release notes: [RVS 0.14.3](docs/releases/0.14.3.md).
 
-[Unreleased]: https://github.com/rvstash/ravenstash-cli-alpha/compare/v0.14.9...HEAD
+[Unreleased]: https://github.com/rvstash/ravenstash-cli-alpha/compare/v0.14.10...HEAD
+[0.14.10]: https://github.com/rvstash/ravenstash-cli-alpha/compare/v0.14.9...v0.14.10
 [0.14.9]: https://github.com/rvstash/ravenstash-cli-alpha/compare/v0.14.8...v0.14.9
 [0.14.8]: https://github.com/rvstash/ravenstash-cli-alpha/compare/v0.14.7...v0.14.8
 [0.14.7]: https://github.com/rvstash/ravenstash-cli-alpha/compare/v0.14.6...v0.14.7
