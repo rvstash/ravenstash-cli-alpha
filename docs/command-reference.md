@@ -40,7 +40,7 @@ When a package tool must connect without an `rvs` wrapper, run `rvs art token mi
 | `rvs art select NAMESPACE/REPOSITORY` | Chooses a private repository. |
 | `rvs art status` | Shows the account, repository or mirror, and format that `rvs art` commands use. |
 | `rvs art clear` | Clears that choice without signing out. |
-| `rvs status` | Shows who is signed in, the profile, the account, the selected target, and the API. |
+| `rvs status` | Shows the profile, who is signed in, the account, the selected target, and the API. |
 
 `rvs status` and `rvs art status` only read: they never select, switch, or
 save anything. A choice made by `RVS_PROFILE`, `RVS_ACCOUNT_REF`, a shell

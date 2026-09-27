@@ -133,6 +133,10 @@ def test_status_names_the_person_and_selections_without_writing_config(
     assert _row(result.output, "Profile").split() == ["Profile", "work"]
     assert "user:avery (Avery Example)" in _row(result.output, "Account")
     assert "not selected" in _row(result.output, "Artifacts target")
+    labels = ("Profile", "Signed in as", "Account", "Artifacts target", "Ravenstash API")
+    rows = [line.split("  ")[0] for line in result.output.splitlines() if line.startswith(labels)]
+    # The profile comes first: it decides which sign-in and selections apply.
+    assert rows == list(labels)
     assert "https://api.work.example" in result.output
     assert cfg_mod.CONFIG_FILE.read_text(encoding="utf-8") == before
     assert not (cfg_mod.CONFIG_DIR / "sessions").exists()

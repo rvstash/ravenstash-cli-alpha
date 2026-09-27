@@ -146,8 +146,8 @@ def status(
     account = selection_account_display(selection)
     output.kv(
         {
-            "Signed in as": identity_display(selection.identity),
             "Profile": with_source(selection.profile_name, selection.profile_source),
+            "Signed in as": identity_display(selection.identity),
             "Account": (
                 with_source(account, selection.account_source) if account else "not selected"
             ),
@@ -160,11 +160,11 @@ def status(
         },
         title="Ravenstash status",
         json_values={
-            "signed_in_as": _identity_json(selection.identity),
             "profile": {
                 "name": selection.profile_name,
                 "selected_by": selection.profile_source,
             },
+            "signed_in_as": _identity_json(selection.identity),
             "account": account_json(selection),
             "targets": {"artifacts": target_json(target)},
             "api_url": selection.api_url,
