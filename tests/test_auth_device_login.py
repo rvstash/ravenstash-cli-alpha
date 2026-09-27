@@ -1245,6 +1245,28 @@ def test_device_token_poll_surfaces_retired_route_message(
     assert "run `rvs update`" in err
 
 
+def test_device_login_reports_success_before_a_retired_post_login_route(
+    monkeypatch, tmp_path: Path, capsys
+) -> None:
+    _isolated_login(monkeypatch, tmp_path)
+    _FakeClient.responses = [
+        _FakeResponse(200, _DEVICE_SESSION),
+        _FakeResponse(200, _DEVICE_TOKEN),
+        _FakeResponse(410, _RETIRED),
+    ]
+
+    with pytest.raises(SystemExit) as raised:
+        login_mod.perform_device_login(profile="default", api_url=None, no_browser=True)
+
+    assert raised.value.code == 1
+    captured = capsys.readouterr()
+    text = " ".join((captured.out + captured.err).split())
+    # The credential is stored, so the login is reported as a success first.
+    assert "Authenticated profile 'default'" in text
+    assert "This rvs release is no longer supported by the Ravenstash API." in text
+    assert "Login failed" not in text
+
+
 def _isolated_refresh(monkeypatch, tmp_path: Path) -> None:
     config_dir = tmp_path / ".rvs"
     _write_profiles_config(config_dir)
@@ -1324,6 +1346,26 @@ def test_refresh_keeps_stored_registries_when_artifacts_meta_fails(
     profile = cfg_mod.load().profiles["default"]
     assert profile.native_registries == before
     assert profile.credential_type == "expiring"
+
+
+def test_refresh_cleanup_finishes_when_the_revoke_route_is_retired(
+    monkeypatch, tmp_path: Path
+) -> None:
+    _isolated_refresh(monkeypatch, tmp_path)
+    deleted: list[str] = []
+    monkeypatch.setattr(
+        cfg_mod,
+        "set_profile_metadata",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(OSError("disk full")),
+    )
+    monkeypatch.setattr(
+        auth_mod, "delete_token_from_store", lambda profile, _store: deleted.append(profile)
+    )
+    _FakeClient.responses = [_FakeResponse(200, _DEVICE_TOKEN), _FakeResponse(410, _RETIRED)]
+
+    # A partial rotated pair is still removed; the retired revoke is only logged.
+    assert auth_mod.refresh_expiring_credential("default") is None
+    assert deleted == ["default"]
 
 
 def test_refresh_stops_after_storing_the_session_when_artifacts_meta_is_retired(
