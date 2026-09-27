@@ -77,7 +77,7 @@ def test_manual_rejects_a_native_path_other_than_the_selected_repository(issuer,
 
     assert result.exit_code == 1
     assert SECRET not in result.stdout
-    assert "different native repository route" in result.stderr
+    assert "different native repository route" in " ".join(result.stderr.split())
 
 
 def test_manual_default_prints_only_the_secret_to_stdout(issuer):
