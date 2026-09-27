@@ -360,9 +360,9 @@ def update_lock(root: Path) -> Iterator[None]:
         if os.name == "nt":
             import msvcrt
 
+            # Lock the first byte; Windows allows locking past the end of the file,
+            # so nothing is written (appends would land beyond the locked byte).
             stream.seek(0)
-            stream.write(b"0")
-            stream.flush()
             try:
                 msvcrt.locking(stream.fileno(), msvcrt.LK_NBLCK, 1)
             except OSError as exc:
