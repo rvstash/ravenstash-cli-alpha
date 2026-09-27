@@ -15,6 +15,9 @@ All notable user-facing changes to `rvs` are recorded here. The format follows
   registries get the standard "credentials not found" answer, so Docker
   continues without credentials and prints no stray message; and failures no
   longer show file paths or parser details.
+- `rvs runtime install node latest` installs the newest Node.js release
+  instead of failing, and a version that does not exist, such as `22.99`, is
+  reported instead of silently installing another release of that major.
 
 ## [0.14.13] - 2026-09-27
 

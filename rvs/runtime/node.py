@@ -55,35 +55,29 @@ def _gpgv_path(path: Path, gpgv: str) -> str:
     return str(path)
 
 
+def _version_key(version: str) -> tuple[int, ...]:
+    return tuple(int(part) for part in version.split("."))
+
+
 def _resolve_full_version(version: str) -> str:
-    """Resolve a partial version (``"20"``, ``"20.11"``) to the full release string."""
+    """Resolve ``latest``, a major (``"20"``), or a major.minor (``"20.11"``)
+    version to the newest matching release; a full version must exist."""
     output.info("Fetching Node.js release index ...")
     with httpx.Client(timeout=30.0) as hx:
         resp = hx.get(_INDEX_URL)
         resp.raise_for_status()
         releases: list[dict[str, Any]] = resp.json()
 
-    # Normalise: strip leading 'v'
-    vp = version.lstrip("v").rstrip(".")
-
-    # Try exact match first, then prefix match
-    for rel in releases:
-        v = rel["version"].lstrip("v")
-        if v == vp or v.startswith(vp + "."):
-            return v
-
-    # Match by major version only
-    try:
-        major = int(vp.split(".")[0])
-    except ValueError:
-        output.fatal(f"Cannot resolve Node.js version '{version}'.")
-
-    for rel in releases:
-        v = rel["version"].lstrip("v")
-        if int(v.split(".")[0]) == major:
-            return v
-
-    output.fatal(f"No Node.js release found for '{version}'.")
+    available = [str(release["version"]).lstrip("v") for release in releases]
+    requested = version.strip().lower().lstrip("v").rstrip(".")
+    matches = [
+        candidate
+        for candidate in available
+        if requested == "latest" or candidate == requested or candidate.startswith(f"{requested}.")
+    ]
+    if not matches:
+        output.fatal(f"No Node.js release found for '{version}'.")
+    return max(matches, key=_version_key)
 
 
 def _verified_archive_digest(version: str, archive_name: str, temp_dir: Path) -> str:
@@ -137,8 +131,8 @@ def _verified_archive_digest(version: str, archive_name: str, temp_dir: Path) ->
 def install(version: str) -> Path:
     """Download and install Node.js *version* to ``~/.rvs/runtimes/node/``.
 
-    *version* may be a major (``"20"``), major.minor (``"20.11"``), or full
-    version string (``"20.11.0"``).  Returns the installation directory.
+    *version* may be ``latest``, a major (``"20"``), major.minor (``"20.11"``), or
+    full version string (``"20.11.0"``). Returns the installation directory.
     """
     platform_target = runtime_platform()
     if platform_target.system == "linux" and platform_target.libc == "musl":
@@ -147,9 +141,6 @@ def install(version: str) -> Path:
             "with the system package manager; rvs will use it from PATH."
         )
     arch = _ARCH_MAP[platform_target.arch]
-
-    if version.lower() == "latest":
-        version = "current"  # nodejs.org uses 'current' for the latest release
 
     full_ver = _resolve_full_version(version)
     dest = RUNTIMES_DIR / "node" / full_ver
