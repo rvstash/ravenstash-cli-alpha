@@ -166,7 +166,8 @@ community expectations.
 Run the repository checks from this directory:
 
 ```bash
-.venv/bin/pytest
+.venv/bin/coverage run -m pytest
+.venv/bin/coverage report
 .venv/bin/ruff check rvs tests
 .venv/bin/pyright
 ```

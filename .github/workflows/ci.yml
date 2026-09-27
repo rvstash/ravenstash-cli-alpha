@@ -128,7 +128,8 @@ jobs:
       - name: Test and lint once
         run: |
           uv sync --frozen --python 3.14
-          uv run pytest
+          uv run coverage run -m pytest
+          uv run coverage report
           uv run ruff format --check rvs tests packaging/repository packaging/scripts
           uv run ruff check rvs tests packaging/repository packaging/scripts
           uv run pyright

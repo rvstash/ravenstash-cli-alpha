@@ -56,7 +56,8 @@ control-plane URL separate from package download and upload URLs.
 Run from the repository root:
 
 ```bash
-.venv/bin/pytest
+.venv/bin/coverage run -m pytest
+.venv/bin/coverage report
 .venv/bin/ruff format --check rvs tests packaging/repository packaging/scripts
 .venv/bin/ruff check rvs tests packaging/repository packaging/scripts
 .venv/bin/pyright

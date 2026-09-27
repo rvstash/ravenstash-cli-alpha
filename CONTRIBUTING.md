@@ -58,11 +58,15 @@ could merge or release is tested.
 ## Local checks
 
 ```bash
-.venv/bin/pytest
+.venv/bin/coverage run -m pytest
+.venv/bin/coverage report
 .venv/bin/ruff format --check rvs tests packaging/repository packaging/scripts
 .venv/bin/ruff check rvs tests packaging/repository packaging/scripts
 .venv/bin/pyright
 ```
+
+`coverage report` enforces the branch-coverage floor set in `pyproject.toml`;
+new code should come with tests that keep it there or raise it.
 
 Workflow or packaging changes must also pass actionlint, shellcheck, repository
 policy tests, and installer Worker tests.

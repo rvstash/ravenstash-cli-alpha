@@ -45,6 +45,7 @@ dev = [
     "pyright==1.1.414",
     "pytest==9.1.1",
     "httpx2-pytest==2.0.0",
+    "coverage==7.16.2",
 ]
 release = [
     "cyclonedx-bom==7.4.0",
@@ -57,6 +58,16 @@ include = ["rvs*"]
 
 [tool.setuptools.package-data]
 "rvs.resources" = ["ravenstash-rvs.asc"]
+
+[tool.coverage.run]
+branch = true
+source = ["rvs"]
+
+[tool.coverage.report]
+# Branch-coverage floor enforced in CI; raise it as coverage grows.
+fail_under = 75
+skip_covered = true
+show_missing = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
