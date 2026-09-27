@@ -65,7 +65,7 @@ source = ["rvs"]
 
 [tool.coverage.report]
 # Branch-coverage floor enforced in CI; raise it as coverage grows.
-fail_under = 75
+fail_under = 83
 skip_covered = true
 show_missing = true
 
