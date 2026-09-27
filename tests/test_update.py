@@ -1,4 +1,6 @@
 import hashlib
+import os
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -12,6 +14,10 @@ from typer.testing import CliRunner
 
 
 runner = CliRunner()
+
+# The autouse fixture below stubs the signed APT channel lookup; keep the real
+# implementation for the tests that exercise its validation.
+_verified_apt_channel_manifest = update_mod._channel_manifest
 
 
 def _completed(returncode: int = 0, stdout: str = "") -> Any:
@@ -756,3 +762,805 @@ def test_update_with_signed_channel_confirms_up_to_date_without_apt_hint(
     assert result.exit_code == 0
     assert "Latest in release channel v0: rvs 0.14.8. You are up to date" in output
     assert "apt-get update" not in output
+
+
+def _channels(recommended: str = "v0", **channels: dict[str, Any]) -> dict[str, Any]:
+    return {"schema": 1, "recommended": recommended, "channels": channels}
+
+
+def _supported(latest: str, **minor_targets: str) -> dict[str, Any]:
+    targets = minor_targets or {latest.rpartition(".")[0]: latest}
+    return {"latest": latest, "minor_targets": targets, "status": "supported"}
+
+
+def _one_line(text: str) -> str:
+    return " ".join(text.split())
+
+
+# ── APT inspection ────────────────────────────────────────────────────────────
+
+
+def test_apt_versions_reads_installed_package_and_policy_candidate(
+    monkeypatch: Any, tmp_path: Path
+) -> None:
+    dpkg_query = tmp_path / "dpkg-query"
+    apt_cache = tmp_path / "apt-cache"
+    dpkg_query.touch()
+    apt_cache.touch()
+    monkeypatch.setattr(update_mod, "_DPKG_QUERY", dpkg_query)
+    monkeypatch.setattr(update_mod, "_APT_CACHE", apt_cache)
+    outputs = {
+        str(dpkg_query): _completed(stdout="ii 0.14.3\n"),
+        str(apt_cache): _completed(
+            stdout="rvs:\n  Installed: 0.14.3\n  Candidate: 0.14.4\n  Version table:\n"
+        ),
+    }
+    monkeypatch.setattr(update_mod, "_run", lambda command: outputs[command[0]])
+
+    assert update_mod._apt_versions() == ("0.14.3", "0.14.4")
+
+
+def test_apt_versions_ignores_removed_package_and_missing_candidate(
+    monkeypatch: Any, tmp_path: Path
+) -> None:
+    dpkg_query = tmp_path / "dpkg-query"
+    apt_cache = tmp_path / "apt-cache"
+    dpkg_query.touch()
+    apt_cache.touch()
+    monkeypatch.setattr(update_mod, "_DPKG_QUERY", dpkg_query)
+    monkeypatch.setattr(update_mod, "_APT_CACHE", apt_cache)
+    outputs = {
+        str(dpkg_query): _completed(stdout="rc 0.14.3\n"),
+        str(apt_cache): _completed(stdout="rvs:\n  Candidate: (none)\n"),
+    }
+    monkeypatch.setattr(update_mod, "_run", lambda command: outputs[command[0]])
+
+    assert update_mod._apt_versions() == (None, None)
+
+
+def test_apt_versions_is_empty_without_dpkg(monkeypatch: Any, tmp_path: Path) -> None:
+    monkeypatch.setattr(update_mod, "_DPKG_QUERY", tmp_path / "missing-dpkg-query")
+    monkeypatch.setattr(
+        update_mod, "_run", lambda command: (_ for _ in ()).throw(AssertionError("ran APT"))
+    )
+
+    assert update_mod._apt_versions() == (None, None)
+
+
+@pytest.mark.parametrize(
+    ("source", "expected"),
+    [
+        (
+            "deb [arch=amd64 signed-by=/etc/apt/keyrings/ravenstash-rvs.gpg] "
+            "https://releases.ravenstash.com/rvs/apt v1 main\n",
+            "v1",
+        ),
+        ("deb https://mirror.example.test/rvs/apt v1 main\n", None),
+        (None, None),
+    ],
+)
+def test_current_channel_trusts_only_the_signed_ravenstash_source(
+    monkeypatch: Any, tmp_path: Path, source: str | None, expected: str | None
+) -> None:
+    source_file = tmp_path / "ravenstash-rvs.list"
+    if source is not None:
+        source_file.write_text(source, encoding="utf-8")
+    monkeypatch.setattr(update_mod, "_APT_SOURCE", source_file)
+
+    assert update_mod._current_channel() == expected
+
+
+def test_root_command_uses_sudo_when_not_root(monkeypatch: Any, tmp_path: Path) -> None:
+    sudo = tmp_path / "sudo"
+    sudo.touch()
+    monkeypatch.setattr(update_mod, "_SUDO", sudo)
+    monkeypatch.setattr(update_mod.os, "geteuid", lambda: 1000, raising=False)
+
+    assert update_mod._root_command(["apt-get", "update"]) == [str(sudo), "apt-get", "update"]
+
+
+def test_root_command_requires_sudo_when_not_root(
+    monkeypatch: Any, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(update_mod, "_SUDO", tmp_path / "missing-sudo")
+    monkeypatch.setattr(update_mod.os, "geteuid", lambda: 1000, raising=False)
+
+    with pytest.raises(SystemExit):
+        update_mod._root_command(["apt-get", "update"])
+
+    assert _one_line(capsys.readouterr().err) == (
+        "Error: Updating requires root privileges and /usr/bin/sudo is unavailable."
+    )
+
+
+# ── Signed APT channel manifest ───────────────────────────────────────────────
+
+
+def _serve_apt_channels(
+    httpx2_mock: Any, monkeypatch: Any, tmp_path: Path, manifest: dict[str, Any], gpgv_exit: int = 0
+) -> list[list[str]]:
+    keyring = tmp_path / "ravenstash-rvs.gpg"
+    gpgv = tmp_path / "gpgv"
+    keyring.touch()
+    gpgv.touch()
+    monkeypatch.setattr(update_mod, "_APT_KEYRING", keyring)
+    monkeypatch.setattr(update_mod, "_GPGV", gpgv)
+    monkeypatch.setenv("RVS_HOME", str(tmp_path / "rvs-home"))
+    httpx2_mock.add_response(url=update_mod._CHANNELS_URL, json=manifest)
+    httpx2_mock.add_response(url=update_mod._CHANNELS_SIGNATURE_URL, content=b"signature")
+    verifications: list[list[str]] = []
+    monkeypatch.setattr(
+        update_mod.subprocess,
+        "run",
+        lambda command, **_kwargs: verifications.append(command) or _completed(gpgv_exit),
+    )
+    return verifications
+
+
+def test_apt_channel_manifest_accepts_gpgv_verified_manifest(
+    httpx2_mock: Any, monkeypatch: Any, tmp_path: Path
+) -> None:
+    manifest = _channels(v0=_supported("0.15.1", **{"0.14": "0.14.3", "0.15": "0.15.1"}))
+    verifications = _serve_apt_channels(httpx2_mock, monkeypatch, tmp_path, manifest)
+
+    assert _verified_apt_channel_manifest() == manifest
+    assert len(verifications) == 1
+    assert verifications[0][:2] == [
+        str(tmp_path / "gpgv"),
+        f"--keyring={tmp_path / 'ravenstash-rvs.gpg'}",
+    ]
+
+
+@pytest.mark.parametrize(
+    ("manifest", "gpgv_exit"),
+    [
+        (_channels(v0=_supported("0.15.1")), 1),
+        ({**_channels(v0=_supported("0.15.1")), "schema": 2}, 0),
+        (_channels(recommended="v1", v0=_supported("0.15.1")), 0),
+        (_channels(v0=_supported("1.0.0")), 0),
+        (_channels(v0=_supported("0.15.1", **{"0.15": "0.14.9"})), 0),
+        (_channels(v0={"latest": "0.15.1", "minor_targets": {}, "status": "supported"}), 0),
+    ],
+    ids=[
+        "bad-signature",
+        "unknown-schema",
+        "unknown-recommendation",
+        "latest-outside-channel",
+        "minor-target-mismatch",
+        "no-minor-targets",
+    ],
+)
+def test_apt_channel_manifest_rejects_unverified_or_inconsistent_manifest(
+    httpx2_mock: Any, monkeypatch: Any, tmp_path: Path, manifest: dict[str, Any], gpgv_exit: int
+) -> None:
+    _serve_apt_channels(httpx2_mock, monkeypatch, tmp_path, manifest, gpgv_exit)
+
+    assert _verified_apt_channel_manifest() is None
+
+
+def test_apt_channel_manifest_requires_installed_keyring(monkeypatch: Any, tmp_path: Path) -> None:
+    monkeypatch.setattr(update_mod, "_APT_KEYRING", tmp_path / "missing.gpg")
+
+    assert _verified_apt_channel_manifest() is None
+
+
+# ── Target selection ──────────────────────────────────────────────────────────
+
+
+def test_requested_target_resolves_channels_and_minor_lines() -> None:
+    manifest = _channels(
+        recommended="v1",
+        v0=_supported("0.16.0", **{"0.15": "0.15.2", "0.16": "0.16.0"}),
+        v1=_supported("1.2.0"),
+    )
+
+    assert update_mod._requested_target(manifest, "v0", None) == (
+        "v0",
+        "0.16.0",
+        "release channel v0",
+    )
+    assert update_mod._requested_target(manifest, "v0", "1") == (
+        "v1",
+        "1.2.0",
+        "release channel v1",
+    )
+    assert update_mod._requested_target(manifest, "v0", "0.15") == (
+        "v0",
+        "0.15.2",
+        "minor release 0.15",
+    )
+
+
+@pytest.mark.parametrize(
+    ("requested", "message"),
+    [
+        ("0", "release-channel downgrades are not supported automatically"),
+        ("0.16", "release-channel downgrades are not supported automatically"),
+        ("latest", "update target must look like 0, v0, or 0.15"),
+    ],
+)
+def test_requested_target_rejects_downgrades_and_malformed_targets(
+    requested: str, message: str
+) -> None:
+    manifest = _channels(recommended="v1", v0=_supported("0.16.0"), v1=_supported("1.2.0"))
+
+    with pytest.raises(ValueError) as raised:
+        update_mod._requested_target(manifest, "v1", requested)
+
+    assert str(raised.value) == message
+
+
+def test_channel_latest_ignores_unsupported_channel() -> None:
+    manifest = _channels(v0={**_supported("0.16.0"), "status": "retired"})
+
+    assert update_mod._channel_latest(manifest, "v0") is None
+    assert update_mod._channel_latest(None, "v0") is None
+
+
+def test_update_announces_newer_recommended_channel(monkeypatch: Any) -> None:
+    monkeypatch.setattr(update_mod, "_apt_versions", lambda: ("0.16.0", "0.16.0"))
+    monkeypatch.setattr(update_mod, "_upgrade_available", _newer)
+    monkeypatch.setattr(update_mod, "_current_channel", lambda: "v0")
+    monkeypatch.setattr(
+        update_mod,
+        "_channel_manifest",
+        lambda: _channels(recommended="v1", v0=_supported("0.16.0"), v1=_supported("1.0.0")),
+    )
+
+    result = runner.invoke(app, ["update"])
+
+    assert result.exit_code == 0, result.output
+    assert (
+        "rvs 1.0.0 is available in release channel v1. "
+        "Review the migration notes, then run: rvs update --to 1"
+    ) in _one_line(result.output)
+
+
+def test_update_reports_missing_apt_candidate(monkeypatch: Any) -> None:
+    monkeypatch.setattr(update_mod, "_apt_versions", lambda: ("0.14.3", None))
+
+    result = runner.invoke(app, ["update"])
+
+    assert result.exit_code == 1
+    assert _one_line(result.stderr) == (
+        "Error: APT has no rvs candidate. Check that the Ravenstash source is configured, "
+        "then run `sudo apt-get update`."
+    )
+
+
+@pytest.mark.parametrize(
+    ("refreshed", "install_exit", "message"),
+    [
+        (("0.14.7", "0.14.9"), 0, "APT now offers rvs 0.14.9 instead of 0.14.8"),
+        (("0.14.6", "0.14.8"), 0, "The installed package changed during refresh"),
+        (("0.14.7", "0.14.8"), 100, "APT could not install the rvs update."),
+    ],
+)
+def test_update_apply_stops_when_apt_state_disagrees(
+    monkeypatch: Any,
+    tmp_path: Path,
+    refreshed: tuple[str, str],
+    install_exit: int,
+    message: str,
+) -> None:
+    apt_get = tmp_path / "apt-get"
+    apt_get.touch()
+    versions = iter((("0.14.7", "0.14.7"), refreshed))
+    exits = iter((0, install_exit))
+    monkeypatch.setattr(update_mod, "_APT_GET", apt_get)
+    monkeypatch.setattr(update_mod, "_apt_versions", lambda: next(versions))
+    monkeypatch.setattr(update_mod, "_upgrade_available", _newer)
+    monkeypatch.setattr(update_mod, "_current_channel", lambda: "v0")
+    monkeypatch.setattr(update_mod, "_channel_manifest", lambda: _manifest("0.14.8"))
+    monkeypatch.setattr(update_mod, "_run_visible", lambda command: _completed(next(exits)))
+
+    result = runner.invoke(app, ["update", "--apply", "--yes"])
+
+    assert result.exit_code == 1
+    assert message in _one_line(result.stderr)
+
+
+def test_update_apply_requires_apt_get(monkeypatch: Any, tmp_path: Path) -> None:
+    monkeypatch.setattr(update_mod, "_APT_GET", tmp_path / "missing-apt-get")
+    monkeypatch.setattr(update_mod, "_apt_versions", lambda: ("0.14.7", "0.14.8"))
+    monkeypatch.setattr(update_mod, "_upgrade_available", _newer)
+    monkeypatch.setattr(update_mod, "_current_channel", lambda: "v0")
+
+    result = runner.invoke(app, ["update", "--apply", "--yes"])
+
+    assert result.exit_code == 1
+    assert "Cannot update because /usr/bin/apt-get is unavailable." in result.stderr
+
+
+@pytest.mark.parametrize(
+    ("channel", "manifest", "message"),
+    [
+        (None, _manifest("0.15.2"), "rvs is not managed by a recognized Ravenstash APT source."),
+        ("v0", None, "Cannot authenticate the Ravenstash release-channel manifest."),
+    ],
+)
+def test_update_to_requires_recognized_source_and_signed_manifest(
+    monkeypatch: Any, channel: str | None, manifest: dict[str, Any] | None, message: str
+) -> None:
+    monkeypatch.setattr(update_mod, "_apt_versions", lambda: ("0.14.3", "0.14.3"))
+    monkeypatch.setattr(update_mod, "_current_channel", lambda: channel)
+    monkeypatch.setattr(update_mod, "_channel_manifest", lambda: manifest)
+
+    result = runner.invoke(app, ["update", "--to", "0.15"])
+
+    assert result.exit_code == 1
+    assert _one_line(result.stderr) == f"Error: {message}"
+
+
+def test_update_to_preview_names_target_and_apply_command(monkeypatch: Any) -> None:
+    monkeypatch.setattr(update_mod, "_apt_versions", lambda: ("0.14.3", "0.14.3"))
+    monkeypatch.setattr(update_mod, "_upgrade_available", _newer)
+    monkeypatch.setattr(update_mod, "_current_channel", lambda: "v0")
+    monkeypatch.setattr(
+        update_mod,
+        "_channel_manifest",
+        lambda: _channels(v0=_supported("0.16.0", **{"0.15": "0.15.2", "0.16": "0.16.0"})),
+    )
+
+    result = runner.invoke(app, ["update", "--to", "0.15"])
+
+    assert result.exit_code == 0, result.output
+    output = _one_line(result.output)
+    assert "Target: minor release 0.15, rvs 0.15.2" in output
+    assert "Install it with: rvs update --to 0.15 --apply" in output
+
+
+# ── Release candidates on APT installations ───────────────────────────────────
+
+
+@pytest.mark.parametrize(
+    ("installed", "has_dpkg_deb", "newer_candidate", "message"),
+    [
+        (None, True, True, "Release candidates can only update an existing rvs APT installation."),
+        ("0.14.3", False, True, "Candidate verification requires /usr/bin/dpkg-deb."),
+        (
+            "0.14.5",
+            True,
+            False,
+            "Release candidate 0.14.4rc1 is not newer than installed rvs 0.14.5.",
+        ),
+    ],
+)
+def test_candidate_update_refuses_unsafe_starting_points(
+    monkeypatch: Any,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    installed: str | None,
+    has_dpkg_deb: bool,
+    newer_candidate: bool,
+    message: str,
+) -> None:
+    dpkg_deb = tmp_path / "dpkg-deb"
+    if has_dpkg_deb:
+        dpkg_deb.touch()
+    monkeypatch.setattr(update_mod, "_DPKG_DEB", dpkg_deb)
+    monkeypatch.setattr(update_mod, "_apt_versions", lambda: (installed, None))
+    monkeypatch.setattr(update_mod, "_upgrade_available", lambda *_args: newer_candidate)
+    monkeypatch.setattr(
+        update_mod,
+        "_download_candidate",
+        lambda *_args: (_ for _ in ()).throw(AssertionError("downloaded a candidate")),
+    )
+
+    with pytest.raises(SystemExit):
+        update_mod._update_candidate("0.14.4rc1", apply=False, yes=False)
+
+    assert _one_line(capsys.readouterr().err) == f"Error: {message}"
+
+
+def test_candidate_download_rejects_mismatched_package_metadata(
+    monkeypatch: Any, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    package = tmp_path / "rvs_0.14.4rc1_arm64.deb"
+    monkeypatch.setattr(update_mod.platform, "machine", lambda: "aarch64")
+    monkeypatch.setattr(
+        update_mod,
+        "download_verified_assets",
+        lambda version, names, destination, *, candidate: {next(iter(names)): package},
+    )
+    monkeypatch.setattr(
+        update_mod, "_run", lambda command: _completed(stdout="rvs\n0.14.4\narm64\n")
+    )
+
+    with pytest.raises(SystemExit):
+        update_mod._download_candidate("0.14.4rc1", tmp_path)
+
+    assert _one_line(capsys.readouterr().err) == (
+        "Error: The candidate package metadata does not match the requested release."
+    )
+
+
+def test_candidate_download_reports_authentication_failure(
+    monkeypatch: Any, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    def rejected(*_args: Any, **_kwargs: Any) -> dict[str, Path]:
+        raise portable_update_mod.UpdateError("the release checksum signature is invalid")
+
+    monkeypatch.setattr(update_mod.platform, "machine", lambda: "x86_64")
+    monkeypatch.setattr(update_mod, "download_verified_assets", rejected)
+
+    with pytest.raises(SystemExit):
+        update_mod._download_candidate("0.14.4rc1", tmp_path)
+
+    assert _one_line(capsys.readouterr().err) == "Error: the release checksum signature is invalid"
+
+
+def test_candidate_architecture_rejects_unsupported_cpu(
+    monkeypatch: Any, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(update_mod.platform, "machine", lambda: "riscv64")
+
+    with pytest.raises(SystemExit):
+        update_mod._candidate_architecture()
+
+    assert _one_line(capsys.readouterr().err) == (
+        "Error: Candidate packages are available only for Linux amd64 and arm64."
+    )
+
+
+# ── Portable installations ────────────────────────────────────────────────────
+
+
+def _use_portable(monkeypatch: Any, installation: Installation, manifest: Any) -> None:
+    monkeypatch.setattr(update_mod, "_apt_versions", lambda: (None, None))
+    monkeypatch.setattr(update_mod, "_portable_installation", lambda: installation)
+    monkeypatch.setattr(update_mod, "fetch_channel_manifest", manifest)
+
+
+def test_portable_update_reports_up_to_date_and_newer_channel(
+    monkeypatch: Any, tmp_path: Path
+) -> None:
+    _use_portable(
+        monkeypatch,
+        _portable(tmp_path),
+        lambda: _channels(recommended="v1", v0=_supported("0.14.3"), v1=_supported("1.0.0")),
+    )
+
+    result = runner.invoke(app, ["update"])
+
+    assert result.exit_code == 0, result.output
+    output = _one_line(result.output)
+    assert (
+        "Installed: rvs 0.14.3. Latest in release channel v0: rvs 0.14.3. You are up to date."
+    ) in output
+    assert "rvs 1.0.0 is available in release channel v1." in output
+
+
+def test_portable_update_refuses_older_target(monkeypatch: Any, tmp_path: Path) -> None:
+    _use_portable(
+        monkeypatch,
+        _portable(tmp_path),
+        lambda: _channels(v0=_supported("0.14.3", **{"0.13": "0.13.9", "0.14": "0.14.3"})),
+    )
+
+    result = runner.invoke(app, ["update", "--to", "0.13"])
+
+    assert result.exit_code == 1
+    assert _one_line(result.stderr) == (
+        "Error: The requested release is not newer than the installed portable version."
+    )
+
+
+def test_portable_update_reports_unauthenticated_manifest(monkeypatch: Any, tmp_path: Path) -> None:
+    def rejected() -> dict[str, Any]:
+        raise portable_update_mod.UpdateError(
+            "could not authenticate the Ravenstash release-channel manifest"
+        )
+
+    _use_portable(monkeypatch, _portable(tmp_path), rejected)
+
+    result = runner.invoke(app, ["update"])
+
+    assert result.exit_code == 1
+    assert _one_line(result.stderr) == (
+        "Error: could not authenticate the Ravenstash release-channel manifest"
+    )
+
+
+@pytest.mark.skipif(os.name == "nt", reason="system-scope root check applies to POSIX installs")
+def test_portable_system_update_requires_root(monkeypatch: Any, tmp_path: Path) -> None:
+    installation = replace(_portable(tmp_path), scope="system")
+    _use_portable(monkeypatch, installation, lambda: _manifest("0.14.4"))
+    monkeypatch.setattr(update_mod.os, "geteuid", lambda: 1000)
+    monkeypatch.setattr(
+        update_mod,
+        "apply_portable_update",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("applied update")),
+    )
+
+    result = runner.invoke(app, ["update", "--apply", "--yes"])
+
+    assert result.exit_code == 1
+    assert _one_line(result.stderr) == (
+        "Error: System-wide portable updates require root privileges. Run: sudo rvs update --apply"
+    )
+
+
+@pytest.mark.parametrize(
+    ("outcome", "exit_code", "message"),
+    [
+        (True, 0, "Verified and staged rvs 0.14.4. It will activate after this command exits."),
+        (False, 0, "Updated rvs to 0.14.4."),
+        (
+            portable_update_mod.UpdateError("another rvs update is already running"),
+            1,
+            "another rvs update is already running",
+        ),
+    ],
+)
+def test_portable_update_apply_reports_activation_outcome(
+    monkeypatch: Any, tmp_path: Path, outcome: Any, exit_code: int, message: str
+) -> None:
+    _use_portable(monkeypatch, _portable(tmp_path), lambda: _manifest("0.14.4"))
+
+    def apply(installation: Installation, version: str, *, candidate: bool) -> bool:
+        assert (version, candidate) == ("0.14.4", False)
+        if isinstance(outcome, Exception):
+            raise outcome
+        return outcome
+
+    monkeypatch.setattr(update_mod, "apply_portable_update", apply)
+
+    result = runner.invoke(app, ["update", "--apply", "--yes"])
+
+    assert result.exit_code == exit_code
+    assert message in _one_line(result.output)
+
+
+def test_portable_installation_reports_invalid_receipt(
+    monkeypatch: Any, capsys: pytest.CaptureFixture[str]
+) -> None:
+    def invalid(**_kwargs: Any) -> Installation:
+        raise ValueError("invalid target in rvs installation receipt")
+
+    monkeypatch.setattr(update_mod, "detect_portable_installation", invalid)
+
+    with pytest.raises(SystemExit):
+        update_mod._portable_installation()
+
+    assert _one_line(capsys.readouterr().err) == (
+        "Error: invalid target in rvs installation receipt"
+    )
+
+
+# ── Package-manager installations ─────────────────────────────────────────────
+
+
+@pytest.mark.parametrize(
+    ("executable", "frozen", "expected"),
+    [
+        ("/nix/store/abc123-ravenstash-cli-env/bin/python3", False, "nix"),
+        ("/opt/homebrew/Cellar/rvs@0/0.14.3/libexec/rvs", True, "homebrew"),
+        ("/usr/local/lib/rvs/rvs", True, None),
+        ("/home/developer/.venv/bin/python3", False, None),
+    ],
+)
+def test_managed_method_detects_package_manager_from_executable(
+    monkeypatch: Any, executable: str, frozen: bool, expected: str | None
+) -> None:
+    monkeypatch.setattr(update_mod.sys, "executable", executable)
+    monkeypatch.setattr(update_mod.sys, "frozen", frozen, raising=False)
+
+    assert update_mod._managed_method() == expected
+
+
+@pytest.mark.parametrize(
+    ("executable", "expected"),
+    [
+        (
+            r"C:\Users\dev\AppData\Local\Microsoft\WinGet\Packages\Ravenstash.rvs_x\rvs.exe",
+            "winget",
+        ),
+        (r"C:\Program Files\rvs\rvs.exe", None),
+    ],
+)
+def test_managed_method_detects_winget_installations_on_windows(
+    monkeypatch: Any, executable: str, expected: str | None
+) -> None:
+    monkeypatch.setattr(update_mod.sys, "executable", executable)
+    monkeypatch.setattr(update_mod.sys, "frozen", True, raising=False)
+    # Only the platform check is Windows-specific; path handling is portable.
+    monkeypatch.setattr(update_mod, "os", SimpleNamespace(name="nt"))
+
+    assert update_mod._managed_method() == expected
+
+
+def _use_managed(monkeypatch: Any, method: str, installed: str, manifest: dict[str, Any]) -> None:
+    monkeypatch.setattr(update_mod, "_apt_versions", lambda: (None, None))
+    monkeypatch.setattr(update_mod, "_portable_installation", lambda: None)
+    monkeypatch.setattr(update_mod, "_managed_method", lambda: method)
+    monkeypatch.setattr(update_mod, "_cli_version", lambda: installed)
+    monkeypatch.setattr(update_mod, "fetch_channel_manifest", lambda: manifest)
+
+
+@pytest.mark.parametrize(
+    ("method", "arguments", "expected"),
+    [
+        ("homebrew", ["update"], "Install it with: brew upgrade rvs@0"),
+        (
+            "homebrew",
+            ["update", "--to", "1"],
+            "Install it with: rvs update --to 1 --apply (replaces the v0 homebrew package)",
+        ),
+        (
+            "nix",
+            ["update"],
+            "Install it with: rvs update --apply "
+            "(replaces the pinned Nix profile with tag v0.14.4)",
+        ),
+    ],
+)
+def test_managed_update_preview_names_the_package_manager_command(
+    monkeypatch: Any, method: str, arguments: list[str], expected: str
+) -> None:
+    _use_managed(
+        monkeypatch,
+        method,
+        "0.14.3",
+        _channels(v0=_supported("0.14.4"), v1=_supported("1.0.0")),
+    )
+
+    result = runner.invoke(app, arguments)
+
+    assert result.exit_code == 0, result.output
+    assert expected in _one_line(result.output)
+
+
+def test_managed_update_reports_up_to_date(monkeypatch: Any) -> None:
+    _use_managed(monkeypatch, "homebrew", "0.14.4", _manifest("0.14.4"))
+
+    result = runner.invoke(app, ["update"])
+
+    assert result.exit_code == 0, result.output
+    assert "Installed: rvs 0.14.4. Latest in release channel v0: rvs 0.14.4." in _one_line(
+        result.output
+    )
+
+
+def test_managed_update_refuses_older_target(monkeypatch: Any) -> None:
+    _use_managed(monkeypatch, "nix", "0.14.4", _manifest("0.14.3"))
+
+    result = runner.invoke(app, ["update"])
+
+    assert result.exit_code == 1
+    assert _one_line(result.stderr) == (
+        "Error: The requested release is not newer than the installed managed version."
+    )
+
+
+def test_managed_update_does_not_install_candidates(monkeypatch: Any) -> None:
+    _use_managed(monkeypatch, "homebrew", "0.14.3", _manifest("0.14.4"))
+
+    result = runner.invoke(app, ["update", "--candidate", "0.14.4rc1"])
+
+    assert result.exit_code == 1
+    assert (
+        _one_line(result.stderr) == "Error: Release candidates are not installed through homebrew."
+    )
+
+
+@pytest.mark.parametrize(
+    ("which", "exit_code", "message"),
+    [
+        (None, 1, "Cannot update because brew is unavailable."),
+        ("brew", 1, "homebrew could not install the rvs update."),
+    ],
+)
+def test_managed_update_apply_reports_package_manager_failure(
+    monkeypatch: Any, which: str | None, exit_code: int, message: str
+) -> None:
+    _use_managed(monkeypatch, "homebrew", "0.14.3", _manifest("0.14.4"))
+    monkeypatch.setattr(update_mod.shutil, "which", lambda command: which)
+    monkeypatch.setattr(update_mod.subprocess, "run", lambda command, **_kwargs: _completed(1))
+
+    result = runner.invoke(app, ["update", "--apply", "--yes"])
+
+    assert result.exit_code == exit_code
+    assert _one_line(result.stderr) == f"Error: {message}"
+
+
+def test_managed_update_apply_across_channels_replaces_series(monkeypatch: Any) -> None:
+    moved: list[tuple[str, str, str]] = []
+    _use_managed(
+        monkeypatch,
+        "homebrew",
+        "0.14.3",
+        _channels(v0=_supported("0.14.4"), v1=_supported("1.0.0")),
+    )
+    monkeypatch.setattr(
+        update_mod,
+        "_replace_managed_series",
+        lambda method, current, target: moved.append((method, current, target)),
+    )
+
+    result = runner.invoke(app, ["update", "--to", "1", "--apply", "--yes"])
+
+    assert result.exit_code == 0, result.output
+    assert moved == [("homebrew", "v0", "v1")]
+
+
+@pytest.mark.parametrize(
+    ("method", "return_codes", "commands", "message"),
+    [
+        (
+            "homebrew",
+            (0, 0),
+            [["brew", "uninstall", "rvs@0"], ["brew", "install", "rvs@1"]],
+            "homebrew moved rvs from v0 to v1; open a new shell and run rvs --version.",
+        ),
+        (
+            "winget",
+            (0, 1, 0),
+            [
+                ["winget", "uninstall", "--exact", "--id", "Ravenstash.rvs.v0"],
+                ["winget", "install", "--exact", "--id", "Ravenstash.rvs.v1"],
+                ["winget", "install", "--exact", "--id", "Ravenstash.rvs.v0"],
+            ],
+            "winget could not move rvs to v1; the v0 package was restored.",
+        ),
+        (
+            "homebrew",
+            (0, 1, 1),
+            [
+                ["brew", "uninstall", "rvs@0"],
+                ["brew", "install", "rvs@1"],
+                ["brew", "install", "rvs@0"],
+            ],
+            "homebrew series migration and rollback both failed. "
+            "Restore the package with: brew install rvs@0",
+        ),
+        (
+            "homebrew",
+            (1,),
+            [["brew", "uninstall", "rvs@0"]],
+            "homebrew could not remove the existing rvs@0 package.",
+        ),
+    ],
+)
+def test_managed_series_replacement_restores_previous_package_on_failure(
+    monkeypatch: Any,
+    capsys: pytest.CaptureFixture[str],
+    method: str,
+    return_codes: tuple[int, ...],
+    commands: list[list[str]],
+    message: str,
+) -> None:
+    calls: list[list[str]] = []
+    codes = iter(return_codes)
+    monkeypatch.setattr(update_mod.shutil, "which", lambda command: command)
+    monkeypatch.setattr(
+        update_mod.subprocess,
+        "run",
+        lambda command, **_kwargs: calls.append(command) or _completed(next(codes)),
+    )
+
+    try:
+        update_mod._replace_managed_series(method, "v0", "v1")
+    except SystemExit as exc:
+        assert exc.code == 1
+
+    captured = capsys.readouterr()
+    assert calls == commands
+    assert message in _one_line(captured.out + captured.err)
+
+
+def test_nix_update_replaces_profile_with_target_tag(
+    monkeypatch: Any, capsys: pytest.CaptureFixture[str]
+) -> None:
+    calls: list[list[str]] = []
+    monkeypatch.setattr(update_mod.shutil, "which", lambda command: command)
+    monkeypatch.setattr(
+        update_mod.subprocess,
+        "run",
+        lambda command, **_kwargs: calls.append(command) or _completed(),
+    )
+
+    update_mod._replace_nix_profile("0.14.3", "0.14.4")
+
+    assert calls[-1] == ["nix", "profile", "install", "github:rvstash/ravenstash-cli-alpha/v0.14.4"]
+    assert "Nix updated the rvs profile to 0.14.4" in _one_line(capsys.readouterr().out)

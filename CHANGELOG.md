@@ -18,6 +18,7 @@ All notable user-facing changes to `rvs` are recorded here. The format follows
 - `rvs runtime install node latest` installs the newest Node.js release
   instead of failing, and a version that does not exist, such as `22.99`, is
   reported instead of silently installing another release of that major.
+- `rvs update` recognizes installations made with winget on Windows.
 
 ## [0.14.13] - 2026-09-27
 

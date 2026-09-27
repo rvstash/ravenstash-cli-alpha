@@ -435,7 +435,7 @@ def _managed_method() -> str | None:
         return None
     if "/cellar/" in value or "/caskroom/" in value:
         return "homebrew"
-    if os.name == "nt" and "\\microsoft\\winget\\packages\\" in value:
+    if os.name == "nt" and "/microsoft/winget/packages/" in value:
         return "winget"
     return None
 
