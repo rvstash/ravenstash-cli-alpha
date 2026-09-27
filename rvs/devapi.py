@@ -38,10 +38,10 @@ def _relative(path: str) -> str:
     candidate = path.strip("/")
     first = candidate.split("/", 1)[0]
     if _VERSION_SEGMENT.fullmatch(first):
-        raise ValueError("DevAPI resource paths must not embed an API version")
+        raise ValueError("Ravenstash API resource paths must not embed an API version")
     if first in _GROUPS:
         raise ValueError(
-            "DevAPI resource paths must not embed a platform or product segment; "
+            "Ravenstash API resource paths must not embed a platform or product segment; "
             "use platform_path or artifacts_path"
         )
     return candidate
@@ -75,7 +75,7 @@ def artifacts_path(path: str) -> str:
 def segment(value: str) -> str:
     """Encode one caller-supplied path segment, such as a reference or digest."""
     if not value:
-        raise ValueError("DevAPI path segments cannot be empty")
+        raise ValueError("Ravenstash API path segments cannot be empty")
     return quote(value, safe="")
 
 
@@ -97,7 +97,9 @@ def api_url(base_url: str, path: str) -> str:
     grouped = len(parts) > 3 and parts[2] in _GROUPS and all(parts[3:])
     root_resource = len(parts) == 3 and parts[2] in _ROOT_RESOURCES
     if parts[:2] != ["", API_VERSION] or not (grouped or root_resource):
-        raise ValueError("Build DevAPI paths with api_path, platform_path, or artifacts_path")
+        raise ValueError(
+            "Build Ravenstash API paths with api_path, platform_path, or artifacts_path"
+        )
     return f"{base_url.rstrip('/')}{path}"
 
 
@@ -105,7 +107,7 @@ def validate_api_version(response: Any) -> None:
     reported = getattr(response, "headers", {}).get("Ravenstash-API-Version")
     if reported is not None and reported != API_VERSION:
         raise ApiVersionMismatchError(
-            f"DevAPI returned version {reported!r}; rvs expects {API_VERSION!r}"
+            f"Ravenstash API returned version {reported!r}; rvs expects {API_VERSION!r}"
         )
 
 
@@ -153,10 +155,10 @@ def collection_items(payload: Any) -> list[dict[str, Any]]:
 def collection_page(payload: Any) -> tuple[list[dict[str, Any]], str | None]:
     """Return the items and continuation cursor of one collection page."""
     if not isinstance(payload, dict) or not isinstance(payload.get("items"), list):
-        raise ValueError("DevAPI collection response is invalid")
+        raise ValueError("Ravenstash API collection response is invalid")
     next_cursor = payload.get("next_cursor")
     if next_cursor is not None and (not isinstance(next_cursor, str) or not next_cursor):
-        raise ValueError("DevAPI collection cursor is invalid")
+        raise ValueError("Ravenstash API collection cursor is invalid")
     return payload["items"], next_cursor
 
 
@@ -207,15 +209,15 @@ def read_collection(
             page_query["cursor"] = result.next_cursor
         items, next_cursor = collection_page(client.get(path, params=page_query).json())
         if len(items) > limit:
-            raise ValueError("DevAPI collection page exceeded the requested limit")
+            raise ValueError("Ravenstash API collection page exceeded the requested limit")
         result.items.extend(items)
         result.next_cursor = next_cursor
         if next_cursor is None or (max_items is not None and len(result.items) >= max_items):
             return result
         if next_cursor in seen:
-            raise ValueError("DevAPI collection repeated a cursor")
+            raise ValueError("Ravenstash API collection repeated a cursor")
         seen.add(next_cursor)
-    raise ValueError("DevAPI collection did not end")
+    raise ValueError("Ravenstash API collection did not end")
 
 
 def collection_all(

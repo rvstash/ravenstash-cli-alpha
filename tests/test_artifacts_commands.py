@@ -167,7 +167,6 @@ account_ref = "ac_23456789"
     monkeypatch.chdir(tmp_path)
     monkeypatch.delenv("RVS_ENV_FILE", raising=False)
     monkeypatch.setenv("RVS_PROFILE_STAGING_API_URL", STAGING_API_URL)
-    monkeypatch.setenv("RVS_PROFILE_STAGING_PKG_API_URL", "https://app-staging.example.test/api")
     monkeypatch.setenv("RVS_PROFILE_STAGING_REPOSITORY_DOMAIN", "packages.example.test")
     _use_fake_client(monkeypatch, _FakeApiClient())
 

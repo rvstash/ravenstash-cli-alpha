@@ -25,8 +25,6 @@ def _point_config(monkeypatch, tmp_path: Path) -> tuple[Path, Path]:
         "RVS_REPOSITORY_DOMAIN",
         "RVS_PROFILE_DEV_REPOSITORY_DOMAIN",
         "RVS_PROFILE_STAGING_REPOSITORY_DOMAIN",
-        "RVS_PKG_API_URL",
-        "RVS_PROFILE_STAGING_PKG_API_URL",
     ):
         monkeypatch.delenv(key, raising=False)
     return config_dir, config_file

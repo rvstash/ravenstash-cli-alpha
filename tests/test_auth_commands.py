@@ -99,7 +99,6 @@ default_profile = "work"
 
 [profiles.work]
 api_url = "https://api.work.example"
-pkg_api_url = "https://app.work.example/api"
 account_ref = "ac_23456789"
 """,
     )

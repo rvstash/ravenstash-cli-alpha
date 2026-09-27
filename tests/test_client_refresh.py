@@ -264,7 +264,6 @@ config_version = 6
 default_profile = "default"
 
 [profiles.default]
-pkg_api_url = "https://app.example/api"
 """.strip(),
         encoding="utf-8",
     )
@@ -358,7 +357,7 @@ def test_grouped_path_builders_require_a_resource() -> None:
     ["repositories", "/repositories", "/v0/repositories", "/v0/me", "/v0/artifacts", "/v1/meta"],
 )
 def test_api_url_rejects_paths_not_built_by_a_group_builder(path: str) -> None:
-    with pytest.raises(ValueError, match="Build DevAPI paths"):
+    with pytest.raises(ValueError, match="Build Ravenstash API paths"):
         api_url("https://api.example", path)
 
 

@@ -11,6 +11,7 @@ All notable user-facing changes to `rvs` are recorded here. The format follows
 - `rvs status` lists the profile first, followed by who is signed in, because
   the profile decides which sign-in and selections apply. With `--json`, the
   `profile` key also comes before `signed_in_as`.
+- Error messages about unexpected API responses name the Ravenstash API.
 
 ## [0.14.14] - 2026-09-27
 

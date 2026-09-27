@@ -566,7 +566,7 @@ def _npm_is_mutation(argv: list[str]) -> bool:
     positional = [arg for arg in argv if not arg.startswith("-")]
     if any(arg in {"unpublish", "deprecate", "tag"} for arg in positional):
         return True
-    # Ravenstash's native dist-tag endpoint is served by Publisher for both
+    # Ravenstash serves the native dist-tag endpoint from its upload host for both
     # reads and mutations. Route ``ls`` there as well and request the combined
     # capability expected by that authenticated endpoint.
     return "dist-tag" in positional
