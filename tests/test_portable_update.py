@@ -59,7 +59,7 @@ def test_release_key_is_the_pinned_4096_bit_rsa_key() -> None:
 
 
 def test_detached_verification_rejects_non_signature_data() -> None:
-    with pytest.raises(VerificationError):
+    with pytest.raises(VerificationError, match=r"^invalid OpenPGP packet header$"):
         verify_detached(b"manifest", b"not a signature")
 
 
@@ -68,7 +68,9 @@ def test_detached_verification_accepts_published_inventory_and_rejects_mutation(
     signature = (FIXTURES / "rvs-v0.14.3-checksums.txt.asc").read_bytes()
 
     verify_detached(inventory, signature)
-    with pytest.raises(VerificationError, match=r"digest prefix|invalid"):
+    with pytest.raises(
+        VerificationError, match=r"^OpenPGP signature digest prefix does not match$"
+    ):
         verify_detached(inventory + b"changed\n", signature)
 
 

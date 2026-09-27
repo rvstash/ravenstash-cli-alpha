@@ -6,6 +6,11 @@ All notable user-facing changes to `rvs` are recorded here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- `rvs update` rejects a release signature whose armor contains non-ASCII
+  text as invalid, instead of stopping with an internal error.
+
 ## [0.14.13] - 2026-09-27
 
 ### Added

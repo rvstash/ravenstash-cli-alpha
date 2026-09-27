@@ -41,7 +41,10 @@ class _RSAKey:
 def _dearmor(value: bytes) -> bytes:
     if not value.startswith(b"-----BEGIN PGP "):
         return value
-    lines = value.decode("ascii").splitlines()
+    try:
+        lines = value.decode("ascii").splitlines()
+    except UnicodeDecodeError as exc:
+        raise VerificationError("OpenPGP armor is invalid") from exc
     payload: list[str] = []
     in_payload = False
     for line in lines[1:]:
