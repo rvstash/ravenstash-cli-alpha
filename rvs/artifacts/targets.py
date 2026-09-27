@@ -51,9 +51,15 @@ class RegistryContext:
 
 
 def parse_target(value: str) -> TargetSpec:
+    """Parse ``[repo:]namespace/repository``, ``in/ar_...``, or a mirror target."""
     candidate = value.strip().strip("/")
     if not candidate:
         output.fatal("Artifact target cannot be empty.")
+    if candidate.startswith(cfg_mod.REPOSITORY_TARGET_PREFIX):
+        # The canonical repository resource name; a bare repository selector is the default.
+        candidate = candidate.removeprefix(cfg_mod.REPOSITORY_TARGET_PREFIX).strip().strip("/")
+        if not candidate or ":" in candidate:
+            output.fatal("Repository targets must be repo:namespace/repository.")
     if candidate.startswith("mirror:"):
         selector = candidate.removeprefix("mirror:").strip().strip("/")
         target_type: cfg_mod.ArtifactTargetType = "official_cache"
@@ -135,6 +141,11 @@ def repository_display_name(repository: dict) -> str:
     return f"{repository['namespace']['name']}/{repository['name']}"
 
 
+def repository_target_name(repository: dict) -> str:
+    """Return the canonical ``repo:namespace/repository`` resource name."""
+    return f"{cfg_mod.REPOSITORY_TARGET_PREFIX}{repository_display_name(repository)}"
+
+
 def remote_public_name(remote: dict) -> str:
     """Return the official source ref or custom name that selects a remote cache."""
     if remote["source_type"] == "official":
@@ -165,7 +176,7 @@ def _repository_target(repository: dict) -> cfg_mod.ArtifactTarget:
         target_type="repository",
         customer_id=repository["account"]["ref"],
         stable_selector=f"in/{repository['ref']}",
-        display_selector=repository_display_name(repository),
+        display_selector=repository_target_name(repository),
         registry_kind=cast("cfg_mod.RegistryKind | None", inferred_kind),
         namespace_realm=namespace["realm"],
         namespace_unique_ref=namespace["ref"],

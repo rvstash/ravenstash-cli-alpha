@@ -136,15 +136,19 @@ def section(title: str) -> None:
 
 
 def kv(
-    pairs: dict[str, str | None], title: str | None = None, *, json_keys: list[str] | None = None
+    pairs: dict[str, str | None],
+    title: str | None = None,
+    *,
+    json_keys: list[str] | None = None,
+    json_values: dict[str, object] | None = None,
 ) -> None:
+    """Print key/value rows; ``json_values`` replaces the rows in JSON output."""
     if _json_enabled:
-        _emit_json(
-            {
-                "title": title,
-                "values": dict(zip(json_keys, pairs.values(), strict=True)) if json_keys else pairs,
-            }
-        )
+        if json_values is None:
+            json_values = (
+                dict(zip(json_keys, pairs.values(), strict=True)) if json_keys else dict(pairs)
+            )
+        _emit_json({"title": title, "values": json_values})
         return
     t = Table(show_header=False, box=None, padding=(0, 2, 0, 0))
     t.add_column("key", style="bold dim", no_wrap=True)

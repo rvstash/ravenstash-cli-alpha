@@ -20,6 +20,13 @@ from ..devapi import (
     read_collection,
     segment,
 )
+from ..status import (
+    account_json,
+    inspect_selection,
+    selection_account_display,
+    target_json,
+    with_source,
+)
 from .auth_commands import app as native_auth_app
 from .evidence_commands import app as evidence_app
 from .formats import FORMATS, flatten_formats
@@ -32,6 +39,7 @@ from .targets import (
     remote_target_name,
     repository_display_name,
     repository_formats,
+    repository_target_name,
     resolve_repository_entry,
     resolve_target,
 )
@@ -150,26 +158,30 @@ def target_select(
     )
 
 
-@app.command("current")
-def target_current(
+@app.command("status")
+def target_status(
     account: str | None = typer.Option(None, "--account", help=_ACCOUNT_HELP),
     profile: str | None = typer.Option(None, "--profile", "-p"),
 ) -> None:
-    """Show the current profile, account, and repository or mirror."""
-    customer_id = _context_customer_id(profile, account)
-    profile_name, selected_account = ensure_active_account(profile, customer_id)
-    selected = cfg_mod.selected_artifact_target(profile_name, selected_account.customer_id)
+    """Show the account, repository or mirror, and format that commands use."""
+    selection = inspect_selection(profile, account)
+    selected = selection.target
+    account_name = selection_account_display(selection)
     output.kv(
         {
-            "Profile": profile_name,
-            "Account": account_display_name(selected_account),
-            "Repository or mirror": selected.display_selector if selected else "none",
-            "Type": selected.target_type if selected else "none",
-            "Account ref": selected.customer_id if selected else "none",
-            "Format": selected.registry_kind or "determined by command" if selected else "none",
+            "Account": (
+                with_source(account_name, selection.account_source)
+                if account_name
+                else "not selected"
+            ),
+            "Target": selected.display_selector if selected else "not selected",
+            "Format": selected.registry_kind if selected else None,
         },
-        title="Current artifact selection",
-        json_keys=["profile", "account", "target", "type", "account_ref", "format"],
+        title="Artifacts status",
+        json_values={
+            "account": account_json(selection),
+            **(target_json(selected) or {"target": None, "type": None, "format": None}),
+        },
     )
 
 
@@ -226,7 +238,7 @@ def _package_lifecycle_columns(
 
 
 def _split_repo_ref(repo_ref: str) -> tuple[str | None, str]:
-    value = repo_ref.strip().strip("/")
+    value = repo_ref.strip().removeprefix(cfg_mod.REPOSITORY_TARGET_PREFIX).strip().strip("/")
     if not value:
         output.fatal("Repository name cannot be empty.")
     if "/" not in value:
@@ -333,7 +345,7 @@ def _package_lane(
     # Only an explicit --format filters the lookup, so a repository without the
     # format a command implies is reported as such rather than as not found.
     repository = _resolve_repository_entry(repo, profile, kind=kind, customer_id=customer_id)
-    display = repository_display_name(repository)
+    display = repository_target_name(repository)
     formats = [item for item in repository_formats(repository) if item in _PACKAGE_KINDS]
     wanted = kind or only
     if wanted is not None:

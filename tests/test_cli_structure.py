@@ -44,12 +44,12 @@ def test_root_help_exposes_clean_public_command_surface() -> None:
         "auth",
         "profile",
         "account",
-        "context",
+        "status",
         "runtime",
         "art",
     ):
         assert command in result.output
-    for removed_root_command in ("pypi", "maven", "system", "sync", "tokens"):
+    for removed_root_command in ("pypi", "maven", "system", "sync", "tokens", "context"):
         assert removed_root_command not in result.output
     removed = runner.invoke(app, ["shell", "--help"])
     assert removed.exit_code != 0
@@ -68,7 +68,7 @@ def test_root_help_groups_commands_by_ecosystem() -> None:
         ("Container tools", ("docker", "oras")),
         ("Helm tools", ("helm",)),
         ("Artifact management", ("art",)),
-        ("Account and configuration", ("account", "auth", "context", "profile")),
+        ("Account and configuration", ("account", "auth", "profile", "status")),
         ("Setup and maintenance", ("runtime", "update")),
     )
 

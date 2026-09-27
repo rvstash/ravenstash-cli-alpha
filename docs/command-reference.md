@@ -10,7 +10,7 @@ Run `rvs COMMAND --help` for every option accepted by an installed version.
 | `rvs auth logout` | Signs out of the selected profile. |
 | `rvs auth logout --all` | Signs out of every local profile. |
 | `rvs auth status` | Shows whether local sign-in information is available. |
-| `rvs auth whoami` | Shows the signed-in Ravenstash user. |
+| `rvs auth whoami` | Shows the signed-in Ravenstash user or automation token. |
 | `rvs auth storage doctor` | Checks whether sign-in information can be saved securely. |
 | `rvs auth storage setup` | Sets up secure local storage. |
 | `rvs profile list` | Lists local profiles. |
@@ -37,11 +37,20 @@ When a package tool must connect without an `rvs` wrapper, run `rvs art token mi
 | `rvs account switch` | Interactively chooses a personal account or organization. |
 | `rvs account switch user:USERNAME` | Chooses a personal account directly by username. |
 | `rvs account switch org:HANDLE` | Chooses an organization directly by its public handle. |
-| `rvs account current` | Shows the selected account. |
 | `rvs art select NAMESPACE/REPOSITORY` | Chooses a private repository. |
-| `rvs art current` | Shows the selected repository or mirror. |
+| `rvs art status` | Shows the account, repository or mirror, and format that `rvs art` commands use. |
 | `rvs art clear` | Clears that choice without signing out. |
-| `rvs context current` | Shows the signed-in user and current choices together. |
+| `rvs status` | Shows who is signed in, the profile, the account, the selected target, and the API. |
+
+`rvs status` and `rvs art status` only read: they never select, switch, or
+save anything. A choice made by `RVS_PROFILE`, `RVS_ACCOUNT_REF`, a shell
+session, or a command option is shown next to its value. With root `--json`,
+`rvs status` nests the selected target under `targets.artifacts`.
+
+`rvs art select` stores a format only when you pass `--format` or the target
+has exactly one format. Otherwise the format stays empty and each command uses
+its own: `rvs pip` uses pypi and `rvs npm` uses npm. Running a wrapper never
+changes the selection.
 
 Account resources are always displayed as `user:USERNAME` or `org:HANDLE` so
 they remain distinct from unprefixed namespace names. Bare account handles are

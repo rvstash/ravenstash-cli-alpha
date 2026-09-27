@@ -83,6 +83,8 @@ class FakeApi:
         self.calls.append(("GET", path, params))
         if path == "/v0/platform/accounts":
             return Response({"items": self.customers, "next_cursor": None})
+        if path == "/v0/platform/me":
+            return Response({"principal_type": "user", "user": None, "credential": None})
         if path == "/v0/artifacts/remote-caches":
             selected = [
                 item
@@ -163,6 +165,14 @@ def test_target_parser_keeps_private_and_mirror_namespaces_disjoint() -> None:
         parse_target("gn_abcdefgh/ar_abcdefgh")
     assert parse_target("mirror:pypiorg").target_type == "official_cache"
     assert parse_target("custom-mirror:piwheels").target_type == "custom_cache"
+
+
+def test_target_parser_accepts_the_canonical_repository_name() -> None:
+    assert parse_target("repo:acme/backend") == parse_target("acme/backend")
+    assert parse_target("repo:in/ar_abcdefgh") == parse_target("in/ar_abcdefgh")
+    for selector in ("repo:", "repo:mirror:pypiorg", "repo:backend"):
+        with pytest.raises(SystemExit):
+            parse_target(selector)
 
 
 @pytest.mark.parametrize(
@@ -329,11 +339,14 @@ def test_one_shot_account_does_not_switch_the_active_account(monkeypatch, tmp_pa
     fake = FakeApi([personal, acme], [])
     monkeypatch.setattr(ApiClient, "from_profile", staticmethod(lambda profile=None: fake))
 
-    result = runner.invoke(app, ["art", "current", "--account", "org:acme"])
+    before = cfg_mod.CONFIG_FILE.read_text(encoding="utf-8")
+
+    result = runner.invoke(app, ["art", "status", "--account", "org:acme"])
 
     assert result.exit_code == 0, result.output
-    assert "acme" in result.output
+    assert "org:acme · command option (--account)" in result.output
     assert cfg_mod.current_customer_id("alice") == "personal-alice"
+    assert cfg_mod.CONFIG_FILE.read_text(encoding="utf-8") == before
 
 
 def test_account_switch_is_local_to_an_integrated_shell(monkeypatch, tmp_path: Path) -> None:

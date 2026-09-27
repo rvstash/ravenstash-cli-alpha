@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+import json
 from typing import TYPE_CHECKING, Any
 
 from rvs import config as cfg_mod
+from rvs import status as status_mod
 from rvs.account import commands as account_cmd
 from rvs.cli import app
-from rvs.context import commands as context_cmd
 from typer.testing import CliRunner
 
 
@@ -24,14 +25,66 @@ class _Response:
         return self._payload
 
 
-def _identity(email: str | None = "developer@example.test") -> dict[str, Any]:
-    """Return a wire ``Identity`` for a signed-in user."""
+def _identity(
+    *,
+    handle: str | None = "avery",
+    display_name: str | None = "Avery Example",
+    credential: dict[str, Any] | None = None,
+    principal_type: str = "user",
+) -> dict[str, Any]:
+    """Return a wire ``Identity``; a device session has no credential."""
     return {
-        "principal_type": "user",
-        "email": email,
-        "personal_account": {"ref": "personal-user", "handle": "avery", "type": "personal"},
-        "credential": None,
+        "principal_type": principal_type,
+        "user": {"handle": handle, "display_name": display_name} if handle else None,
+        "email": "developer@example.test" if credential is None else None,
+        "personal_account": (
+            {"ref": "personal-user", "handle": "avery", "type": "personal"}
+            if credential is None
+            else None
+        ),
+        "credential": credential,
     }
+
+
+AVERY = {
+    "ref": "personal-user",
+    "handle": "avery",
+    "type": "personal",
+    "display_name": "Avery Example",
+    "is_admin": True,
+    "organization_role": None,
+    "authority_revision": 1,
+}
+ACME = {
+    "ref": "acme",
+    "handle": "acme",
+    "type": "organization",
+    "display_name": "Acme Incorporated",
+    "is_admin": True,
+    "organization_role": "admin",
+    "authority_revision": 2,
+}
+
+
+def _serve(monkeypatch, identity: dict[str, Any], items: list[dict[str, Any]]) -> list[str]:
+    calls: list[str] = []
+
+    class _Client:
+        @staticmethod
+        def get(path: str, params: dict | None = None) -> _Response:
+            calls.append(path)
+            if path == "/v0/platform/me":
+                return _Response(identity)
+            assert path == "/v0/platform/accounts"
+            return _Response({"items": items, "next_cursor": None})
+
+    monkeypatch.setattr(
+        status_mod.ApiClient, "from_profile", staticmethod(lambda profile=None: _Client())
+    )
+    monkeypatch.setattr(
+        account_cmd.ApiClient, "from_profile", staticmethod(lambda profile=None: _Client())
+    )
+    return calls
 
 
 def _isolate_config(monkeypatch, tmp_path: Path) -> None:
@@ -56,70 +109,67 @@ account_ref = "personal-user"
         monkeypatch.delenv(key, raising=False)
 
 
-def test_context_current_shows_distinct_user_profile_account_and_target(
+def _row(output: str, label: str) -> str:
+    return next(line for line in output.splitlines() if line.startswith(label))
+
+
+def test_status_names_the_person_and_selections_without_writing_config(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
     _isolate_config(monkeypatch, tmp_path)
-    calls: list[str] = []
+    calls = _serve(monkeypatch, _identity(), [AVERY, ACME])
+    before = cfg_mod.CONFIG_FILE.read_text(encoding="utf-8")
 
-    class _Client:
-        @staticmethod
-        def get(path: str, params: dict | None = None) -> _Response:
-            calls.append(path)
-            if path == "/v0/platform/me":
-                return _Response(_identity())
-            assert path == "/v0/platform/accounts"
-            return _Response(
-                {
-                    "items": [
-                        {
-                            "ref": "personal-user",
-                            "handle": "avery",
-                            "type": "personal",
-                            "label": "Avery Example",
-                            "is_admin": True,
-                            "organization_role": None,
-                            "authority_revision": 1,
-                        }
-                    ],
-                    "next_cursor": None,
-                }
-            )
-
-    monkeypatch.setattr(
-        context_cmd.ApiClient,
-        "from_profile",
-        staticmethod(lambda profile=None: _Client()),
-    )
-
-    result = runner.invoke(app, ["context", "current"])
+    result = runner.invoke(app, ["status"])
 
     assert result.exit_code == 0, result.output
     assert calls == ["/v0/platform/me", "/v0/platform/accounts"]
-    assert "developer@example.test" in result.output
-    assert "work" in result.output
-    assert "persisted default" in result.output
-    assert "user:avery" in result.output
-    assert "personal account default" in result.output
-    assert "not selected" in result.output
+    assert "user:avery (Avery Example)" in _row(result.output, "Signed in as")
+    assert "developer@example.test" not in result.output
+    assert _row(result.output, "Profile").split() == ["Profile", "work"]
+    assert "user:avery (Avery Example)" in _row(result.output, "Account")
+    assert "not selected" in _row(result.output, "Artifacts target")
     assert "https://api.work.example" in result.output
+    assert cfg_mod.CONFIG_FILE.read_text(encoding="utf-8") == before
+    assert not (cfg_mod.CONFIG_DIR / "sessions").exists()
 
 
-def test_context_current_shows_account_scoped_selected_target(monkeypatch, tmp_path: Path) -> None:
+def test_status_shows_the_target_and_non_default_sources(monkeypatch, tmp_path: Path) -> None:
     _isolate_config(monkeypatch, tmp_path)
-    cfg_mod.set_active_account(
+    cfg_mod.set_active_account(profile="work", customer=ACME)
+    cfg_mod.set_selected_artifact_target(
+        cfg_mod.ArtifactTarget(
+            target_type="repository",
+            customer_id="acme",
+            stable_selector="in/ar_23456789",
+            # Earlier releases saved the bare repository name.
+            display_selector="team/libs",
+            registry_kind="pypi",
+            namespace_realm="internal",
+            namespace_unique_ref="in_23456789",
+            namespace_name_cache="team",
+            repository_unique_ref="ar_23456789",
+            repository_name_cache="libs",
+        ),
         profile="work",
-        customer={
-            "ref": "acme",
-            "handle": "acme",
-            "type": "organization",
-            "label": "Acme Incorporated",
-            "is_admin": True,
-            "organization_role": "admin",
-            "authority_revision": 2,
-        },
+        customer_id="acme",
     )
+    monkeypatch.setenv("RVS_ACCOUNT_REF", "acme")
+    _serve(monkeypatch, _identity(), [AVERY, ACME])
+
+    result = runner.invoke(app, ["status", "--profile", "work"])
+
+    assert result.exit_code == 0, result.output
+    assert "work · command option (--profile)" in _row(result.output, "Profile")
+    account = _row(result.output, "Account")
+    assert "org:acme (Acme Incorporated) · environment (RVS_ACCOUNT_REF)" in account
+    assert "repo:team/libs · pypi" in _row(result.output, "Artifacts target")
+
+
+def test_status_json_nests_targets_by_product(monkeypatch, tmp_path: Path) -> None:
+    _isolate_config(monkeypatch, tmp_path)
+    cfg_mod.set_active_account(profile="work", customer=ACME)
     cfg_mod.set_selected_artifact_target(
         cfg_mod.ArtifactTarget(
             target_type="official_cache",
@@ -131,25 +181,142 @@ def test_context_current_shows_account_scoped_selected_target(monkeypatch, tmp_p
         profile="work",
         customer_id="acme",
     )
+    _serve(monkeypatch, _identity(), [AVERY, ACME])
 
-    class _Client:
-        @staticmethod
-        def get(path: str, params: dict | None = None) -> _Response:
-            assert path == "/v0/platform/me"
-            return _Response(_identity())
-
-    monkeypatch.setattr(
-        context_cmd.ApiClient,
-        "from_profile",
-        staticmethod(lambda profile=None: _Client()),
-    )
-
-    result = runner.invoke(app, ["context", "current"])
+    result = runner.invoke(app, ["--json", "status"])
 
     assert result.exit_code == 0, result.output
-    assert "org:acme" in result.output
-    assert "persisted profile" in result.output
-    assert "mirror:pypiorg" in result.output
+    assert json.loads(result.output)["values"] == {
+        "signed_in_as": {
+            "display": "user:avery (Avery Example)",
+            "principal_type": "user",
+            "user": "user:avery",
+            "display_name": "Avery Example",
+            "credential": None,
+        },
+        "profile": {"name": "work", "selected_by": "persisted default"},
+        "account": {
+            "ref": "acme",
+            "handle": "org:acme",
+            "display_name": "Acme Incorporated",
+            "selected_by": "persisted profile",
+        },
+        "targets": {
+            "artifacts": {"target": "mirror:pypiorg", "type": "official_cache", "format": "pypi"}
+        },
+        "api_url": "https://api.work.example",
+    }
+
+
+def test_status_does_not_repeat_the_organization_for_automation(
+    monkeypatch, tmp_path: Path
+) -> None:
+    _isolate_config(monkeypatch, tmp_path)
+    monkeypatch.setenv("RVS_ACCOUNT_REF", "acme")
+    token_account = {"ref": "acme", "handle": "acme", "type": "organization"}
+    identity = _identity(
+        handle=None,
+        principal_type="automation",
+        credential={"scenario": "organization_workload", "account": token_account},
+    )
+    _serve(monkeypatch, identity, [ACME])
+
+    result = runner.invoke(app, ["status"])
+
+    assert result.exit_code == 0, result.output
+    signed_in = _row(result.output, "Signed in as")
+    assert "organization automation token" in signed_in
+    assert "acme" not in signed_in
+    assert "org:acme (Acme Incorporated)" in _row(result.output, "Account")
+    assert "RVS_TOKEN acts only" not in result.output
+
+
+def test_status_names_the_owner_of_an_organization_pat(monkeypatch, tmp_path: Path) -> None:
+    _isolate_config(monkeypatch, tmp_path)
+    token_account = {"ref": "acme", "handle": "acme", "type": "organization"}
+    identity = _identity(
+        credential={"scenario": "user_organization", "account": token_account},
+    )
+    _serve(monkeypatch, identity, [ACME])
+
+    result = runner.invoke(app, ["status"])
+
+    assert result.exit_code == 0, result.output
+    signed_in = _row(result.output, "Signed in as")
+    assert "user:avery (Avery Example) · organization-account PAT" in signed_in
+    # The persisted personal account is not one this token can act for.
+    assert "RVS_TOKEN acts only for org:acme" in result.stderr
+    assert "RVS_ACCOUNT_REF=acme" in result.stderr
+
+
+def test_status_falls_back_to_older_identity_without_a_person_name(
+    monkeypatch, tmp_path: Path
+) -> None:
+    _isolate_config(monkeypatch, tmp_path)
+    identity = _identity()
+    del identity["user"]
+    _serve(monkeypatch, identity, [AVERY])
+
+    result = runner.invoke(app, ["status"])
+    as_json = runner.invoke(app, ["--json", "status"])
+
+    assert result.exit_code == 0, result.output
+    assert _row(result.output, "Signed in as").split() == ["Signed", "in", "as", "user:avery"]
+    signed_in = json.loads(as_json.output)["values"]["signed_in_as"]
+    assert signed_in["user"] == "user:avery"
+    assert signed_in["display_name"] is None
+    assert "developer@example.test" not in as_json.output
+
+
+def test_art_status_leaves_a_command_chosen_format_empty(monkeypatch, tmp_path: Path) -> None:
+    _isolate_config(monkeypatch, tmp_path)
+    cfg_mod.set_active_account(profile="work", customer=ACME)
+    cfg_mod.set_selected_artifact_target(
+        cfg_mod.ArtifactTarget(
+            target_type="repository",
+            customer_id="acme",
+            stable_selector="in/ar_23456789",
+            display_selector="repo:team/libs",
+            # A repository with several formats and no --format keeps it open.
+            registry_kind=None,
+            namespace_realm="internal",
+            namespace_unique_ref="in_23456789",
+            namespace_name_cache="team",
+            repository_unique_ref="ar_23456789",
+            repository_name_cache="libs",
+        ),
+        profile="work",
+        customer_id="acme",
+    )
+    _serve(monkeypatch, _identity(), [AVERY, ACME])
+    before = cfg_mod.CONFIG_FILE.read_text(encoding="utf-8")
+
+    result = runner.invoke(app, ["art", "status"])
+    as_json = runner.invoke(app, ["--json", "art", "status"])
+
+    assert result.exit_code == 0, result.output
+    assert "org:acme (Acme Incorporated)" in _row(result.output, "Account")
+    assert "repo:team/libs" in _row(result.output, "Target")
+    assert _row(result.output, "Format").split() == ["Format", "-"]
+    assert json.loads(as_json.output)["values"] == {
+        "account": {
+            "ref": "acme",
+            "handle": "org:acme",
+            "display_name": "Acme Incorporated",
+            "selected_by": "persisted profile",
+        },
+        "target": "repo:team/libs",
+        "type": "repository",
+        "format": None,
+    }
+    assert cfg_mod.CONFIG_FILE.read_text(encoding="utf-8") == before
+
+
+def test_removed_context_and_account_current_commands_are_rejected() -> None:
+    for argv in (["context", "current"], ["account", "current"], ["art", "current"]):
+        result = runner.invoke(app, argv)
+        assert result.exit_code == 2, argv
+        assert "No such command" in result.output
 
 
 def test_profile_use_reports_persistence_scope(monkeypatch, tmp_path: Path) -> None:
@@ -194,7 +361,7 @@ def test_account_switch_warns_when_environment_still_overrides_selection(
                             "ref": "acme",
                             "handle": "acme",
                             "type": "organization",
-                            "label": "Acme Incorporated",
+                            "display_name": "Acme Incorporated",
                             "is_admin": True,
                             "organization_role": "admin",
                             "authority_revision": 2,
@@ -235,7 +402,7 @@ def test_account_list_displays_typed_user_and_organization_handles(
                             "ref": "personal-user",
                             "handle": "avery",
                             "type": "personal",
-                            "label": "Avery Example",
+                            "display_name": "Avery Example",
                             "is_admin": True,
                             "organization_role": None,
                             "authority_revision": 1,
@@ -244,7 +411,7 @@ def test_account_list_displays_typed_user_and_organization_handles(
                             "ref": "acme",
                             "handle": "acme",
                             "type": "organization",
-                            "label": "Acme Incorporated",
+                            "display_name": "Acme Incorporated",
                             "is_admin": True,
                             "organization_role": "admin",
                             "authority_revision": 2,
@@ -265,6 +432,7 @@ def test_account_list_displays_typed_user_and_organization_handles(
     assert result.exit_code == 0, result.output
     assert "user:avery" in result.output
     assert "org:acme" in result.output
+    assert "Acme Incorporated" in result.output
 
 
 def test_account_list_follows_pages_and_shows_unknown_account_types(
@@ -279,7 +447,7 @@ def test_account_list_follows_pages_and_shows_unknown_account_types(
                     "ref": "personal-user",
                     "handle": "avery",
                     "type": "personal",
-                    "label": "Avery Example",
+                    "display_name": "Avery Example",
                     "is_admin": True,
                     "organization_role": None,
                     "authority_revision": 1,
@@ -293,7 +461,7 @@ def test_account_list_follows_pages_and_shows_unknown_account_types(
                     "ref": "ac_23456789",
                     "handle": "ops",
                     "type": "enterprise",
-                    "label": "Ops",
+                    "display_name": "Ops",
                     "is_admin": False,
                     "organization_role": "auditor",
                     "authority_revision": 4,
@@ -333,7 +501,7 @@ def test_account_switch_without_selector_opens_account_picker(monkeypatch, tmp_p
             "ref": "acme",
             "handle": "acme",
             "type": "organization",
-            "label": "Acme Incorporated",
+            "display_name": "Acme Incorporated",
             "is_admin": True,
             "organization_role": "admin",
             "authority_revision": 2,
@@ -342,7 +510,7 @@ def test_account_switch_without_selector_opens_account_picker(monkeypatch, tmp_p
             "ref": "personal-user",
             "handle": "avery",
             "type": "personal",
-            "label": "Avery Example",
+            "display_name": "Avery Example",
             "is_admin": True,
             "organization_role": None,
             "authority_revision": 1,

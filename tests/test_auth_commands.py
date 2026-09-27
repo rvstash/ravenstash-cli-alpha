@@ -138,7 +138,8 @@ account_ref = "ac_23456789"
     assert result.exit_code == 0
     assert calls == ["/v0/platform/me"]
     assert "work" in result.output
-    assert "developer@example.test" in result.output
+    assert "user:developer" in result.output
+    assert "developer@example.test" not in result.output
     assert "cus_verified" not in result.output
     assert "custpid1" not in result.output
     assert "https://api.work.example" not in result.output
@@ -187,7 +188,7 @@ api_url = "https://api.work.example"
     result = runner.invoke(auth_cmd.app, ["whoami"])
 
     assert result.exit_code == 0, result.output
-    assert "automation for org:acme" in result.output
+    assert "organization automation token for org:acme" in result.output
 
 
 def test_auth_login_delegates_to_device_login_with_active_profile(

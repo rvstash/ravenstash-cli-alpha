@@ -79,6 +79,7 @@ SESSIONS_DIR_NAME = "sessions"
 DEFAULT_API_URL = "https://api.ravenstash.com"
 DEFAULT_REPOSITORY_DOMAIN = "rvsta.sh"
 CURRENT_CONFIG_VERSION = 6
+REPOSITORY_TARGET_PREFIX = "repo:"
 
 
 class ConfigError(ValueError):
@@ -725,11 +726,15 @@ def _artifact_target_from_mapping(value: object) -> ArtifactTarget | None:
     registry_kind = value.get("format")
     if registry_kind not in {None, "pypi", "npm", "maven", "oci"}:
         return None
+    display_selector = cast("str", display_selector)
+    if target_type == "repository" and not display_selector.startswith(REPOSITORY_TARGET_PREFIX):
+        # Earlier releases saved the bare namespace/repository name.
+        display_selector = f"{REPOSITORY_TARGET_PREFIX}{display_selector}"
     return ArtifactTarget(
         target_type=cast("ArtifactTargetType", target_type),
         customer_id=cast("str", customer_id),
         stable_selector=cast("str", stable_selector),
-        display_selector=cast("str", display_selector),
+        display_selector=display_selector,
         registry_kind=cast("RegistryKind | None", registry_kind),
         namespace_realm=value.get("namespace_realm"),
         namespace_unique_ref=value.get("namespace_unique_ref"),

@@ -8,18 +8,33 @@ All notable user-facing changes to `rvs` are recorded here. The format follows
 
 ### Added
 
+- `rvs status` shows who is signed in, the profile, the acting account, the
+  selected Artifacts target, and the Ravenstash API. `rvs art status` shows
+  the account, repository or mirror, and format that `rvs art` commands use.
+  Both only read and never select or save anything.
 - `rvs` warns once per run, on stderr, when Ravenstash reports that an API this
   release uses is deprecated, and shows the date it stops working when known.
   Run `rvs update` to check for a newer release.
 
 ### Changed
 
+- People and accounts are shown by public handle and name, such as
+  `user:ada (Ada Lovelace)` or `org:acme (Acme Inc)`, instead of by email.
+  `rvs auth whoami` also names the kind of access token in use, and
+  `rvs account list` adds a name column.
+- A selected repository is shown as `repo:NAMESPACE/REPOSITORY`, including in
+  publish confirmations and `--json` output.
 - When Ravenstash no longer supports an API this release uses, every command,
   including sign-in refresh and package-tool wrappers, stops with a message to
   update `rvs` and exit status 1. `rvs auth logout`, `rvs profile delete`, and
   `rvs profile rename` still remove local credentials before they report it.
 - Refreshing a sign-in waits and retries when Ravenstash is briefly busy and
   says how long to wait.
+
+### Removed
+
+- `rvs context current`, `rvs account current`, and `rvs art current`. Use
+  `rvs status` or `rvs art status`.
 
 ## [0.14.12] - 2026-09-27
 

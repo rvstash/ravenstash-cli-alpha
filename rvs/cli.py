@@ -11,11 +11,11 @@ from .account.commands import app as account_app
 from .artifacts.commands import app as artifacts_app
 from .auth.commands import app as auth_app
 from .auth.commands import profile_app
-from .context.commands import app as context_app
 from .installations import Installation, write_receipt
 from .native import commands as native_commands
 from .oci import commands as oci_commands
 from .runtime.commands import app as runtime_app
+from .status import status
 from .update import update
 
 
@@ -71,7 +71,7 @@ app = typer.Typer(
 app.add_typer(auth_app, name="auth", rich_help_panel=ACCOUNT_CONFIGURATION_PANEL)
 app.add_typer(profile_app, name="profile", rich_help_panel=ACCOUNT_CONFIGURATION_PANEL)
 app.add_typer(account_app, name="account", rich_help_panel=ACCOUNT_CONFIGURATION_PANEL)
-app.add_typer(context_app, name="context", rich_help_panel=ACCOUNT_CONFIGURATION_PANEL)
+app.command("status", rich_help_panel=ACCOUNT_CONFIGURATION_PANEL)(status)
 app.add_typer(runtime_app, name="runtime", rich_help_panel=SETUP_MAINTENANCE_PANEL)
 app.add_typer(artifacts_app, name="art", rich_help_panel=ARTIFACT_MANAGEMENT_PANEL)
 app.command("update", rich_help_panel=SETUP_MAINTENANCE_PANEL)(update)

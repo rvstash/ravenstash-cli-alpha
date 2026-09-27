@@ -51,8 +51,8 @@ def _folded_typed_handle(account: dict) -> str | None:
         return None
 
 
-def resolve_account(selector: str, profile: str | None = None) -> dict:
-    items = accounts(profile)
+def match_account(items: list[dict], selector: str) -> dict:
+    """Return the one account in *items* that *selector* names, without caching it."""
     value = selector.strip()
     if not value:
         output.fatal("Account name cannot be empty.")
@@ -96,7 +96,11 @@ def resolve_account(selector: str, profile: str | None = None) -> dict:
             f"More than one account matches '{selector}'. "
             f"Use one of these account references: {refs}"
         )
-    selected = matches[0]
+    return matches[0]
+
+
+def resolve_account(selector: str, profile: str | None = None) -> dict:
+    selected = match_account(accounts(profile), selector)
     cfg_mod.cache_account(
         profile=_profile_name(profile),
         customer=selected,
@@ -147,17 +151,63 @@ def ensure_active_account(
     )
 
 
-def identity_display(identity: object) -> str:
-    """Describe the principal returned by the platform identity endpoint."""
+def with_display_name(handle: str, name: object) -> str:
+    """Return a typed handle followed by a display name that adds information."""
+    if not isinstance(name, str) or not name.strip():
+        return handle
+    name = name.strip()
+    bare_handle = handle.partition(":")[2] or handle
+    return handle if name.casefold() == bare_handle.casefold() else f"{handle} ({name})"
+
+
+def payload_named_display(account: dict) -> str:
+    """Return an API account as its typed handle and display name."""
+    return with_display_name(payload_display_name(account), account.get("display_name"))
+
+
+_CREDENTIAL_KINDS = {
+    "user_personal": "personal-account PAT",
+    "user_organization": "organization-account PAT",
+    "organization_workload": "organization automation token",
+}
+
+
+def identity_person(identity: dict) -> tuple[str | None, str | None]:
+    """Return the signed-in person's typed handle and name, never an email.
+
+    Organization automation has no person.
+    """
+    user = identity.get("user")
+    if isinstance(user, dict) and isinstance(user.get("handle"), str):
+        name = user.get("display_name")
+        return typed_handle("personal", user["handle"]), name if isinstance(name, str) else None
+    personal = identity.get("personal_account")
+    if isinstance(personal, dict):
+        # An older API names only the personal account of a signed-in person.
+        return payload_display_name(personal), None
+    return None, None
+
+
+def identity_display(identity: object, *, with_token_account: bool = False) -> str:
+    """Describe the principal returned by the platform identity endpoint.
+
+    A person is shown by public handle and name, never by sign-in email. An
+    organization automation token has no person. Its account is added only when
+    *with_token_account* is set, for output that does not show the account itself.
+    """
     if not isinstance(identity, dict):
         return "unknown"
-    email = identity.get("email")
-    if isinstance(email, str) and email:
-        return email
     credential = identity.get("credential")
-    if isinstance(credential, dict) and isinstance(credential.get("account"), dict):
-        return f"{identity.get('principal_type') or 'automation'} for {payload_display_name(credential['account'])}"
-    return "unknown"
+    scenario = credential.get("scenario") if isinstance(credential, dict) else None
+    credential_kind = _CREDENTIAL_KINDS.get(str(scenario), "access token") if scenario else None
+    token_account = credential.get("account") if isinstance(credential, dict) else None
+    if credential_kind and with_token_account and isinstance(token_account, dict):
+        credential_kind = f"{credential_kind} for {payload_display_name(token_account)}"
+    handle, name = identity_person(identity)
+    if handle is None:
+        return credential_kind or identity.get("principal_type") or "unknown"
+    person = with_display_name(handle, name)
+    return f"{person} · {credential_kind}" if credential_kind else person
 
 
 def display_name(account: cfg_mod.AccountContext) -> str:
@@ -181,31 +231,12 @@ def account_list(
         rows.append(
             [
                 f"{label} (active)" if account_ref == active_id else label,
+                str(item.get("display_name") or ""),
                 account_ref,
-                str(item.get("organization_role", "")),
+                str(item.get("organization_role") or ""),
             ]
         )
-    output.table(["Account", "Account ref", "Role"], rows)
-
-
-@app.command("current")
-def account_current(
-    profile: str | None = typer.Option(None, "--profile", "-p"),
-) -> None:
-    """Show the selected personal account or organization."""
-    profile_name, account = ensure_active_account(profile)
-    output.kv(
-        {
-            "Local profile": profile_name,
-            "Account": display_name(account),
-            "Selected by": cfg_mod.account_selection_source(profile_name),
-            "Display name": account.account_label,
-            "Account handle": display_name(account),
-            "Account ref": account.customer_unique_ref,
-            "Role": account.organization_role or "unknown",
-        },
-        title="Current Ravenstash account",
-    )
+    output.table(["Account", "Name", "Account ref", "Role"], rows)
 
 
 def _render_account_selector(

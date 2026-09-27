@@ -1,0 +1,184 @@
+"""Read-only summary of the signed-in user and the current CLI selections."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+import typer
+
+from . import config as cfg_mod
+from . import output
+from .account.commands import (
+    accounts,
+    identity_display,
+    identity_person,
+    match_account,
+    payload_display_name,
+    payload_named_display,
+)
+from .client import ApiClient, ApiError
+from .devapi import platform_path
+
+
+# Everyday sources stay implicit; any other source is shown next to its value.
+_DEFAULT_SOURCES = frozenset({"persisted default", "persisted profile", "personal account default"})
+
+
+@dataclass(frozen=True)
+class Selection:
+    """The effective selections, resolved without writing configuration."""
+
+    profile_name: str
+    profile_source: str
+    api_url: str
+    identity: dict
+    account: dict | None
+    account_ref: str | None
+    account_source: str
+    target: cfg_mod.ArtifactTarget | None
+
+
+def inspect_selection(profile: str | None = None, account: str | None = None) -> Selection:
+    """Verify the sign-in and resolve the acting account and its selected target.
+
+    Every lookup is read-only: nothing is cached, activated, or selected.
+    """
+    cfg = cfg_mod.load()
+    profile_name = profile or cfg_mod.current_profile_name(cfg)
+    try:
+        identity = ApiClient.from_profile(profile_name).get(platform_path("me")).json()
+    except ApiError as exc:
+        output.fatal(f"Could not verify the current Ravenstash sign-in: {exc}")
+    if not isinstance(identity, dict):
+        output.fatal("Ravenstash returned an invalid identity.")
+    items = accounts(profile_name)
+    if account is not None:
+        selected: dict | None = match_account(items, account)
+        account_ref = str(selected["ref"])
+        account_source = "command option (--account)"
+    else:
+        account_ref = cfg_mod.current_customer_id(profile_name, cfg)
+        account_source = cfg_mod.account_selection_source(profile_name, cfg)
+        if account_ref is None:
+            # Commands fall back to the one personal account the same way.
+            personal = [item for item in items if item.get("type") == "personal"]
+            if len(personal) == 1:
+                account_ref = str(personal[0]["ref"])
+                account_source = "personal account default"
+        selected = next((item for item in items if item.get("ref") == account_ref), None)
+        if account_ref is not None and selected is None:
+            output.warn(f"The selected account {account_ref} is not available to this sign-in.")
+    _warn_about_token_account(identity, account_ref)
+    cached = cfg_mod.cached_account(profile_name, account_ref) if account_ref else None
+    return Selection(
+        profile_name=profile_name,
+        profile_source=(
+            "command option (--profile)" if profile else cfg_mod.profile_selection_source()
+        ),
+        api_url=cfg.active_profile(profile_name).api_url,
+        identity=identity,
+        account=selected,
+        account_ref=account_ref,
+        account_source=account_source,
+        target=cached.selected_target if cached is not None else None,
+    )
+
+
+def _warn_about_token_account(identity: dict, account_ref: str | None) -> None:
+    """Explain when an access token cannot act for the selected account."""
+    credential = identity.get("credential")
+    token_account = credential.get("account") if isinstance(credential, dict) else None
+    if not isinstance(token_account, dict) or token_account.get("ref") == account_ref:
+        return
+    handle = payload_display_name(token_account)
+    output.warn(
+        f"RVS_TOKEN acts only for {handle}. Select it with `rvs account switch {handle}` "
+        f"or RVS_ACCOUNT_REF={token_account.get('ref')}."
+    )
+
+
+def with_source(value: str, source: str) -> str:
+    return value if source in _DEFAULT_SOURCES else f"{value} · {source}"
+
+
+def selection_account_display(selection: Selection) -> str | None:
+    if selection.account is not None:
+        return payload_named_display(selection.account)
+    return selection.account_ref
+
+
+def account_json(selection: Selection) -> dict | None:
+    if selection.account_ref is None:
+        return None
+    return {
+        "ref": selection.account_ref,
+        "handle": (
+            payload_display_name(selection.account) if selection.account is not None else None
+        ),
+        "display_name": (
+            selection.account.get("display_name") if selection.account is not None else None
+        ),
+        "selected_by": selection.account_source,
+    }
+
+
+def target_json(target: cfg_mod.ArtifactTarget | None) -> dict | None:
+    if target is None:
+        return None
+    return {
+        "target": target.display_selector,
+        "type": target.target_type,
+        "format": target.registry_kind,
+    }
+
+
+def _identity_json(identity: dict) -> dict:
+    credential = identity.get("credential")
+    handle, name = identity_person(identity)
+    return {
+        "display": identity_display(identity),
+        "principal_type": identity.get("principal_type") or "user",
+        "user": handle,
+        "display_name": name,
+        "credential": credential.get("scenario") if isinstance(credential, dict) else None,
+    }
+
+
+def status(
+    profile: str | None = typer.Option(
+        None,
+        "--profile",
+        "-p",
+        help="Local profile to inspect (default: selected profile).",
+    ),
+) -> None:
+    """Show who is signed in and what the CLI currently acts on."""
+    selection = inspect_selection(profile)
+    target = selection.target
+    account = selection_account_display(selection)
+    output.kv(
+        {
+            "Signed in as": identity_display(selection.identity),
+            "Profile": with_source(selection.profile_name, selection.profile_source),
+            "Account": (
+                with_source(account, selection.account_source) if account else "not selected"
+            ),
+            "Artifacts target": (
+                " · ".join(part for part in (target.display_selector, target.registry_kind) if part)
+                if target is not None
+                else "not selected"
+            ),
+            "Ravenstash API": selection.api_url,
+        },
+        title="Ravenstash status",
+        json_values={
+            "signed_in_as": _identity_json(selection.identity),
+            "profile": {
+                "name": selection.profile_name,
+                "selected_by": selection.profile_source,
+            },
+            "account": account_json(selection),
+            "targets": {"artifacts": target_json(target)},
+            "api_url": selection.api_url,
+        },
+    )

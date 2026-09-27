@@ -133,7 +133,7 @@ Profiles let one computer remember separate Ravenstash sign-ins or settings:
 ```bash
 rvs auth login --profile work
 rvs profile use work
-rvs context current
+rvs status
 ```
 
 The CLI can also install and select Python, Node.js, and Java versions:

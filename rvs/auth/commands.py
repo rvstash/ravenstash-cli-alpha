@@ -560,7 +560,7 @@ def whoami(
     output.kv(
         {
             "Local profile": profile_name,
-            "User": identity_display(identity),
+            "User": identity_display(identity, with_token_account=True),
         },
         title="Authenticated Ravenstash user",
     )

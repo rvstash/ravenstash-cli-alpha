@@ -45,7 +45,7 @@ choice is remembered for the selected account and profile.
 Check it at any time:
 
 ```bash
-rvs context current
+rvs status
 ```
 
 ## 4. Install a package
@@ -118,10 +118,8 @@ rvs profile current
 Show the current choices:
 
 ```bash
-rvs auth status
-rvs account current
-rvs art current
-rvs context current
+rvs status
+rvs art status
 ```
 
 If no repository is selected, choose one with `rvs art select
