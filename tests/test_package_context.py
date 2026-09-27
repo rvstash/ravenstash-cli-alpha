@@ -650,7 +650,15 @@ def test_hidden_repository_format_explains_automation_token_scope(
         monkeypatch.delenv("RVS_TOKEN", raising=False)
 
     class HiddenFormatApi:
-        def get(self, path, params):
+        def get(self, path, params=None):
+            if path == "/v0/platform/me":
+                account = {"ref": "personal-alice", "handle": "alice", "type": "personal"}
+                return Response(
+                    {
+                        "principal_type": "user",
+                        "credential": {"scenario": "user_personal", "account": account},
+                    }
+                )
             assert params["format"] == "pypi"
             raise ApiError(404, "Repository not found")
 

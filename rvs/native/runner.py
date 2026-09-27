@@ -24,7 +24,7 @@ import typer
 
 from .. import config as cfg_mod
 from .. import output
-from ..account.commands import resolve_account
+from ..account.commands import acting_account_ref, resolve_account
 from ..artifacts.routing import (
     CanonicalRouter,
     npm_auth_token_key,
@@ -248,8 +248,7 @@ def _selected_customer_id(options: NativeOptions) -> str | None:
         return options.customer_id
     if options.account:
         return str(resolve_account(options.account, options.profile)["ref"])
-    profile_name = options.profile or cfg_mod.current_profile_name()
-    return cfg_mod.current_customer_id(profile_name)
+    return acting_account_ref(options.profile or cfg_mod.current_profile_name())
 
 
 def _is_publishing(tool: NativeTool, argv: list[str]) -> bool:

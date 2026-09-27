@@ -10,14 +10,15 @@ from . import config as cfg_mod
 from . import output
 from .account.commands import (
     accounts,
+    credential_account,
     identity_display,
     identity_person,
     match_account,
     payload_display_name,
     payload_named_display,
+    token_account_conflict,
+    verified_identity,
 )
-from .client import ApiClient, ApiError
-from .devapi import platform_path
 
 
 # Everyday sources stay implicit; any other source is shown next to its value.
@@ -45,17 +46,20 @@ def inspect_selection(profile: str | None = None, account: str | None = None) ->
     """
     cfg = cfg_mod.load()
     profile_name = profile or cfg_mod.current_profile_name(cfg)
-    try:
-        identity = ApiClient.from_profile(profile_name).get(platform_path("me")).json()
-    except ApiError as exc:
-        output.fatal(f"Could not verify the current Ravenstash sign-in: {exc}")
-    if not isinstance(identity, dict):
-        output.fatal("Ravenstash returned an invalid identity.")
+    identity = verified_identity(profile_name)
     items = accounts(profile_name)
+    token = credential_account(identity)
     if account is not None:
         selected: dict | None = match_account(items, account)
         account_ref = str(selected["ref"])
         account_source = "command option (--account)"
+    elif token is not None:
+        # Commands act only for the token's account; a conflict stops them.
+        account_ref = str(token["ref"])
+        account_source = "access token (RVS_TOKEN)"
+        if conflict := token_account_conflict(token):
+            output.warn(conflict)
+        selected = next((item for item in items if item.get("ref") == account_ref), token)
     else:
         account_ref = cfg_mod.current_customer_id(profile_name, cfg)
         account_source = cfg_mod.account_selection_source(profile_name, cfg)
@@ -68,7 +72,6 @@ def inspect_selection(profile: str | None = None, account: str | None = None) ->
         selected = next((item for item in items if item.get("ref") == account_ref), None)
         if account_ref is not None and selected is None:
             output.warn(f"The selected account {account_ref} is not available to this sign-in.")
-    _warn_about_token_account(identity, account_ref)
     cached = cfg_mod.cached_account(profile_name, account_ref) if account_ref else None
     return Selection(
         profile_name=profile_name,
@@ -81,19 +84,6 @@ def inspect_selection(profile: str | None = None, account: str | None = None) ->
         account_ref=account_ref,
         account_source=account_source,
         target=cached.selected_target if cached is not None else None,
-    )
-
-
-def _warn_about_token_account(identity: dict, account_ref: str | None) -> None:
-    """Explain when an access token cannot act for the selected account."""
-    credential = identity.get("credential")
-    token_account = credential.get("account") if isinstance(credential, dict) else None
-    if not isinstance(token_account, dict) or token_account.get("ref") == account_ref:
-        return
-    handle = payload_display_name(token_account)
-    output.warn(
-        f"RVS_TOKEN acts only for {handle}. Select it with `rvs account switch {handle}` "
-        f"or RVS_ACCOUNT_REF={token_account.get('ref')}."
     )
 
 

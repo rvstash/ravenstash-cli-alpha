@@ -18,6 +18,11 @@ All notable user-facing changes to `rvs` are recorded here. The format follows
 
 ### Changed
 
+- With a personal access token or organization automation token in
+  `RVS_TOKEN`, commands act for the account that owns the token, so CI jobs no
+  longer need `RVS_ACCOUNT_REF` or `rvs account switch`. A saved or shell
+  selection does not apply while the token is set, and an `RVS_ACCOUNT_REF`
+  naming another account stops the command with an explanation.
 - People and accounts are shown by public handle and name, such as
   `user:ada (Ada Lovelace)` or `org:acme (Acme Inc)`, instead of by email.
   `rvs auth whoami` also names the kind of access token in use, and

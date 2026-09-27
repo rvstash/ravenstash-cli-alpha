@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from typing import cast
 
 from .. import config as cfg
-from ..account.commands import resolve_account
+from ..account.commands import acting_account_ref, resolve_account
 from ..client import ApiClient
 from ..devapi import artifacts_path, collection_all
 from ..oci.registry import normalized_registry_host
@@ -110,7 +110,7 @@ def discover(
     customer_id = (
         str(resolve_account(account, profile_name)["ref"])
         if account
-        else cfg.current_customer_id(profile_name)
+        else acting_account_ref(profile_name)
     )
     if not customer_id:
         raise ValueError("No account is selected. Run rvs account switch.")

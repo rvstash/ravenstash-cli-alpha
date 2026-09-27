@@ -8,7 +8,7 @@ from typing import Literal, cast
 
 from .. import config as cfg_mod
 from .. import output
-from ..account.commands import ensure_active_account
+from ..account.commands import acting_account_ref, ensure_active_account
 from ..auth.token_format import STATIC_NATIVE_DURATION_SECONDS, validate_public_token
 from ..client import ApiClient, ApiError
 from ..devapi import (
@@ -277,7 +277,7 @@ def resolve_target(
     client = ApiClient.from_profile(profile_name)
     try:
         if spec.target_type == "repository":
-            effective_customer_id = customer_id or cfg_mod.current_customer_id(profile_name)
+            effective_customer_id = customer_id or acting_account_ref(profile_name)
             if effective_customer_id is None:
                 output.fatal("No account is selected. Run `rvs account switch`.")
             repository = resolve_repository_entry(

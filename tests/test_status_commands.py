@@ -4,7 +4,6 @@ import json
 from typing import TYPE_CHECKING, Any
 
 from rvs import config as cfg_mod
-from rvs import status as status_mod
 from rvs.account import commands as account_cmd
 from rvs.cli import app
 from typer.testing import CliRunner
@@ -78,9 +77,6 @@ def _serve(monkeypatch, identity: dict[str, Any], items: list[dict[str, Any]]) -
             assert path == "/v0/platform/accounts"
             return _Response({"items": items, "next_cursor": None})
 
-    monkeypatch.setattr(
-        status_mod.ApiClient, "from_profile", staticmethod(lambda profile=None: _Client())
-    )
     monkeypatch.setattr(
         account_cmd.ApiClient, "from_profile", staticmethod(lambda profile=None: _Client())
     )
@@ -244,9 +240,32 @@ def test_status_names_the_owner_of_an_organization_pat(monkeypatch, tmp_path: Pa
     assert result.exit_code == 0, result.output
     signed_in = _row(result.output, "Signed in as")
     assert "user:avery (Avery Example) · organization-account PAT" in signed_in
-    # The persisted personal account is not one this token can act for.
-    assert "RVS_TOKEN acts only for org:acme" in result.stderr
-    assert "RVS_ACCOUNT_REF=acme" in result.stderr
+    # The token's account replaces the persisted personal account.
+    assert "org:acme (Acme Incorporated) · access token (RVS_TOKEN)" in _row(
+        result.output, "Account"
+    )
+    assert result.stderr == ""
+
+
+def test_status_warns_when_rvs_account_ref_names_another_account(
+    monkeypatch, tmp_path: Path
+) -> None:
+    _isolate_config(monkeypatch, tmp_path)
+    monkeypatch.setenv("RVS_ACCOUNT_REF", "personal-user")
+    token_account = {"ref": "acme", "handle": "acme", "type": "organization"}
+    _serve(
+        monkeypatch,
+        _identity(credential={"scenario": "user_organization", "account": token_account}),
+        [ACME],
+    )
+
+    result = runner.invoke(app, ["status"])
+
+    assert result.exit_code == 0, result.output
+    assert "org:acme (Acme Incorporated)" in _row(result.output, "Account")
+    assert "RVS_ACCOUNT_REF is personal-user, but RVS_TOKEN acts only for org:acme" in (
+        result.stderr
+    )
 
 
 def test_status_json_never_reports_the_sign_in_email(monkeypatch, tmp_path: Path) -> None:

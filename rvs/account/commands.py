@@ -9,6 +9,7 @@ from rich.markup import escape
 
 from .. import config as cfg_mod
 from .. import output
+from ..auth.token_format import ACCOUNT_TOKEN_MARKERS
 from ..client import ApiClient, ApiError
 from ..devapi import collection_all, platform_path
 from ..interactive import select_index
@@ -34,6 +35,70 @@ def accounts(profile: str | None = None) -> list[dict]:
     except ValueError:
         output.fatal("Ravenstash returned an invalid account list.")
     return [item for item in items if isinstance(item, dict)]
+
+
+_identities: dict[tuple[str, str | None], dict] = {}
+
+
+def verified_identity(profile: str | None = None) -> dict:
+    """Return the server's view of the signed-in principal, once per process."""
+    profile_name = _profile_name(profile)
+    key = (profile_name, os.environ.get("RVS_TOKEN"))
+    if key not in _identities:
+        try:
+            identity = ApiClient.from_profile(profile_name).get(platform_path("me")).json()
+        except ApiError as exc:
+            output.fatal(f"Could not verify the current Ravenstash sign-in: {exc}")
+        if not isinstance(identity, dict):
+            output.fatal("Ravenstash returned an invalid identity.")
+        _identities[key] = identity
+    return _identities[key]
+
+
+def credential_account(identity: dict) -> dict | None:
+    """Return the one account an access token acts for; a sign-in session has none."""
+    credential = identity.get("credential")
+    account = credential.get("account") if isinstance(credential, dict) else None
+    return account if isinstance(account, dict) and account.get("ref") else None
+
+
+def has_account_token() -> bool:
+    """Return whether RVS_TOKEN holds an access token bound to one account."""
+    return os.environ.get("RVS_TOKEN", "").startswith(ACCOUNT_TOKEN_MARKERS)
+
+
+def token_account(profile: str | None = None) -> dict | None:
+    """Return the account an access token in RVS_TOKEN acts for, or None."""
+    if not has_account_token():
+        return None
+    return credential_account(verified_identity(profile))
+
+
+def token_account_conflict(account: dict) -> str | None:
+    """Explain an RVS_ACCOUNT_REF that names another account than the token's."""
+    explicit = os.environ.get("RVS_ACCOUNT_REF")
+    if not explicit or explicit == account["ref"]:
+        return None
+    return (
+        f"RVS_ACCOUNT_REF is {explicit}, but RVS_TOKEN acts only for "
+        f"{payload_display_name(account)} ({account['ref']}). Unset RVS_ACCOUNT_REF "
+        "or use a token for that account."
+    )
+
+
+def acting_account_ref(profile: str | None = None) -> str | None:
+    """Return the account a command acts for when it has no --account option.
+
+    RVS_TOKEN acts for exactly one account, so that account wins over any saved
+    or shell selection. Without RVS_TOKEN, the local selection applies.
+    """
+    profile_name = _profile_name(profile)
+    account = token_account(profile_name)
+    if account is None:
+        return cfg_mod.current_customer_id(profile_name)
+    if conflict := token_account_conflict(account):
+        output.fatal(conflict)
+    return str(account["ref"])
 
 
 def payload_display_name(account: dict) -> str:
@@ -114,13 +179,16 @@ def ensure_active_account(
     customer_id: str | None = None,
 ) -> tuple[str, cfg_mod.AccountContext]:
     profile_name = _profile_name(profile)
-    effective_id = customer_id or cfg_mod.current_customer_id(profile_name)
+    token = token_account(profile_name) if customer_id is None else None
+    effective_id = customer_id or acting_account_ref(profile_name)
     if effective_id:
         cached = cfg_mod.cached_account(profile_name, effective_id)
         if cached is not None:
             return profile_name, cached
         profile_config = cfg_mod.load().active_profile(profile_name)
-        if effective_id == profile_config.customer_id:
+        if token is not None:
+            customer = token
+        elif effective_id == profile_config.customer_id:
             customer = {
                 "ref": effective_id,
                 "type": "personal",
@@ -145,7 +213,8 @@ def ensure_active_account(
     return profile_name, cfg_mod.cache_account(
         profile=profile_name,
         customer=customer,
-        activate=customer_id is None,
+        # A token's account is implied by the token; it never changes the selection.
+        activate=customer_id is None and token is None,
     )
 
 
@@ -217,7 +286,7 @@ def account_list(
 ) -> None:
     """List personal accounts and organizations available to one profile."""
     profile_name = _profile_name(profile)
-    active_id = cfg_mod.current_customer_id(profile_name)
+    active_id = acting_account_ref(profile_name)
     rows = []
     for item in accounts(profile_name):
         account_ref = str(item.get("ref", ""))
@@ -299,7 +368,9 @@ def _switch_account(account: str | None, profile: str | None) -> None:
     scope = cfg_mod.account_selection_write_scope()
     saved = cfg_mod.set_active_account(profile=profile_name, customer=selected)
     output.success(f"Account '{display_name(saved)}' selected for {scope}.")
-    if os.environ.get("RVS_ACCOUNT_REF"):
+    if has_account_token():
+        output.warn("RVS_TOKEN is set; commands act only for its account while it is set.")
+    elif os.environ.get("RVS_ACCOUNT_REF"):
         output.warn(
             "RVS_ACCOUNT_REF is set and still overrides the selected account in this shell."
         )

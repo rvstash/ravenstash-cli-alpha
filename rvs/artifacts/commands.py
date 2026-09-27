@@ -10,8 +10,13 @@ import typer
 
 from .. import config as cfg_mod
 from .. import output
+from ..account.commands import (
+    acting_account_ref,
+    ensure_active_account,
+    payload_display_name,
+    resolve_account,
+)
 from ..account.commands import display_name as account_display_name
-from ..account.commands import ensure_active_account, payload_display_name, resolve_account
 from ..client import ApiClient, ApiError
 from ..devapi import (
     artifacts_path,
@@ -109,7 +114,7 @@ def _customer_id(profile: str | None, explicit_customer_id: str | None = None) -
     if options.get("account"):
         return str(resolve_account(cast("str", options["account"]), profile)["ref"])
     profile_name, _ = _profile(profile)
-    customer_id = cfg_mod.current_customer_id(profile_name)
+    customer_id = acting_account_ref(profile_name)
     if not customer_id:
         output.fatal("No account is selected. Run `rvs account switch`.")
     return customer_id

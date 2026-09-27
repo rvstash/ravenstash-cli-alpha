@@ -18,7 +18,7 @@ import typer
 
 from .. import config as cfg_mod
 from .. import output
-from ..account.commands import resolve_account
+from ..account.commands import acting_account_ref, resolve_account
 from ..artifacts.routing import native_path as opaque_native_path
 from ..artifacts.targets import expected_repository_target, resolve_target
 from ..auth.token_format import STATIC_NATIVE_DURATION_SECONDS, validate_public_token
@@ -123,7 +123,7 @@ def resolve_route(
     customer_id = options.customer_id
     if customer_id is None and options.account is not None:
         customer_id = str(resolve_account(options.account, profile_name)["ref"])
-    customer_id = customer_id or cfg_mod.current_customer_id(profile_name)
+    customer_id = customer_id or acting_account_ref(profile_name)
     selected = cfg_mod.selected_artifact_target(profile_name, customer_id)
     repo_ref = options.target
     if repo_ref is None and selected is not None:

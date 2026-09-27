@@ -9,8 +9,13 @@ import re
 STATIC_NATIVE_DURATION_SECONDS = 4 * 60 * 60
 
 
+# Personal-account PAT, organization-account PAT, and organization automation token.
+# Each is bound to exactly one account; a sign-in session token is not.
+ACCOUNT_TOKEN_MARKERS = ("rvs_ust", "rvs_uot", "rvs_oat")
+
+
 def validate_public_token(value: str, *, native: bool = False) -> str:
-    markers = "rvs_slt" if native else "rvs_ust|rvs_uot|rvs_oat"
+    markers = "rvs_slt" if native else "|".join(ACCOUNT_TOKEN_MARKERS)
     match = re.fullmatch(rf"({markers})([A-Za-z0-9_-]{{43}})", value)
     if match is None:
         raise ValueError("Invalid public credential format")

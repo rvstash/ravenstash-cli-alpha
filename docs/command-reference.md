@@ -47,6 +47,11 @@ save anything. A choice made by `RVS_PROFILE`, `RVS_ACCOUNT_REF`, a shell
 session, or a command option is shown next to its value. With root `--json`,
 `rvs status` nests the selected target under `targets.artifacts`.
 
+With a personal access token or organization automation token in `RVS_TOKEN`,
+commands act for the one account that owns the token, so a CI job needs no
+account selection. A saved or shell selection does not apply while the token is
+set, and `RVS_ACCOUNT_REF`, if set, must name the same account.
+
 `rvs art select` stores a format only when you pass `--format` or the target
 has exactly one format. Otherwise the format stays empty and each command uses
 its own: `rvs pip` uses pypi and `rvs npm` uses npm. Running a wrapper never
