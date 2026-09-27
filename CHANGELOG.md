@@ -6,6 +6,8 @@ All notable user-facing changes to `rvs` are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.14.12] - 2026-09-27
+
 ### Security
 
 - `rvs` no longer reads a `.rvs.env` file from the current directory or its
@@ -44,6 +46,8 @@ All notable user-facing changes to `rvs` are recorded here. The format follows
   one manifest.
 - `rvs art package show --version` reads every page of the version's files. With
   `--json`, the document also carries the version's `file_count`.
+
+Detailed release notes: [RVS 0.14.12](docs/releases/0.14.12.md).
 
 ## [0.14.11] - 2026-09-26
 
@@ -245,7 +249,8 @@ Detailed release notes: [RVS 0.14.4](docs/releases/0.14.4.md).
 
 Detailed release notes: [RVS 0.14.3](docs/releases/0.14.3.md).
 
-[Unreleased]: https://github.com/rvstash/ravenstash-cli-alpha/compare/v0.14.11...HEAD
+[Unreleased]: https://github.com/rvstash/ravenstash-cli-alpha/compare/v0.14.12...HEAD
+[0.14.12]: https://github.com/rvstash/ravenstash-cli-alpha/compare/v0.14.11...v0.14.12
 [0.14.11]: https://github.com/rvstash/ravenstash-cli-alpha/compare/v0.14.10...v0.14.11
 [0.14.10]: https://github.com/rvstash/ravenstash-cli-alpha/compare/v0.14.9...v0.14.10
 [0.14.9]: https://github.com/rvstash/ravenstash-cli-alpha/compare/v0.14.8...v0.14.9
