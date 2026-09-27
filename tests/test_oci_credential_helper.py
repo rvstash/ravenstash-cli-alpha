@@ -1,7 +1,8 @@
 """Docker credential-helper protocol for the ephemeral ``docker-credential-rvs`` broker.
 
 Docker runs ``docker-credential-rvs <action>``, writes the server URL (``get``) or a
-JSON payload (``store``/``erase``) to stdin, and reads JSON from stdout.
+JSON payload (``store``/``erase``) to stdin, and reads the result or an error
+message from stdout; a failure exits with status 1.
 """
 
 import io
@@ -13,7 +14,15 @@ from typing import TYPE_CHECKING, NamedTuple
 
 import pytest
 from rvs.oci import credential_helper
-from rvs.oci.registry import normalized_registry_host
+from rvs.oci.credential_helper import (
+    BROKER_INVALID,
+    BROKER_UNAVAILABLE,
+    BROKER_UNREADABLE,
+    BROKER_UNSAFE,
+    CREDENTIALS_NOT_FOUND,
+    READ_ONLY,
+    UNSUPPORTED,
+)
 
 
 if TYPE_CHECKING:
@@ -64,7 +73,8 @@ def _run_helper(
 
 
 def _assert_failed(result: HelperResult, message: str) -> None:
-    assert result == HelperResult(1, "", f"{message}\n")
+    # Docker reads the error message from stdout, not stderr.
+    assert result == HelperResult(1, f"{message}\n", "")
 
 
 # ── Successful protocol actions ───────────────────────────────────────────────
@@ -108,8 +118,29 @@ def test_store_and_erase_are_refused_without_touching_the_broker(
 
     result = _run_helper(monkeypatch, capsys, operation, stdin=request)
 
-    _assert_failed(result, "the ephemeral Ravenstash helper is read-only")
+    _assert_failed(result, READ_ONLY)
     assert broker.read_bytes() == original
+
+
+@pytest.mark.parametrize(
+    ("arguments", "message"),
+    [
+        pytest.param(("store",), READ_ONLY, id="store"),
+        pytest.param(("erase",), READ_ONLY, id="erase"),
+        pytest.param(("version",), UNSUPPORTED, id="unsupported"),
+    ],
+)
+def test_actions_without_a_broker_are_answered_from_the_action_alone(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    arguments: tuple[str, ...],
+    message: str,
+) -> None:
+    monkeypatch.delenv("RVS_OCI_CREDENTIAL_FILE", raising=False)
+
+    result = _run_helper(monkeypatch, capsys, *arguments, stdin=REGISTRY)
+
+    _assert_failed(result, message)
 
 
 @pytest.mark.usefixtures("broker")
@@ -129,7 +160,7 @@ def test_unsupported_actions_are_rejected(
 ) -> None:
     result = _run_helper(monkeypatch, capsys, *arguments, stdin=REGISTRY)
 
-    _assert_failed(result, "unsupported credential-helper operation")
+    _assert_failed(result, UNSUPPORTED)
 
 
 @pytest.mark.usefixtures("broker")
@@ -142,33 +173,17 @@ def test_unsupported_actions_are_rejected(
         pytest.param(f"{REGISTRY}:5000", id="other-port"),
         pytest.param(f"{REGISTRY}.other.example.test", id="suffixed-host"),
         pytest.param(f"https://{REGISTRY}@other.example.test", id="userinfo-host"),
-    ],
-)
-def test_get_withholds_credentials_from_any_other_registry(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], server_url: str
-) -> None:
-    result = _run_helper(monkeypatch, capsys, "get", stdin=server_url)
-
-    _assert_failed(result, "credentials are not available for this registry")
-
-
-@pytest.mark.usefixtures("broker")
-@pytest.mark.parametrize(
-    "server_url",
-    [
         pytest.param("https://[::1", id="unclosed-ipv6-literal"),
         pytest.param(f"{REGISTRY}:99999", id="port-out-of-range"),
     ],
 )
-def test_get_rejects_an_unparseable_server_url(
+def test_get_reports_not_found_for_any_other_registry(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], server_url: str
 ) -> None:
-    with pytest.raises(ValueError) as parse_error:
-        normalized_registry_host(server_url)
-
+    # Docker treats this exact message as "no credentials" and continues.
     result = _run_helper(monkeypatch, capsys, "get", stdin=server_url)
 
-    _assert_failed(result, str(parse_error.value))
+    _assert_failed(result, CREDENTIALS_NOT_FOUND)
 
 
 # ── Broker state ──────────────────────────────────────────────────────────────
@@ -187,20 +202,32 @@ def test_missing_broker_configuration_is_reported(
 
     result = _run_helper(monkeypatch, capsys, "get", stdin=REGISTRY)
 
-    _assert_failed(result, "Ravenstash OCI credential broker is unavailable")
+    _assert_failed(result, BROKER_UNAVAILABLE)
 
 
-def test_removed_broker_file_reports_the_operating_system_error(
+def test_removed_broker_reports_that_it_is_unavailable(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], broker: Path
 ) -> None:
     # The wrapper deletes the broker when its native command exits.
     broker.unlink()
-    with pytest.raises(FileNotFoundError) as missing:
-        broker.stat()
 
     result = _run_helper(monkeypatch, capsys, "get", stdin=REGISTRY)
 
-    _assert_failed(result, str(missing.value))
+    _assert_failed(result, BROKER_UNAVAILABLE)
+
+
+@pytest.mark.skipif(
+    os.name == "nt" or os.geteuid() == 0,
+    reason="needs POSIX permissions that apply to the current user",
+)
+def test_unreadable_broker_reports_neither_path_nor_secret(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], broker: Path
+) -> None:
+    broker.chmod(0o000)
+
+    result = _run_helper(monkeypatch, capsys, "get", stdin=REGISTRY)
+
+    _assert_failed(result, BROKER_UNREADABLE)
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX permission bits are not enforced on Windows")
@@ -215,12 +242,7 @@ def test_group_or_world_accessible_broker_is_refused(
 
     result = _run_helper(monkeypatch, capsys, "get", stdin=REGISTRY)
 
-    _assert_failed(result, "Ravenstash OCI credential broker permissions are unsafe")
-
-
-def _decode_broker(content: bytes) -> object:
-    """Decode broker bytes the way the helper does, to learn the stdlib's message."""
-    return json.loads(content.decode("utf-8"))
+    _assert_failed(result, BROKER_UNSAFE)
 
 
 @pytest.mark.parametrize(
@@ -231,19 +253,17 @@ def _decode_broker(content: bytes) -> object:
         pytest.param(b"\xff", id="not-utf-8"),
     ],
 )
-def test_unreadable_broker_content_is_reported(
+def test_undecodable_broker_is_invalid(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
     broker: Path,
     content: bytes,
 ) -> None:
     broker.write_bytes(content)
-    with pytest.raises(ValueError) as decode_error:
-        _decode_broker(content)
 
     result = _run_helper(monkeypatch, capsys, "get", stdin=REGISTRY)
 
-    _assert_failed(result, str(decode_error.value))
+    _assert_failed(result, BROKER_INVALID)
 
 
 @pytest.mark.parametrize(
@@ -260,6 +280,11 @@ def test_unreadable_broker_content_is_reported(
         pytest.param(
             {"server": [REGISTRY], "username": USERNAME, "secret": SECRET}, id="list-server"
         ),
+        pytest.param(
+            {"server": "https://[::1", "username": USERNAME, "secret": SECRET},
+            id="unparseable-server",
+        ),
+        pytest.param({"server": "https:///", "username": USERNAME, "secret": SECRET}, id="no-host"),
     ],
 )
 @pytest.mark.parametrize("operation", ["get", "list"])
@@ -274,8 +299,8 @@ def test_invalid_broker_payload_is_refused(
 
     result = _run_helper(monkeypatch, capsys, operation, stdin=REGISTRY)
 
-    _assert_failed(result, "Ravenstash OCI credential broker is invalid")
-    assert SECRET not in result.stderr
+    _assert_failed(result, BROKER_INVALID)
+    assert SECRET not in result.stdout
 
 
 def test_helper_process_reports_refusal_without_a_traceback(broker: Path) -> None:
@@ -289,5 +314,5 @@ def test_helper_process_reports_refusal_without_a_traceback(broker: Path) -> Non
     )
 
     assert result.returncode == 1
-    assert result.stdout == ""
-    assert result.stderr == "the ephemeral Ravenstash helper is read-only\n"
+    assert result.stdout == f"{READ_ONLY}\n"
+    assert result.stderr == ""

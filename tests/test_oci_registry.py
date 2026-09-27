@@ -4,6 +4,7 @@ import sys
 
 import pytest
 from rvs.oci import credential_helper
+from rvs.oci.credential_helper import BROKER_INVALID, CREDENTIALS_NOT_FOUND
 from rvs.oci.registry import normalized_registry_host
 
 
@@ -23,17 +24,17 @@ def test_registry_authority_preserves_host_and_port(address, expected):
 
 
 @pytest.mark.parametrize(
-    ("server", "requested", "allowed"),
+    ("server", "requested", "refusal"),
     [
-        ("oci.example", "https://OCI.example./v1/", True),
-        ("[::1]:5000", "http://[::1]:5000", True),
-        ("[::1]:5000", "http://[::1]:5001", False),
-        ("oci.example", "another.example", False),
-        ("https:///", "https:///", False),
+        ("oci.example", "https://OCI.example./v1/", None),
+        ("[::1]:5000", "http://[::1]:5000", None),
+        ("[::1]:5000", "http://[::1]:5001", CREDENTIALS_NOT_FOUND),
+        ("oci.example", "another.example", CREDENTIALS_NOT_FOUND),
+        ("https:///", "https:///", BROKER_INVALID),
     ],
 )
 def test_credential_helper_checks_canonical_authority(
-    monkeypatch, tmp_path, capsys, server, requested, allowed
+    monkeypatch, tmp_path, capsys, server, requested, refusal
 ):
     broker = tmp_path / "broker.json"
     broker.write_text(
@@ -43,12 +44,11 @@ def test_credential_helper_checks_canonical_authority(
     monkeypatch.setenv("RVS_OCI_CREDENTIAL_FILE", str(broker))
     monkeypatch.setattr(sys, "argv", ["docker-credential-rvs", "get"])
     monkeypatch.setattr(sys, "stdin", io.StringIO(requested))
-    if allowed:
+    if refusal is None:
         credential_helper.main()
         assert json.loads(capsys.readouterr().out)["Secret"] == "test-secret"
     else:
         with pytest.raises(SystemExit, match="1"):
             credential_helper.main()
-        captured = capsys.readouterr()
-        assert captured.out == ""
-        assert "test-secret" not in captured.err
+        # Docker reads the refusal from stdout; the secret never appears.
+        assert capsys.readouterr() == (f"{refusal}\n", "")

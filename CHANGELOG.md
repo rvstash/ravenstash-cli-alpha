@@ -10,6 +10,11 @@ All notable user-facing changes to `rvs` are recorded here. The format follows
 
 - `rvs update` rejects a release signature whose armor contains non-ASCII
   text as invalid, instead of stopping with an internal error.
+- The `docker-credential-rvs` helper follows the Docker credential-helper
+  protocol: errors are reported on stdout, where Docker reads them; other
+  registries get the standard "credentials not found" answer, so Docker
+  continues without credentials and prints no stray message; and failures no
+  longer show file paths or parser details.
 
 ## [0.14.13] - 2026-09-27
 
