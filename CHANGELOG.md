@@ -6,12 +6,16 @@ All notable user-facing changes to `rvs` are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.14.15] - 2026-09-27
+
 ### Changed
 
 - `rvs status` lists the profile first, followed by who is signed in, because
   the profile decides which sign-in and selections apply. With `--json`, the
   `profile` key also comes before `signed_in_as`.
 - Error messages about unexpected API responses name the Ravenstash API.
+
+Detailed release notes: [RVS 0.14.15](docs/releases/0.14.15.md).
 
 ## [0.14.14] - 2026-09-27
 
@@ -315,7 +319,8 @@ Detailed release notes: [RVS 0.14.4](docs/releases/0.14.4.md).
 
 Detailed release notes: [RVS 0.14.3](docs/releases/0.14.3.md).
 
-[Unreleased]: https://github.com/rvstash/ravenstash-cli-alpha/compare/v0.14.14...HEAD
+[Unreleased]: https://github.com/rvstash/ravenstash-cli-alpha/compare/v0.14.15...HEAD
+[0.14.15]: https://github.com/rvstash/ravenstash-cli-alpha/compare/v0.14.14...v0.14.15
 [0.14.14]: https://github.com/rvstash/ravenstash-cli-alpha/compare/v0.14.13...v0.14.14
 [0.14.13]: https://github.com/rvstash/ravenstash-cli-alpha/compare/v0.14.12...v0.14.13
 [0.14.12]: https://github.com/rvstash/ravenstash-cli-alpha/compare/v0.14.11...v0.14.12
