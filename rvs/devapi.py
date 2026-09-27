@@ -125,19 +125,26 @@ def retry_after_seconds(headers: Any) -> float | None:
             return None
 
 
-def retired_route_message(response: Any) -> str | None:
-    """Return the server's upgrade message for a retired DevAPI route."""
-    if getattr(response, "status_code", None) != 410:
+def route_deprecated(headers: Any) -> bool:
+    """Return whether a response announces a deprecated route (RFC 9745).
+
+    Only the header's presence matters, so a malformed value still counts.
+    """
+    return headers is not None and headers.get("Deprecation") is not None
+
+
+def route_sunset_date(headers: Any) -> str | None:
+    """Return the UTC date of a ``Sunset`` header (RFC 8594), if it parses."""
+    raw = headers.get("Sunset") if headers is not None else None
+    if not isinstance(raw, str) or not raw.strip():
         return None
     try:
-        payload = response.json()
-    except ValueError:
+        sunset = parsedate_to_datetime(raw.strip())
+        if sunset.tzinfo is None:
+            sunset = sunset.replace(tzinfo=UTC)
+        return sunset.astimezone(UTC).date().isoformat()
+    except TypeError, ValueError, OverflowError, IndexError:
         return None
-    error = payload.get("error") if isinstance(payload, dict) else None
-    if not isinstance(error, dict) or error.get("code") != API_ROUTE_RETIRED:
-        return None
-    message = error.get("message")
-    return message if isinstance(message, str) and message else API_ROUTE_RETIRED
 
 
 def collection_items(payload: Any) -> list[dict[str, Any]]:

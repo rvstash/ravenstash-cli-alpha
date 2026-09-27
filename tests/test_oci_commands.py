@@ -288,6 +288,43 @@ def test_oci_route_rejects_a_token_minted_for_another_repository(
         oci_runner.resolve_route("docker", oci_runner.OciOptions(target="main/images"))
 
 
+def test_oci_route_on_a_retired_api_fails_cleanly_on_stderr(
+    monkeypatch, tmp_path: Path, capsys
+) -> None:
+    import httpx2
+    from rvs.client import ApiClient
+
+    _setup(monkeypatch, tmp_path)
+
+    class GoneTransport:
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            pass
+
+        def __enter__(self) -> GoneTransport:
+            return self
+
+        def __exit__(self, *args: Any) -> None:
+            return None
+
+        def request(self, method: str, url: str, **kwargs: Any) -> httpx2.Response:
+            return httpx2.Response(410, text="<html>Gone</html>")
+
+    monkeypatch.setattr(httpx2, "Client", GoneTransport)
+    monkeypatch.setattr(
+        oci_runner.ApiClient,
+        "from_profile",
+        staticmethod(lambda profile=None: ApiClient("https://api.example", "token")),
+    )
+
+    with pytest.raises(SystemExit) as exc_info:
+        oci_runner.resolve_route("docker", oci_runner.OciOptions(target="main/images"))
+
+    assert exc_info.value.code == 1
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "no longer supported by the Ravenstash API" in " ".join(captured.err.split())
+
+
 def test_oci_read_route_mints_read_only_repository_token(monkeypatch, tmp_path: Path) -> None:
     _setup(monkeypatch, tmp_path)
     api = _Api()

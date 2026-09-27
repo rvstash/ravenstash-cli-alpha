@@ -16,6 +16,7 @@ from typer.testing import CliRunner
 if TYPE_CHECKING:
     from pathlib import Path
 
+from rvs import client as client_mod
 from rvs import config as cfg_mod
 from rvs import interactive
 from rvs.auth import commands as auth_cmd
@@ -1225,7 +1226,9 @@ def test_device_login_surfaces_retired_route_message(monkeypatch, tmp_path: Path
     with pytest.raises(SystemExit):
         login_mod.perform_device_login(profile="default", api_url=None, no_browser=True)
 
-    assert "retired API route. Upgrade rvs." in " ".join(capsys.readouterr().err.split())
+    err = " ".join(capsys.readouterr().err.split())
+    assert "This rvs release is no longer supported by the Ravenstash API." in err
+    assert "run `rvs update`" in err
 
 
 def test_device_token_poll_surfaces_retired_route_message(
@@ -1237,7 +1240,9 @@ def test_device_token_poll_surfaces_retired_route_message(
     with pytest.raises(SystemExit):
         login_mod.perform_device_login(profile="default", api_url=None, no_browser=True)
 
-    assert "retired API route. Upgrade rvs." in " ".join(capsys.readouterr().err.split())
+    err = " ".join(capsys.readouterr().err.split())
+    assert "This rvs release is no longer supported by the Ravenstash API." in err
+    assert "run `rvs update`" in err
 
 
 def _isolated_refresh(monkeypatch, tmp_path: Path) -> None:
@@ -1304,7 +1309,6 @@ def test_refresh_does_not_rewrite_config_when_registries_are_unchanged(
     "meta_response",
     [
         _FakeResponse(503, {}),
-        _FakeResponse(410, _RETIRED),
         _FakeResponse(200, ["not", "an", "object"]),  # type: ignore[arg-type]
     ],
 )
@@ -1320,6 +1324,115 @@ def test_refresh_keeps_stored_registries_when_artifacts_meta_fails(
     profile = cfg_mod.load().profiles["default"]
     assert profile.native_registries == before
     assert profile.credential_type == "expiring"
+
+
+def test_refresh_stops_after_storing_the_session_when_artifacts_meta_is_retired(
+    monkeypatch, tmp_path: Path
+) -> None:
+    _isolated_refresh(monkeypatch, tmp_path)
+    _FakeClient.responses = [_FakeResponse(200, _DEVICE_TOKEN), _FakeResponse(410, _RETIRED)]
+
+    with pytest.raises(client_mod.ApiRouteRetiredError):
+        auth_mod.refresh_expiring_credential("default")
+
+    # The rotated session was stored before discovery reported the retired route.
+    assert cfg_mod.load().profiles["default"].credential_type == "expiring"
+
+
+@pytest.mark.parametrize(
+    "response",
+    [_FakeResponse(410, _RETIRED), _FakeResponse(410, {"detail": "Gone"})],
+)
+def test_refresh_reports_a_retired_route_instead_of_logging_it(
+    monkeypatch, tmp_path: Path, response: _FakeResponse
+) -> None:
+    _isolated_refresh(monkeypatch, tmp_path)
+    deleted: list[str] = []
+    monkeypatch.setattr(auth_mod, "delete_token", deleted.append)
+    _FakeClient.responses = [response]
+
+    with pytest.raises(client_mod.ApiRouteRetiredError) as exc_info:
+        auth_mod.refresh_expiring_credential("default")
+
+    assert "no longer supported by the Ravenstash API" in str(exc_info.value)
+    assert deleted == []
+
+
+@pytest.mark.parametrize("status", [429, 503])
+def test_refresh_honors_retry_after_and_resends_the_same_operation(
+    monkeypatch, tmp_path: Path, capsys, status: int
+) -> None:
+    _isolated_refresh(monkeypatch, tmp_path)
+    monkeypatch.setattr(client_mod, "_deprecation_warned", False)
+    slept: list[float] = []
+    monkeypatch.setattr("rvs.client.time.sleep", slept.append)
+    deprecated = {"Deprecation": "@1767225600", "Sunset": "Thu, 01 Jan 2099 00:00:00 GMT"}
+    _FakeClient.responses = [
+        _FakeResponse(status, {}, {"Retry-After": "3"}),
+        _FakeResponse(200, _DEVICE_TOKEN, deprecated),
+        ARTIFACTS_META,
+    ]
+
+    assert auth_mod.refresh_expiring_credential("default") == "jwt-token"
+
+    assert slept == [3.0]
+    first, second = (payload for _url, payload, _headers in _FakeClient.requests[:2])
+    assert first is not None and second is not None
+    assert first["operation_id"] == second["operation_id"]
+    err = " ".join(capsys.readouterr().err.split())
+    assert "Ravenstash will retire on 2099-01-01" in err
+
+
+def test_revoke_reports_a_retired_route(monkeypatch) -> None:
+    _FakeClient.requests = []
+    _FakeClient.responses = [_FakeResponse(410, {"detail": "not json either"})]
+    monkeypatch.setattr(auth_mod.httpx, "Client", _FakeClient)
+
+    with pytest.raises(client_mod.ApiRouteRetiredError):
+        auth_mod.revoke_device_refresh_token("https://api.ravenstash.com", "old-refresh")
+
+
+@pytest.mark.parametrize(
+    ("app", "command"),
+    [
+        (auth_cmd.app, ["logout"]),
+        (auth_cmd.app, ["logout", "--all"]),
+        (auth_cmd.profile_app, ["delete", "work"]),
+        (auth_cmd.profile_app, ["rename", "work", "renamed"]),
+    ],
+)
+def test_signing_out_on_a_retired_route_removes_local_credentials_then_fails(
+    monkeypatch, tmp_path: Path, app, command: list[str]
+) -> None:
+    config_dir = tmp_path / ".rvs"
+    _write_profiles_config(config_dir, default_profile="work")
+    monkeypatch.setattr(cfg_mod, "CONFIG_DIR", config_dir)
+    monkeypatch.setattr(cfg_mod, "CONFIG_FILE", config_dir / "config.toml")
+    calls: list[str] = []
+
+    def revoke(profile: str) -> bool:
+        calls.append(f"revoke:{profile}")
+        raise client_mod.ApiRouteRetiredError
+
+    monkeypatch.setattr(auth_cmd.auth_mod, "revoke_stored_refresh_token", revoke)
+    monkeypatch.setattr(
+        auth_cmd.auth_mod, "delete_token", lambda profile: calls.append(f"delete:{profile}")
+    )
+    monkeypatch.setattr(
+        auth_cmd.auth_mod,
+        "delete_token_from_all_stores",
+        lambda profile: calls.append(f"delete:{profile}"),
+    )
+
+    result = runner.invoke(app, command)
+
+    assert result.exit_code == 1
+    assert result.exception is None or isinstance(result.exception, SystemExit)
+    assert calls[:2] == [f"revoke:{calls[0].split(':')[1]}", f"delete:{calls[0].split(':')[1]}"]
+    output_text = " ".join(result.output.split())
+    assert "Could not revoke the device session" in output_text
+    assert "This rvs release is no longer supported by the Ravenstash API." in output_text
+    assert "run `rvs update`" in output_text
 
 
 def test_refresh_keeps_stored_registries_when_artifacts_meta_transport_fails(

@@ -226,6 +226,12 @@ Custom mirror creation is available in the webapp. Existing custom mirrors remai
 available to CLI listing, showing, and selection; age changes, deletion, and
 upstream attachment are managed in the webapp.
 
+When Ravenstash deprecates an API that the installed `rvs` uses, commands keep
+working and print one warning on stderr with the date the API stops working.
+After that date, commands stop with a message to update `rvs` and exit status 1.
+Stdout, JSON output, and native tool output are not changed by the warning. Run
+`rvs update` to check for a newer release.
+
 `rvs update --to 0.MINOR` previews the latest stable patch in that minor line
 without changing the active installation or its rolling `v0` channel. Add
 `--apply` to install. A later plain `rvs update` resumes at the newest `v0`

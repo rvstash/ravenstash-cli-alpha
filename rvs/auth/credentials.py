@@ -434,7 +434,13 @@ def revoke_stored_refresh_token(profile: str) -> bool | None:
 
 
 def revoke_device_refresh_token(api_url: str, refresh_token: str) -> bool:
-    """Best-effort server-side revocation for a stored device refresh token."""
+    """Best-effort server-side revocation for a stored device refresh token.
+
+    A retired route raises :class:`~rvs.client.ApiRouteRetiredError` so the
+    caller can tell the user to update rvs instead of reporting a plain failure.
+    """
+    from ..client import check_route_lifecycle
+
     try:
         with httpx.Client(timeout=15.0) as client:
             response = client.post(
@@ -442,6 +448,7 @@ def revoke_device_refresh_token(api_url: str, refresh_token: str) -> bool:
                 headers={"User-Agent": _rvs_user_agent()},
                 json={"refresh_token": refresh_token},
             )
+            check_route_lifecycle(response)
             validate_api_version(response)
     except httpx.HTTPError, ApiVersionMismatchError:
         logger.info("Device refresh token revocation request failed")
@@ -455,8 +462,12 @@ def refresh_expiring_credential(
     stale_access_token: str | None = None,
     http_client: httpx.Client | None = None,
 ) -> str | None:
-    """Refresh an expired expiring device credential for *profile*."""
+    """Refresh an expired expiring device credential for *profile*.
+
+    A retired refresh route raises :class:`~rvs.client.ApiRouteRetiredError`.
+    """
     from .. import config as cfg_mod
+    from ..client import check_route_lifecycle, retry_rate_limited
 
     initial_store = selected_credential_store(profile)
     initial_refresh_token = (
@@ -507,21 +518,19 @@ def refresh_expiring_credential(
             "refresh_token": refresh_token,
             "platform": _device_platform(),
         }
-        try:
+        refresh_url = devapi_url(issuer_api_url, platform_path("auth/device/refresh"))
+        headers = {"User-Agent": _rvs_user_agent()}
+
+        def send() -> httpx.Response:
             if http_client is None:
                 with httpx.Client(timeout=15.0) as client:
-                    response = client.post(
-                        devapi_url(issuer_api_url, platform_path("auth/device/refresh")),
-                        headers={"User-Agent": _rvs_user_agent()},
-                        json=request,
-                    )
-            else:
-                response = http_client.post(
-                    devapi_url(issuer_api_url, platform_path("auth/device/refresh")),
-                    headers={"User-Agent": _rvs_user_agent()},
-                    json=request,
-                    timeout=15.0,
-                )
+                    return client.post(refresh_url, headers=headers, json=request)
+            return http_client.post(refresh_url, headers=headers, json=request, timeout=15.0)
+
+        try:
+            # The operation ID makes a resent refresh safe after 429 or 503.
+            response = retry_rate_limited(send(), send)
+            check_route_lifecycle(response)
             validate_api_version(response)
         except httpx.HTTPError, ApiVersionMismatchError:
             logger.info("Device credential refresh failed for profile %s", profile)

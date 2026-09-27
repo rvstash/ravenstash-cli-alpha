@@ -6,6 +6,21 @@ All notable user-facing changes to `rvs` are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `rvs` warns once per run, on stderr, when Ravenstash reports that an API this
+  release uses is deprecated, and shows the date it stops working when known.
+  Run `rvs update` to check for a newer release.
+
+### Changed
+
+- When Ravenstash no longer supports an API this release uses, every command,
+  including sign-in refresh and package-tool wrappers, stops with a message to
+  update `rvs` and exit status 1. `rvs auth logout`, `rvs profile delete`, and
+  `rvs profile rename` still remove local credentials before they report it.
+- Refreshing a sign-in waits and retries when Ravenstash is briefly busy and
+  says how long to wait.
+
 ## [0.14.12] - 2026-09-27
 
 ### Security

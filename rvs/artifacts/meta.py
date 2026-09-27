@@ -4,7 +4,8 @@ The platform sign-in responses carry no product data. After a device login and
 after each access-token refresh, rvs reads ``GET /v0/artifacts/meta`` and
 updates the profile's stored native-registry projection when it changed. A
 failed discovery keeps the stored projection and never fails the command that
-triggered it.
+triggered it, unless the API reports that this rvs release is no longer
+supported.
 """
 
 from __future__ import annotations
@@ -15,7 +16,7 @@ from typing import Literal
 import httpx2 as httpx
 
 from .. import config as cfg_mod
-from ..client import rvs_user_agent
+from ..client import ApiRouteRetiredError, check_route_lifecycle, rvs_user_agent
 from ..devapi import api_url, artifacts_path, validate_api_version
 
 
@@ -42,6 +43,7 @@ def sync_native_registries(
                 response = client.get(url, headers=headers)
         else:
             response = http_client.get(url, headers=headers, timeout=_DISCOVERY_TIMEOUT_SECONDS)
+        check_route_lifecycle(response)
         validate_api_version(response)
         if not response.is_success:
             logger.info(
@@ -63,6 +65,8 @@ def sync_native_registries(
         if current.native_registries == discovered:
             return "unchanged"
         cfg_mod.set_profile_metadata(profile, native_registries=registries)
+    except ApiRouteRetiredError:
+        raise
     except Exception:  # Discovery is advisory; it must never fail the triggering command.
         logger.info(
             "Artifacts discovery failed for profile %s; keeping stored endpoints",

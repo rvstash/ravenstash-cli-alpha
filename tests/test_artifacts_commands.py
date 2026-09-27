@@ -1305,7 +1305,9 @@ def test_artifacts_command_surfaces_retired_route_message(monkeypatch, tmp_path:
     result = runner.invoke(artifacts_cmd.app, ["repo", "list"])
 
     assert result.exit_code == 1
-    assert "retired API route. Upgrade rvs." in " ".join(result.output.split())
+    output_text = " ".join(result.output.split())
+    assert "This rvs release is no longer supported by the Ravenstash API." in output_text
+    assert "run `rvs update`" in output_text
     assert "HTTP 410" not in result.output
 
 

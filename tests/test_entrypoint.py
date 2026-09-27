@@ -75,3 +75,25 @@ def test_malformed_config_is_reported_without_a_traceback(tmp_path: Path) -> Non
     assert "could not read" in stderr
     assert "rvs profile delete --all" in stderr
     assert "Traceback" not in stderr
+
+
+def test_retired_api_route_is_reported_without_a_traceback(monkeypatch, capsys) -> None:
+    import pytest
+    from rvs import cli, entrypoint
+    from rvs.client import ApiRouteRetiredError
+
+    def retired_app() -> None:
+        raise ApiRouteRetiredError
+
+    monkeypatch.setattr(sys, "argv", ["rvs", "art", "repo", "list"])
+    monkeypatch.setattr(cli, "app", retired_app)
+
+    with pytest.raises(SystemExit) as exc_info:
+        entrypoint.main()
+
+    assert exc_info.value.code == 1
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    stderr = " ".join(captured.err.split())
+    assert "This rvs release is no longer supported by the Ravenstash API." in stderr
+    assert "Traceback" not in stderr

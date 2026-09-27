@@ -28,6 +28,8 @@ from .devapi import (
     api_url,
     is_mint_token_path,
     retry_after_seconds,
+    route_deprecated,
+    route_sunset_date,
     validate_api_version,
 )
 
@@ -46,6 +48,12 @@ _READ_STATUS_ATTEMPTS = 3
 _READ_STATUS_BACKOFF_SECONDS = (0.5, 2.0)
 # A longer Retry-After is reported to the user instead of blocking the command.
 MAX_RETRY_AFTER_SECONDS = 30.0
+
+UPDATE_HINT = "run `rvs update` to check for a newer release"
+API_ROUTE_RETIRED_MESSAGE = (
+    f"This rvs release is no longer supported by the Ravenstash API. Update rvs: {UPDATE_HINT}."
+)
+_deprecation_warned = False
 
 
 def rvs_user_agent() -> str:
@@ -75,9 +83,8 @@ class ApiError(Exception):
     def _message(self) -> str:
         if self.status_code in _RETRYABLE_READ_STATUSES and self.retry_after is not None:
             return f"{self._http_message()} (retry after {self.retry_after:g}s)"
-        if isinstance(self.detail, dict) and self.detail.get("code") == API_ROUTE_RETIRED:
-            message = self.detail.get("message")
-            return message if isinstance(message, str) and message else API_ROUTE_RETIRED
+        if self.status_code == 410:
+            return API_ROUTE_RETIRED_MESSAGE
         if isinstance(self.detail, dict) and self.detail.get("code") == "RepositoryTargetAmbiguous":
             matches = self.detail.get("matches")
             if isinstance(matches, list):
@@ -132,6 +139,66 @@ class ApiError(Exception):
             if problems:
                 message = f"{message} ({'; '.join(problems)})"
         return f"HTTP {self.status_code}{code}: {message}"
+
+
+class ApiRouteRetiredError(ApiError):
+    """The DevAPI no longer serves a route this rvs release uses."""
+
+    def __init__(self) -> None:
+        super().__init__(410, {"code": API_ROUTE_RETIRED, "message": API_ROUTE_RETIRED_MESSAGE})
+
+
+def deprecation_message(headers: Any) -> str:
+    """Describe a deprecated-route response and how to update rvs."""
+    sunset = route_sunset_date(headers)
+    when = f"on {sunset}" if sunset else "soon"
+    return (
+        f"This rvs release uses an API that Ravenstash will retire {when}. "
+        f"Update rvs: {UPDATE_HINT}."
+    )
+
+
+def check_route_lifecycle(response: Any) -> None:
+    """Stop on a retired DevAPI route and warn once about a deprecated one.
+
+    Every DevAPI response passes through here. Any ``410`` means this release
+    can no longer use the route; a ``Deprecation`` header produces one stderr
+    warning per process so machine-readable stdout stays untouched.
+    """
+    global _deprecation_warned
+    if getattr(response, "status_code", None) == 410:
+        raise ApiRouteRetiredError
+    headers = getattr(response, "headers", None)
+    if _deprecation_warned or not route_deprecated(headers):
+        return
+    _deprecation_warned = True
+    from . import output
+
+    output.warn(deprecation_message(headers))
+
+
+def retry_rate_limited(
+    resp: httpx.Response, send: Any, refresh: Any = lambda: False
+) -> httpx.Response:
+    """Resend a rate-limited or unavailable request, honoring ``Retry-After``.
+
+    The session can expire while waiting, so a resent request that gets 401
+    refreshes once and is sent again. Only requests that are safe to repeat,
+    such as reads or requests carrying an idempotency key, may use this.
+    """
+    for attempt in range(_READ_STATUS_ATTEMPTS - 1):
+        if resp.status_code not in _RETRYABLE_READ_STATUSES:
+            break
+        delay = retry_after_seconds(resp.headers)
+        if delay is None:
+            delay = _READ_STATUS_BACKOFF_SECONDS[attempt] + random.uniform(0, 0.1)
+        if delay > MAX_RETRY_AFTER_SECONDS:
+            break
+        time.sleep(delay)
+        resp = send()
+        if resp.status_code == 401 and refresh():
+            resp = send()
+    return resp
 
 
 class ApiClient:
@@ -276,30 +343,10 @@ class ApiClient:
             if resp.status_code == 401 and retry and self._refresh(hx):
                 resp = send()
             if idempotent_read:
-                resp = self._retry_read(resp, send, lambda: retry and self._refresh(hx))
+                resp = retry_rate_limited(resp, send, lambda: retry and self._refresh(hx))
+        check_route_lifecycle(resp)
         self._raise(resp)
         self._validate_contract(resp)
-        return resp
-
-    @staticmethod
-    def _retry_read(resp: httpx.Response, send: Any, refresh: Any) -> httpx.Response:
-        """Retry a rate-limited or unavailable read, honoring ``Retry-After``.
-
-        The session can expire while waiting, so a retried read that gets 401
-        refreshes once and is sent again.
-        """
-        for attempt in range(_READ_STATUS_ATTEMPTS - 1):
-            if resp.status_code not in _RETRYABLE_READ_STATUSES:
-                break
-            delay = retry_after_seconds(resp.headers)
-            if delay is None:
-                delay = _READ_STATUS_BACKOFF_SECONDS[attempt] + random.uniform(0, 0.1)
-            if delay > MAX_RETRY_AFTER_SECONDS:
-                break
-            time.sleep(delay)
-            resp = send()
-            if resp.status_code == 401 and refresh():
-                resp = send()
         return resp
 
     # ── request methods ───────────────────────────────────────────────────────

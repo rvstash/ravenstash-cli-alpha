@@ -17,10 +17,10 @@ from .. import auth as auth_mod
 from .. import config as cfg_mod
 from .. import output
 from ..artifacts.meta import sync_native_registries
+from ..client import check_route_lifecycle
 from ..devapi import api_url as devapi_url
 from ..devapi import (
     platform_path,
-    retired_route_message,
     retry_after_seconds,
     validate_api_version,
 )
@@ -239,9 +239,8 @@ def perform_device_login(
                 headers={"User-Agent": f"rvs/{rvs_version}"},
                 json=request_payload,
             )
+            check_route_lifecycle(create_resp)
             validate_api_version(create_resp)
-            if retired := retired_route_message(create_resp):
-                raise RuntimeError(retired)
             create_resp.raise_for_status()
             session = create_resp.json()
     except Exception as exc:
@@ -265,6 +264,7 @@ def perform_device_login(
                     headers={"User-Agent": _rvs_user_agent()},
                     json={"device_code": device_code},
                 )
+                check_route_lifecycle(poll_resp)
                 validate_api_version(poll_resp)
                 if poll_resp.is_success:
                     payload = poll_resp.json()
@@ -328,8 +328,6 @@ def perform_device_login(
                     output.fatal("Login was denied.")
                 if error == "expired_token":
                     output.fatal("Login session expired before approval.")
-                if retired := retired_route_message(poll_resp):
-                    output.fatal(f"Login failed: {retired}")
 
                 poll_resp.raise_for_status()
     except KeyboardInterrupt:

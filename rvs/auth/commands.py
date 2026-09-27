@@ -13,7 +13,7 @@ from .. import auth as auth_mod
 from .. import config as cfg_mod
 from .. import output
 from ..account.commands import identity_display
-from ..client import ApiClient, ApiError
+from ..client import ApiClient, ApiError, ApiRouteRetiredError
 from ..devapi import platform_path
 from ..interactive import select_index
 from . import stores
@@ -119,19 +119,33 @@ def _warn_env_profile_override() -> None:
         output.warn("RVS_PROFILE is set and still overrides the default profile in this shell.")
 
 
-def _revoke_server_session(profile: str) -> None:
-    """Revoke a profile's device session on its issuing API before local removal."""
-    revoked = auth_mod.revoke_stored_refresh_token(profile)
+def _revoke_server_session(profile: str) -> ApiRouteRetiredError | None:
+    """Revoke a profile's device session on its issuing API before local removal.
+
+    Revocation stays best-effort. A retired route is returned so the command can
+    finish removing local credentials and then fail with the update message.
+    """
+    retired: ApiRouteRetiredError | None = None
+    try:
+        revoked = auth_mod.revoke_stored_refresh_token(profile)
+    except ApiRouteRetiredError as exc:
+        retired, revoked = exc, False
     if revoked is None:
-        return
+        return None
     if revoked:
         output.info(f"Device session for profile '{profile}' revoked on the server.")
-        return
+        return None
     output.warn(
         f"Could not revoke the device session for profile '{profile}' on the server; "
         "its refresh token stays valid there until it expires. Local credentials are "
         "removed regardless."
     )
+    return retired
+
+
+def _fail_if_retired(retired: ApiRouteRetiredError | None) -> None:
+    if retired is not None:
+        output.fatal(str(retired))
 
 
 def _interactive_terminal_available() -> bool:
@@ -474,16 +488,19 @@ def logout(
         if not profiles:
             output.info("No profiles configured.")
             return
+        retired = None
         for profile_name in profiles:
-            _revoke_server_session(profile_name)
+            retired = _revoke_server_session(profile_name) or retired
             auth_mod.delete_token(profile_name)
         output.success("Credentials removed for all profiles.")
+        _fail_if_retired(retired)
         return
 
     profile_name = _target_profile(profile, cfg)
-    _revoke_server_session(profile_name)
+    retired = _revoke_server_session(profile_name)
     auth_mod.delete_token(profile_name)
     output.success(f"Credentials removed for profile '{profile_name}'.")
+    _fail_if_retired(retired)
 
 
 @app.command("status")
@@ -649,6 +666,7 @@ def profile_delete(
 
     if all_profiles:
         profiles = cfg_mod.profile_names_for_reset()
+        retired = None
         try:
             cfg_mod.load()
         except cfg_mod.ConfigError:
@@ -659,22 +677,24 @@ def profile_delete(
                 )
         else:
             for profile_name in profiles:
-                _revoke_server_session(profile_name)
+                retired = _revoke_server_session(profile_name) or retired
         for profile_name in profiles:
             auth_mod.delete_token_from_all_stores(profile_name)
         cfg_mod.delete_all_profiles()
         output.success("All profiles deleted.")
         _warn_env_profile_override()
+        _fail_if_retired(retired)
         return
 
     cfg = cfg_mod.load()
     profile_name = profile or _current_profile_name(cfg)
     _require_profile(cfg, profile_name)
-    _revoke_server_session(profile_name)
+    retired = _revoke_server_session(profile_name)
     auth_mod.delete_token(profile_name)
     cfg_mod.delete_profile(profile_name)
     output.success(f"Profile '{profile_name}' deleted.")
     _warn_env_profile_override()
+    _fail_if_retired(retired)
 
 
 @profile_app.command("rename")
@@ -692,7 +712,7 @@ def profile_rename(
     if new in cfg.profiles:
         output.fatal(f"Profile '{new}' already exists.")
 
-    _revoke_server_session(old)
+    retired = _revoke_server_session(old)
     profile = cfg.profiles[old]
     cfg.profiles[new] = profile
     del cfg.profiles[old]
@@ -708,3 +728,4 @@ def profile_rename(
     output.info(
         f"Run `rvs auth login --profile {new}` to store credentials for the renamed profile."
     )
+    _fail_if_retired(retired)

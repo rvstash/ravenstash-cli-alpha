@@ -29,6 +29,7 @@ def main() -> None:
         return
 
     from .cli import app
+    from .client import ApiRouteRetiredError
     from .config import ConfigError
 
     try:
@@ -37,6 +38,11 @@ def main() -> None:
         from . import output
 
         output.fatal(f"{exc}. Run `rvs profile delete --all` to reset the local configuration.")
+    except ApiRouteRetiredError as exc:
+        # Raised from paths without their own handler, such as a session refresh.
+        from . import output
+
+        output.fatal(str(exc))
 
 
 if __name__ == "__main__":

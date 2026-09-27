@@ -85,6 +85,69 @@ def test_manual_rejects_a_credential_for_another_repository_or_an_unsafe_path(
     assert message in " ".join(result.stderr.split())
 
 
+class _Transport:
+    def __init__(self, response: httpx.Response) -> None:
+        self.response = response
+
+    def __call__(self, *args, **kwargs) -> _Transport:
+        return self
+
+    def __enter__(self) -> _Transport:
+        return self
+
+    def __exit__(self, *args) -> None:
+        return None
+
+    def request(self, method: str, url: str, **kwargs) -> httpx.Response:
+        return self.response
+
+
+def _devapi_answers(monkeypatch, response: httpx.Response) -> None:
+    monkeypatch.setattr(httpx, "Client", _Transport(response))
+    monkeypatch.setattr(
+        ApiClient,
+        "from_profile",
+        lambda *args, **kwargs: ApiClient("https://api.example", "token"),
+    )
+
+
+@pytest.mark.parametrize(
+    "response",
+    [
+        httpx.Response(410, json={"error": {"code": "ApiRouteRetired", "message": "Upgrade."}}),
+        httpx.Response(410, text="gone"),
+    ],
+)
+def test_manual_on_a_retired_route_fails_cleanly_without_stdout(issuer, monkeypatch, response):
+    _devapi_answers(monkeypatch, response)
+
+    result = runner.invoke(app, ["art", "token", "mint", "--target", "space/packages"])
+
+    assert result.exit_code == 1
+    assert isinstance(result.exception, SystemExit)
+    assert result.stdout == ""
+    stderr = " ".join(result.stderr.split())
+    assert "This rvs release is no longer supported by the Ravenstash API." in stderr
+    assert "run `rvs update`" in stderr
+
+
+def test_manual_deprecation_warning_never_reaches_stdout(issuer, monkeypatch):
+    from rvs import client as client_mod
+
+    monkeypatch.setattr(client_mod, "_deprecation_warned", False)
+    payload = issuer.issue_native.return_value.json()
+    _devapi_answers(
+        monkeypatch,
+        httpx.Response(200, json=payload, headers={"Deprecation": "@1", "Sunset": "bogus"}),
+    )
+
+    result = runner.invoke(app, ["art", "token", "mint", "--target", "space/packages"])
+
+    assert result.exit_code == 0, result.output
+    assert result.stdout == SECRET + "\n"
+    assert "Ravenstash will retire soon" in " ".join(result.stderr.split())
+
+
 def test_manual_accepts_an_opaque_native_path_for_the_selected_repository(issuer):
     payload = issuer.issue_native.return_value.json() | {"native_path": "/r/v2/ar_abcdefgh"}
     issuer.issue_native.return_value = httpx.Response(200, json=payload)

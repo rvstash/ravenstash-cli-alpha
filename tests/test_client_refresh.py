@@ -5,8 +5,9 @@ from typing import Any, ClassVar
 import httpx2 as httpx
 import pytest
 from rvs import auth as auth_mod
+from rvs import client as client_mod
 from rvs import config as cfg_mod
-from rvs.client import ApiClient, ApiError
+from rvs.client import ApiClient, ApiError, ApiRouteRetiredError
 from rvs.devapi import (
     api_path,
     api_url,
@@ -17,8 +18,8 @@ from rvs.devapi import (
     read_collection,
     remote_cache_mint_token_path,
     repository_mint_token_path,
-    retired_route_message,
     retry_after_seconds,
+    route_sunset_date,
     segment,
 )
 
@@ -403,25 +404,123 @@ _RETIRED = {
 }
 
 
-def test_api_client_surfaces_retired_route_message(monkeypatch) -> None:
+_UPGRADE = (
+    "This rvs release is no longer supported by the Ravenstash API. "
+    "Update rvs: run `rvs update` to check for a newer release."
+)
+
+
+@pytest.mark.parametrize(
+    "response",
+    [
+        httpx.Response(410, json=_RETIRED),
+        httpx.Response(410, json={"error": {"code": "Gone", "message": "gone"}}),
+        httpx.Response(410, text="<html>gone</html>"),
+    ],
+)
+def test_api_client_reports_any_gone_route_as_an_unsupported_release(
+    monkeypatch, response: httpx.Response
+) -> None:
     _FakeHttpClient.requests = []
-    _FakeHttpClient.responses = [httpx.Response(410, json=_RETIRED)]
+    _FakeHttpClient.responses = [response]
     monkeypatch.setattr(httpx, "Client", _FakeHttpClient)
 
-    with pytest.raises(ApiError) as exc_info:
+    with pytest.raises(ApiRouteRetiredError) as exc_info:
         ApiClient("https://api.example", "token").get(artifacts_path("repositories"))
 
+    assert isinstance(exc_info.value, ApiError)
     assert exc_info.value.status_code == 410
-    assert str(exc_info.value) == "This rvs release uses a retired API route. Upgrade rvs."
+    assert exc_info.value.code == "ApiRouteRetired"
+    assert str(exc_info.value) == _UPGRADE
 
 
-def test_retired_route_message_recognizes_only_the_retired_code() -> None:
-    assert retired_route_message(httpx.Response(410, json=_RETIRED)) == (
-        "This rvs release uses a retired API route. Upgrade rvs."
+_DEPRECATED = {"Deprecation": "@1767225600", "Sunset": "Thu, 01 Jan 2099 00:00:00 GMT"}
+
+
+@pytest.mark.parametrize(
+    "response",
+    [
+        httpx.Response(200, json={"ok": True}, headers=_DEPRECATED),
+        httpx.Response(404, json={"error": {"code": "NotFound"}}, headers=_DEPRECATED),
+    ],
+)
+def test_api_client_warns_once_on_stderr_about_a_deprecated_route(
+    monkeypatch, capsys, response: httpx.Response
+) -> None:
+    monkeypatch.setattr(client_mod, "_deprecation_warned", False)
+    _FakeHttpClient.requests = []
+    _FakeHttpClient.responses = [response, response]
+    monkeypatch.setattr(httpx, "Client", _FakeHttpClient)
+    client = ApiClient("https://api.example", "token")
+
+    for _ in range(2):
+        try:
+            client.post(artifacts_path("repositories"))
+        except ApiError as exc:
+            assert exc.status_code == 404
+
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    err = " ".join(captured.err.split())
+    assert err.count("will retire") == 1
+    assert (
+        "This rvs release uses an API that Ravenstash will retire on 2099-01-01. "
+        "Update rvs: run `rvs update` to check for a newer release." in err
     )
-    assert retired_route_message(httpx.Response(410, json={"error": {"code": "Gone"}})) is None
-    assert retired_route_message(httpx.Response(404, json=_RETIRED)) is None
-    assert retired_route_message(httpx.Response(410, text="gone")) is None
+
+
+def test_deprecation_warning_is_json_on_stderr_in_json_mode(monkeypatch, capsys) -> None:
+    from rvs import output
+
+    monkeypatch.setattr(client_mod, "_deprecation_warned", False)
+    monkeypatch.setattr(output, "_json_enabled", True)
+
+    client_mod.check_route_lifecycle(httpx.Response(200, headers={"Deprecation": "@1"}))
+
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert '"level": "warning"' in captured.err
+    assert "will retire soon" in captured.err
+
+
+@pytest.mark.parametrize(
+    "headers",
+    [
+        {"Deprecation": "not-a-date"},
+        {"Deprecation": "", "Sunset": ""},
+        {"Deprecation": "@1767225600", "Sunset": "sometime next year"},
+        {"Deprecation": "@x", "Sunset": "Thu, 01 Jan 99999 00:00:00 GMT"},
+    ],
+)
+def test_malformed_lifecycle_headers_still_warn_without_a_date(
+    monkeypatch, capsys, headers: dict[str, str]
+) -> None:
+    monkeypatch.setattr(client_mod, "_deprecation_warned", False)
+
+    client_mod.check_route_lifecycle(httpx.Response(200, headers=headers))
+
+    assert "Ravenstash will retire soon. Update rvs:" in " ".join(capsys.readouterr().err.split())
+
+
+def test_responses_without_deprecation_do_not_warn(monkeypatch, capsys) -> None:
+    monkeypatch.setattr(client_mod, "_deprecation_warned", False)
+
+    client_mod.check_route_lifecycle(
+        httpx.Response(200, headers={"Sunset": "Thu, 01 Jan 2099 00:00:00 GMT"})
+    )
+    client_mod.check_route_lifecycle(httpx.Response(200))
+
+    assert capsys.readouterr().err == ""
+    assert client_mod._deprecation_warned is False
+
+
+def test_sunset_dates_are_reported_as_utc_dates() -> None:
+    assert route_sunset_date({"Sunset": "Thu, 01 Jan 2099 00:00:00 GMT"}) == "2099-01-01"
+    assert route_sunset_date({"Sunset": "Thu, 31 Dec 2099 23:30:00 -0200"}) == "2100-01-01"
+    assert route_sunset_date({"Sunset": "Thu, 01 Jan 2099 00:00:00 -0000"}) == "2099-01-01"
+    assert route_sunset_date({"Sunset": "garbage"}) is None
+    assert route_sunset_date({}) is None
+    assert route_sunset_date(None) is None
 
 
 def test_api_client_rejects_a_different_reported_contract(monkeypatch) -> None:
