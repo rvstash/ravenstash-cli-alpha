@@ -173,10 +173,10 @@ def warn_additional_sources(
 
     # Compare repository paths as well as hosts. Never print credentials, query
     # strings, or token-bearing paths (including third-party entitlement URLs).
-    from ..artifacts.routing import native_base_url
+    from ..artifacts.routing import native_root_url
 
     roots = [
-        native_base_url(url) + f"/{route.route_coordinate}/{route.repository_reference}/"
+        native_root_url(url, route.native_path)
         for url in (route.read_base_url, route.push_base_url)
         if url is not None
     ]

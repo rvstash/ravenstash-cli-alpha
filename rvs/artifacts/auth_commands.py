@@ -18,7 +18,12 @@ from ..client import ApiClient, ApiError
 from ..devapi import remote_cache_mint_token_path, repository_mint_token_path
 from .discovery import discover
 from .formats import flatten_formats
-from .targets import expected_repository_target, repository_native_route, token_scope_hint
+from .targets import (
+    expected_repository_target,
+    remote_cache_native_path,
+    repository_native_path,
+    token_scope_hint,
+)
 
 
 app = typer.Typer(help="Create short-lived tokens for package tools.", no_args_is_help=True)
@@ -100,7 +105,7 @@ def mint(
                         "expected_target": expected_repository_target(selected),
                     },
                 ).json()
-                repository_native_route(response, selected.repository_unique_ref)
+                repository_native_path(response, selected.repository_unique_ref)
                 minted_formats = response["formats"]
             else:
                 if access != "read":
@@ -112,16 +117,7 @@ def mint(
                     remote_cache_mint_token_path(selected.remote_unique_ref),
                     {"duration_seconds": seconds},
                 ).json()
-                native_parts = str(response["native_path"]).strip("/").split("/")
-                if (
-                    response["format"] != mirror_format
-                    or response["remote_cache_ref"] != selected.remote_unique_ref
-                    or len(native_parts) != 2
-                    or not all(native_parts)
-                ):
-                    raise ValueError(
-                        "Ravenstash returned a credential for a different private mirror."
-                    )
+                remote_cache_native_path(response, selected.remote_unique_ref, mirror_format)
                 minted_formats = [mirror_format]
         secret = response.get("access_token")
         if not isinstance(secret, str):

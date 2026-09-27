@@ -127,6 +127,7 @@ def _store_expiring_credential(
             customer_id=customer_id,
             credential_store=credential_store,
             credential_type=auth_mod.EXPIRING_CREDENTIAL_TYPE,
+            credential_api_url=api_url,
             expires_at=expires_at.isoformat(),
             refresh_expires_at=refresh_expires_at.isoformat(),
         )
@@ -202,8 +203,16 @@ def perform_device_login(
     credential_store: str | None = None,
 ) -> None:
     resolved_api_url = _resolve_api_url(profile, api_url)
+    if api_url is None and (ignored := cfg_mod.ignored_endpoint_overrides(profile)):
+        verb = "is" if len(ignored) == 1 else "are"
+        output.warn(
+            f"{' and '.join(ignored)} {verb} ignored because profile '{profile}' is already "
+            f"saved and uses {resolved_api_url}. Log in with a new profile name, or delete "
+            "this profile first, to use another Ravenstash API."
+        )
     previous_refresh_token: str | None = None
-    previous_refresh_api_url = cfg_mod.stored_profile_api_url(profile) or resolved_api_url
+    # A replaced session is revoked where it was issued.
+    previous_refresh_api_url = cfg_mod.stored_credential_api_url(profile) or resolved_api_url
     if auth_mod.has_active_expiring_session(profile):
         previous_refresh_token = auth_mod.get_refresh_token(profile)
         output.info(f"Profile '{profile}' is already authenticated; replacing it.")

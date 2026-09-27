@@ -53,7 +53,7 @@ def issuer(monkeypatch):
 
     def resolve(*args, **kwargs):
         print("Resolved fixture target")
-        return Discovery("fixture", target, ("pypi",), ("in", "ar_abcdefgh"))
+        return Discovery("fixture", target, ("pypi",), "in/ar_abcdefgh")
 
     monkeypatch.setattr(auth_commands, "discover", resolve)
     monkeypatch.setattr(ApiClient, "from_profile", lambda *args, **kwargs: client)
@@ -62,22 +62,37 @@ def issuer(monkeypatch):
 
 
 @pytest.mark.parametrize(
-    "native_path",
-    ["/in/ar_zzzzzzzz", "/space/packages", "/in/ar_abcdefgh/pypi", None],
+    ("change", "message"),
+    [
+        ({"target": {"repository_ref": "ar_zzzzzzzz"}}, "credential for a different repository"),
+        ({"target": None}, "credential for a different repository"),
+        ({"native_path": None}, "invalid native path"),
+        ({"native_path": "/in/../ar_zzzzzzzz"}, "invalid native path"),
+        ({"native_path": "/in/ar_abcdefgh?x=1"}, "invalid native path"),
+        ({"native_path": "//evil.example/in"}, "invalid native path"),
+    ],
 )
-def test_manual_rejects_a_native_path_other_than_the_selected_repository(issuer, native_path):
-    payload = issuer.issue_native.return_value.json()
-    if native_path is None:
-        del payload["native_path"]
-    else:
-        payload["native_path"] = native_path
+def test_manual_rejects_a_credential_for_another_repository_or_an_unsafe_path(
+    issuer, change, message
+):
+    payload = issuer.issue_native.return_value.json() | change
     issuer.issue_native.return_value = httpx.Response(200, json=payload)
 
     result = runner.invoke(app, ["art", "token", "mint", "--target", "space/packages"])
 
     assert result.exit_code == 1
     assert SECRET not in result.stdout
-    assert "different native repository route" in " ".join(result.stderr.split())
+    assert message in " ".join(result.stderr.split())
+
+
+def test_manual_accepts_an_opaque_native_path_for_the_selected_repository(issuer):
+    payload = issuer.issue_native.return_value.json() | {"native_path": "/r/v2/ar_abcdefgh"}
+    issuer.issue_native.return_value = httpx.Response(200, json=payload)
+
+    result = runner.invoke(app, ["art", "token", "mint", "--target", "space/packages"])
+
+    assert result.exit_code == 0, result.output
+    assert result.stdout == SECRET + "\n"
 
 
 def test_manual_default_prints_only_the_secret_to_stdout(issuer):
@@ -114,9 +129,7 @@ def test_manual_kind_is_required_only_when_target_is_ambiguous(issuer, monkeypat
     monkeypatch.setattr(
         auth_commands,
         "discover",
-        lambda *args, **kwargs: Discovery(
-            "fixture", target, ("pypi", "oci"), ("in", "ar_abcdefgh")
-        ),
+        lambda *args, **kwargs: Discovery("fixture", target, ("pypi", "oci"), "in/ar_abcdefgh"),
     )
 
     result = runner.invoke(app, ["art", "token", "mint", "--target", "space/packages"])
@@ -282,7 +295,7 @@ def _multi_lane_issuer(monkeypatch, issuer, formats):
     monkeypatch.setattr(
         auth_commands,
         "discover",
-        lambda *args, **kwargs: Discovery("fixture", target, formats, ("in", "ar_abcdefgh")),
+        lambda *args, **kwargs: Discovery("fixture", target, formats, "in/ar_abcdefgh"),
     )
     issuer.issue_native.return_value = httpx.Response(
         200,
@@ -362,7 +375,7 @@ def test_mirror_mint_sends_only_duration_and_checks_format(issuer, monkeypatch):
     monkeypatch.setattr(
         auth_commands,
         "discover",
-        lambda *args, **kwargs: Discovery("fixture", target, ("pypi",), ("o", "pypiorg")),
+        lambda *args, **kwargs: Discovery("fixture", target, ("pypi",), "o/pypiorg"),
     )
     issuer.issue_native.return_value = httpx.Response(
         200,
@@ -392,14 +405,16 @@ def test_mirror_mint_sends_only_duration_and_checks_format(issuer, monkeypatch):
 
 
 @pytest.mark.parametrize(
-    "mismatch",
+    ("mismatch", "message"),
     [
-        {"format": "npm"},
-        {"remote_cache_ref": "rc_23456789"},
-        {"native_path": "/o"},
+        ({"format": "npm"}, "different private mirror"),
+        ({"remote_cache_ref": "rc_23456789"}, "different private mirror"),
+        ({"native_path": "/o/./pypiorg"}, "invalid native path"),
     ],
 )
-def test_mirror_mint_rejects_a_credential_for_another_mirror(issuer, monkeypatch, mismatch):
+def test_mirror_mint_rejects_a_credential_for_another_mirror(
+    issuer, monkeypatch, mismatch, message
+):
     target = SimpleNamespace(
         target_type="official_cache",
         remote_unique_ref="rc_abcdefgh",
@@ -409,7 +424,7 @@ def test_mirror_mint_rejects_a_credential_for_another_mirror(issuer, monkeypatch
     monkeypatch.setattr(
         auth_commands,
         "discover",
-        lambda *args, **kwargs: Discovery("fixture", target, ("pypi",), ("o", "pypiorg")),
+        lambda *args, **kwargs: Discovery("fixture", target, ("pypi",), "o/pypiorg"),
     )
     issuer.issue_native.return_value = httpx.Response(
         200,
@@ -429,5 +444,5 @@ def test_mirror_mint_rejects_a_credential_for_another_mirror(issuer, monkeypatch
     result = runner.invoke(app, ["art", "token", "mint", "--target", "mirror:pypiorg"])
 
     assert result.exit_code == 1
-    assert "different private mirror" in result.stderr
+    assert message in " ".join(result.stderr.split())
     assert SECRET not in result.stdout

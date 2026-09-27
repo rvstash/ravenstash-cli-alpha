@@ -13,7 +13,13 @@ import subprocess
 import tempfile
 from pathlib import Path, PurePosixPath
 
-from channel_policy import compatibility_channel, manifest, version_matches_channel
+from channel_policy import (
+    compatibility_channel,
+    manifest,
+    policy,
+    validate_freshness,
+    version_matches_channel,
+)
 
 
 def fail(message: str) -> None:
@@ -193,9 +199,11 @@ def verify_manifest(repo: Path, keyring: Path, distributions: set[str]) -> None:
     try:
         payload = json.loads(manifest_path.read_text(encoding="utf-8"))
         expected = manifest(repo, payload["recommended"])
+        # A manifest published before the freshness fields existed carries none.
+        validate_freshness(payload)
     except (KeyError, OSError, TypeError, ValueError, json.JSONDecodeError) as exc:
         fail(f"invalid channel manifest: {exc}")
-    if payload != expected:
+    if policy(payload) != policy(expected):
         fail("channel manifest does not match signed APT distributions")
     if set(payload["channels"]) != distributions:
         fail("channel manifest and distribution inventory differ")

@@ -15,6 +15,7 @@ which also follows collection pages.
 from __future__ import annotations
 
 import importlib.metadata
+import os
 import random
 import time
 from typing import TYPE_CHECKING, Any
@@ -61,7 +62,10 @@ class ApiError(Exception):
         self.status_code = status_code
         self.detail = detail
         self.retry_after = retry_after
-        super().__init__(self._message())
+        # Server text is data: strip terminal control characters from the message.
+        from .output import plain
+
+        super().__init__(plain(self._message()))
 
     @property
     def code(self) -> str | None:
@@ -154,6 +158,19 @@ class ApiClient:
         cfg = cfg_mod.load()
         profile_name = profile or cfg_mod.current_profile_name(cfg)
         p: ProfileConfig = cfg.active_profile(profile_name)
+        from . import output
+
+        ignored = cfg_mod.ignored_endpoint_overrides(profile_name, cfg)
+        if ignored:
+            verb = "is" if len(ignored) == 1 else "are"
+            output.warn(
+                f"{' and '.join(ignored)} {verb} ignored because profile '{profile_name}' is "
+                "already saved; environment endpoint overrides only seed a new profile."
+            )
+        if "RVS_TOKEN" not in os.environ and (
+            origin_error := auth_mod.credential_origin_error(profile_name)
+        ):
+            output.fatal(origin_error)
         refresh_before_request = auth_mod.credential_needs_refresh(profile_name)
         token = (
             auth_mod.get_token(profile_name, refresh=False)
@@ -164,8 +181,6 @@ class ApiClient:
             token = auth_mod.get_token(profile_name)
             refresh_before_request = False
         if not token:
-            from . import output
-
             output.fatal(
                 f"No token for profile '{profile_name}'. Run: rvs auth login --profile {profile_name}"
             )

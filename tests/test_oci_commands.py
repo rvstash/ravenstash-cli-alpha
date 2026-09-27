@@ -479,13 +479,16 @@ def test_oci_reference_prints_stable_root_without_v2(monkeypatch, tmp_path: Path
     assert "/v2/" not in result.output
 
 
-def test_oci_capability_rejects_noncanonical_native_path(monkeypatch, tmp_path: Path) -> None:
+@pytest.mark.parametrize("native_path", ["/in/../images", "/in/ar_xyzabcde?x=1", "", None])
+def test_oci_capability_rejects_an_unsafe_native_path(
+    monkeypatch, tmp_path: Path, native_path: str | None
+) -> None:
     _setup(monkeypatch, tmp_path)
 
     class InvalidPathApi(_Api):
         def post(self, path: str, json=None) -> _Response:
             response = super().post(path, json)
-            response.value["native_path"] = "/in_abcdefgh/images"
+            response.value["native_path"] = native_path
             return response
 
     monkeypatch.setattr(
@@ -500,7 +503,30 @@ def test_oci_capability_rejects_noncanonical_native_path(monkeypatch, tmp_path: 
     )
 
     assert result.exit_code != 0
-    assert "native_path is not canonical" in result.output
+    assert "invalid native path" in " ".join(result.output.split())
+
+
+def test_oci_route_uses_an_opaque_native_path_as_is(monkeypatch, tmp_path: Path) -> None:
+    _setup(monkeypatch, tmp_path)
+
+    class OpaquePathApi(_Api):
+        def post(self, path: str, json=None) -> _Response:
+            response = super().post(path, json)
+            response.value["native_path"] = "/r/v2/ar_xyzabcde"
+            return response
+
+    monkeypatch.setattr(
+        oci_runner.ApiClient, "from_profile", staticmethod(lambda profile=None: OpaquePathApi())
+    )
+
+    route = oci_runner.resolve_route("docker", oci_runner.OciOptions(target="main/images"))
+
+    assert route.native_root == "oci.rvsta.sh/r/v2/ar_xyzabcde"
+    assert "r/v2/ar_xyzabcde" in route.accepted_roots
+    # A reference below the opaque root is this target; another repository is not.
+    oci_runner._assert_exact_targets(["oci.rvsta.sh/r/v2/ar_xyzabcde/api:1"], route)
+    with pytest.raises(SystemExit):
+        oci_runner._assert_exact_targets(["oci.rvsta.sh/in/ar_23456789/api:1"], route)
 
 
 def test_package_and_mirror_commands_reject_oci_kinds() -> None:

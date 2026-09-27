@@ -52,9 +52,15 @@ def sync_native_registries(
         if not isinstance(payload, dict):
             raise ValueError("Artifacts discovery response is invalid")
         registries = payload["native_registries"]
-        discovered = cfg_mod.parse_native_registries(registries, profile_name=profile)
         current = cfg_mod.load().profiles.get(profile)
-        if current is None or current.native_registries == discovered:
+        if current is None:
+            return "unchanged"
+        discovered = cfg_mod.parse_native_registries(
+            registries,
+            profile_name=profile,
+            repository_domain=current.repository_domain,
+        )
+        if current.native_registries == discovered:
             return "unchanged"
         cfg_mod.set_profile_metadata(profile, native_registries=registries)
     except Exception:  # Discovery is advisory; it must never fail the triggering command.

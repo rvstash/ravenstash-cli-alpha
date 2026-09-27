@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import contextlib
 import json
+import re
 import sys
 from typing import Literal
 
@@ -101,10 +102,18 @@ def _request(
             rows = collection_items(payload)
             columns = [
                 key
-                for key in ("path", "content_type", "digest", "tag", "manifest_kind", "tag_count")
+                for key in (
+                    "path",
+                    "content_type",
+                    "digest",
+                    "tag",
+                    "manifest_kind",
+                    "recent_tags",
+                    "tag_count",
+                )
                 if any(key in row for row in rows)
             ]
-            output.table(columns, [[str(row.get(key) or "—") for key in columns] for row in rows])
+            output.table(columns, [[_cell(row.get(key)) for key in columns] for row in rows])
             if payload.get("next_cursor"):
                 click.echo(f"Next page: --cursor {payload['next_cursor']}", err=True)
         else:
@@ -119,6 +128,21 @@ def _request(
 
 
 _COLLECTIONS = frozenset({"paths", "manifests", "tags"})
+_DIGEST = re.compile(r"sha256:[a-f0-9]{64}")
+
+
+def _cell(value: object) -> str:
+    if isinstance(value, list):
+        return ", ".join(str(item) for item in value) or "—"
+    if value is None or value == "":
+        return "—"
+    return str(value)
+
+
+def _digest(value: str | None) -> str | None:
+    if value is not None and _DIGEST.fullmatch(value) is None:
+        raise ValueError("Use a manifest digest such as sha256:<64 hex characters>.")
+    return value
 
 
 def _validated(call, *args):
@@ -229,20 +253,25 @@ def manifest_app_delete(
 @tag_app.command("list")
 def tag_app_list(
     path: str = typer.Argument(...),
+    digest: str | None = typer.Option(
+        None, "--digest", help="List only the tags that point at this manifest digest."
+    ),
     limit: int = typer.Option(50, "--limit", min=1, max=100),
     cursor: str | None = typer.Option(None, "--cursor"),
     target: str | None = typer.Option(None, "--target", "-t"),
     account: str | None = typer.Option(None, "--account"),
     profile: str | None = typer.Option(None, "--profile", "-p"),
 ) -> None:
+    """List a path's tags in tag order, optionally only those of one manifest."""
     path = _validated(_path, path)
+    digest = _validated(_digest, digest)
     _request(
         "GET",
         "tags",
         target=target,
         account=account,
         profile=profile,
-        params={"path": path, "limit": limit, "cursor": cursor},
+        params={"path": path, "digest": digest, "limit": limit, "cursor": cursor},
     )
 
 

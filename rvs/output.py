@@ -1,8 +1,14 @@
-"""Rich-based terminal output helpers for rvs."""
+"""Rich-based terminal output helpers for rvs.
+
+Messages, table cells, and titles are rendered as plain text: server-supplied
+strings can never inject Rich markup, and terminal control characters are
+replaced before anything reaches the console.
+"""
 
 from __future__ import annotations
 
 import json
+import re
 from typing import NoReturn
 
 from rich.console import Console
@@ -15,6 +21,21 @@ from .account.handles import typed_handle
 console = Console()
 err_console = Console(stderr=True)
 _json_enabled = False
+# C0 and C1 controls other than tab and newline, including ESC and DEL.
+_CONTROL_CHARACTERS = re.compile(r"[\x00-\x08\x0b-\x1f\x7f-\x9f]")
+
+
+def plain(value: object) -> str:
+    """Return *value* as text with terminal control characters made visible-safe."""
+    return _CONTROL_CHARACTERS.sub("\ufffd", str(value))
+
+
+def _text(value: object, style: str | None = None) -> Text:
+    return Text(plain(value), style=style or "")
+
+
+def _message(label: str, style: str, msg: str) -> Text:
+    return Text.assemble((label, style), " ", plain(msg))
 
 
 def set_json(enabled: bool) -> None:
@@ -47,35 +68,35 @@ def success(msg: str) -> None:
     if _json_enabled:
         _emit_json({"level": "success", "message": msg})
         return
-    console.print(f"[bold green]OK[/] {msg}")
+    console.print(_message("OK", "bold green", msg))
 
 
 def info(msg: str) -> None:
     if _json_enabled:
         _emit_json({"level": "info", "message": msg})
         return
-    console.print(f"[cyan]->[/] {msg}")
+    console.print(_message("->", "cyan", msg))
 
 
 def warn(msg: str) -> None:
     if _json_enabled:
         _emit_json({"level": "warning", "message": msg}, err=True)
         return
-    err_console.print(f"[bold yellow]![/] {msg}")
+    err_console.print(_message("!", "bold yellow", msg))
 
 
 def error(msg: str) -> None:
     if _json_enabled:
         _emit_json({"level": "error", "message": msg}, err=True)
         return
-    err_console.print(f"[bold red]Error:[/] {msg}")
+    err_console.print(_message("Error:", "bold red", msg))
 
 
 def fatal(msg: str) -> NoReturn:
     if _json_enabled:
         _emit_json({"level": "error", "message": msg}, err=True)
         raise SystemExit(1)
-    err_console.print(f"[bold red]Error:[/] {msg}")
+    err_console.print(_message("Error:", "bold red", msg))
     raise SystemExit(1)
 
 
@@ -94,11 +115,15 @@ def table(
             }
         )
         return
-    t = Table(title=title, show_header=True, header_style="bold dim")
+    t = Table(
+        title=_text(title) if title is not None else None,
+        show_header=True,
+        header_style="bold dim",
+    )
     for col in columns:
-        t.add_column(col)
+        t.add_column(_text(col))
     for row in rows:
-        t.add_row(*row)
+        t.add_row(*(_text(cell) for cell in row))
     console.print(t)
 
 
@@ -106,7 +131,8 @@ def section(title: str) -> None:
     if _json_enabled:
         _emit_json({"section": title})
         return
-    console.print(f"\n[bold]{title}[/]")
+    console.print()
+    console.print(_text(title, "bold"))
 
 
 def kv(
@@ -124,16 +150,14 @@ def kv(
     t.add_column("key", style="bold dim", no_wrap=True)
     t.add_column("value")
     for k, v in pairs.items():
-        t.add_row(k, v or Text("-", style="dim"))
+        t.add_row(_text(k), _text(v) if v else Text("-", style="dim"))
     if title:
-        console.print(f"[bold]{title}[/]")
+        console.print(_text(title, "bold"))
     console.print(t)
 
 
 def resource_account_hint(selector: str, selected_account_ref: str, owner: dict) -> None:
     """Report explicit cross-account access without changing CLI context."""
-    from rich.markup import escape
-
     owner_id = str(owner["ref"])
     account_type = str(owner.get("type") or "account")
     try:
@@ -158,4 +182,4 @@ def resource_account_hint(selector: str, selected_account_ref: str, owner: dict)
             err=True,
         )
     else:
-        info(escape(message))
+        info(message)

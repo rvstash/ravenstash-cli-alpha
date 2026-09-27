@@ -431,8 +431,8 @@ def _remote_cache(**overrides: Any) -> dict[str, Any]:
         "account": dict(_ACCOUNT_SUMMARY),
         "format": "pypi",
         "source_type": "official",
-        "remote_name": None,
-        "official_slug": "pypiorg",
+        "name": "PyPI",
+        "official_source_ref": "pypiorg",
         "min_age_hours": None,
         "max_age_hours": None,
         "consumer_repository_count": 0,
@@ -453,7 +453,7 @@ def _upstream(position: int, **source: Any) -> dict[str, Any]:
             "display_name": "pypiorg",
             "namespace_ref": None,
             "namespace_name": None,
-            "remote_source_type": "official",
+            "source_type": "official",
             **source,
         },
         "publication_control": "externally_controlled",
@@ -534,7 +534,7 @@ def test_artifacts_official_remote_list_reports_external_publication_control(
     monkeypatch, tmp_path: Path
 ) -> None:
     _isolate_config(monkeypatch, tmp_path)
-    fake = _FakeApiClient([[_remote_cache(ref="rc_23456789", official_slug="pypi")]])
+    fake = _FakeApiClient([[_remote_cache(ref="rc_23456789", official_source_ref="pypi")]])
     _use_fake_client(monkeypatch, fake)
     tables: list[tuple[list[str], list[list[str]]]] = []
     monkeypatch.setattr(
@@ -886,28 +886,47 @@ def _version_detail() -> dict[str, Any]:
         "keywords": ["demo", "example"],
         "size_bytes": 2000,
         "downloads": 9,
-        "files": [
-            {
-                "filename": "demo-1.2.3-py3-none-any.whl",
-                "size_bytes": 1500,
-                "published_at": "2026-09-01T00:00:00Z",
-                "digests": {"md5": "d" * 32, "sha256": "a" * 64, "blake3_256": "b" * 64},
-            },
-            {
-                "filename": "demo-1.2.3.tar.gz",
-                "size_bytes": 500,
-                "published_at": None,
-                "digests": {"sha256": "c" * 64},
-            },
-        ],
+        "file_count": 2,
     }
+
+
+def _version_files() -> list[_JsonResponse]:
+    """The version's files as two collection pages."""
+    return [
+        _JsonResponse(
+            {
+                "items": [
+                    {
+                        "filename": "demo-1.2.3-py3-none-any.whl",
+                        "size_bytes": 1500,
+                        "published_at": "2026-09-01T00:00:00Z",
+                        "digests": {"md5": "d" * 32, "sha256": "a" * 64, "blake3_256": "b" * 64},
+                    }
+                ],
+                "next_cursor": "files-page-2",
+            }
+        ),
+        _JsonResponse(
+            {
+                "items": [
+                    {
+                        "filename": "demo-1.2.3.tar.gz",
+                        "size_bytes": 500,
+                        "published_at": None,
+                        "digests": {"sha256": "c" * 64},
+                    }
+                ],
+                "next_cursor": None,
+            }
+        ),
+    ]
 
 
 def test_artifacts_package_show_version_prints_files_and_every_digest(
     monkeypatch, tmp_path: Path
 ) -> None:
     _isolate_config(monkeypatch, tmp_path)
-    fake = _FakeApiClient([_repository_entry("repo-pypi"), _version_detail()])
+    fake = _FakeApiClient([_repository_entry("repo-pypi"), _version_detail(), *_version_files()])
     _use_fake_client(monkeypatch, fake)
     tables: list[tuple[list[str], list[list[str]]]] = []
     monkeypatch.setattr(
@@ -922,12 +941,19 @@ def test_artifacts_package_show_version_prints_files_and_every_digest(
     )
 
     assert result.exit_code == 0, result.output
+    files_path = "/v0/artifacts/repositories/ar_xyzabcde/formats/pypi/package/version/files"
     assert fake.calls[1:] == [
         (
             "GET",
             "/v0/artifacts/repositories/ar_xyzabcde/formats/pypi/package/version",
             {"package_name": "demo", "version": "1.2.3"},
-        )
+        ),
+        ("GET", files_path, {"package_name": "demo", "version": "1.2.3", "limit": 100}),
+        (
+            "GET",
+            files_path,
+            {"package_name": "demo", "version": "1.2.3", "limit": 100, "cursor": "files-page-2"},
+        ),
     ]
     assert "broken wheel" in result.stdout
     assert "MIT" in result.stdout
@@ -952,7 +978,7 @@ def test_artifacts_package_show_version_json_keeps_the_digest_map(
     monkeypatch, tmp_path: Path
 ) -> None:
     _isolate_config(monkeypatch, tmp_path)
-    fake = _FakeApiClient([_repository_entry("repo-pypi"), _version_detail()])
+    fake = _FakeApiClient([_repository_entry("repo-pypi"), _version_detail(), *_version_files()])
     _use_fake_client(monkeypatch, fake)
     output.set_json(True)
     try:
@@ -967,6 +993,11 @@ def test_artifacts_package_show_version_json_keeps_the_digest_map(
     document = json.loads(result.stdout)
     assert document["repository"] == "ar_xyzabcde"
     assert document["package"] == "demo"
+    assert document["file_count"] == 2
+    assert [item["filename"] for item in document["files"]] == [
+        "demo-1.2.3-py3-none-any.whl",
+        "demo-1.2.3.tar.gz",
+    ]
     assert document["files"][0]["digests"]["blake3_256"] == "b" * 64
 
 
@@ -1286,7 +1317,7 @@ def test_scoped_npm_package_names_stay_in_the_query(monkeypatch, tmp_path: Path)
             _package_summary(name="@scope/pkg", normalized_name="@scope/pkg", status="active"),
             {"items": [], "next_cursor": None},
             _repository_entry("repo-npm"),
-            {"version": "2.0.0", "deprecated": True, "files": []},
+            {"version": "2.0.0", "deprecated": True, "file_count": 0},
         ]
     )
     _use_fake_client(monkeypatch, fake)
@@ -1344,11 +1375,11 @@ def test_unknown_open_enum_values_are_displayed_as_is(monkeypatch, tmp_path: Pat
                     kind="partner_feed",
                     ref=None,
                     display_name="partner",
-                    remote_source_type="partner",
+                    source_type="partner",
                 )
                 | {"resolution_tier": "partner_tier", "publication_control": "partner_signed"}
             ],
-            [_remote_cache(source_type="partner", remote_name="vendor", official_slug=None)],
+            [_remote_cache(source_type="partner", name="vendor", official_source_ref=None)],
         ]
     )
     _use_fake_client(monkeypatch, fake)

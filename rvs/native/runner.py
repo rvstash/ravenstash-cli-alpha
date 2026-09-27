@@ -11,6 +11,7 @@ import json
 import netrc
 import os
 import re
+import secrets
 import subprocess
 import tempfile
 import xml.etree.ElementTree as ET
@@ -65,17 +66,18 @@ class RegistryRoute:
     kind: RegistryKind
     read_base_url: str
     push_base_url: str | None
-    route_coordinate: str
-    repository_reference: str
-    route_realm: Literal["in"] | None
+    # Opaque server-issued native path without its outer slashes.
+    native_path: str
     package_token: str = field(repr=False)
+    # Maven looks up credentials by repository ID. A per-run random ID cannot be
+    # claimed in advance by a project POM that points elsewhere.
+    maven_server_id: str = field(default_factory=lambda: f"rvs-{secrets.token_hex(12)}")
 
     @property
     def pypi_index_url(self) -> str:
         return _ROUTER.pypi_index_url(
             self.read_base_url,
-            self.route_coordinate,
-            self.repository_reference,
+            self.native_path,
         )
 
     @property
@@ -84,16 +86,14 @@ class RegistryRoute:
             output.fatal("The selected private mirror is read-only.")
         return _ROUTER.pypi_upload_url(
             self.push_base_url,
-            self.route_coordinate,
-            self.repository_reference,
+            self.native_path,
         )
 
     @property
     def npm_registry_url(self) -> str:
         return _ROUTER.npm_registry_url(
             self.read_base_url,
-            self.route_coordinate,
-            self.repository_reference,
+            self.native_path,
         )
 
     @property
@@ -102,16 +102,14 @@ class RegistryRoute:
             output.fatal("The selected private mirror is read-only.")
         return _ROUTER.npm_upload_registry_url(
             self.push_base_url,
-            self.route_coordinate,
-            self.repository_reference,
+            self.native_path,
         )
 
     @property
     def maven_repo_url(self) -> str:
         return _ROUTER.maven_repo_url(
             self.read_base_url,
-            self.route_coordinate,
-            self.repository_reference,
+            self.native_path,
         )
 
     @property
@@ -120,8 +118,7 @@ class RegistryRoute:
             output.fatal("The selected private mirror is read-only.")
         return _ROUTER.maven_upload_url(
             self.push_base_url,
-            self.route_coordinate,
-            self.repository_reference,
+            self.native_path,
         )
 
 
@@ -241,9 +238,7 @@ def _resolve_route(
         kind=kind,
         read_base_url=context.read_base_url,
         push_base_url=context.push_base_url,
-        route_coordinate=context.route_coordinate,
-        repository_reference=context.repository_reference,
-        route_realm=context.route_realm,
+        native_path=context.native_path,
         package_token=context.token,
     )
 
@@ -447,14 +442,15 @@ def _inject_override(
                 route=route,
             )
             _replace_maven_settings_arg(cmd, settings_path, native_arg_start)
+            server_id = route.maven_server_id
             if _maven_has_goal(maven_args, "deploy"):
                 cmd.append(
-                    f"-DaltDeploymentRepository=rvs-private::default::{route.maven_upload_url}"
+                    f"-DaltDeploymentRepository={server_id}::default::{route.maven_upload_url}"
                 )
             if _maven_has_goal(maven_args, "deploy-file"):
                 cmd.extend(
                     [
-                        "-DrepositoryId=rvs-private",
+                        f"-DrepositoryId={server_id}",
                         f"-Durl={route.maven_upload_url}",
                     ]
                 )
@@ -663,20 +659,21 @@ def _write_maven_settings(
     root = _load_maven_settings(base_path) if not isolate else ET.Element("settings")
     server_ids = set() if route is not None else _maven_server_ids_for_urls(urls, argv)
     if route is not None:
-        server_ids.add("rvs-private")
+        server_ids.add(route.maven_server_id)
         _ensure_maven_profile(root, route, isolate=isolate)
     if not server_ids:
-        server_ids.add("rvs-private")
+        server_ids.add(f"rvs-{secrets.token_hex(12)}")
     servers = _ensure_xml_child(root, "servers")
     if route is not None:
         for element in root.iter():
             if _local_name(element.tag) in {"repository", "pluginRepository", "snapshotRepository"}:
                 if (
-                    _child_text(element, "id") == "rvs-private"
+                    _child_text(element, "id") == route.maven_server_id
                     and _child_text(element, "url") not in urls
                 ):
                     output.fatal(
-                        "Native Maven settings use reserved repository ID rvs-private for another URL."
+                        "Native Maven settings reuse this run's Ravenstash repository ID "
+                        "for another URL."
                     )
     for server_id in sorted(server_ids):
         _upsert_maven_server(servers, server_id, token)
@@ -720,12 +717,13 @@ def _maven_server_ids_for_urls(urls: list[str], argv: list[str]) -> set[str]:
 
 
 def _ensure_maven_profile(root: ET.Element, route: RegistryRoute, *, isolate: bool = False) -> None:
+    server_id = route.maven_server_id
     mirrors = _ensure_xml_child(root, "mirrors")
     for existing in mirrors:
-        if _child_text(existing, "id") == "rvs-private":
+        if _child_text(existing, "id") == server_id:
             if _child_text(existing, "url") != route.maven_repo_url:
                 output.fatal(
-                    "Native Maven settings use reserved mirror ID rvs-private for another URL."
+                    "Native Maven settings reuse this run's Ravenstash mirror ID for another URL."
                 )
             continue
         pattern = _child_text(existing, "mirrorOf") or ""
@@ -738,15 +736,15 @@ def _ensure_maven_profile(root: ET.Element, route: RegistryRoute, *, isolate: bo
             remaining = [
                 part.strip()
                 for part in pattern.split(",")
-                if part.strip() not in {"central", "rvs-private"}
+                if part.strip() not in {"central", server_id}
             ]
             _ensure_xml_child(existing, "mirrorOf").text = ",".join(
-                [*remaining, "!central", "!rvs-private"]
+                [*remaining, "!central", f"!{server_id}"]
             )
-    mirror = _find_child_with_text(mirrors, "mirror", "id", "rvs-private")
+    mirror = _find_child_with_text(mirrors, "mirror", "id", server_id)
     if mirror is None:
         mirror = ET.SubElement(mirrors, "mirror")
-        ET.SubElement(mirror, "id").text = "rvs-private"
+        ET.SubElement(mirror, "id").text = server_id
     _ensure_xml_child(mirror, "url").text = route.maven_repo_url
     _ensure_xml_child(mirror, "mirrorOf").text = "*" if isolate else "central"
 
@@ -757,18 +755,20 @@ def _ensure_maven_profile(root: ET.Element, route: RegistryRoute, *, isolate: bo
         ET.SubElement(profile, "id").text = "rvs"
     repositories = _ensure_xml_child(profile, "repositories")
     plugin_repositories = _ensure_xml_child(profile, "pluginRepositories")
-    _upsert_maven_repository(repositories, "repository", route.maven_repo_url)
-    _upsert_maven_repository(plugin_repositories, "pluginRepository", route.maven_repo_url)
+    _upsert_maven_repository(repositories, "repository", route.maven_repo_url, server_id)
+    _upsert_maven_repository(
+        plugin_repositories, "pluginRepository", route.maven_repo_url, server_id
+    )
     active_profiles = _ensure_xml_child(root, "activeProfiles")
     if _find_child_text(active_profiles, "activeProfile", "rvs") is None:
         ET.SubElement(active_profiles, "activeProfile").text = "rvs"
 
 
-def _upsert_maven_repository(parent: ET.Element, tag: str, url: str) -> None:
-    repo = _find_child_with_text(parent, tag, "id", "rvs-private")
+def _upsert_maven_repository(parent: ET.Element, tag: str, url: str, server_id: str) -> None:
+    repo = _find_child_with_text(parent, tag, "id", server_id)
     if repo is None:
         repo = ET.SubElement(parent, tag)
-        ET.SubElement(repo, "id").text = "rvs-private"
+        ET.SubElement(repo, "id").text = server_id
     url_element = _ensure_xml_child(repo, "url")
     url_element.text = url
 

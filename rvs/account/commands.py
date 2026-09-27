@@ -219,7 +219,7 @@ def _render_account_selector(
         "",
     ]
     for index, item in enumerate(items):
-        handle = escape(payload_display_name(item))
+        handle = escape(output.plain(payload_display_name(item)))
         account_ref = str(item.get("ref", ""))
         account_type = item.get("type")
         role = str(item.get("organization_role") or "")
@@ -230,7 +230,7 @@ def _render_account_selector(
         active = " [dim](active)[/]" if account_ref == active_account_ref else ""
         pointer = ">" if index == selected_index else " "
         label = f"[bold]{handle}[/]" if index == selected_index else handle
-        lines.append(f"[cyan]{pointer}[/] {label} [dim]{escape(detail)}[/]{active}")
+        lines.append(f"[cyan]{pointer}[/] {label} [dim]{escape(output.plain(detail))}[/]{active}")
     return "\n".join(lines)
 
 

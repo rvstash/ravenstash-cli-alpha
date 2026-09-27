@@ -119,6 +119,21 @@ def _warn_env_profile_override() -> None:
         output.warn("RVS_PROFILE is set and still overrides the default profile in this shell.")
 
 
+def _revoke_server_session(profile: str) -> None:
+    """Revoke a profile's device session on its issuing API before local removal."""
+    revoked = auth_mod.revoke_stored_refresh_token(profile)
+    if revoked is None:
+        return
+    if revoked:
+        output.info(f"Device session for profile '{profile}' revoked on the server.")
+        return
+    output.warn(
+        f"Could not revoke the device session for profile '{profile}' on the server; "
+        "its refresh token stays valid there until it expires. Local credentials are "
+        "removed regardless."
+    )
+
+
 def _interactive_terminal_available() -> bool:
     return sys.stdin.isatty() and output.console.is_terminal and not output.is_json()
 
@@ -460,11 +475,13 @@ def logout(
             output.info("No profiles configured.")
             return
         for profile_name in profiles:
+            _revoke_server_session(profile_name)
             auth_mod.delete_token(profile_name)
         output.success("Credentials removed for all profiles.")
         return
 
     profile_name = _target_profile(profile, cfg)
+    _revoke_server_session(profile_name)
     auth_mod.delete_token(profile_name)
     output.success(f"Credentials removed for profile '{profile_name}'.")
 
@@ -479,8 +496,13 @@ def status(
     cfg = cfg_mod.load()
     profile_name = _target_profile(profile, cfg)
     p = cfg.active_profile(profile_name)
-    token = auth_mod.get_token(profile_name)
-    source = auth_mod.token_source(profile_name)
+    origin_error = (
+        None
+        if os.environ.get("RVS_TOKEN") is not None
+        else auth_mod.credential_origin_error(profile_name)
+    )
+    token = None if origin_error else auth_mod.get_token(profile_name)
+    source = None if origin_error else auth_mod.token_source(profile_name)
     credential_store = (
         "not used (RVS_TOKEN)"
         if source == "RVS_TOKEN"
@@ -499,6 +521,8 @@ def status(
         },
         title="Authentication status",
     )
+    if origin_error:
+        output.warn(origin_error)
     if not token:
         raise typer.Exit(1)
 
@@ -625,6 +649,17 @@ def profile_delete(
 
     if all_profiles:
         profiles = cfg_mod.profile_names_for_reset()
+        try:
+            cfg_mod.load()
+        except cfg_mod.ConfigError:
+            if profiles:
+                output.warn(
+                    "The local configuration cannot be read, so device sessions are not "
+                    "revoked on the server; their refresh tokens stay valid until they expire."
+                )
+        else:
+            for profile_name in profiles:
+                _revoke_server_session(profile_name)
         for profile_name in profiles:
             auth_mod.delete_token_from_all_stores(profile_name)
         cfg_mod.delete_all_profiles()
@@ -635,6 +670,7 @@ def profile_delete(
     cfg = cfg_mod.load()
     profile_name = profile or _current_profile_name(cfg)
     _require_profile(cfg, profile_name)
+    _revoke_server_session(profile_name)
     auth_mod.delete_token(profile_name)
     cfg_mod.delete_profile(profile_name)
     output.success(f"Profile '{profile_name}' deleted.")
@@ -656,6 +692,7 @@ def profile_rename(
     if new in cfg.profiles:
         output.fatal(f"Profile '{new}' already exists.")
 
+    _revoke_server_session(old)
     profile = cfg.profiles[old]
     cfg.profiles[new] = profile
     del cfg.profiles[old]

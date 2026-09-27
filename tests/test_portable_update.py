@@ -30,6 +30,12 @@ from rvs.update_trust import VerificationError, _release_key, verify_detached
 FIXTURES = Path(__file__).parent / "fixtures"
 
 
+@pytest.fixture(autouse=True)
+def _isolated_rvs_home(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """Keep the accepted-manifest state out of the developer's real ~/.rvs."""
+    monkeypatch.setenv("RVS_HOME", str(tmp_path / "rvs-home"))
+
+
 def _installation(tmp_path: Path, version: str = "0.14.3") -> Installation:
     return Installation(
         schema=1,
@@ -214,3 +220,76 @@ def test_receipt_is_non_secret_json(tmp_path: Path) -> None:
         "target",
         "version",
     }
+
+
+def _timed_manifest(generated_at: str, expires: str) -> dict[str, Any]:
+    return {
+        "schema": 1,
+        "recommended": "v0",
+        "generated_at": generated_at,
+        "expires": expires,
+        "channels": {
+            "v0": {"latest": "0.15.1", "minor_targets": {"0.15": "0.15.1"}, "status": "supported"}
+        },
+    }
+
+
+def test_channel_freshness_rejects_expired_and_regressing_manifests() -> None:
+    from datetime import UTC, datetime
+
+    now = datetime(2026, 9, 27, 12, 0, tzinfo=UTC)
+    check = portable_update_mod.check_manifest_freshness
+    newest = _timed_manifest("2026-09-27T05:00:00Z", "2026-10-04T05:00:00Z")
+
+    check(newest, now=now)
+    # The same manifest is still acceptable, an older signed one is a replay.
+    check(newest, now=now)
+    with pytest.raises(UpdateError, match="older than one rvs already verified"):
+        check(_timed_manifest("2026-09-26T05:00:00Z", "2026-10-03T05:00:00Z"), now=now)
+    # Once timestamps were seen, a legacy manifest without them is also a replay.
+    with pytest.raises(UpdateError, match="older than one rvs already verified"):
+        check({"schema": 1, "channels": {}, "recommended": "v0"}, now=now)
+    with pytest.raises(UpdateError, match="expired at"):
+        check(
+            _timed_manifest("2026-09-28T05:00:00Z", "2026-09-29T05:00:00Z"),
+            now=datetime(2026, 9, 30, tzinfo=UTC),
+        )
+    check(_timed_manifest("2026-09-28T05:00:00Z", "2026-10-05T05:00:00Z"), now=now)
+    with pytest.raises(UpdateError, match="older than one rvs already verified"):
+        check(newest, now=now)
+
+
+@pytest.mark.parametrize(
+    "fields",
+    [
+        {"generated_at": "2026-09-27T05:00:00Z"},
+        {"generated_at": "2026-09-27T05:00:00", "expires": "2026-10-04T05:00:00Z"},
+        {"generated_at": "2026-09-27T05:00:00Z", "expires": "2026-09-27T05:00:00Z"},
+        {"generated_at": 7, "expires": "2026-10-04T05:00:00Z"},
+    ],
+)
+def test_channel_freshness_rejects_malformed_timestamps(fields: dict[str, Any]) -> None:
+    from datetime import UTC, datetime
+
+    manifest = {"schema": 1, "channels": {}, "recommended": "v0", **fields}
+
+    with pytest.raises(UpdateError):
+        portable_update_mod.check_manifest_freshness(
+            manifest, now=datetime(2026, 9, 27, 12, 0, tzinfo=UTC)
+        )
+
+
+def test_channel_freshness_accepts_legacy_manifest_before_any_timestamped_one() -> None:
+    portable_update_mod.check_manifest_freshness({"schema": 1, "channels": {}, "recommended": "v0"})
+
+
+def test_channel_discovery_rejects_an_expired_signed_manifest(
+    httpx2_mock: Any, monkeypatch: Any
+) -> None:
+    manifest = _timed_manifest("2020-01-01T00:00:00Z", "2020-01-08T00:00:00Z")
+    httpx2_mock.add_response(url=portable_update_mod.CHANNELS_URL, json=manifest)
+    httpx2_mock.add_response(url=f"{portable_update_mod.CHANNELS_URL}.gpg", content=b"signature")
+    monkeypatch.setattr(portable_update_mod, "verify_detached", lambda *_args: None)
+
+    with pytest.raises(UpdateError, match="expired at"):
+        portable_update_mod.fetch_channel_manifest()

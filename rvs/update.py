@@ -28,6 +28,7 @@ from .installations import compatibility_channel, detect_portable_installation
 from .portable_update import (
     UpdateError,
     apply_portable_update,
+    check_manifest_freshness,
     download_verified_assets,
     fetch_channel_manifest,
     latest_for_channel,
@@ -197,6 +198,11 @@ def _channel_manifest() -> dict[str, Any] | None:
         if recommended not in payload["channels"]:
             return None
     except KeyError, TypeError, ValueError:
+        return None
+    try:
+        check_manifest_freshness(payload)
+    except UpdateError as exc:
+        output.warn(f"Ignoring the release-channel manifest: {exc}.")
         return None
     return payload
 

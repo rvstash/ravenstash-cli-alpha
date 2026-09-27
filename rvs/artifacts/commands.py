@@ -911,10 +911,17 @@ def package_show(
     client = _client(profile)
     try:
         if version is not None:
+            coordinate = {"package_name": name, "version": version}
             detail = client.get(
                 _format_path(repository_unique_ref, registry_kind, "package/version"),
-                params={"package_name": name, "version": version},
+                params=coordinate,
             ).json()
+            # A version's files are their own filename-ordered collection.
+            files = collection_all(
+                client,
+                _format_path(repository_unique_ref, registry_kind, "package/version/files"),
+                coordinate,
+            )
         else:
             item = client.get(
                 _format_path(repository_unique_ref, registry_kind, "package"),
@@ -930,7 +937,7 @@ def package_show(
         output.fatal(str(exc))
 
     if version is not None:
-        _print_package_version(repository_unique_ref, name, registry_kind, detail)
+        _print_package_version(repository_unique_ref, name, registry_kind, detail, files)
         return
 
     # A cursor may be returned even when no version follows; the count settles it.
@@ -993,10 +1000,12 @@ def package_show(
 
 
 def _print_package_version(
-    repository_ref: str, name: str, registry_kind: str, detail: dict
+    repository_ref: str, name: str, registry_kind: str, detail: dict, files: list[dict]
 ) -> None:
     if output.is_json():
-        click.echo(json.dumps({"repository": repository_ref, "package": name, **detail}))
+        click.echo(
+            json.dumps({"repository": repository_ref, "package": name, **detail, "files": files})
+        )
         return
     lifecycle: dict[str, str | None] = {}
     if registry_kind == "pypi":
@@ -1023,12 +1032,12 @@ def _print_package_version(
             "Keywords": ", ".join(str(word) for word in keywords)
             if isinstance(keywords, list)
             else "",
+            "Files": str(detail.get("file_count", len(files))),
             "Size": str(detail.get("size_bytes", "")),
             "Downloads": str(detail.get("downloads", "0")),
         },
         title=f"{name} {detail.get('version', '')}",
     )
-    files = detail.get("files") or []
     if files:
         output.table(
             ["File", "Size", "Published", "Digests"],

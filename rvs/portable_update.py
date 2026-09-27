@@ -15,6 +15,7 @@ import uuid
 import zipfile
 from contextlib import contextmanager
 from dataclasses import replace
+from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING, Any
 
@@ -22,6 +23,7 @@ import httpx2 as httpx
 
 from .apt_channels import minor_target_for_version, normalize_channel, normalize_minor_target
 from .installations import RECEIPT_NAME, Installation, compatibility_channel, write_receipt
+from .paths import rvs_path
 from .update_trust import VerificationError, verify_detached
 
 
@@ -68,6 +70,85 @@ def _headers() -> dict[str, str]:
     return headers
 
 
+# The newest signed ``generated_at`` this user has accepted; an older manifest is
+# a replay and is refused.
+CHANNEL_STATE_FILE = "release-channels.json"
+
+
+def _channel_state_path() -> Path:
+    return rvs_path(CHANNEL_STATE_FILE)
+
+
+def _signed_timestamp(payload: dict[str, Any], field: str) -> datetime:
+    value = payload.get(field)
+    if not isinstance(value, str):
+        raise UpdateError(f"the signed release-channel manifest has an invalid {field}")
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise UpdateError(f"the signed release-channel manifest has an invalid {field}") from exc
+    if parsed.tzinfo is None:
+        raise UpdateError(f"the signed release-channel manifest has an invalid {field}")
+    return parsed
+
+
+def _last_seen_generated_at() -> datetime | None:
+    try:
+        payload = json.loads(_channel_state_path().read_text(encoding="utf-8"))
+        return _signed_timestamp(payload, "generated_at")
+    except OSError, ValueError, UpdateError, AttributeError:
+        return None
+
+
+def _remember_generated_at(value: datetime) -> None:
+    path = _channel_state_path()
+    try:
+        path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+        temporary = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
+        temporary.write_text(
+            json.dumps({"generated_at": value.astimezone(UTC).isoformat()}), encoding="utf-8"
+        )
+        os.replace(temporary, path)
+    except OSError:
+        # Freshness state is best effort; failing to record it never blocks updates.
+        return
+
+
+def check_manifest_freshness(payload: dict[str, Any], *, now: datetime | None = None) -> None:
+    """Reject a stale or replayed signed release-channel manifest.
+
+    ``generated_at`` and ``expires`` are part of the signed document. Manifests
+    published before these fields existed are accepted until this installation
+    has seen one that carries them; from then on a manifest without them, one
+    that has expired, or one older than the newest already accepted is refused.
+    """
+    current = now or datetime.now(UTC)
+    last_seen = _last_seen_generated_at()
+    if "generated_at" not in payload and "expires" not in payload:
+        if last_seen is not None:
+            raise UpdateError(
+                "the signed release-channel manifest is older than one rvs already verified; "
+                "try again later"
+            )
+        return
+    generated_at = _signed_timestamp(payload, "generated_at")
+    expires = _signed_timestamp(payload, "expires")
+    if expires <= generated_at:
+        raise UpdateError("the signed release-channel manifest has an invalid validity period")
+    if expires <= current:
+        raise UpdateError(
+            f"the signed release-channel manifest expired at {expires.isoformat()}; "
+            "try again later or check your system clock"
+        )
+    if last_seen is not None and generated_at < last_seen:
+        raise UpdateError(
+            "the signed release-channel manifest is older than one rvs already verified; "
+            "try again later"
+        )
+    if last_seen is None or generated_at > last_seen:
+        _remember_generated_at(generated_at)
+
+
 def fetch_channel_manifest() -> dict[str, Any]:
     try:
         with httpx.Client(timeout=15.0, follow_redirects=False) as client:
@@ -103,6 +184,7 @@ def fetch_channel_manifest() -> dict[str, Any]:
                     raise UpdateError(
                         "the signed release-channel manifest contains an invalid minor target"
                     )
+        check_manifest_freshness(payload)
         return payload
     except (OSError, ValueError, VerificationError, httpx.HTTPError) as exc:
         if isinstance(exc, UpdateError):

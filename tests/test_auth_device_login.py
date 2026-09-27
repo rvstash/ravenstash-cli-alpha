@@ -25,23 +25,38 @@ from rvs.auth import device as login_mod
 
 runner = CliRunner()
 
+# DevAPI 0.22 shape: keyed by format, one nullable field set, unknown formats allowed.
 NATIVE_REGISTRIES = {
     "pypi": {
         "read_base_url": "https://pypi.rvsta.sh",
         "push_base_url": "https://push.pypi.rvsta.sh",
         "mirror_base_url": "https://mirror.pypi.rvsta.sh",
+        "registry_base_url": None,
     },
     "npm": {
         "read_base_url": "https://npm.rvsta.sh",
         "push_base_url": "https://push.npm.rvsta.sh",
         "mirror_base_url": "https://mirror.npm.rvsta.sh",
+        "registry_base_url": None,
     },
     "maven": {
         "read_base_url": "https://maven.rvsta.sh",
         "push_base_url": "https://push.maven.rvsta.sh",
         "mirror_base_url": "https://mirror.maven.rvsta.sh",
+        "registry_base_url": None,
     },
-    "oci": {"registry_base_url": "https://oci.rvsta.sh"},
+    "oci": {
+        "read_base_url": None,
+        "push_base_url": None,
+        "mirror_base_url": None,
+        "registry_base_url": "https://oci.rvsta.sh",
+    },
+    "cargo": {
+        "read_base_url": None,
+        "push_base_url": None,
+        "mirror_base_url": None,
+        "registry_base_url": None,
+    },
 }
 
 
@@ -73,6 +88,7 @@ def _write_profiles_config(
     default_profile: str = "default",
     refresh_expires_at: str = "2099-01-01T04:00:00+00:00",
     credential_type: str = "expiring",
+    default_extra: str = "",
 ) -> None:
     config_file = config_dir / "config.toml"
     config_dir.mkdir()
@@ -83,6 +99,7 @@ default_profile = "{default_profile}"
 
 [profiles.default]
 api_url = "https://api.ravenstash.com"
+{default_extra}
 account_ref = "ac_23456789"
 credential_type = "{credential_type}"
 expires_at = "2099-01-01T00:00:00+00:00"
@@ -641,8 +658,10 @@ def test_device_login_replaces_active_profile_and_revokes_previous_refresh(
     stored_refresh_tokens: list[tuple[str, str]] = []
     revoked: list[tuple[str, str]] = []
     info_messages: list[str] = []
+    warnings: list[str] = []
 
     monkeypatch.setattr(login_mod.httpx, "Client", _FakeClient)
+    monkeypatch.setattr(login_mod.output, "warn", warnings.append)
     monkeypatch.setattr(
         login_mod.auth_mod,
         "set_token",
@@ -672,10 +691,15 @@ def test_device_login_replaces_active_profile_and_revokes_previous_refresh(
     assert stored_refresh_tokens == [("default", "new-refresh-token")]
     assert revoked == [("https://api.ravenstash.com", "old-refresh")]
     assert any("already authenticated" in message for message in info_messages)
+    assert any("RVS_API_URL is ignored" in message for message in warnings)
     profile = cfg_mod.load().profiles["default"]
-    assert profile.api_url == "https://api.redirect.example.test"
+    # An environment override never redirects a saved profile's login.
+    assert profile.api_url == "https://api.ravenstash.com"
+    assert profile.credential_api_url == "https://api.ravenstash.com"
     assert profile.refresh_expires_at is not None
-    assert _FakeClient.requests[-1][0] == "https://api.redirect.example.test/v0/artifacts/meta"
+    assert all(
+        request[0].startswith("https://api.ravenstash.com/") for request in _FakeClient.requests
+    )
     assert profile.native_registries.pypi.read_base_url == "https://pypi.rvsta.sh"
     assert profile.native_registries.npm.push_base_url == "https://push.npm.rvsta.sh"
     assert profile.native_registries.oci_registry_base_url == "https://oci.rvsta.sh"
@@ -744,8 +768,10 @@ def test_device_login_does_not_revoke_expired_previous_refresh(
     ]
     revoked: list[tuple[str, str]] = []
     info_messages: list[str] = []
+    warnings: list[str] = []
 
     monkeypatch.setattr(login_mod.httpx, "Client", _FakeClient)
+    monkeypatch.setattr(login_mod.output, "warn", warnings.append)
     monkeypatch.setattr(login_mod.auth_mod, "set_token", lambda _profile, _token: None)
     monkeypatch.setattr(
         login_mod.auth_mod,
@@ -809,10 +835,15 @@ def test_refresh_expiring_credential_rotates_tokens(
     tmp_path: Path,
 ) -> None:
     config_dir = tmp_path / ".rvs"
-    _write_profiles_config(config_dir, credential_type="expiring")
+    _write_profiles_config(
+        config_dir,
+        credential_type="expiring",
+        default_extra='repository_domain = "packages.enterprise.example"',
+    )
     monkeypatch.setattr(cfg_mod, "CONFIG_DIR", config_dir)
     monkeypatch.setattr(cfg_mod, "CONFIG_FILE", config_dir / "config.toml")
-    monkeypatch.setenv("RVS_REPOSITORY_DOMAIN", "packages.enterprise.example")
+    # A saved profile keeps its stored domain; the environment cannot redirect it.
+    monkeypatch.setenv("RVS_REPOSITORY_DOMAIN", "attacker.example.test")
     monkeypatch.setattr(auth_mod, "_keyring_available", lambda: True)
     monkeypatch.setattr(
         auth_mod,
@@ -1306,3 +1337,169 @@ def test_refresh_keeps_stored_registries_when_artifacts_meta_transport_fails(
 
     assert auth_mod.refresh_expiring_credential("default") == "jwt-token"
     assert cfg_mod.load().profiles["default"].native_registries == before
+
+
+def test_device_login_seeds_a_new_profile_from_environment_overrides(
+    monkeypatch, tmp_path: Path
+) -> None:
+    config_dir = _isolated_login(monkeypatch, tmp_path)
+    (config_dir / "config.toml").write_text("config_version = 6\n", encoding="utf-8")
+    monkeypatch.setenv("RVS_PROFILE_DEV_API_URL", "http://localhost:6002")
+    monkeypatch.setenv("RVS_PROFILE_DEV_REPOSITORY_DOMAIN", "localhost")
+    local_meta = json.loads(json.dumps(NATIVE_REGISTRIES).replace("rvsta.sh", "edge.example:8788"))
+    _FakeClient.responses = [
+        _FakeResponse(200, _DEVICE_SESSION),
+        _FakeResponse(200, _DEVICE_TOKEN),
+        _FakeResponse(200, {"formats": ["pypi"], "native_registries": local_meta}),
+    ]
+
+    login_mod.perform_device_login(profile="dev", api_url=None, no_browser=True)
+
+    profile = cfg_mod.load().profiles["dev"]
+    assert profile.api_url == "http://localhost:6002"
+    assert profile.credential_api_url == "http://localhost:6002"
+    assert profile.repository_domain == "localhost"
+    # The stored domain, not the environment, rewrites discovered hosts from now on.
+    assert profile.native_registries.pypi.read_base_url == "http://localhost:8788"
+    assert all(url.startswith("http://localhost:6002/") for url, *_ in _FakeClient.requests)
+
+
+def test_refresh_never_sends_a_refresh_token_to_another_api_origin(
+    monkeypatch, tmp_path: Path
+) -> None:
+    config_dir = tmp_path / ".rvs"
+    _write_profiles_config(
+        config_dir, default_extra='credential_api_url = "https://api.issuer.example"'
+    )
+    monkeypatch.setattr(cfg_mod, "CONFIG_DIR", config_dir)
+    monkeypatch.setattr(cfg_mod, "CONFIG_FILE", config_dir / "config.toml")
+    monkeypatch.setattr(auth_mod, "_keyring_available", lambda: True)
+    monkeypatch.setattr(auth_mod, "_kr_get", lambda profile: "stored-secret")
+    monkeypatch.setattr(auth_mod.httpx, "Client", _FakeClient)
+    _FakeClient.requests = []
+    _FakeClient.responses = []
+
+    assert auth_mod.refresh_expiring_credential("default") is None
+    assert _FakeClient.requests == []
+    message = auth_mod.credential_origin_error("default")
+    assert message is not None
+    assert "issued by https://api.issuer.example" in message
+    assert "rvs auth login --profile default" in message
+
+
+def test_api_client_refuses_to_send_a_stored_token_to_another_origin(
+    monkeypatch, tmp_path: Path, capsys
+) -> None:
+    from rvs.client import ApiClient
+
+    config_dir = tmp_path / ".rvs"
+    _write_profiles_config(
+        config_dir, default_extra='credential_api_url = "https://api.issuer.example"'
+    )
+    monkeypatch.setattr(cfg_mod, "CONFIG_DIR", config_dir)
+    monkeypatch.setattr(cfg_mod, "CONFIG_FILE", config_dir / "config.toml")
+    monkeypatch.delenv("RVS_TOKEN", raising=False)
+    monkeypatch.setattr(auth_mod, "_keyring_available", lambda: True)
+    monkeypatch.setattr(auth_mod, "_kr_get", lambda profile: "stored-secret")
+
+    with pytest.raises(SystemExit):
+        ApiClient.from_profile("default")
+
+    assert "was issued by https://api.issuer.example" in " ".join(capsys.readouterr().err.split())
+
+
+def test_api_client_uses_env_api_url_with_rvs_token_and_no_saved_profile(
+    monkeypatch, tmp_path: Path
+) -> None:
+    from rvs.client import ApiClient
+
+    config_dir = tmp_path / ".rvs"
+    monkeypatch.setattr(cfg_mod, "CONFIG_DIR", config_dir)
+    monkeypatch.setattr(cfg_mod, "CONFIG_FILE", config_dir / "config.toml")
+    monkeypatch.setattr(cfg_mod, "PROFILE_ENV_FILE", config_dir / "profiles.env")
+    monkeypatch.delenv("RVS_ENV_FILE", raising=False)
+    monkeypatch.delenv("RVS_PROFILE", raising=False)
+    monkeypatch.setenv("RVS_TOKEN", "rvs_ust" + "A" * 43)
+    monkeypatch.setenv("RVS_API_URL", "https://api.ci.example")
+
+    client = ApiClient.from_profile()
+
+    assert client._base == "https://api.ci.example"
+
+
+def test_revoke_stored_refresh_token_uses_the_issuing_api(monkeypatch, tmp_path: Path) -> None:
+    config_dir = tmp_path / ".rvs"
+    _write_profiles_config(config_dir)
+    monkeypatch.setattr(cfg_mod, "CONFIG_DIR", config_dir)
+    monkeypatch.setattr(cfg_mod, "CONFIG_FILE", config_dir / "config.toml")
+    monkeypatch.setattr(auth_mod, "_keyring_available", lambda: True)
+    monkeypatch.setattr(
+        auth_mod, "_kr_get", lambda profile: "old-refresh" if profile == "work:refresh" else None
+    )
+    revoked: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        auth_mod,
+        "revoke_device_refresh_token",
+        lambda api_url, token: revoked.append((api_url, token)) or True,
+    )
+
+    assert auth_mod.revoke_stored_refresh_token("work") is True
+    assert auth_mod.revoke_stored_refresh_token("default") is None
+    assert revoked == [("https://api.work.example", "old-refresh")]
+
+
+@pytest.mark.parametrize(
+    ("command", "revocation", "expected"),
+    [
+        (["logout"], True, "revoked on the server"),
+        (["logout"], False, "Could not revoke the device session"),
+        (["logout", "--all"], False, "Could not revoke the device session"),
+    ],
+)
+def test_logout_revokes_the_server_session_best_effort(
+    monkeypatch, tmp_path: Path, command: list[str], revocation: bool, expected: str
+) -> None:
+    config_dir = tmp_path / ".rvs"
+    _write_profiles_config(config_dir, default_profile="work")
+    monkeypatch.setattr(cfg_mod, "CONFIG_DIR", config_dir)
+    monkeypatch.setattr(cfg_mod, "CONFIG_FILE", config_dir / "config.toml")
+    calls: list[str] = []
+    monkeypatch.setattr(
+        auth_cmd.auth_mod,
+        "revoke_stored_refresh_token",
+        lambda profile: calls.append(f"revoke:{profile}") or revocation,
+    )
+    monkeypatch.setattr(
+        auth_cmd.auth_mod, "delete_token", lambda profile: calls.append(f"delete:{profile}")
+    )
+
+    result = runner.invoke(auth_cmd.app, command)
+
+    assert result.exit_code == 0
+    assert calls[:2] == [f"revoke:{calls[0].split(':')[1]}", f"delete:{calls[0].split(':')[1]}"]
+    assert expected in " ".join(result.output.split())
+
+
+@pytest.mark.parametrize("command", [["delete", "work"], ["rename", "work", "renamed"]])
+def test_profile_delete_and_rename_revoke_the_server_session(
+    monkeypatch, tmp_path: Path, command: list[str]
+) -> None:
+    config_dir = tmp_path / ".rvs"
+    _write_profiles_config(config_dir)
+    monkeypatch.setattr(cfg_mod, "CONFIG_DIR", config_dir)
+    monkeypatch.setattr(cfg_mod, "CONFIG_FILE", config_dir / "config.toml")
+    calls: list[str] = []
+    monkeypatch.setattr(
+        auth_cmd.auth_mod,
+        "revoke_stored_refresh_token",
+        lambda profile: calls.append(f"revoke:{profile}") or False,
+    )
+    monkeypatch.setattr(
+        auth_cmd.auth_mod, "delete_token", lambda profile: calls.append(f"delete:{profile}")
+    )
+
+    result = runner.invoke(auth_cmd.profile_app, command)
+
+    assert result.exit_code == 0
+    assert calls == ["revoke:work", "delete:work"]
+    assert "Could not revoke the device session" in " ".join(result.output.split())

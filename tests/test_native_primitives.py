@@ -35,7 +35,7 @@ def found(monkeypatch):
         "default",
         target,
         ("pypi", "npm", "maven", "oci"),
-        ("in", "ar_abcdefgh"),
+        "in/ar_abcdefgh",
     )
     monkeypatch.setattr(primitives, "discover", lambda *args: found)
     monkeypatch.setattr(config, "save", lambda *_: pytest.fail("template wrote configuration"))

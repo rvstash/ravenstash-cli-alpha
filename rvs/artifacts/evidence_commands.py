@@ -251,7 +251,7 @@ def _intent_payload(
         "package_name": package,
         "version": version,
         "scope": scope,
-        "analysis_context_id": analysis_context,
+        "analysis_context": analysis_context,
         "artifact_manifest": manifest,
         "evidence": [
             {
@@ -262,11 +262,23 @@ def _intent_payload(
             }
             for evidence_type, item in evidence
         ],
-        "deadline": (
+        "deadline_at": (
             datetime.datetime.now(datetime.UTC) + datetime.timedelta(hours=24)
         ).isoformat(),
         "idempotency_key": idempotency_key or f"rvs-evidence-{uuid.uuid4()}",
     }
+
+
+def _upload_failure(exc: Exception) -> str:
+    """Describe an upload failure without echoing the presigned request URL."""
+    if isinstance(exc, httpx2.HTTPStatusError):
+        return f"the storage service answered HTTP {exc.response.status_code}"
+    if isinstance(exc, httpx2.HTTPError):
+        # Transport errors can quote the request, whose query string is a credential.
+        return f"{type(exc).__name__} while sending the file to the storage service"
+    if isinstance(exc, (KeyError, TypeError)):
+        return "Ravenstash returned an invalid upload request"
+    return str(exc)
 
 
 def _upload_evidence(
@@ -295,7 +307,7 @@ def _upload_evidence(
     by_ref = {str(item["ref"]): local for item, (_, local) in zip(uploads, evidence, strict=True)}
     for prepared_upload in requests:
         request = prepared_upload.get("request")
-        upload_ref = str(prepared_upload.get("upload_ref"))
+        upload_ref = str(prepared_upload.get("ref"))
         local = by_ref.get(upload_ref)
         if not isinstance(request, dict) or local is None:
             output.fatal("Ravenstash returned an invalid upload request.")
@@ -313,10 +325,10 @@ def _upload_evidence(
                 )
                 response.raise_for_status()
         except (OSError, httpx2.HTTPError, KeyError, TypeError) as exc:
-            output.fatal(f"Evidence upload failed for {local.filename}: {exc}")
+            output.fatal(f"Evidence upload failed for {local.filename}: {_upload_failure(exc)}")
         intent = client.post(
             _intent_path(intent["ref"], f"/uploads/{segment(upload_ref)}/complete"),
-            json={"expected_size": local.size, "sha256_digest": local.sha256},
+            json={"expected_size_bytes": local.size, "sha256_digest": local.sha256},
         ).json()
     return intent
 
@@ -433,7 +445,7 @@ def upload(
     try:
         candidates = collection_all(
             client,
-            _evidence_path("artifacts"),
+            _evidence_path("files"),
             {
                 "repository_ref": repository_ref,
                 "format": format,
@@ -441,7 +453,7 @@ def upload(
                 "version": version,
             },
         )
-        by_digest = {item["sha256_digest"]: item for item in candidates}
+        by_digest = {item["digests"]["sha256"]: item for item in candidates}
         selected = [by_digest[digest] for digest in artifact_sha256]
         if not selected:
             output.fatal("At least one --artifact-sha256 selector is required.")
@@ -458,8 +470,8 @@ def upload(
             analysis_context=analysis_context,
             artifacts=[
                 {
-                    "sha256_digest": item["sha256_digest"],
-                    "size": item["size"],
+                    "sha256_digest": item["digests"]["sha256"],
+                    "size": item["size_bytes"],
                     "filename": item["filename"],
                 }
                 for item in selected
@@ -598,10 +610,10 @@ def _download_document(
     analysis_context: str | None = None,
 ) -> None:
     client = ApiClient.from_profile(profile)
-    params = {"analysis_context_id": analysis_context} if analysis_context else None
+    params = {"analysis_context": analysis_context} if analysis_context else None
     try:
         response = client.get(
-            _evidence_path(f"artifacts/{segment(artifact_ref)}/{kind}"), params=params
+            _evidence_path(f"files/{segment(artifact_ref)}/{kind}"), params=params
         )
     except (ApiError, httpx2.HTTPError) as exc:
         output.fatal(str(exc))

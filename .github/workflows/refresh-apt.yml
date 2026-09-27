@@ -139,3 +139,29 @@ jobs:
             signed \
             "https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com" \
             ravenstash-cli-releases
+      - name: Refresh the portable-update manifest when its policy is unchanged
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_APT_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_APT_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          R2_ACCOUNT_ID: ${{ vars.R2_APT_ACCOUNT_ID }}
+        run: |
+          # The signed manifest expires, so the portable copy is re-signed with the
+          # APT metadata. Only its freshness fields may change here: a release that
+          # has not reached the portable manifest yet is published by release.yml.
+          endpoint="https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
+          destination=s3://ravenstash-cli-releases/rvs
+          if ! aws s3 cp "$destination/channels.json" portable-channels.json \
+              --endpoint-url "$endpoint" --only-show-errors; then
+            echo "::warning::No portable channel manifest to refresh"
+            exit 0
+          fi
+          if ! python3 packaging/repository/channel_policy.py same-policy \
+              portable-channels.json signed/channels.json; then
+            echo "::warning::Portable channel policy differs from APT; leaving it for the release workflow"
+            exit 0
+          fi
+          aws s3 cp signed/channels.json "$destination/channels.json" \
+            --endpoint-url "$endpoint" --cache-control no-cache --only-show-errors
+          aws s3 cp signed/channels.json.gpg "$destination/channels.json.gpg" \
+            --endpoint-url "$endpoint" --cache-control no-cache --only-show-errors

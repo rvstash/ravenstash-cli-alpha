@@ -31,7 +31,8 @@ class Discovery:
     profile: str
     target: cfg.ArtifactTarget
     formats: tuple[str, ...]
-    native_path: tuple[str, str]
+    # Credential-free native path of the target, without outer slashes.
+    native_path: str
 
     @property
     def oci_plain_http(self) -> bool:
@@ -81,7 +82,7 @@ class Discovery:
             route = router.maven_repo_url if access == "read" else router.maven_upload_url
         else:
             route = router.npm_registry_url if access == "read" else router.npm_upload_registry_url
-        return route(base, *self.native_path)
+        return route(base, self.native_path)
 
     def reference(self, kind: str, operand: str | None = None) -> str:
         from ..oci.reference import qualify_reference
@@ -98,7 +99,7 @@ class Discovery:
         from ..oci.reference import qualify_reference
 
         self.select_format(kind, ("oci",))
-        root = "/".join(self.native_path)
+        root = self.native_path
         return qualify_reference(f"{self.endpoint(kind)}/{root}", operand)
 
 
@@ -124,7 +125,7 @@ def discover(
         repository = resolve_repository_entry(client, spec.selector, customer_id)
         selected = _repository_target(repository)
         formats = tuple(item for item in repository_formats(repository) if item in FORMATS)
-        path = ("in", str(selected.repository_unique_ref))
+        path = f"in/{selected.repository_unique_ref}"
     else:
         params = {"account_ref": customer_id}
         if kind is not None:
@@ -138,10 +139,8 @@ def discover(
         remote = matches[0]
         selected = _remote_target(remote, spec.target_type)
         formats = (str(remote["format"]),)
-        path = (
-            "o" if spec.target_type == "official_cache" else "c",
-            remote_public_name(remote),
-        )
+        prefix = "o" if spec.target_type == "official_cache" else "c"
+        path = f"{prefix}/{remote_public_name(remote)}"
     if not formats:
         raise ValueError("The target has no enabled formats.")
     return Discovery(profile_name, selected, formats, path)

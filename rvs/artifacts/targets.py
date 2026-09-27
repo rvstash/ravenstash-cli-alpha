@@ -18,6 +18,7 @@ from ..devapi import (
     repository_mint_token_path,
 )
 from .formats import FORMATS
+from .routing import native_path
 
 
 PackageKind = Literal["pypi", "npm", "maven"]
@@ -44,9 +45,8 @@ class RegistryContext:
     target: cfg_mod.ArtifactTarget
     read_base_url: str
     push_base_url: str | None
-    route_coordinate: str
-    repository_reference: str
-    route_realm: Literal["in"] | None
+    # Opaque server-issued native path without its outer slashes.
+    native_path: str
     token: str = field(repr=False)
 
 
@@ -136,10 +136,10 @@ def repository_display_name(repository: dict) -> str:
 
 
 def remote_public_name(remote: dict) -> str:
-    """Return the official source slug or custom name that selects a remote cache."""
+    """Return the official source ref or custom name that selects a remote cache."""
     if remote["source_type"] == "official":
-        return str(remote.get("official_slug") or remote["ref"])
-    return str(remote.get("remote_name") or remote["ref"])
+        return str(remote.get("official_source_ref") or remote["ref"])
+    return str(remote.get("name") or remote["ref"])
 
 
 def remote_target_name(remote: dict) -> str:
@@ -207,7 +207,7 @@ def matching_remote_caches(
         remote
         for remote in remotes
         if remote["source_type"] == family
-        and selector in {remote["ref"], remote.get("official_slug"), remote.get("remote_name")}
+        and selector in {remote["ref"], remote_public_name(remote)}
     ]
 
 
@@ -347,18 +347,23 @@ def expected_repository_target(selected: cfg_mod.ArtifactTarget) -> dict[str, ob
     }
 
 
-def repository_native_route(credential: dict, repository_ref: str) -> tuple[str, str]:
-    """Return the ``("in", ref)`` route of a repository credential, or raise."""
-    # Every format of a repository shares one canonical ID-based route.
-    native_path = credential.get("native_path")
-    if not isinstance(native_path, str) or native_path.strip("/").split("/") != [
-        "in",
-        repository_ref,
-    ]:
-        raise ValueError(
-            "Ravenstash returned a credential for a different native repository route."
-        )
-    return "in", repository_ref
+def repository_native_path(credential: dict, repository_ref: str) -> str:
+    """Return the native path of a credential minted for *repository_ref*, or raise.
+
+    The native path is opaque; the credential's target identity is what proves
+    it was minted for the selected repository.
+    """
+    target = credential.get("target")
+    if not isinstance(target, dict) or target.get("repository_ref") != repository_ref:
+        raise ValueError("Ravenstash returned a credential for a different repository.")
+    return native_path(credential.get("native_path"))
+
+
+def remote_cache_native_path(credential: dict, remote_cache_ref: str, kind: str) -> str:
+    """Return the native path of a credential minted for one private mirror, or raise."""
+    if credential.get("format") != kind or credential.get("remote_cache_ref") != remote_cache_ref:
+        raise ValueError("Ravenstash returned a credential for a different private mirror.")
+    return native_path(credential.get("native_path"))
 
 
 def registry_context(
@@ -395,10 +400,7 @@ def registry_context(
                     "expected_target": expected_repository_target(selected),
                 },
             ).json()
-            route_coordinate, repository_reference = repository_native_route(
-                credential, selected.repository_unique_ref
-            )
-            route_realm: Literal["in"] | None = "in"
+            route_path = repository_native_path(credential, selected.repository_unique_ref)
         else:
             if not selected.remote_unique_ref:
                 raise ValueError("Selected private mirror has no permanent ID")
@@ -406,15 +408,7 @@ def registry_context(
                 remote_cache_mint_token_path(selected.remote_unique_ref),
                 {"duration_seconds": STATIC_NATIVE_DURATION_SECONDS},
             ).json()
-            if credential["format"] != kind or credential["remote_cache_ref"] != (
-                selected.remote_unique_ref
-            ):
-                raise ValueError("Remote cache resolution returned a different private mirror")
-            native_parts = credential["native_path"].strip("/").split("/")
-            if len(native_parts) != 2 or not all(native_parts):
-                raise ValueError("Remote cache resolution returned an invalid native path")
-            route_coordinate, repository_reference = native_parts
-            route_realm = None
+            route_path = remote_cache_native_path(credential, selected.remote_unique_ref, kind)
         native_token = validate_public_token(credential["access_token"], native=True)
     except (ApiError, KeyError, TypeError, ValueError) as exc:
         output.fatal(str(exc))
@@ -434,8 +428,6 @@ def registry_context(
         target=selected,
         read_base_url=read_base_url,
         push_base_url=push_base_url,
-        route_coordinate=route_coordinate,
-        repository_reference=repository_reference,
-        route_realm=route_realm,
+        native_path=route_path,
         token=native_token,
     )

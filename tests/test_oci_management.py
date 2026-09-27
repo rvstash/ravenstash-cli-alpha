@@ -126,6 +126,12 @@ def test_oci_list_has_one_format_and_preserves_cursor_envelope(transport):
             "tags",
             {"path": "images/api", "limit": 50},
         ),
+        (
+            ["tag", "list", "images/api", "--digest", DIGEST],
+            "get",
+            "tags",
+            {"path": "images/api", "digest": DIGEST, "limit": 50},
+        ),
     ],
 )
 def test_oci_exact_references_reach_typed_routes(transport, args, method, suffix, params):
@@ -279,3 +285,32 @@ def test_oras_logout_mutates_only_a_temporary_overlay(monkeypatch, tmp_path):
         "oras", ["logout", "oci.test", "--registry-config", str(source)], oci_runner.OciOptions()
     )
     assert source.read_text() == original
+
+
+def test_oci_tag_list_rejects_a_malformed_digest_filter(transport):
+    result = runner.invoke(app, ["art", "oci", "tag", "list", "images/api", "--digest", "latest"])
+    assert result.exit_code == 1
+    assert "manifest digest" in result.stderr
+    transport.get.assert_not_called()
+
+
+def test_oci_manifest_list_shows_recent_tags_and_the_tag_count(transport):
+    transport.get.return_value.json.return_value = {
+        "items": [
+            {
+                "path": "images/api",
+                "digest": DIGEST,
+                "manifest_kind": "image",
+                "recent_tags": ["v3", "v2"],
+                "tag_count": 12,
+            }
+        ],
+        "next_cursor": None,
+    }
+    result = runner.invoke(
+        app, ["art", "oci", "manifest", "list", "images/api"], env={"COLUMNS": "300"}
+    )
+    assert result.exit_code == 0, result.output
+    assert "recent_tags" in result.stdout
+    assert "v3, v2" in result.stdout
+    assert "12" in result.stdout

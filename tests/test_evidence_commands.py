@@ -219,7 +219,10 @@ def test_stage_emits_stable_json_without_upload_request(
     assert json.loads(result.stdout)["ref"] == "pe_23456789abcdefghijkmn"
     assert "upload_request" not in result.output
     assert client.payload is not None
-    assert client.payload["analysis_context_id"] == "pypi-cpython313-linux-x86_64-base"
+    assert client.payload["analysis_context"] == "pypi-cpython313-linux-x86_64-base"
+    assert "analysis_context_id" not in client.payload
+    assert "deadline_at" in client.payload
+    assert "deadline" not in client.payload
     assert client.payload["repository_ref"] == "ar_23456789"
     assert client.payload["format"] == "pypi"
     assert client.payload["package_name"] == "demo"
@@ -399,10 +402,10 @@ def test_upload_resolves_release_artifacts_and_completes_uploads_by_ref(
                 {
                     "items": [
                         {
-                            "ref": "pa_23456789abcdefghijkmn",
+                            "ref": "af_23456789abcdefghijkmn",
                             "filename": "demo-1.0.0-py3-none-any.whl",
-                            "sha256_digest": digest,
-                            "size": 5,
+                            "size_bytes": 5,
+                            "digests": {"sha256": digest, "md5": "c" * 32},
                             "artifact_type": "wheel",
                             "targetable": True,
                             "exclusion_reason": None,
@@ -428,7 +431,7 @@ def test_upload_resolves_release_artifacts_and_completes_uploads_by_ref(
                     {
                         "uploads": [
                             {
-                                "upload_ref": "pu_23456789abcdefghijkmn",
+                                "ref": "pu_23456789abcdefghijkmn",
                                 "request": {
                                     "method": "PUT",
                                     "url": "https://uploads.example.test/x",
@@ -492,7 +495,7 @@ def test_upload_resolves_release_artifacts_and_completes_uploads_by_ref(
     assert result.exit_code == 0, result.output
     assert calls[0] == (
         "GET",
-        "/v0/artifacts/package-evidence/artifacts",
+        "/v0/artifacts/package-evidence/files",
         {
             "repository_ref": "ar_23456789",
             "format": "pypi",
@@ -521,6 +524,7 @@ def test_upload_resolves_release_artifacts_and_completes_uploads_by_ref(
     assert calls[2][2] == {
         "uploads": [{"upload_ref": "pu_23456789abcdefghijkmn", "content_md5": ANY}]
     }
+    assert calls[4][2] == {"expected_size_bytes": 2, "sha256_digest": ANY}
     # The typed upload instruction supplies the method and headers.
     assert calls[3][2] == {"Content-MD5": "ignored"}
     assert "pe_23456789abcdefghijkmn" in result.output
@@ -559,14 +563,14 @@ def test_status_retire_and_documents_use_flat_evidence_routes(
     assert (
         runner.invoke(
             evidence_commands.app,
-            ["report", "pa_23456789abcdefghijkmn", "--output", str(report)],
+            ["report", "af_23456789abcdefghijkmn", "--output", str(report)],
         ).exit_code
         == 0
     )
     assert paths == [
         ("GET", "/v0/artifacts/package-evidence/intents/pe_23456789abcdefghijkmn"),
         ("POST", "/v0/artifacts/package-evidence/intents/pe_23456789abcdefghijkmn/retire"),
-        ("GET", "/v0/artifacts/package-evidence/artifacts/pa_23456789abcdefghijkmn/report"),
+        ("GET", "/v0/artifacts/package-evidence/files/af_23456789abcdefghijkmn/report"),
     ]
 
 
@@ -578,3 +582,70 @@ def test_waiting_stops_at_a_state_it_does_not_know(monkeypatch) -> None:
     intent = {"ref": "ei_abcdefgh", "state": "archived"}
 
     assert evidence_commands._wait(_Client(), intent, timeout=60) == intent
+
+
+def test_evidence_upload_failure_never_prints_the_presigned_url(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    evidence = tmp_path / "bom.cdx.json"
+    evidence.write_text("{}", encoding="utf-8")
+    presigned = "https://uploads.example.test/x?X-Amz-Signature=secret-signature"
+
+    class FlowClient:
+        def post(self, path: str, *, json: dict[str, object]) -> _Response:
+            return _Response(
+                {"uploads": [{"ref": "pu_23456789abcdefghijkmn", "request": {"url": presigned}}]}
+            )
+
+    class FailingPutClient:
+        def __init__(self, *args: object, **kwargs: object) -> None:
+            pass
+
+        def __enter__(self) -> FailingPutClient:
+            return self
+
+        def __exit__(self, *args: object) -> None:
+            return None
+
+        def request(self, method: str, url: str, **kwargs: object) -> Any:
+            request = evidence_commands.httpx2.Request(method, url)
+            response = evidence_commands.httpx2.Response(403, request=request)
+            raise evidence_commands.httpx2.HTTPStatusError(
+                f"Client error '403 Forbidden' for url '{url}'",
+                request=request,
+                response=response,
+            )
+
+    monkeypatch.setattr(evidence_commands.httpx2, "Client", FailingPutClient)
+    local = evidence_commands._hash_file(evidence, max_bytes=1024)
+    intent: dict[str, object] = {
+        "ref": "pe_23456789abcdefghijkmn",
+        "evidence": [{"ref": "pu_23456789abcdefghijkmn"}],
+    }
+
+    with pytest.raises(SystemExit):
+        evidence_commands._upload_evidence(
+            FlowClient(),  # type: ignore[arg-type]
+            intent,
+            [("cyclonedx", local)],
+        )
+
+    printed = capsys.readouterr()
+    assert "secret-signature" not in printed.out + printed.err
+    assert "HTTP 403" in " ".join(printed.err.split())
+    assert evidence_commands._upload_failure(
+        evidence_commands.httpx2.ConnectError(f"failed to reach {presigned}")
+    ) == ("ConnectError while sending the file to the storage service")
+
+
+def test_evidence_upload_http_error_message_is_redacted() -> None:
+    request = evidence_commands.httpx2.Request("PUT", "https://uploads.example.test/x?sig=secret")
+    response = evidence_commands.httpx2.Response(403, request=request)
+    error = evidence_commands.httpx2.HTTPStatusError(
+        "boom sig=secret", request=request, response=response
+    )
+
+    message = evidence_commands._upload_failure(error)
+
+    assert message == "the storage service answered HTTP 403"
+    assert "secret" not in message

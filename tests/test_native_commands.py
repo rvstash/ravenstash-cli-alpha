@@ -28,6 +28,15 @@ NPM_MIRROR_URL = "https://javascript-mirror.example.test"
 MAVEN_READ_URL = "https://java-read.example.test"
 MAVEN_PUSH_URL = "https://java-write.example.test"
 MAVEN_MIRROR_URL = "https://java-mirror.example.test"
+MAVEN_ID = "rvs-0123456789abcdef01234567"
+
+
+@pytest.fixture(autouse=True)
+def _fixed_maven_server_id(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Pin the per-run random Maven repository ID so settings can be asserted."""
+    monkeypatch.setattr(native_runner.secrets, "token_hex", lambda _size: MAVEN_ID[4:])
+
+
 PYPI_READ_HOST = "python-read.example.test"
 PYPI_MIRROR_HOST = "python-mirror.example.test"
 NPM_READ_HOST = "javascript-read.example.test"
@@ -590,9 +599,7 @@ def test_native_pip_exchanges_profile_token_for_scoped_remote_credential(
             "pypi",
             PYPI_MIRROR_URL,
             None,
-            "c",
-            "piwheels",
-            None,
+            "c/piwheels",
             "rvs_sltBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBA",
         ),
     )
@@ -646,9 +653,7 @@ def test_native_pip_local_remote_cache_netrc_uses_hostname_without_port(
             "pypi",
             "http://localhost:43101/registry/pypi",
             None,
-            "c",
-            "piwheels",
-            None,
+            "c/piwheels",
             "rvs_sltBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBA",
         ),
     )
@@ -685,9 +690,7 @@ def test_native_pip_exchanges_official_remote_credential(
             "pypi",
             PYPI_MIRROR_URL,
             None,
-            "o",
-            "pypiorg",
-            None,
+            "o/pypiorg",
             "rvs_sltBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBA",
         ),
     )
@@ -833,9 +836,9 @@ def test_native_maven_repo_override_generates_temp_settings(
     assert result.exit_code == 0
     assert calls[0]["cmd"][0:2] == ["/bin/mvn", "--settings"]
     assert calls[0]["cmd"][-1] == (
-        f"-DaltDeploymentRepository=rvs-private::default::{MAVEN_PUSH_URL}/in/ar_xyzabcde/"
+        f"-DaltDeploymentRepository={MAVEN_ID}::default::{MAVEN_PUSH_URL}/in/ar_xyzabcde/"
     )
-    assert "<id>rvs-private</id>" in settings_texts[0]
+    assert f"<id>{MAVEN_ID}</id>" in settings_texts[0]
     assert "<mirrorOf>central</mirrorOf>" in settings_texts[0]
     assert "<username>__token__</username>" in settings_texts[0]
     assert (
@@ -850,9 +853,7 @@ def test_native_maven_read_only_mirror_uses_only_download_route(tmp_path: Path) 
         kind="maven",
         read_base_url=MAVEN_MIRROR_URL,
         push_base_url=None,
-        route_coordinate="o",
-        repository_reference="maven-central",
-        route_realm=None,
+        native_path="o/maven-central",
         package_token="rvs_sltBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBA",
     )
     cmd = [
@@ -892,9 +893,7 @@ def test_native_maven_passthrough_accepts_dependency_get_flags(
             "maven",
             MAVEN_MIRROR_URL,
             None,
-            "o",
-            "maven-central",
-            None,
+            "o/maven-central",
             "download-token",
         ),
     )
@@ -952,7 +951,7 @@ def test_native_maven_deploy_file_injects_upload_destination(
 
     assert result.exit_code == 0
     assert calls[0]["cmd"][-2:] == [
-        "-DrepositoryId=rvs-private",
+        f"-DrepositoryId={MAVEN_ID}",
         f"-Durl={MAVEN_PUSH_URL}/in/ar_xyzabcde/",
     ]
 
@@ -1092,7 +1091,7 @@ def test_uv_read_only_mirror_does_not_request_upload_url(monkeypatch, tmp_path):
         native_runner,
         "_resolve_route",
         lambda *a, **kw: native_runner.RegistryRoute(
-            "pypi", PYPI_MIRROR_URL, None, "o", "pypiorg", None, "download-token"
+            "pypi", PYPI_MIRROR_URL, None, "o/pypiorg", "download-token"
         ),
     )
     calls = []
@@ -1175,14 +1174,14 @@ def test_maven_preserves_other_repositories_and_mirror_credentials(monkeypatch, 
         root = ET.parse(cmd[cmd.index("--settings") + 1]).getroot()
         mirrors = {el.findtext("id"): el for el in root.findall("./mirrors/mirror")}
         assert mirrors["vendor"].findtext("url") == "https://vendor.test/maven/"
-        assert mirrors["vendor"].findtext("mirrorOf") == "*,!central,!rvs-private"
-        assert mirrors["rvs-private"].findtext("mirrorOf") == "central"
+        assert mirrors["vendor"].findtext("mirrorOf") == f"*,!central,!{MAVEN_ID}"
+        assert mirrors[MAVEN_ID].findtext("mirrorOf") == "central"
         passwords = {
             el.findtext("id"): el.findtext("password") for el in root.findall("./servers/server")
         }
         assert passwords == {
             "vendor": "vendor-secret",
-            "rvs-private": "rvs_sltAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+            MAVEN_ID: "rvs_sltAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
         }
 
     _capture_run(monkeypatch, calls, hook)
@@ -1192,3 +1191,14 @@ def test_maven_preserves_other_repositories_and_mirror_credentials(monkeypatch, 
     assert result.exit_code == 0, result.output
     assert "Existing Maven mirrors" in result.output
     assert original.read_text() == content
+
+
+def test_maven_repository_id_is_random_per_run(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.undo()
+    first = native_runner.RegistryRoute("maven", MAVEN_MIRROR_URL, None, "o/maven-central", "t")
+    second = native_runner.RegistryRoute("maven", MAVEN_MIRROR_URL, None, "o/maven-central", "t")
+
+    assert first.maven_server_id != second.maven_server_id
+    assert first.maven_server_id.startswith("rvs-")
+    assert len(first.maven_server_id) == len("rvs-") + 24
+    assert "rvs-private" not in {first.maven_server_id, second.maven_server_id}

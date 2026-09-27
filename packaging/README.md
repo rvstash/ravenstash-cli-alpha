@@ -136,6 +136,12 @@ The installer publishes `portable_installer_api=1` as the compatibility contract
 used by the standalone `setup-ravenstash` GitHub Action.
 The channel policy is published at the distribution-neutral
 `https://releases.ravenstash.com/rvs/channels.json` path.
+The signed manifest carries `generated_at` and `expires` (seven days later, like
+the APT `Valid-Until`). The daily metadata refresh re-signs it for APT and, when
+only those two fields changed, for the portable path as well. `rvs update`
+rejects an expired manifest and one older than the newest it already accepted;
+manifests published before these fields existed are accepted until the first
+timestamped one has been seen.
 After the corresponding GitHub release is public, stable release automation
 publishes the neutral update policy alongside validation and signing for the
 protected installer-promotion jobs. Installer deployment waits for both,

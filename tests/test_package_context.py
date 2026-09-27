@@ -60,8 +60,9 @@ def remote(
         "account": summary(owner),
         "format": kind,
         "source_type": family,
-        "remote_name": name if family == "custom" else None,
-        "official_slug": name if family == "official" else None,
+        # Official caches carry a display name; their selector is the source ref.
+        "name": name if family == "custom" else f"{name} (official)",
+        "official_source_ref": name if family == "official" else None,
         "min_age_hours": None,
         "max_age_hours": None,
         "consumer_repository_count": 0,
@@ -111,7 +112,7 @@ class FakeApi:
             assert json == {"duration_seconds": 14400}
             official = item["source_type"] == "official"
             prefix = "o" if official else "c"
-            public_name = item["official_slug"] if official else item["remote_name"]
+            public_name = item["official_source_ref"] if official else item["name"]
             return Response(
                 {
                     "access_token": "rvs_sltEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEA",
@@ -498,16 +499,23 @@ def test_cross_account_selection_stays_in_current_context_and_uses_owner_credent
     assert cfg_mod.current_customer_id("alice") == "personal-alice"
 
 
-@pytest.mark.parametrize("native_path", ["/in/ar_zzzzzzzz", "/engineering/packages", 7])
-def test_registry_context_requires_the_selected_repositorys_native_path(
-    monkeypatch, tmp_path, native_path
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"target": {**EXPECTED_TARGET, "repository_ref": "ar_zzzzzzzz"}},
+        {"native_path": "/in/../ar_zzzzzzzz"},
+        {"native_path": 7},
+    ],
+)
+def test_registry_context_requires_a_credential_for_the_selected_repository(
+    monkeypatch, tmp_path, change
 ):
     from rvs.artifacts.targets import registry_context
 
     class _OtherRoute(CrossAccountApi):
         def post(self, path, json=None):
             response = super().post(path, json)
-            return Response({**response.json(), "native_path": native_path})
+            return Response({**response.json(), **change})
 
     isolate(monkeypatch, tmp_path)
     fake = _OtherRoute()
@@ -666,3 +674,20 @@ def test_unselected_format_explains_automation_token_scope(monkeypatch):
         with pytest.raises(ValueError) as raised:
             discovery(target_type).select_format("pypi", applicable)
         assert "RVS_TOKEN" not in str(raised.value)
+
+
+def test_registry_context_routes_an_opaque_native_path_as_is(monkeypatch, tmp_path):
+    from rvs.artifacts.targets import registry_context
+
+    class _OpaqueRoute(CrossAccountApi):
+        def post(self, path, json=None):
+            response = super().post(path, json)
+            return Response({**response.json(), "native_path": "/r/v2/ar_abcdefgh/"})
+
+    isolate(monkeypatch, tmp_path)
+    fake = _OpaqueRoute()
+    monkeypatch.setattr(ApiClient, "from_profile", staticmethod(lambda profile=None: fake))
+
+    context = registry_context(kind="pypi", target="in/ar_abcdefgh", profile="alice")
+
+    assert context.native_path == "r/v2/ar_abcdefgh"

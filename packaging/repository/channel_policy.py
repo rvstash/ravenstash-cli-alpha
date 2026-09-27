@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import datetime as dt
 import json
 import re
 import subprocess
@@ -17,6 +18,48 @@ CHANNEL_PATTERN = re.compile(rf"^v({NUMBER})$")
 VERSION_PATTERN = re.compile(
     r"^([0-9]+)\.([0-9]+)\.([0-9]+)(?:rc[1-9][0-9]*|[~+.-][A-Za-z0-9.-]+)?$"
 )
+# Signed freshness fields. The manifest is re-signed with the APT metadata by the
+# daily refresh, so it shares the APT Valid-Until period.
+TIMESTAMP_FIELDS = ("generated_at", "expires")
+MANIFEST_VALIDITY = dt.timedelta(days=7)
+MAX_MANIFEST_VALIDITY = dt.timedelta(days=8)
+CLOCK_SKEW = dt.timedelta(minutes=5)
+
+
+def utc_now() -> dt.datetime:
+    # Repository tooling runs in the Ubuntu 20.04 signing image (Python 3.8).
+    return dt.datetime.now(dt.timezone.utc)  # noqa: UP017
+
+
+def format_timestamp(value: dt.datetime) -> str:
+    return value.astimezone(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")  # noqa: UP017
+
+
+def parse_timestamp(value: object) -> dt.datetime:
+    if not isinstance(value, str) or not value.endswith("Z"):
+        raise ValueError(f"invalid manifest timestamp: {value!r}")
+    parsed = dt.datetime.strptime(value, "%Y-%m-%dT%H:%M:%SZ")
+    return parsed.replace(tzinfo=dt.timezone.utc)  # noqa: UP017
+
+
+def policy(payload: dict[str, Any]) -> dict[str, Any]:
+    """Return a manifest without its signed freshness fields."""
+    return {key: value for key, value in payload.items() if key not in TIMESTAMP_FIELDS}
+
+
+def validate_freshness(payload: dict[str, Any], now: dt.datetime | None = None) -> None:
+    """Require current, bounded freshness fields; legacy manifests carry none."""
+    if not any(key in payload for key in TIMESTAMP_FIELDS):
+        return
+    current = now or utc_now()
+    generated_at = parse_timestamp(payload.get("generated_at"))
+    expires = parse_timestamp(payload.get("expires"))
+    if generated_at > current + CLOCK_SKEW:
+        raise ValueError("manifest generated_at is in the future")
+    if not generated_at < expires <= generated_at + MAX_MANIFEST_VALIDITY:
+        raise ValueError("manifest validity period exceeds policy")
+    if expires <= current:
+        raise ValueError("manifest has expired")
 
 
 def channel_for_version(version: str) -> str:
@@ -117,7 +160,9 @@ def minor_targets(packages_file: Path, channel: str) -> dict[str, str]:
     }
 
 
-def manifest(repository: Path, recommended: str) -> dict[str, Any]:
+def manifest(
+    repository: Path, recommended: str, *, now: dt.datetime | None = None
+) -> dict[str, Any]:
     recommended = normalize_channel(recommended)
     channels: dict[str, dict[str, Any]] = {}
     for distribution in sorted((repository / "dists").iterdir()):
@@ -135,7 +180,14 @@ def manifest(repository: Path, recommended: str) -> dict[str, Any]:
         }
     if recommended not in channels:
         raise ValueError(f"recommended channel {recommended} is not published")
-    return {"channels": channels, "recommended": recommended, "schema": 1}
+    generated_at = (now or utc_now()).replace(microsecond=0)
+    return {
+        "channels": channels,
+        "expires": format_timestamp(generated_at + MANIFEST_VALIDITY),
+        "generated_at": format_timestamp(generated_at),
+        "recommended": recommended,
+        "schema": 1,
+    }
 
 
 def existing_recommended(repository: Path, fallback: str) -> str:
@@ -165,6 +217,12 @@ def main() -> None:
     recommended_parser = subparsers.add_parser("existing-recommended")
     recommended_parser.add_argument("repository", type=Path)
     recommended_parser.add_argument("fallback")
+    same_policy_parser = subparsers.add_parser(
+        "same-policy",
+        help="exit 0 when two manifests differ at most in their freshness fields",
+    )
+    same_policy_parser.add_argument("left", type=Path)
+    same_policy_parser.add_argument("right", type=Path)
     arguments = parser.parse_args()
 
     try:
@@ -190,6 +248,11 @@ def main() -> None:
                     sort_keys=True,
                 )
             )
+        elif arguments.command == "same-policy":
+            left = json.loads(arguments.left.read_text(encoding="utf-8"))
+            right = json.loads(arguments.right.read_text(encoding="utf-8"))
+            if policy(left) != policy(right):
+                raise SystemExit(1)
         else:
             print(existing_recommended(arguments.repository, arguments.fallback))
     except (KeyError, OSError, TypeError, ValueError) as exc:

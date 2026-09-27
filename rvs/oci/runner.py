@@ -19,6 +19,7 @@ import typer
 from .. import config as cfg_mod
 from .. import output
 from ..account.commands import resolve_account
+from ..artifacts.routing import native_path as opaque_native_path
 from ..artifacts.targets import expected_repository_target, resolve_target
 from ..auth.token_format import STATIC_NATIVE_DURATION_SECONDS, validate_public_token
 from ..client import ApiClient, ApiError
@@ -152,33 +153,30 @@ def resolve_route(
             credential_body,
         ).json()
         token = validate_public_token(credential["access_token"], native=True)
-        native_path = credential["native_path"]
+        # The native path is opaque; the minted target proves the repository.
+        response_root = opaque_native_path(credential["native_path"])
         minted_target = credential["target"]
+        if not isinstance(minted_target, dict):
+            raise TypeError("target is not an object")
     except ApiError as exc:
         output.fatal(str(exc))
     except (KeyError, TypeError, ValueError) as exc:
         output.fatal(f"Invalid OCI capability response: {exc}")
-    if not isinstance(native_path, str) or _native_route_parts(native_path) is None:
-        output.fatal("Invalid OCI capability response: native_path is not canonical.")
+    if minted_target.get("repository_ref") != target.repository_unique_ref:
+        output.fatal("Invalid OCI capability response: the credential is for another repository.")
     # Minting may refresh the session and its registry discovery; read the profile
     # afterwards so this invocation uses the current OCI host.
     registry_url, registry_host = _registry_url(cfg_mod.load().active_profile(profile_name))
-    response_root = native_path.strip("/")
     friendly_root = _friendly_oci_root(
         minted_target.get("namespace_name"),
         minted_target.get("repository_name"),
     )
     stable_root = _stable_oci_root(target.repository_unique_ref)
-    if (
-        minted_target.get("repository_ref") != target.repository_unique_ref
-        or response_root != stable_root
-    ):
-        output.fatal("Invalid OCI capability response: native_path is not canonical.")
     return OciRoute(
         kind=kind,
         registry_url=registry_url,
         registry_host=registry_host,
-        native_root=f"{registry_host}{native_path}",
+        native_root=f"{registry_host}/{response_root}",
         accepted_roots=frozenset((response_root, friendly_root, stable_root)),
         package_token=token,
         account=account,
@@ -186,7 +184,15 @@ def resolve_route(
     )
 
 
-def _ravenstash_routes(argv: list[str], registry_host: str) -> set[str]:
+def _ravenstash_routes(
+    argv: list[str], registry_host: str, accepted_roots: frozenset[str] = frozenset()
+) -> set[str]:
+    """Return the Ravenstash repository roots referenced on the OCI host.
+
+    A reference below one of *accepted_roots* reports that root, whatever its
+    depth; any other reference reports its first two path components when they
+    form a repository root.
+    """
     marker = f"{registry_host}/"
     routes: set[str] = set()
     for argument in argv:
@@ -194,15 +200,25 @@ def _ravenstash_routes(argv: list[str], registry_host: str) -> set[str]:
         while (index := argument.find(marker, start)) >= 0:
             suffix = argument[index + len(marker) :]
             candidate = re.split(r"[\s,;\]\[(){}]", suffix, maxsplit=1)[0]
+            accepted = next(
+                (
+                    root
+                    for root in accepted_roots
+                    if candidate == root or candidate.startswith(f"{root}/")
+                ),
+                None,
+            )
             parts = candidate.split("/")
-            if len(parts) >= 2 and _native_route_parts("/".join(parts[:2])) is not None:
+            if accepted is not None:
+                routes.add(accepted)
+            elif len(parts) >= 2 and _native_route_parts("/".join(parts[:2])) is not None:
                 routes.add("/".join(parts[:2]))
             start = index + len(marker)
     return routes
 
 
 def _assert_exact_targets(argv: list[str], route: OciRoute) -> None:
-    observed = _ravenstash_routes(argv, route.registry_host)
+    observed = _ravenstash_routes(argv, route.registry_host, route.accepted_roots)
     if any(value not in route.accepted_roots for value in observed):
         output.fatal(
             "This invocation references another Ravenstash logical repository. "

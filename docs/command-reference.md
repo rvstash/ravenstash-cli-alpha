@@ -19,6 +19,13 @@ Run `rvs COMMAND --help` for every option accepted by an installed version.
 | `rvs profile rename OLD NEW` | Renames a profile. |
 | `rvs profile delete NAME` | Deletes a local profile. |
 
+`rvs auth logout`, `rvs profile delete`, and `rvs profile rename` also end the
+profile's device session on the Ravenstash server. If the server cannot be
+reached, local credentials are still removed and `rvs` warns that the session
+stays valid on the server until it expires. A saved profile keeps the
+Ravenstash API it was created for, and its stored sign-in is only ever sent to
+the API that issued it; to use another API, sign in with a new profile.
+
 When a package tool must connect without an `rvs` wrapper, run `rvs art token mint --target NAMESPACE/REPOSITORY`. The `--access` and
 `--duration` flags default to read and four hours. Select formats explicitly when the target enables more than one.
 
@@ -110,9 +117,9 @@ Versions are listed newest first. When more versions exist than are shown,
 `package show` says so on stderr. With root `--json`, `package show` prints one
 document with the `package` summary, the listed `versions`, and
 `versions_next_cursor`, which is null once every version is listed; `--version`
-prints one document with the version's metadata and `files`, each carrying a
-`digests` object keyed by algorithm (such as `sha256`, `sha512`, `md5`, or
-`blake2b_256`).
+prints one document with the version's metadata, its `file_count`, and every
+one of its `files`, each carrying a `digests` object keyed by algorithm (such as
+`sha256`, `sha512`, `md5`, or `blake2b_256`).
 
 Yanking is a PyPI resolver control. npm deprecation is warning metadata and does
 not prevent installation. Maven has no corresponding lifecycle operation.
@@ -124,6 +131,10 @@ read every page from Ravenstash. Commands that take `--limit` and `--cursor`,
 such as `rvs art oci list` and `rvs art evidence list`, return exactly one page
 and print the cursor for the next page; with root `--json` they return the page
 unchanged with its `next_cursor`.
+
+`rvs art oci manifest list PATH` shows each manifest's newest tags and its total
+tag count. `rvs art oci tag list PATH --digest sha256:DIGEST` lists every tag
+that points at one manifest.
 
 When Ravenstash asks `rvs` to slow down or is briefly unavailable, read commands
 wait for the time the server asks for (up to 30 seconds) and retry a limited

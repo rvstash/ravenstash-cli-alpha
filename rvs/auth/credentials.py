@@ -67,6 +67,26 @@ class NoCredentialStoreError(RuntimeError):
     """No configured credential store can be used without first-time setup."""
 
 
+def credential_origin_error(profile: str) -> str | None:
+    """Explain why *profile*'s stored credential must not be sent, if it must not.
+
+    Device credentials are bound to the DevAPI that issued them. They are never
+    sent to another origin, even when the profile's API URL was changed.
+    """
+    from .. import config as cfg_mod
+
+    p = cfg_mod.load().profiles.get(profile)
+    if p is None or p.credential_origin_matches():
+        return None
+    issuer = cfg_mod.api_origin(p.credential_origin_url)
+    target = cfg_mod.api_origin(p.api_url)
+    return (
+        f"The stored login for profile '{profile}' was issued by {issuer}, not {target}; "
+        f"rvs will not send it to {target}. Run `rvs auth login --profile {profile}` "
+        f"to log in to {target}."
+    )
+
+
 def is_refreshable_credential_type(credential_type: str | None) -> bool:
     """Return whether *credential_type* can use device refresh tokens."""
     return credential_type == EXPIRING_CREDENTIAL_TYPE
@@ -390,6 +410,29 @@ def has_active_expiring_session(profile: str) -> bool:
     return get_refresh_token(profile) is not None
 
 
+def revoke_stored_refresh_token(profile: str) -> bool | None:
+    """Best-effort revocation of *profile*'s stored refresh token on its issuer.
+
+    Returns ``None`` when there is nothing to revoke, otherwise whether the
+    server accepted the revocation. Local credentials are left untouched.
+    """
+    from .. import config as cfg_mod
+
+    try:
+        p = cfg_mod.load().profiles.get(profile)
+        if p is None or not is_refreshable_credential_type(p.credential_type):
+            return None
+        if _stored_refresh_token_expired(profile):
+            return None
+        refresh_token = get_refresh_token(profile)
+    except OSError, RuntimeError, ValueError:
+        logger.info("Cannot read the stored refresh token for profile %s", profile)
+        return False
+    if not refresh_token:
+        return None
+    return revoke_device_refresh_token(p.credential_origin_url, refresh_token)
+
+
 def revoke_device_refresh_token(api_url: str, refresh_token: str) -> bool:
     """Best-effort server-side revocation for a stored device refresh token."""
     try:
@@ -429,6 +472,11 @@ def refresh_expiring_credential(
         p = cfg.profiles.get(profile)
         if not p or not is_refreshable_credential_type(p.credential_type):
             return None
+        if not p.credential_origin_matches():
+            # Never send a refresh token to an API other than the one that issued it.
+            logger.info("Refusing to refresh profile %s against another API origin", profile)
+            return None
+        issuer_api_url = p.credential_origin_url
 
         refresh_token = _store_get(store, _refresh_profile(profile))
         if not refresh_token:
@@ -463,13 +511,13 @@ def refresh_expiring_credential(
             if http_client is None:
                 with httpx.Client(timeout=15.0) as client:
                     response = client.post(
-                        devapi_url(p.api_url, platform_path("auth/device/refresh")),
+                        devapi_url(issuer_api_url, platform_path("auth/device/refresh")),
                         headers={"User-Agent": _rvs_user_agent()},
                         json=request,
                     )
             else:
                 response = http_client.post(
-                    devapi_url(p.api_url, platform_path("auth/device/refresh")),
+                    devapi_url(issuer_api_url, platform_path("auth/device/refresh")),
                     headers={"User-Agent": _rvs_user_agent()},
                     json=request,
                     timeout=15.0,
@@ -508,10 +556,10 @@ def refresh_expiring_credential(
             refresh_expires_at = datetime.now(UTC) + timedelta(seconds=refresh_expires_in)
             cfg_mod.set_profile_metadata(
                 profile,
-                api_url=p.api_url,
                 customer_id=payload.get("account_ref"),
                 credential_store=store,
                 credential_type=EXPIRING_CREDENTIAL_TYPE,
+                credential_api_url=issuer_api_url,
                 expires_at=expires_at.isoformat(),
                 refresh_expires_at=refresh_expires_at.isoformat(),
             )
@@ -520,11 +568,11 @@ def refresh_expiring_credential(
             # A rotated pair is useful only when both secrets and its metadata are
             # durable. Revoke and remove a partial pair rather than leaving an
             # access token whose refresh state is ambiguous.
-            revoke_device_refresh_token(p.api_url, new_refresh_token)
+            revoke_device_refresh_token(issuer_api_url, new_refresh_token)
             delete_token_from_store(profile, store)
             cfg_mod.clear_profile_credential_metadata(profile)
             return None
-        refreshed_api_url = p.api_url
+        refreshed_api_url = issuer_api_url
 
     # Product discovery is outside the refresh lock and never fails the refresh.
     from ..artifacts.meta import sync_native_registries

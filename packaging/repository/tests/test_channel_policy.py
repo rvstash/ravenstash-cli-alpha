@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import datetime as dt
 import sys
 import tempfile
 import unittest
@@ -14,8 +15,13 @@ from channel_policy import (
     filter_packages,
     manifest,
     normalize_channel,
+    policy,
+    validate_freshness,
     version_matches_channel,
 )
+
+
+UTC = dt.timezone.utc  # noqa: UP017
 
 
 class ChannelPolicyTests(unittest.TestCase):
@@ -73,6 +79,37 @@ class ChannelPolicyTests(unittest.TestCase):
             payload["channels"]["v0"]["minor_targets"],
             {"0.14": "0.14.6", "0.15": "0.15.1"},
         )
+
+    def test_manifest_signs_a_bounded_validity_period(self) -> None:
+        now = dt.datetime(2026, 9, 27, 5, 41, 12, 345, tzinfo=UTC)
+        with tempfile.TemporaryDirectory() as directory:
+            repository = Path(directory)
+            packages = repository / "dists/v0/main/binary-amd64/Packages"
+            packages.parent.mkdir(parents=True)
+            packages.write_text("Package: rvs\nVersion: 0.14.3\n", encoding="utf-8")
+
+            payload = manifest(repository, "v0", now=now)
+            later = manifest(repository, "v0", now=now + dt.timedelta(days=1))
+
+        self.assertEqual(payload["generated_at"], "2026-09-27T05:41:12Z")
+        self.assertEqual(payload["expires"], "2026-10-04T05:41:12Z")
+        self.assertEqual(policy(payload), policy(later))
+        self.assertNotIn("generated_at", policy(payload))
+        validate_freshness(payload, now=now + dt.timedelta(days=6))
+        with self.assertRaisesRegex(ValueError, "expired"):
+            validate_freshness(payload, now=now + dt.timedelta(days=7))
+
+    def test_freshness_accepts_legacy_manifest_and_rejects_partial_or_long_periods(self) -> None:
+        now = dt.datetime(2026, 9, 27, tzinfo=UTC)
+        validate_freshness({"schema": 1}, now=now)
+        for fields in (
+            {"generated_at": "2026-09-27T00:00:00Z"},
+            {"generated_at": "2026-09-27T00:00:00Z", "expires": "2026-10-27T00:00:00Z"},
+            {"generated_at": "2026-09-28T00:00:00Z", "expires": "2026-09-30T00:00:00Z"},
+            {"generated_at": "2026-09-27T00:00:00+00:00", "expires": "2026-09-30T00:00:00Z"},
+        ):
+            with self.subTest(fields=fields), self.assertRaises(ValueError):
+                validate_freshness(fields, now=now)
 
 
 if __name__ == "__main__":

@@ -6,6 +6,45 @@ All notable user-facing changes to `rvs` are recorded here. The format follows
 
 ## [Unreleased]
 
+### Security
+
+- `rvs` no longer reads a `.rvs.env` file from the current directory or its
+  parents, so a checked-out project cannot redirect `rvs`. Besides
+  `~/.rvs/profiles.env`, an env file is read only when `RVS_ENV_FILE` names it,
+  and that file must belong to you and must not be writable by group or others.
+- Endpoint settings from the environment or an env file only apply while a
+  profile is being created. They never change the Ravenstash API or
+  package-registry addresses of a saved profile, and `rvs` warns when one is
+  ignored. Automation with `RVS_TOKEN` and no saved profile is unchanged.
+- A stored sign-in is only sent to the Ravenstash API that issued it. If a
+  profile's API no longer matches, commands stop and ask you to sign in again
+  for that API.
+- `rvs auth logout`, `rvs profile delete`, and `rvs profile rename` end the
+  device session on the Ravenstash server as well as removing local
+  credentials, and warn when the server could not be reached.
+- Plain HTTP is accepted only for `localhost` and literal loopback addresses
+  such as `127.0.0.1` and `::1`; other names, including `*.localhost`, need
+  HTTPS.
+- Evidence upload errors no longer print the temporary upload address.
+- Text from Ravenstash is always shown literally; it can no longer change
+  terminal formatting or inject control characters.
+- `rvs mvn` gives the Ravenstash repository a random ID for each run, so a
+  project file cannot claim the ID that receives the temporary credential.
+- `rvs update` refuses a release-channel manifest that has expired or is older
+  than one it has already accepted.
+
+### Changed
+
+- `rvs` follows the updated Ravenstash `v0` developer API for OCI tags,
+  package-version files, native registry discovery, private mirrors, upstream
+  sources, and package evidence. Earlier `rvs` releases cannot use these
+  routes once Ravenstash adopts the update.
+- `rvs art oci manifest list` shows each manifest's newest tags and total tag
+  count. `rvs art oci tag list PATH --digest sha256:DIGEST` lists every tag of
+  one manifest.
+- `rvs art package show --version` reads every page of the version's files. With
+  `--json`, the document also carries the version's `file_count`.
+
 ## [0.14.11] - 2026-09-26
 
 ### Removed

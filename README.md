@@ -192,12 +192,15 @@ rvs art oci list --content-type helm_chart --target platform/packages
 rvs art oci manifest list charts/api
 rvs art oci manifest show charts/api@sha256:YOUR_DIGEST
 rvs art oci tag list charts/api
+rvs art oci tag list charts/api --digest sha256:YOUR_DIGEST
 rvs art oci tag create charts/api@sha256:YOUR_DIGEST stable
 ```
 
 These lists return one page: they expose `--limit` and `--cursor`, and root
-`--json` returns the page with its `next_cursor`. `tag create` points a tag at a
-manifest and moves the tag when it already exists. Other listings, such as
+`--json` returns the page with its `next_cursor`. Manifest listings show each
+manifest's newest tags and its tag count; `tag list --digest` lists every tag of
+one manifest. `tag create` points a new tag at a manifest and never moves a tag
+that already points at another manifest. Other listings, such as
 `rvs art repo list` and `rvs art package list`, read every page.
 Use `rvs docker`, `rvs helm`, or `rvs oras` to transfer native content. ORAS needs
 no Ravenstash format flag. Wrapper credentials and logout changes stay in temporary
@@ -212,7 +215,7 @@ rvs art evidence stage dist/demo-1.0.0-py3-none-any.whl \
   --evidence cyclonedx=bom.cdx.json --analysis-context observed
 
 rvs art evidence status pe_EXAMPLE --wait
-rvs art evidence sbom pa_EXAMPLE --analysis-context observed -o demo.cdx.json
+rvs art evidence sbom af_EXAMPLE --analysis-context observed -o demo.cdx.json
 ```
 
 Staging does not publish the package; use the normal native client afterward.
