@@ -6,6 +6,8 @@ All notable user-facing changes to `rvs` are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.14.13] - 2026-09-27
+
 ### Added
 
 - `rvs status` shows who is signed in, the profile, the acting account, the
@@ -40,6 +42,8 @@ All notable user-facing changes to `rvs` are recorded here. The format follows
 
 - `rvs context current`, `rvs account current`, and `rvs art current`. Use
   `rvs status` or `rvs art status`.
+
+Detailed release notes: [RVS 0.14.13](docs/releases/0.14.13.md).
 
 ## [0.14.12] - 2026-09-27
 
@@ -284,7 +288,8 @@ Detailed release notes: [RVS 0.14.4](docs/releases/0.14.4.md).
 
 Detailed release notes: [RVS 0.14.3](docs/releases/0.14.3.md).
 
-[Unreleased]: https://github.com/rvstash/ravenstash-cli-alpha/compare/v0.14.12...HEAD
+[Unreleased]: https://github.com/rvstash/ravenstash-cli-alpha/compare/v0.14.13...HEAD
+[0.14.13]: https://github.com/rvstash/ravenstash-cli-alpha/compare/v0.14.12...v0.14.13
 [0.14.12]: https://github.com/rvstash/ravenstash-cli-alpha/compare/v0.14.11...v0.14.12
 [0.14.11]: https://github.com/rvstash/ravenstash-cli-alpha/compare/v0.14.10...v0.14.11
 [0.14.10]: https://github.com/rvstash/ravenstash-cli-alpha/compare/v0.14.9...v0.14.10
