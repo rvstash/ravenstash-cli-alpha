@@ -35,7 +35,7 @@ def customer(
         "ref": customer_id,
         "handle": label,
         "type": account_type,
-        "label": label,
+        "display_name": label,
         "is_admin": False,
         "organization_role": "member" if account_type == "organization" else None,
         "authority_revision": 4,

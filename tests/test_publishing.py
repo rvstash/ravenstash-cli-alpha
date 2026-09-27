@@ -66,7 +66,7 @@ def test_preview_renders_grouped_files_and_defaults_to_no(tmp_path):
         output.set_json(False)
         confirm_publish(
             "platform/backend",
-            config.AccountContext("c", "ref", "organization", "YYYY"),
+            config.AccountContext("c", "ref", "organization", customer_handle="YYYY"),
             pypi_artifacts([file]),
         )
 

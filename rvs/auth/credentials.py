@@ -456,6 +456,20 @@ def revoke_device_refresh_token(api_url: str, refresh_token: str) -> bool:
     return response.is_success
 
 
+def discard_device_refresh_token(api_url: str, refresh_token: str) -> None:
+    """Revoke a refresh token while cleaning up after a failed credential write.
+
+    The cleanup must finish even when this rvs release is no longer supported,
+    so a retired revocation route is only logged here.
+    """
+    from ..client import ApiRouteRetiredError
+
+    try:
+        revoke_device_refresh_token(api_url, refresh_token)
+    except ApiRouteRetiredError:
+        logger.info("Device refresh token revocation route is retired")
+
+
 def refresh_expiring_credential(
     profile: str,
     *,
@@ -577,13 +591,14 @@ def refresh_expiring_credential(
             # A rotated pair is useful only when both secrets and its metadata are
             # durable. Revoke and remove a partial pair rather than leaving an
             # access token whose refresh state is ambiguous.
-            revoke_device_refresh_token(issuer_api_url, new_refresh_token)
+            discard_device_refresh_token(issuer_api_url, new_refresh_token)
             delete_token_from_store(profile, store)
             cfg_mod.clear_profile_credential_metadata(profile)
             return None
         refreshed_api_url = issuer_api_url
 
-    # Product discovery is outside the refresh lock and never fails the refresh.
+    # Product discovery is outside the refresh lock and never fails the refresh,
+    # unless the API reports that this rvs release is no longer supported.
     from ..artifacts.meta import sync_native_registries
 
     sync_native_registries(profile, refreshed_api_url, http_client=http_client)

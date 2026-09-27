@@ -112,6 +112,7 @@ account_ref = "ac_23456789"
         def json() -> dict[str, Any]:
             return {
                 "principal_type": "user",
+                "user": {"handle": "developer", "display_name": None},
                 "email": "developer@example.test",
                 "personal_account": {
                     "ref": "ac_23456789",

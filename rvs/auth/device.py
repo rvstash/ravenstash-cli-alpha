@@ -17,7 +17,7 @@ from .. import auth as auth_mod
 from .. import config as cfg_mod
 from .. import output
 from ..artifacts.meta import sync_native_registries
-from ..client import check_route_lifecycle
+from ..client import ApiRouteRetiredError, check_route_lifecycle
 from ..devapi import api_url as devapi_url
 from ..devapi import (
     platform_path,
@@ -280,19 +280,28 @@ def perform_device_login(
                             credential_store=credential_store,
                         )
                     except RuntimeError as exc:
-                        auth_mod.revoke_device_refresh_token(
+                        auth_mod.discard_device_refresh_token(
                             resolved_api_url,
                             payload["refresh_token"],
                         )
                         output.fatal(f"Login approved, but credentials could not be stored: {exc}")
-                    if previous_refresh_token:
-                        auth_mod.revoke_device_refresh_token(
-                            previous_refresh_api_url,
-                            previous_refresh_token,
+                    try:
+                        if previous_refresh_token:
+                            auth_mod.revoke_device_refresh_token(
+                                previous_refresh_api_url,
+                                previous_refresh_token,
+                            )
+                        discovery = sync_native_registries(
+                            profile, resolved_api_url, http_client=client
                         )
-                    discovery = sync_native_registries(
-                        profile, resolved_api_url, http_client=client
-                    )
+                    except ApiRouteRetiredError as exc:
+                        # The new credential is stored; report that before the
+                        # update message rather than calling the login failed.
+                        poll_display.stop()
+                        output.success(
+                            f"Authenticated profile '{profile}' with an expiring credential."
+                        )
+                        output.fatal(str(exc))
                     poll_display.stop()
                     if discovery == "failed":
                         output.warn(

@@ -247,7 +247,6 @@ class AccountContext:
     customer_unique_ref: str
     # Account types are an open value set; personal and organization are known.
     account_type: str
-    account_label: str
     organization_role: str | None = None
     authority_revision: int | None = None
     selected_target: ArtifactTarget | None = None
@@ -757,16 +756,14 @@ def _account_contexts_from_mapping(value: object) -> dict[str, AccountContext]:
         if not isinstance(account_ref, str) or not isinstance(raw, dict):
             continue
         account_type = raw.get("account_type")
-        label = raw.get("account_label")
         if not isinstance(account_type, str) or not account_type:
             continue
-        if not account_ref or not isinstance(label, str):
+        if not account_ref:
             continue
         result[account_ref] = AccountContext(
             customer_id=account_ref,
             customer_unique_ref=account_ref,
             account_type=account_type,
-            account_label=label,
             organization_role=raw.get("organization_role"),
             authority_revision=raw.get("authority_revision"),
             selected_target=_artifact_target_from_mapping(raw.get("selected_target")),
@@ -793,7 +790,6 @@ def _account_context_mapping(account: AccountContext) -> dict:
         key: value
         for key, value in {
             "account_type": account.account_type,
-            "account_label": account.account_label,
             "account_handle": account.customer_handle,
             "organization_role": account.organization_role,
             "authority_revision": account.authority_revision,
@@ -1129,7 +1125,7 @@ def cache_account(
     """Cache safe account metadata, optionally making the account active.
 
     *customer* is a DevAPI ``Account`` or embedded ``AccountSummary``. A summary
-    carries only ``ref``, ``handle``, and ``type``; the label, role, and authority
+    carries only ``ref``, ``handle``, and ``type``; the role and authority
     revision already cached from the full account list are then retained.
     """
     cfg = load()
@@ -1137,17 +1133,10 @@ def cache_account(
     customer_id = str(customer["ref"])
     existing = profile_config.accounts.get(customer_id)
     handle = customer.get("handle")
-    if "label" in customer:
-        label = str(customer["label"])
-    elif existing is not None:
-        label = existing.account_label
-    else:
-        label = str(handle or customer_id)
     account = AccountContext(
         customer_id=customer_id,
         customer_unique_ref=customer_id,
         account_type=str(customer["type"]),
-        account_label=label,
         customer_handle=handle
         if handle is not None
         else (existing.customer_handle if existing is not None else None),

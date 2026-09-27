@@ -105,7 +105,7 @@ class _FakeApiClient:
 _ACCOUNT_SUMMARY = {"ref": "ac_23456789", "handle": "test-account", "type": "organization"}
 _ACCOUNT = {
     **_ACCOUNT_SUMMARY,
-    "label": "Test account",
+    "display_name": "Test account",
     "is_admin": True,
     "organization_role": "owner",
     "authority_revision": 3,
@@ -1422,7 +1422,6 @@ active_account_ref = "ac_23456789"
 
 [profiles.default.accounts.ac_23456789]
 account_type = "personal"
-account_label = "personal"
 organization_role = "owner"
 
 [profiles.default.accounts.ac_23456789.selected_target]

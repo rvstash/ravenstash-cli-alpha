@@ -124,7 +124,6 @@ def ensure_active_account(
             customer = {
                 "ref": effective_id,
                 "type": "personal",
-                "label": "personal",
                 "organization_role": "owner",
                 "authority_revision": None,
             }
@@ -132,7 +131,6 @@ def ensure_active_account(
             customer = {
                 "ref": effective_id,
                 "type": "organization",
-                "label": effective_id,
                 "organization_role": None,
                 "authority_revision": None,
             }
@@ -181,10 +179,6 @@ def identity_person(identity: dict) -> tuple[str | None, str | None]:
     if isinstance(user, dict) and isinstance(user.get("handle"), str):
         name = user.get("display_name")
         return typed_handle("personal", user["handle"]), name if isinstance(name, str) else None
-    personal = identity.get("personal_account")
-    if isinstance(personal, dict):
-        # An older API names only the personal account of a signed-in person.
-        return payload_display_name(personal), None
     return None, None
 
 
@@ -213,7 +207,7 @@ def identity_display(identity: object, *, with_token_account: bool = False) -> s
 def display_name(account: cfg_mod.AccountContext) -> str:
     return typed_handle(
         account.account_type,
-        account.customer_handle or account.account_label or account.customer_unique_ref,
+        account.customer_handle or account.customer_unique_ref,
     )
 
 

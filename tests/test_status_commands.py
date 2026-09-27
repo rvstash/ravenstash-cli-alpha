@@ -249,13 +249,9 @@ def test_status_names_the_owner_of_an_organization_pat(monkeypatch, tmp_path: Pa
     assert "RVS_ACCOUNT_REF=acme" in result.stderr
 
 
-def test_status_falls_back_to_older_identity_without_a_person_name(
-    monkeypatch, tmp_path: Path
-) -> None:
+def test_status_json_never_reports_the_sign_in_email(monkeypatch, tmp_path: Path) -> None:
     _isolate_config(monkeypatch, tmp_path)
-    identity = _identity()
-    del identity["user"]
-    _serve(monkeypatch, identity, [AVERY])
+    _serve(monkeypatch, _identity(display_name=None), [AVERY])
 
     result = runner.invoke(app, ["status"])
     as_json = runner.invoke(app, ["--json", "status"])
@@ -265,7 +261,7 @@ def test_status_falls_back_to_older_identity_without_a_person_name(
     signed_in = json.loads(as_json.output)["values"]["signed_in_as"]
     assert signed_in["user"] == "user:avery"
     assert signed_in["display_name"] is None
-    assert "developer@example.test" not in as_json.output
+    assert "developer@example.test" not in result.output + as_json.output
 
 
 def test_art_status_leaves_a_command_chosen_format_empty(monkeypatch, tmp_path: Path) -> None:

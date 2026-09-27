@@ -85,7 +85,7 @@ class _FakeDevApi:
                             "ref": "ac_23456789",
                             "handle": "staging",
                             "type": "personal",
-                            "label": "personal",
+                            "display_name": None,
                             "is_admin": True,
                             "organization_role": None,
                             "authority_revision": 1,
@@ -180,7 +180,6 @@ active_account_ref = "ac_23456789"
 
 [profiles.staging.accounts.ac_23456789]
 account_type = "personal"
-account_label = "personal"
 account_handle = "staging"
 
 [profiles.staging.accounts.ac_23456789.selected_target]

@@ -501,7 +501,7 @@ def test_cache_account_summary_keeps_fields_known_from_the_full_account(
             "ref": "ac_23456789",
             "handle": "acme",
             "type": "organization",
-            "label": "Acme Inc.",
+            "display_name": "Acme Inc.",
             "is_admin": True,
             "organization_role": "admin",
             "authority_revision": 4,
@@ -514,14 +514,14 @@ def test_cache_account_summary_keeps_fields_known_from_the_full_account(
     )
 
     assert summary.customer_handle == "acme-renamed"
-    assert summary.account_label == "Acme Inc."
     assert summary.organization_role == "admin"
     assert summary.authority_revision == 4
     stored = cfg_mod.load().profiles["default"].accounts["ac_23456789"]
-    assert stored.account_label == "Acme Inc."
+    assert stored.customer_handle == "acme-renamed"
+    assert stored.organization_role == "admin"
 
 
-def test_cache_account_summary_without_history_uses_the_handle_as_label(
+def test_cache_account_summary_without_history_keeps_only_the_summary(
     monkeypatch, tmp_path: Path
 ) -> None:
     _point_config(monkeypatch, tmp_path)
@@ -532,6 +532,6 @@ def test_cache_account_summary_without_history_uses_the_handle_as_label(
         customer={"ref": "ac_23456789", "handle": "dev", "type": "personal"},
     )
 
-    assert account.account_label == "dev"
+    assert account.customer_handle == "dev"
     assert account.organization_role is None
     assert account.authority_revision is None
