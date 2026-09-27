@@ -1,7 +1,5 @@
 """Publication previews and confirmation for native-tool launchers."""
 
-from __future__ import annotations
-
 import glob
 import json
 import re

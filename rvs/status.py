@@ -1,7 +1,5 @@
 """Read-only summary of the signed-in user and the current CLI selections."""
 
-from __future__ import annotations
-
 from dataclasses import dataclass
 
 import typer

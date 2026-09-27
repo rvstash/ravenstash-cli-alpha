@@ -1,7 +1,5 @@
 """Shared helpers for downloading and extracting runtime archives."""
 
-from __future__ import annotations
-
 import hashlib
 import os
 import platform

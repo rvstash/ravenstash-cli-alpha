@@ -1,7 +1,5 @@
 """Tool-specific native setup recipes; rendering has no side effects."""
 
-from __future__ import annotations
-
 import shlex
 from typing import TYPE_CHECKING
 from urllib.parse import urlsplit

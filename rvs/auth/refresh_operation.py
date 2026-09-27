@@ -1,7 +1,5 @@
 """Persist a retry correlation ID, never a refresh secret, under the profile lock."""
 
-from __future__ import annotations
-
 import hashlib
 import json
 import os

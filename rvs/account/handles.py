@@ -1,7 +1,5 @@
 """Canonical public names for user and organization account resources."""
 
-from __future__ import annotations
-
 
 def typed_handle(account_type: object, handle: object) -> str:
     """Return the unambiguous public name for an account resource."""

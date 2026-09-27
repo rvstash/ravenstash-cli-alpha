@@ -48,8 +48,6 @@ native-registry endpoints; stored device credentials are bound to the DevAPI
 URL that issued them (``credential_api_url``).
 """
 
-from __future__ import annotations
-
 import hashlib
 import os
 import re

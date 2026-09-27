@@ -5,8 +5,6 @@ Downloads from: https://nodejs.org/dist/v{version}/node-v{version}-linux-{arch}.
 Installs to: ~/.rvs/runtimes/node/<full_version>/
 """
 
-from __future__ import annotations
-
 import os
 import shutil
 import subprocess

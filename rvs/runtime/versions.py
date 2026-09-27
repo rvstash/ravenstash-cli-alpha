@@ -1,7 +1,5 @@
 """Version ordering helpers for managed runtimes."""
 
-from __future__ import annotations
-
 import re
 
 

@@ -1,7 +1,5 @@
 """OCI graph management through the typed developer API."""
 
-from __future__ import annotations
-
 import contextlib
 import json
 import re

@@ -1,7 +1,5 @@
 """Passphrase-encrypted local credential vault with a session-memory agent."""
 
-from __future__ import annotations
-
 import base64
 import getpass
 import hashlib

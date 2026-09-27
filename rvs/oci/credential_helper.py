@@ -1,7 +1,5 @@
 """Ephemeral, read-only Docker credential-helper protocol for Ravenstash OCI."""
 
-from __future__ import annotations
-
 import json
 import os
 import sys

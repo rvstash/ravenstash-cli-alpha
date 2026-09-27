@@ -1,7 +1,5 @@
 """Read-only discovery shared by endpoint, reference, token and setup commands."""
 
-from __future__ import annotations
-
 from dataclasses import dataclass
 from typing import cast
 

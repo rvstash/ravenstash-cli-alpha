@@ -1,7 +1,5 @@
 """Authentication and credential storage for the Ravenstash CLI."""
 
-from __future__ import annotations
-
 from .credentials import (
     EXPIRING_CREDENTIAL_TYPE,
     NoCredentialStoreError,

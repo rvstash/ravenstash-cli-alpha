@@ -1,7 +1,5 @@
 """Credential-free native addresses, OCI references and setup templates."""
 
-from __future__ import annotations
-
 import contextlib
 import json
 import sys

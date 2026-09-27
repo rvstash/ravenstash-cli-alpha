@@ -1,7 +1,5 @@
 """Exact-target Docker, Helm, and ORAS launchers over one OCI endpoint."""
 
-from __future__ import annotations
-
 import json
 import os
 import re

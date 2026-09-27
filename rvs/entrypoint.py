@@ -1,7 +1,5 @@
 """Lightweight process entry point for the CLI and credential helper."""
 
-from __future__ import annotations
-
 import sys
 from pathlib import Path
 

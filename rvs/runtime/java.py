@@ -8,8 +8,6 @@ API: https://api.adoptium.net/v3/assets/latest/{major}/hotspot?os=linux&...
 Installs to: ~/.rvs/runtimes/java/<semver>/
 """
 
-from __future__ import annotations
-
 import os
 import tempfile
 from pathlib import Path

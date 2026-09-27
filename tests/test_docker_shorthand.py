@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import pytest
 from rvs.oci.docker import expand, parse
 

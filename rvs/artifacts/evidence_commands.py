@@ -1,7 +1,5 @@
 """Package-evidence staging, upload, status, and document export commands."""
 
-from __future__ import annotations
-
 import base64
 import datetime
 import hashlib

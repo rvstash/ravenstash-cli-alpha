@@ -12,8 +12,6 @@ only checks that it is a plain relative path before joining it to an exact
 discovered service URL. No hostname labels are derived.
 """
 
-from __future__ import annotations
-
 import re
 from urllib.parse import urlparse
 

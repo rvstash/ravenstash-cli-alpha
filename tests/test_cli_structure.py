@@ -1,5 +1,4 @@
-from __future__ import annotations
-
+import annotationlib
 from typing import TYPE_CHECKING
 
 import pytest
@@ -12,6 +11,7 @@ from typer.testing import CliRunner
 
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator
     from pathlib import Path
 
 
@@ -220,3 +220,28 @@ def test_ci_placeholder_commands_are_registered(args: list[str]) -> None:
 
     assert ci_result.exit_code == 2
     assert "No such command" in ci_result.output
+
+
+def _command_paths(command: object, prefix: str = "") -> Iterator[str]:
+    yield prefix
+    if isinstance(command, TyperGroup):
+        context = Context(command)
+        for name in command.list_commands(context):
+            subcommand = command.get_command(context, name)
+            assert subcommand is not None
+            yield from _command_paths(subcommand, f"{prefix} {name}".strip())
+
+
+def test_every_command_signature_resolves_at_runtime() -> None:
+    # Annotations are evaluated lazily, and Typer evaluates each command's
+    # signature when it builds the command tree. A name imported only for type
+    # checking in a command signature would fail here instead of in the field.
+    for group in app.registered_groups:
+        assert group.typer_instance is not None
+        for command in group.typer_instance.registered_commands:
+            assert command.callback is not None
+            annotationlib.get_annotations(command.callback, format=annotationlib.Format.VALUE)
+
+    paths = set(_command_paths(get_command(app)))
+
+    assert {"auth login", "art token mint", "status"} <= paths

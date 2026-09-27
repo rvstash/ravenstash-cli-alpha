@@ -1,7 +1,5 @@
 """Advisory native source discovery. Never edit inputs or fetch remote includes."""
 
-from __future__ import annotations
-
 import json
 import os
 import shlex

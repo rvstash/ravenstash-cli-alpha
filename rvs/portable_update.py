@@ -1,7 +1,5 @@
 """Authenticated download and atomic activation for portable rvs installations."""
 
-from __future__ import annotations
-
 import hashlib
 import json
 import os

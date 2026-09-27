@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import pytest
 from rvs.oci import helm
 from rvs.oci.runner import _operations_for

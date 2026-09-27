@@ -8,8 +8,6 @@ triggered it, unless the API reports that this rvs release is no longer
 supported.
 """
 
-from __future__ import annotations
-
 import logging
 from typing import Literal
 

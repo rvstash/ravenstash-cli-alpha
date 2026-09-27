@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import pytest
 from rvs.apt_channels import (
     channel_for_version,

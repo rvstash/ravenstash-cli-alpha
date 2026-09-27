@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from rvs import config as cfg_mod
 
 

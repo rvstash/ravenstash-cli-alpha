@@ -1,7 +1,5 @@
 """Compatibility-channel policy for signed Ravenstash APT releases."""
 
-from __future__ import annotations
-
 import re
 
 

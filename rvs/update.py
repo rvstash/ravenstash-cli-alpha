@@ -1,7 +1,5 @@
 """Signed APT update and explicit compatibility-channel upgrades."""
 
-from __future__ import annotations
-
 import json
 import os
 import platform

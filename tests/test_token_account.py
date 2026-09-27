@@ -1,7 +1,5 @@
 """RVS_TOKEN acts for exactly one account, which the server names."""
 
-from __future__ import annotations
-
 from typing import TYPE_CHECKING, Any
 
 import pytest

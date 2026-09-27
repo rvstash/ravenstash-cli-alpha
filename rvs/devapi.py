@@ -7,8 +7,6 @@ group-relative paths to :func:`platform_path` or :func:`artifacts_path`; they
 never spell the version or group segments themselves.
 """
 
-from __future__ import annotations
-
 import re
 from dataclasses import dataclass, field
 from datetime import UTC, datetime

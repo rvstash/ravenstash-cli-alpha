@@ -12,8 +12,6 @@ Resource paths are built with the group-aware builders in :mod:`rvs.devapi`,
 which also follows collection pages.
 """
 
-from __future__ import annotations
-
 import importlib.metadata
 import os
 import random

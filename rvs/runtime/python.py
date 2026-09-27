@@ -6,8 +6,6 @@ Downloads a self-contained CPython build from:
 Installs to: ~/.rvs/runtimes/python/<full_version>/
 """
 
-from __future__ import annotations
-
 import os
 import re
 import tempfile

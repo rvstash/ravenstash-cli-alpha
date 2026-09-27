@@ -1,7 +1,5 @@
 """Best-effort advisories for unusually old native package clients."""
 
-from __future__ import annotations
-
 import re
 from dataclasses import dataclass
 from functools import cache

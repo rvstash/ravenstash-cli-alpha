@@ -1,7 +1,5 @@
 """Shared device authorization implementation for rvs auth login."""
 
-from __future__ import annotations
-
 import importlib.metadata
 import math
 import platform as platform_mod

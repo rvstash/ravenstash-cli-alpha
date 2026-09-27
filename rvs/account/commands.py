@@ -1,7 +1,5 @@
 """Commands for choosing a personal account or organization."""
 
-from __future__ import annotations
-
 import os
 
 import typer

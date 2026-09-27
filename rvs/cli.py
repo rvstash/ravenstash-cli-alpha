@@ -1,7 +1,5 @@
 """Root command wiring for the Ravenstash developer CLI."""
 
-from __future__ import annotations
-
 from pathlib import Path  # noqa: TC003 - Typer resolves command annotations at runtime.
 
 import typer

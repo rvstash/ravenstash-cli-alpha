@@ -1,7 +1,5 @@
 """Safe environment construction for child processes launched by RVS."""
 
-from __future__ import annotations
-
 import os
 from typing import TYPE_CHECKING
 

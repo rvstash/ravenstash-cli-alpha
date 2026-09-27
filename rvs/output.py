@@ -5,8 +5,6 @@ strings can never inject Rich markup, and terminal control characters are
 replaced before anything reaches the console.
 """
 
-from __future__ import annotations
-
 import json
 import re
 from typing import NoReturn

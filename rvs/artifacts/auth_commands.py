@@ -1,7 +1,5 @@
 """Explicit, secret-only manual native credential output."""
 
-from __future__ import annotations
-
 import contextlib
 import json
 import re

@@ -12,8 +12,6 @@ delete_token(profile) -> None
 token_source(profile) -> str | None
 """
 
-from __future__ import annotations
-
 import hashlib
 import importlib
 import importlib.metadata

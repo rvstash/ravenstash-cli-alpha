@@ -4,8 +4,6 @@ Docker runs ``docker-credential-rvs <action>``, writes the server URL (``get``) 
 JSON payload (``store``/``erase``) to stdin, and reads JSON from stdout.
 """
 
-from __future__ import annotations
-
 import io
 import json
 import os

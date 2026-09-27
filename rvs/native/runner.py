@@ -5,8 +5,6 @@ files. They require a selected target, preserve additional native sources, and i
 short-lived credentials for the child process without editing lockfiles.
 """
 
-from __future__ import annotations
-
 import json
 import netrc
 import os
