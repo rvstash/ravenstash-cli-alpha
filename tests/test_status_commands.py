@@ -106,7 +106,16 @@ account_ref = "personal-user"
 
 
 def _row(output: str, label: str) -> str:
-    return next(line for line in output.splitlines() if line.startswith(label))
+    """Return one table row, including values a narrow console wraps onto
+    indented continuation lines, with whitespace normalized."""
+    lines = output.splitlines()
+    start = next(index for index, line in enumerate(lines) if line.startswith(label))
+    row = [lines[start]]
+    for line in lines[start + 1 :]:
+        if not line.startswith(" ") or not line.strip():
+            break
+        row.append(line)
+    return " ".join(" ".join(row).split())
 
 
 def test_status_names_the_person_and_selections_without_writing_config(
@@ -263,8 +272,9 @@ def test_status_warns_when_rvs_account_ref_names_another_account(
 
     assert result.exit_code == 0, result.output
     assert "org:acme (Acme Incorporated)" in _row(result.output, "Account")
+    # Narrow consoles (Windows runners) wrap the warning; compare it normalized.
     assert "RVS_ACCOUNT_REF is personal-user, but RVS_TOKEN acts only for org:acme" in (
-        result.stderr
+        " ".join(result.stderr.split())
     )
 
 
