@@ -85,8 +85,10 @@ class _FakeApiClient:
         self.request_headers.append(("PATCH", path, headers))
         return self._next({})
 
-    def put(self, path: str, json: Any = None) -> _JsonResponse:
-        self.calls.append(("PUT", path, json))
+    def put(
+        self, path: str, json: Any = None, params: dict[str, Any] | None = None
+    ) -> _JsonResponse:
+        self.calls.append(("PUT", path, {"json": json, "params": params} if params else json))
         return self._next({})
 
     def delete(
@@ -666,7 +668,7 @@ def _package_summary(**overrides: Any) -> dict[str, Any]:
         "version_count": 3,
         "total_size_bytes": 1234,
         "latest_uploaded_at": "2026-09-01T00:00:00Z",
-        "dist_tags": {},
+        "tags": {},
         **overrides,
     }
 
@@ -1320,6 +1322,7 @@ def test_scoped_npm_package_names_stay_in_the_query(monkeypatch, tmp_path: Path)
             _repository_entry("repo-npm"),
             _package_summary(name="@scope/pkg", normalized_name="@scope/pkg", status="active"),
             {"items": [], "next_cursor": None},
+            {"items": [], "next_cursor": None},
             _repository_entry("repo-npm"),
             {"version": "2.0.0", "deprecated": True, "file_count": 0},
         ]
@@ -1352,11 +1355,13 @@ def test_scoped_npm_package_names_stay_in_the_query(monkeypatch, tmp_path: Path)
     assert [call[1] for call in package_calls] == [
         "/v0/artifacts/repositories/ar_xyzabcde/formats/npm/package",
         "/v0/artifacts/repositories/ar_xyzabcde/formats/npm/package/versions",
+        "/v0/artifacts/repositories/ar_xyzabcde/formats/npm/package/tags",
         "/v0/artifacts/repositories/ar_xyzabcde/formats/npm/package/version",
     ]
     assert package_calls[0][2] == {"package_name": "@scope/pkg"}
     assert package_calls[1][2] == {"package_name": "@scope/pkg", "limit": 50}
-    assert package_calls[2][2]["params"] == {"package_name": "@scope/pkg", "version": "2.0.0"}
+    assert package_calls[2][2] == {"package_name": "@scope/pkg", "limit": 100}
+    assert package_calls[3][2]["params"] == {"package_name": "@scope/pkg", "version": "2.0.0"}
 
 
 def test_unknown_open_enum_values_are_displayed_as_is(monkeypatch, tmp_path: Path) -> None:
@@ -1598,3 +1603,371 @@ def test_self_explaining_errors_show_their_own_message() -> None:
     assert str(ApiError(409, {"code": "Conflict", "message": "Tag exists"})) == (
         "HTTP 409 Conflict: Tag exists"
     )
+
+
+# ── package tags ─────────────────────────────────────────────────────────────
+
+_TAGS_PATH = "/v0/artifacts/repositories/ar_xyzabcde/formats/npm/package/tags"
+
+
+def _package_tag(tag: str, version: str | None, **overrides: Any) -> dict[str, Any]:
+    return {
+        "tag": tag,
+        "version": version,
+        "stored_version": version,
+        "state": "effective",
+        "revision": 1,
+        **overrides,
+    }
+
+
+def _npm_repository() -> dict[str, Any]:
+    return _repository_entry("repo-npm", formats=_formats("pypi", "npm"))
+
+
+def test_package_tag_list_shows_effective_and_stored_versions(monkeypatch, tmp_path: Path) -> None:
+    _isolate_config(monkeypatch, tmp_path)
+    fake = _FakeApiClient(
+        [
+            _npm_repository(),
+            {
+                "items": [
+                    _package_tag("beta", "2.0.0-beta.1"),
+                    _package_tag(
+                        "latest", "1.9.0", stored_version="2.0.0", state="fallback", revision=3
+                    ),
+                ],
+                "next_cursor": "c1",
+            },
+            {
+                "items": [_package_tag("next", None, stored_version="3.0.0-rc.1", state="hidden")],
+                "next_cursor": None,
+            },
+        ]
+    )
+    _use_fake_client(monkeypatch, fake)
+
+    result = runner.invoke(
+        artifacts_cmd.app, ["package", "tag", "list", "@scope/pkg", "--target", "repo-npm"]
+    )
+
+    assert result.exit_code == 0, result.output
+    assert fake.calls[1:] == [
+        ("GET", _TAGS_PATH, {"package_name": "@scope/pkg", "limit": 100}),
+        ("GET", _TAGS_PATH, {"package_name": "@scope/pkg", "limit": 100, "cursor": "c1"}),
+    ]
+    text = " ".join(result.stdout.split())
+    for expected in ("Tag", "Version", "State", "Stored", "fallback", "2.0.0", "hidden"):
+        assert expected in text
+    assert "3.0.0-rc.1" in text
+
+
+def test_package_tag_list_json_keeps_the_wire_items(monkeypatch, tmp_path: Path) -> None:
+    _isolate_config(monkeypatch, tmp_path)
+    items = [_package_tag("latest", "1.0.0")]
+    fake = _FakeApiClient([_npm_repository(), {"items": items, "next_cursor": None}])
+    _use_fake_client(monkeypatch, fake)
+    output.set_json(True)
+    try:
+        result = runner.invoke(
+            artifacts_cmd.app, ["package", "tag", "list", "demo", "--target", "repo-npm"]
+        )
+    finally:
+        output.set_json(False)
+
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.stdout) == {
+        "repository": "ar_xyzabcde",
+        "package": "demo",
+        "items": items,
+    }
+
+
+def test_package_tag_list_says_when_a_package_has_none(monkeypatch, tmp_path: Path) -> None:
+    _isolate_config(monkeypatch, tmp_path)
+    _use_fake_client(monkeypatch, _FakeApiClient([_npm_repository(), []]))
+
+    result = runner.invoke(
+        artifacts_cmd.app, ["package", "tag", "list", "demo", "--target", "repo-npm"]
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "demo has no tags" in result.output
+
+
+@pytest.mark.parametrize(
+    ("result", "message"),
+    [
+        (
+            "created",
+            "Created tag 'beta' at demo@2.0.0 in 'repo:test-account/repo-npm' (revision 1).",
+        ),
+        ("moved", "Moved tag 'beta' to demo@2.0.0"),
+        ("unchanged", "Tag 'beta' already points at demo@2.0.0"),
+    ],
+)
+def test_package_tag_set_creates_or_moves_a_tag_without_confirmation(
+    monkeypatch, tmp_path: Path, result, message
+) -> None:
+    _isolate_config(monkeypatch, tmp_path)
+    fake = _FakeApiClient(
+        [
+            _npm_repository(),
+            {"tag": "beta", "version": "2.0.0", "revision": 1, "result": result},
+        ]
+    )
+    _use_fake_client(monkeypatch, fake)
+
+    invoked = runner.invoke(
+        artifacts_cmd.app,
+        ["package", "tag", "set", "demo", "beta", "2.0.0", "--target", "repo-npm"],
+    )
+
+    assert invoked.exit_code == 0, invoked.output
+    assert message in " ".join(invoked.stdout.split())
+    assert fake.calls[-1] == (
+        "PUT",
+        f"{_TAGS_PATH}/beta",
+        {
+            "json": {"version": "2.0.0", "expected_revision": None},
+            "params": {"package_name": "demo"},
+        },
+    )
+
+
+def test_package_tag_set_confirms_moving_latest_and_sends_the_revision(
+    monkeypatch, tmp_path: Path
+) -> None:
+    _isolate_config(monkeypatch, tmp_path)
+    fake = _FakeApiClient(
+        [
+            _npm_repository(),
+            _npm_repository(),
+            {"tag": "latest", "version": "1.0.1", "revision": 4, "result": "moved"},
+        ]
+    )
+    _use_fake_client(monkeypatch, fake)
+    argv = ["package", "tag", "set", "@scope/pkg", "latest", "1.0.1", "--target", "repo-npm"]
+
+    declined = runner.invoke(artifacts_cmd.app, argv, input="n\n")
+    accepted = runner.invoke(artifacts_cmd.app, [*argv, "--expect-revision", "3"], input="y\n")
+
+    assert declined.exit_code == 1
+    prompt = " ".join(declined.output.split())
+    assert "Point 'latest' of @scope/pkg in 'repo:test-account/repo-npm' at 1.0.1?" in prompt
+    assert accepted.exit_code == 0, accepted.output
+    puts = [call for call in fake.calls if call[0] == "PUT"]
+    assert puts == [
+        (
+            "PUT",
+            f"{_TAGS_PATH}/latest",
+            {
+                "json": {"version": "1.0.1", "expected_revision": 3},
+                "params": {"package_name": "@scope/pkg"},
+            },
+        )
+    ]
+
+
+def test_package_tag_delete_always_confirms(monkeypatch, tmp_path: Path) -> None:
+    _isolate_config(monkeypatch, tmp_path)
+    fake = _FakeApiClient([_npm_repository(), _npm_repository(), _npm_repository()])
+    _use_fake_client(monkeypatch, fake)
+    argv = ["package", "tag", "delete", "demo", "beta", "--target", "repo-npm"]
+
+    declined = runner.invoke(artifacts_cmd.app, argv, input="n\n")
+    accepted = runner.invoke(artifacts_cmd.app, argv, input="y\n")
+    forced = runner.invoke(artifacts_cmd.app, [*argv, "--yes", "--expect-revision", "2"])
+
+    assert declined.exit_code == 1
+    assert "Delete tag 'beta' of demo in 'repo:test-account/repo-npm'?" in " ".join(
+        declined.output.split()
+    )
+    assert accepted.exit_code == 0, accepted.output
+    assert forced.exit_code == 0, forced.output
+    assert "Deleted tag 'beta' of demo" in forced.stdout
+    deletes = [call for call in fake.calls if call[0] == "DELETE"]
+    assert deletes == [
+        ("DELETE", f"{_TAGS_PATH}/beta", {"package_name": "demo"}),
+        ("DELETE", f"{_TAGS_PATH}/beta", {"package_name": "demo", "expected_revision": 2}),
+    ]
+
+
+def test_package_tag_changes_in_json_mode_need_yes(monkeypatch, tmp_path: Path) -> None:
+    _isolate_config(monkeypatch, tmp_path)
+    fake = _FakeApiClient([_npm_repository()])
+    _use_fake_client(monkeypatch, fake)
+    output.set_json(True)
+    try:
+        result = runner.invoke(
+            artifacts_cmd.app,
+            ["package", "tag", "delete", "demo", "beta", "--target", "repo-npm"],
+        )
+    finally:
+        output.set_json(False)
+
+    assert result.exit_code == 1
+    assert "Pass --yes" in result.output
+    assert all(call[0] == "GET" for call in fake.calls)
+
+
+def test_package_tag_set_json_reports_the_mutation(monkeypatch, tmp_path: Path) -> None:
+    _isolate_config(monkeypatch, tmp_path)
+    mutation = {"tag": "latest", "version": "1.0.1", "revision": 4, "result": "moved"}
+    _use_fake_client(monkeypatch, _FakeApiClient([_npm_repository(), mutation]))
+    output.set_json(True)
+    try:
+        result = runner.invoke(
+            artifacts_cmd.app,
+            ["package", "tag", "set", "demo", "latest", "1.0.1", "-t", "repo-npm", "--yes"],
+        )
+    finally:
+        output.set_json(False)
+
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.stdout) == {
+        "repository": "ar_xyzabcde",
+        "package": "demo",
+        **mutation,
+    }
+
+
+@pytest.mark.parametrize(
+    ("reason", "hint"),
+    [
+        ("revision_mismatch", "retry with its current --expect-revision"),
+        ("target_unavailable", "not installable in this repository"),
+        ("latest_required", "move it with `rvs art package tag set`"),
+        ("tag_limit", "maximum number of tags"),
+        ("some_future_reason", "HTTP 409 Conflict: Refused"),
+    ],
+)
+def test_package_tag_conflicts_explain_their_reason(
+    monkeypatch, tmp_path: Path, reason, hint
+) -> None:
+    _isolate_config(monkeypatch, tmp_path)
+
+    class ConflictClient(_FakeApiClient):
+        def delete(self, path, params=None, headers=None):
+            raise artifacts_cmd.ApiError(
+                409, {"code": "Conflict", "message": "Refused", "reason": reason}
+            )
+
+    _use_fake_client(monkeypatch, ConflictClient([_npm_repository()]))
+
+    result = runner.invoke(
+        artifacts_cmd.app,
+        ["package", "tag", "delete", "demo", "latest", "--target", "repo-npm", "--yes"],
+    )
+
+    assert result.exit_code == 1
+    assert hint in " ".join(result.output.split())
+
+
+@pytest.mark.parametrize(
+    ("argv", "responses", "message"),
+    [
+        (
+            ["package", "tag", "list", "demo", "--target", "repo-pypi", "--format", "pypi"],
+            [],
+            "Listing package tags is supported only for npm packages.",
+        ),
+        (
+            ["package", "tag", "set", "demo", "beta", "1.0", "--target", "repo-pypi"],
+            [_repository_entry("repo-pypi", formats=_formats("pypi", "maven"))],
+            "has no npm format. Changing package tags applies only to npm packages.",
+        ),
+    ],
+)
+def test_package_tags_name_the_format_they_need(
+    monkeypatch, tmp_path: Path, argv, responses, message
+) -> None:
+    _isolate_config(monkeypatch, tmp_path)
+    fake = _FakeApiClient(list(responses))
+    _use_fake_client(monkeypatch, fake)
+
+    result = runner.invoke(artifacts_cmd.app, argv)
+
+    assert result.exit_code == 1
+    assert message in " ".join(result.output.split())
+    assert all(call[1].endswith("/resolve") for call in fake.calls)
+
+
+def test_package_show_prints_effective_tags_and_marks_fallbacks(
+    monkeypatch, tmp_path: Path
+) -> None:
+    _isolate_config(monkeypatch, tmp_path)
+    fake = _FakeApiClient(
+        [
+            _npm_repository(),
+            _package_summary(tags={"latest": "1.9.0", "beta": "2.0.0-beta.1"}),
+            {
+                "items": [
+                    _version_summary("2.0.0-beta.1", tags=["beta"]),
+                    _version_summary("1.9.0", tags=["latest"]),
+                ],
+                "next_cursor": None,
+            },
+            [
+                _package_tag("beta", "2.0.0-beta.1"),
+                _package_tag("latest", "1.9.0", stored_version="2.0.0", state="fallback"),
+            ],
+        ]
+    )
+    _use_fake_client(monkeypatch, fake)
+
+    result = runner.invoke(
+        artifacts_cmd.app, ["package", "show", "demo", "--target", "repo-npm", "--format", "npm"]
+    )
+
+    assert result.exit_code == 0, result.output
+    text = " ".join(result.stdout.split())
+    assert "beta=2.0.0-beta.1, latest=1.9.0 (fallback; set to 2.0.0)" in text
+    assert "Tags" in text
+
+
+@pytest.mark.parametrize("field", ["tags", "dist_tags"])
+def test_package_show_reads_summary_tags_when_the_detail_is_unavailable(
+    monkeypatch, tmp_path: Path, field
+) -> None:
+    _isolate_config(monkeypatch, tmp_path)
+
+    class NoTagDetail(_FakeApiClient):
+        def get(self, path, params=None):
+            if path.endswith("/package/tags"):
+                raise artifacts_cmd.ApiError(404, {"code": "NotFound", "message": "Not found"})
+            return super().get(path, params)
+
+    summary = _package_summary()
+    summary.pop("tags")
+    summary[field] = {"latest": "1.2.3"}
+    fake = NoTagDetail([_npm_repository(), summary, {"items": [], "next_cursor": None}])
+    _use_fake_client(monkeypatch, fake)
+
+    result = runner.invoke(
+        artifacts_cmd.app, ["package", "show", "demo", "--target", "repo-npm", "--format", "npm"]
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "latest=1.2.3" in result.stdout
+
+
+def test_package_show_version_lists_its_tags(monkeypatch, tmp_path: Path) -> None:
+    _isolate_config(monkeypatch, tmp_path)
+    fake = _FakeApiClient(
+        [
+            _npm_repository(),
+            {"version": "1.9.0", "tags": ["latest", "lts"], "file_count": 0},
+            [],
+        ]
+    )
+    _use_fake_client(monkeypatch, fake)
+
+    result = runner.invoke(
+        artifacts_cmd.app,
+        ["package", "show", "demo", "-t", "repo-npm", "-f", "npm", "--version", "1.9.0"],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "latest, lts" in result.stdout
+    assert not any(call[1].endswith("/package/tags") for call in fake.calls)

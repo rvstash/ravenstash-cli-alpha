@@ -29,6 +29,11 @@ class PublishItem:
     file_count: int | None = None
 
 
+def _clean(value: str) -> str:
+    # Names are data, never terminal control sequences or Rich markup.
+    return "".join(character if character.isprintable() else "?" for character in value)
+
+
 def confirm_publish(
     repository: str,
     account: config.AccountContext,
@@ -41,15 +46,11 @@ def confirm_publish(
     if output.is_json():
         output.fatal("Publishing requires confirmation. Pass --yes (native wrappers: --rvs-yes).")
 
-    # Names are data, never terminal control sequences or Rich markup.
-    def clean(value: str) -> str:
-        return "".join(character if character.isprintable() else "?" for character in value)
-
-    typer.echo(f"Publish to {clean(repository)} ({clean(display_name(account))})\n", err=True)
+    typer.echo(f"Publish to {_clean(repository)} ({_clean(display_name(account))})\n", err=True)
     for item in artifacts:
-        typer.echo(clean(item.identity), err=True)
+        typer.echo(_clean(item.identity), err=True)
         for detail in item.details:
-            typer.echo(f"  {clean(detail)}", err=True)
+            typer.echo(f"  {_clean(detail)}", err=True)
     typer.echo(err=True)
     if artifacts and all(item.file_count is not None for item in artifacts):
         count = sum(item.file_count or 0 for item in artifacts)
@@ -66,6 +67,18 @@ def confirm_context(
     if account is None:
         output.fatal("Cannot identify the publishing account.")
     confirm_publish(context.target.display_selector, account, artifacts, yes=yes)
+
+
+def confirm_change(context: RegistryContext, question: str, *, yes: bool = False) -> None:
+    """Confirm a native change that is not a publish, such as moving a dist-tag."""
+    if yes:
+        return
+    if output.is_json():
+        output.fatal("This change requires confirmation. Pass --yes (native wrappers: --rvs-yes).")
+    account = config.cached_account(context.profile_name, context.customer_id)
+    owner = f" ({_clean(display_name(account))})" if account is not None else ""
+    typer.echo(f"Target: {_clean(context.target.display_selector)}{owner}", err=True)
+    typer.confirm(_clean(question), default=False, abort=True, err=True)
 
 
 def _parse_pypi_metadata(raw: str) -> dict[str, str]:

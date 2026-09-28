@@ -29,7 +29,7 @@ from ..artifacts.routing import (
 )
 from ..artifacts.targets import registry_context
 from ..artifacts.trash import NATIVE_UNPUBLISH_NOTICE, WHOLE_PACKAGE_UNPUBLISH_HINT
-from ..publishing import PublishItem, confirm_context, native_artifacts
+from ..publishing import PublishItem, confirm_change, confirm_context, native_artifacts
 from ..runtime import tools
 from ..subprocesses import child_environment
 from ..tool_advisories import warn_if_old
@@ -181,6 +181,7 @@ def _build_plan(
         options,
         operations,
         artifacts=native_artifacts(tool, argv) if _is_publishing(tool, argv) else None,
+        confirmation=_npm_dist_tag_confirmation(argv, env) if tool == "npm" else None,
     )
     _inject_override(
         tool,
@@ -227,6 +228,7 @@ def _resolve_route(
     options: NativeOptions,
     operations: tuple[PackageOperation, ...],
     artifacts: list[PublishItem] | None = None,
+    confirmation: str | None = None,
 ) -> RegistryRoute:
     context = registry_context(
         kind=kind,
@@ -238,6 +240,8 @@ def _resolve_route(
     )
     if artifacts is not None:
         confirm_context(context, artifacts, yes=options.yes)
+    if confirmation is not None:
+        confirm_change(context, confirmation, yes=options.yes)
     return RegistryRoute(
         kind=kind,
         read_base_url=context.read_base_url,
@@ -596,12 +600,15 @@ _NPM_VALUE_OPTIONS = frozenset(
 _NPM_COMMAND_ALIASES = {"dist-tags": "dist-tag"}
 
 
-def _npm_command(argv: list[str]) -> str | None:
-    """Return the npm command: the first positional argument, alias-resolved.
+# npm's own `dist-tag` subcommand spellings. Any other subcommand lists tags
+# (`npm dist-tag` and `npm dist-tag PACKAGE` list) or is a usage error.
+_NPM_DIST_TAG_ADD = frozenset({"add", "a", "set", "s"})
+_NPM_DIST_TAG_REMOVE = frozenset({"rm", "r", "del", "d", "remove"})
+_NPM_DEFAULT_TAG = "latest"
 
-    Later positionals are package specs or command arguments, so a package named
-    `unpublish` in `npm install unpublish` never changes the classification.
-    """
+
+def _npm_positionals(argv: list[str]) -> list[str]:
+    positionals: list[str] = []
     skip_value = False
     for arg in argv:
         if skip_value:
@@ -609,8 +616,64 @@ def _npm_command(argv: list[str]) -> str | None:
         elif arg in _NPM_VALUE_OPTIONS:
             skip_value = True
         elif not arg.startswith("-"):
-            return _NPM_COMMAND_ALIASES.get(arg, arg)
-    return None
+            positionals.append(arg)
+    return positionals
+
+
+def _npm_command(argv: list[str]) -> str | None:
+    """Return the npm command: the first positional argument, alias-resolved.
+
+    Later positionals are package specs or command arguments, so a package named
+    `unpublish` in `npm install unpublish` never changes the classification.
+    """
+    positionals = _npm_positionals(argv)
+    return _NPM_COMMAND_ALIASES.get(positionals[0], positionals[0]) if positionals else None
+
+
+def _npm_dist_tag_action(argv: list[str]) -> Literal["add", "rm", "ls"] | None:
+    """Classify `npm dist-tag` by its subcommand; reads are everything else."""
+    if _npm_command(argv) != "dist-tag":
+        return None
+    positionals = _npm_positionals(argv)
+    subcommand = positionals[1] if len(positionals) > 1 else None
+    if subcommand in _NPM_DIST_TAG_ADD:
+        return "add"
+    if subcommand in _NPM_DIST_TAG_REMOVE:
+        return "rm"
+    return "ls"
+
+
+def _npm_dist_tag_confirmation(argv: list[str], env: Mapping[str, str]) -> str | None:
+    """Return the question to confirm before an `npm dist-tag` change, if any.
+
+    Moving `latest` changes what `npm install PACKAGE` resolves to, and removing
+    a tag breaks installs by it, so both are confirmed; other additions are not.
+    """
+    action = _npm_dist_tag_action(argv)
+    if action not in {"add", "rm"}:
+        return None
+    positionals = _npm_positionals(argv)
+    spec = positionals[2] if len(positionals) > 2 else None
+    explicit = positionals[3] if len(positionals) > 3 else None
+    if spec is None or (action == "rm" and explicit is None):
+        # npm refuses the command with its usage message before any request.
+        return None
+    if action == "rm":
+        return f"Remove npm dist-tag '{explicit}' from {spec}? Installs by this tag stop working."
+    # npm falls back to its `tag` setting, which defaults to `latest`.
+    tag = (
+        explicit
+        or _arg_value(argv, "--tag")
+        or env.get("NPM_CONFIG_TAG")
+        or env.get("npm_config_tag")
+        or _NPM_DEFAULT_TAG
+    )
+    if tag != _NPM_DEFAULT_TAG:
+        return None
+    return (
+        f"Point npm dist-tag 'latest' at {spec}? "
+        "`npm install` without a version or tag then installs it."
+    )
 
 
 def _npm_is_publish(argv: list[str]) -> bool:
@@ -622,10 +685,12 @@ def _npm_is_unpublish(argv: list[str]) -> bool:
 
 
 def _npm_is_mutation(argv: list[str]) -> bool:
-    # Ravenstash serves the native dist-tag endpoint from its upload host for both
-    # reads and mutations. Route ``ls`` there as well and request the combined
-    # capability expected by that authenticated endpoint.
-    return _npm_command(argv) in {"unpublish", "deprecate", "tag", "dist-tag"}
+    # `dist-tag ls` reads from the download registry with a read-only credential;
+    # `dist-tag add`/`rm` change tags on the publish registry.
+    command = _npm_command(argv)
+    if command == "dist-tag":
+        return _npm_dist_tag_action(argv) != "ls"
+    return command in {"unpublish", "deprecate", "tag"}
 
 
 def _replace_npm_registry_arg(cmd: list[str], native_arg_start: int, registry_url: str) -> None:

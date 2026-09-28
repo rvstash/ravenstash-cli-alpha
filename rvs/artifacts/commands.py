@@ -61,10 +61,15 @@ upstream_app = typer.Typer(
 )
 remote_app = typer.Typer(help="Manage private mirrors.", no_args_is_help=True)
 package_app = typer.Typer(help="Manage packages hosted in a repository.", no_args_is_help=True)
+package_tag_app = typer.Typer(
+    help="Manage package tags such as npm distribution tags (latest, next, beta).",
+    no_args_is_help=True,
+)
 app.add_typer(repo_app, name="repo")
 repo_app.add_typer(upstream_app, name="upstream")
 app.add_typer(remote_app, name="mirror")
 app.add_typer(package_app, name="package")
+package_app.add_typer(package_tag_app, name="tag")
 app.add_typer(evidence_app, name="evidence")
 app.add_typer(oci_app, name="oci")
 app.add_typer(native_auth_app, name="token")
@@ -881,12 +886,57 @@ def package_list(
 
 _DEFAULT_VERSION_LIMIT = 50
 _MAX_VERSION_LIMIT = 100
+# Formats whose packages have tags; npm calls them distribution tags.
+_TAGGED_PACKAGE_FORMATS = ("npm",)
 
 
-def _dist_tags_label(tags: object) -> str:
+def _package_tags(item: dict) -> object:
+    # `dist_tags` is the field name used before package tags became generic.
+    return item.get("tags") if "tags" in item else item.get("dist_tags")
+
+
+def _tags_label(tags: object, details: list[dict] | None = None) -> str:
+    """Show effective tags as ``tag=version``, noting tags that do not resolve
+    to their stored version in this repository."""
+    if details:
+        return ", ".join(_tag_detail_label(entry) for entry in details)
     if not isinstance(tags, dict):
         return ""
     return ", ".join(f"{tag}={version}" for tag, version in sorted(tags.items()))
+
+
+def _tag_detail_label(entry: dict) -> str:
+    tag = str(entry.get("tag", ""))
+    version = entry.get("version")
+    stored = entry.get("stored_version")
+    state = entry.get("state")
+    label = f"{tag}={version or '-'}"
+    if state == "fallback":
+        return f"{label} (fallback; set to {stored})" if stored else f"{label} (fallback)"
+    if state == "hidden":
+        return f"{label} (hidden; set to {stored})" if stored else f"{label} (hidden)"
+    return label
+
+
+def _read_package_tags(
+    client: ApiClient, repository_ref: str, registry_kind: str, name: str
+) -> list[dict] | None:
+    """Read the tag detail best effort; the package summary still lists tags."""
+    if registry_kind not in _TAGGED_PACKAGE_FORMATS:
+        return None
+    try:
+        return collection_all(
+            client,
+            _format_path(repository_ref, registry_kind, "package/tags"),
+            {"package_name": name},
+        )
+    except ApiError, ValueError:
+        return None
+
+
+def _version_tags_label(entry: dict) -> str:
+    tags = entry.get("tags")
+    return ", ".join(str(tag) for tag in tags) if isinstance(tags, list) else ""
 
 
 def _digests_label(digests: object) -> str:
@@ -951,6 +1001,11 @@ def package_show(
             )
     except (ApiError, ValueError) as exc:
         output.fatal(str(exc))
+    tag_details = (
+        None
+        if version is not None
+        else _read_package_tags(client, repository_unique_ref, registry_kind, name)
+    )
 
     if version is not None:
         _print_package_version(repository_unique_ref, name, registry_kind, detail, files)
@@ -970,6 +1025,7 @@ def package_show(
                     "package": item,
                     "versions": versions.items,
                     "versions_next_cursor": versions.next_cursor if more_versions else None,
+                    **({"tags": tag_details} if tag_details is not None else {}),
                 }
             )
         )
@@ -986,18 +1042,28 @@ def package_show(
             "Versions": str(item.get("version_count", "")),
             "Size": str(item.get("total_size_bytes", "")),
             "Last upload": str(item.get("latest_uploaded_at") or ""),
-            "Distribution tags": _dist_tags_label(item.get("dist_tags")),
+            "Tags": _tags_label(_package_tags(item), tag_details),
         },
         title=name,
     )
 
     if versions.items:
         lifecycle_headings, _ = _package_lifecycle_columns(registry_kind, versions.items[0])
+        tagged = any(entry.get("tags") for entry in versions.items)
         output.table(
-            ["Version", *lifecycle_headings, "Published", "Files", "Size", "Downloads"],
+            [
+                "Version",
+                *(["Tags"] if tagged else []),
+                *lifecycle_headings,
+                "Published",
+                "Files",
+                "Size",
+                "Downloads",
+            ],
             [
                 [
                     str(entry.get("version", "")),
+                    *([_version_tags_label(entry)] if tagged else []),
                     *_package_lifecycle_columns(registry_kind, entry)[1],
                     str(entry.get("published_at") or ""),
                     str(entry.get("file_count", "")),
@@ -1040,6 +1106,7 @@ def _print_package_version(
             "Repository": repository_ref,
             "Package": name,
             "Version": str(detail.get("version", "")),
+            **({"Tags": _version_tags_label(detail)} if detail.get("tags") else {}),
             "Published": str(detail.get("published_at") or ""),
             **lifecycle,
             "Summary": detail.get("summary") or "",
@@ -1225,3 +1292,185 @@ def package_undeprecate(
     except ApiError as exc:
         output.fatal(str(exc))
     output.success(f"Undeprecated {name}@{version} in '{display}'.")
+
+
+# ── package tag ──────────────────────────────────────────────────────────────
+
+_LATEST_TAG = "latest"
+_TAG_FORMAT_HELP = "Package format; package tags are available for npm."
+_TAG_CONFLICT_HINTS = {
+    "revision_mismatch": "The tag changed since you read it. Run `rvs art package tag list` "
+    "and retry with its current --expect-revision.",
+    "target_unavailable": "That version is not installable in this repository, for example "
+    "because it is in the trash or held for checking.",
+    "latest_required": "Every npm package keeps a `latest` tag while it has versions; move "
+    "it with `rvs art package tag set` instead.",
+    "tag_limit": "The package already has the maximum number of tags; delete one first.",
+}
+
+
+def _tag_lane(
+    repo: str | None, kind: str | None, profile: str | None, operation: str
+) -> tuple[str, cfg_mod.RegistryKind, str]:
+    return _package_lane(repo, kind, profile, only=_TAGGED_PACKAGE_FORMATS[0], operation=operation)
+
+
+def _tag_error(exc: ApiError) -> str:
+    reason = exc.detail.get("reason") if isinstance(exc.detail, dict) else None
+    hint = _TAG_CONFLICT_HINTS.get(reason) if isinstance(reason, str) else None
+    return f"{exc} {hint}" if hint else str(exc)
+
+
+def _confirm_tag_change(question: str, *, yes: bool) -> None:
+    if yes:
+        return
+    if output.is_json():
+        output.fatal("This tag change requires confirmation. Pass --yes.")
+    typer.confirm(question, default=False, abort=True, err=True)
+
+
+@package_tag_app.command("list")
+def package_tag_list(
+    account: str | None = typer.Option(None, "--account", help=_ACCOUNT_HELP),
+    name: str = typer.Argument(..., help="Package name."),
+    repo: str | None = typer.Option(None, "--target", "-t", help=_PACKAGE_TARGET_HELP),
+    kind: str | None = typer.Option(None, "--format", "-f", help=_TAG_FORMAT_HELP),
+    profile: str | None = typer.Option(None, "--profile", "-p"),
+) -> None:
+    """List a package's tags as installs in this repository resolve them.
+
+    A tag whose version is not installable here is marked: `latest` falls back to
+    the best installable version, and other tags are hidden until it is.
+    """
+    repository_unique_ref, registry_kind, display = _tag_lane(
+        repo, kind, profile, "Listing package tags"
+    )
+    client = _client(profile)
+    try:
+        items = collection_all(
+            client,
+            _format_path(repository_unique_ref, registry_kind, "package/tags"),
+            {"package_name": name},
+        )
+    except ApiError as exc:
+        output.fatal(_tag_error(exc))
+    except ValueError as exc:
+        output.fatal(str(exc))
+    if output.is_json():
+        click.echo(
+            json.dumps({"repository": repository_unique_ref, "package": name, "items": items})
+        )
+        return
+    if not items:
+        output.info(f"{name} has no tags in '{display}'.")
+        return
+    output.table(
+        ["Tag", "Version", "State", "Stored", "Revision"],
+        [
+            [
+                str(item.get("tag", "")),
+                str(item.get("version") or "-"),
+                str(item.get("state") or ""),
+                str(item.get("stored_version") or ""),
+                "" if item.get("revision") is None else str(item["revision"]),
+            ]
+            for item in items
+        ],
+        title=f"Tags of {name} in {display}",
+    )
+
+
+@package_tag_app.command("set")
+def package_tag_set(
+    account: str | None = typer.Option(None, "--account", help=_ACCOUNT_HELP),
+    name: str = typer.Argument(..., help="Package name."),
+    tag: str = typer.Argument(..., help="Tag to create or move, such as latest or beta."),
+    version: str = typer.Argument(..., help="Version the tag points at."),
+    repo: str | None = typer.Option(None, "--target", "-t", help=_PACKAGE_TARGET_HELP),
+    kind: str | None = typer.Option(None, "--format", "-f", help=_TAG_FORMAT_HELP),
+    expect_revision: int | None = typer.Option(
+        None,
+        "--expect-revision",
+        min=1,
+        help="Change the tag only if its revision (see `tag list`) is still this one.",
+    ),
+    profile: str | None = typer.Option(None, "--profile", "-p"),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation prompt."),
+) -> None:
+    """Create TAG or move it to VERSION.
+
+    Package tags move, unlike OCI tags. Moving `latest` changes what installs
+    without a version or tag resolve to, so it asks for confirmation.
+    """
+    repository_unique_ref, registry_kind, display = _tag_lane(
+        repo, kind, profile, "Changing package tags"
+    )
+    if tag == _LATEST_TAG:
+        _confirm_tag_change(
+            f"Point '{_LATEST_TAG}' of {name} in '{display}' at {version}? Installs "
+            "without a version or tag then get this version.",
+            yes=yes,
+        )
+    client = _client(profile)
+    try:
+        payload = client.put(
+            _format_path(repository_unique_ref, registry_kind, f"package/tags/{segment(tag)}"),
+            json={"version": version, "expected_revision": expect_revision},
+            params={"package_name": name},
+        ).json()
+    except ApiError as exc:
+        output.fatal(_tag_error(exc))
+    if output.is_json():
+        click.echo(json.dumps({"repository": repository_unique_ref, "package": name, **payload}))
+        return
+    result = payload.get("result")
+    target = f"{name}@{payload.get('version', version)}"
+    revision = payload.get("revision")
+    if result == "created":
+        output.success(f"Created tag '{tag}' at {target} in '{display}' (revision {revision}).")
+    elif result == "unchanged":
+        output.success(f"Tag '{tag}' already points at {target} in '{display}'.")
+    else:
+        output.success(f"Moved tag '{tag}' to {target} in '{display}' (revision {revision}).")
+
+
+@package_tag_app.command("delete")
+def package_tag_delete(
+    account: str | None = typer.Option(None, "--account", help=_ACCOUNT_HELP),
+    name: str = typer.Argument(..., help="Package name."),
+    tag: str = typer.Argument(..., help="Tag to delete."),
+    repo: str | None = typer.Option(None, "--target", "-t", help=_PACKAGE_TARGET_HELP),
+    kind: str | None = typer.Option(None, "--format", "-f", help=_TAG_FORMAT_HELP),
+    expect_revision: int | None = typer.Option(
+        None,
+        "--expect-revision",
+        min=1,
+        help="Delete the tag only if its revision (see `tag list`) is still this one.",
+    ),
+    profile: str | None = typer.Option(None, "--profile", "-p"),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation prompt."),
+) -> None:
+    """Delete TAG at once; the version it pointed at is unchanged.
+
+    Installs by the tag stop working. `latest` cannot be deleted while the
+    package has versions; move it with `tag set` instead.
+    """
+    repository_unique_ref, registry_kind, display = _tag_lane(
+        repo, kind, profile, "Changing package tags"
+    )
+    _confirm_tag_change(
+        f"Delete tag '{tag}' of {name} in '{display}'? Installs by this tag stop working.",
+        yes=yes,
+    )
+    client = _client(profile)
+    try:
+        client.delete(
+            _format_path(repository_unique_ref, registry_kind, f"package/tags/{segment(tag)}"),
+            params={
+                "package_name": name,
+                **({"expected_revision": expect_revision} if expect_revision else {}),
+            },
+        )
+    except ApiError as exc:
+        output.fatal(_tag_error(exc))
+    output.success(f"Deleted tag '{tag}' of {name} in '{display}'.")

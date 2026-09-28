@@ -105,7 +105,7 @@ Renaming or deleting a repository, changing a repository's package sources,
 changing a private mirror's package-age policy, deleting a private mirror, and
 deleting a whole package are managed in the Ravenstash web app only. `rvs` can
 list and show these resources, delete single package versions and OCI content,
-and yank or deprecate versions. Restoring deleted content from the repository
+yank or deprecate versions, and change package tags. Restoring deleted content from the repository
 trash is also done in the web app.
 
 ## Packages
@@ -122,6 +122,9 @@ trash is also done in the web app.
 | `rvs art package deprecate PACKAGE VERSION --message TEXT` | Adds an npm deprecation warning. |
 | `rvs art package undeprecate PACKAGE VERSION` | Clears an npm deprecation warning. |
 | `rvs art package delete-version PACKAGE VERSION` | Moves one version to the repository trash. |
+| `rvs art package tag list PACKAGE` | Lists the package's tags (npm dist-tags) as installs in the repository resolve them. |
+| `rvs art package tag set PACKAGE TAG VERSION` | Creates `TAG` or moves it to `VERSION`. |
+| `rvs art package tag delete PACKAGE TAG` | Deletes a tag at once; the version stays. |
 
 Package commands act on the repository chosen with `rvs art select` unless you
 pass `--target NAMESPACE/REPOSITORY` (or `in/ar_...`). `--format` is needed only
@@ -138,6 +141,34 @@ one of its `files`, each carrying a `digests` object keyed by algorithm (such as
 
 Yanking is a PyPI resolver control. npm deprecation is warning metadata and does
 not prevent installation. Maven has no corresponding lifecycle operation.
+
+## Package tags
+
+Package tags are npm's distribution tags, such as `latest`, `next`, or `beta`:
+`npm install PACKAGE@beta` installs the version the `beta` tag points at, and
+`npm install PACKAGE` installs the one `latest` points at. Only npm packages have
+tags; the `tag` commands refuse other formats.
+
+`package show` prints the package's tags, and every version row shows the tags
+that point at it. A tag always resolves to a version that can be installed from
+the repository. While the version a tag is set to cannot be installed there (for
+example, it is in the trash or still being checked), `latest` falls back to the
+best installable version and other tags are hidden. `tag list` marks those tags
+as `fallback` or `hidden` and shows the version they are set to under
+`Stored`; they apply again as soon as that version is installable.
+
+`tag set` moves an existing tag. `tag list` shows each tag's revision; pass it as
+`--expect-revision N` to `tag set` or `tag delete` so the change applies only if
+nobody changed the tag since. Moving `latest` and deleting any tag ask for
+confirmation unless you pass `--yes`. `latest` cannot be deleted while the
+package has versions; move it instead. Changing tags needs publish access.
+
+### Package tags and OCI tags
+
+Package tags and OCI tags are different things. A package tag is a movable
+pointer to a release, and `tag set` moves it. An OCI tag names an image or chart
+manifest and never moves: `rvs art oci tag create` refuses a tag that already
+points at another manifest, so delete it first to repoint the name.
 
 ## Deleting content
 
@@ -213,6 +244,13 @@ These are native-tool passthroughs rather than a second package-management API.
 For example, use `rvs pip install PACKAGE`, `rvs twine upload dist/*`, `rvs npm
 publish`, or `rvs mvn deploy`. Publishing commands ask for confirmation unless
 `--rvs-yes` is supplied.
+
+`rvs npm dist-tag ls` reads tags from the repository's install address with
+read-only access. `rvs npm dist-tag add` and `rvs npm dist-tag rm` change them
+through the publish address with publish access, so there is no `--registry` to
+pass. Pointing `latest` at another version (including `dist-tag add
+PACKAGE@VERSION` without a tag, which npm treats as `latest`) and removing any
+tag ask for confirmation unless `--rvs-yes` is supplied.
 
 pnpm, Yarn, Bun, Gradle, and sbt can use Ravenstash package addresses, but there
 are no `rvs pnpm`, `rvs yarn`, `rvs bun`, `rvs gradle`, or `rvs sbt` commands.

@@ -301,14 +301,9 @@ def test_native_commands_request_only_the_operations_they_need() -> None:
         "read",
         "publish",
     )
-    assert native_runner._operations_for("npm", ["dist-tag", "ls", "demo"]) == (
-        "read",
-        "publish",
-    )
-    assert native_runner._operations_for("npm", ["dist-tags", "ls", "demo"]) == (
-        "read",
-        "publish",
-    )
+    # Listing dist-tags is a read; only changes need publish.
+    assert native_runner._operations_for("npm", ["dist-tag", "ls", "demo"]) == ("read",)
+    assert native_runner._operations_for("npm", ["dist-tags", "ls", "demo"]) == ("read",)
     assert native_runner._operations_for("mvn", ["test"]) == ("read",)
     assert native_runner._operations_for("mvn", ["deploy"]) == ("read", "publish")
     assert native_runner._operations_for(
@@ -511,12 +506,50 @@ def test_native_npm_unpublish_mints_delete_authority_and_explains_refusals(
     assert "rvs art package delete-version NAME VERSION" in stderr
 
 
-def test_native_npm_repo_override_uses_upload_registry_for_dist_tag_list(
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["dist-tag"],
+        ["dist-tag", "demo"],
+        ["dist-tag", "ls", "demo"],
+        ["dist-tags", "list", "demo"],
+        ["dist-tag", "--loglevel", "verbose", "l", "demo"],
+    ],
+)
+def test_npm_dist_tag_classifies_reads_and_changes_by_subcommand(argv) -> None:
+    assert native_runner._npm_dist_tag_action(argv) == "ls"
+    assert not native_runner._npm_is_mutation(argv)
+    for subcommand in ("add", "a", "set", "s"):
+        change = ["dist-tag", subcommand, "demo@1.0.0", "beta"]
+        assert native_runner._npm_dist_tag_action(change) == "add"
+        assert native_runner._operations_for("npm", change) == ("read", "publish")
+    for subcommand in ("rm", "r", "del", "d", "remove"):
+        change = ["dist-tag", subcommand, "demo", "beta"]
+        assert native_runner._npm_dist_tag_action(change) == "rm"
+        assert native_runner._operations_for("npm", change) == ("read", "publish")
+    assert native_runner._npm_dist_tag_action(["install", "demo"]) is None
+
+
+def _record_mints(monkeypatch: Any) -> list[list[str]]:
+    minted: list[list[str]] = []
+    original_post = _FakeApi.post
+
+    def recording_post(self, path, json=None):
+        if json is not None and "operations" in json:
+            minted.append(list(json["operations"]))
+        return original_post(self, path, json)
+
+    monkeypatch.setattr(_FakeApi, "post", recording_post)
+    return minted
+
+
+def test_native_npm_dist_tag_list_reads_the_download_registry_with_read_only_access(
     monkeypatch: Any,
     tmp_path: Path,
 ) -> None:
     _isolate_config(monkeypatch, tmp_path)
     _mock_native_tools(monkeypatch)
+    minted = _record_mints(monkeypatch)
     calls: list[dict[str, Any]] = []
     _capture_run(monkeypatch, calls)
 
@@ -525,20 +558,111 @@ def test_native_npm_repo_override_uses_upload_registry_for_dist_tag_list(
         ["npm", "--rvs-target", "staging/repo-npm", "dist-tag", "ls", "demo"],
     )
 
-    assert result.exit_code == 0
+    assert result.exit_code == 0, result.output
+    assert minted == [["read"]]
     assert calls[0]["cmd"] == [
         "/bin/npm",
         "dist-tag",
         "--registry",
-        f"{NPM_PUSH_URL}/in/ar_xyzabcde/",
+        f"{NPM_READ_URL}/in/ar_xyzabcde/",
         "ls",
         "demo",
     ]
-    assert calls[0]["env"]["NPM_CONFIG_REGISTRY"] == f"{NPM_PUSH_URL}/in/ar_xyzabcde/"
+    assert calls[0]["env"]["NPM_CONFIG_REGISTRY"] == f"{NPM_READ_URL}/in/ar_xyzabcde/"
     assert (
-        calls[0]["env"][f"NPM_CONFIG_//{NPM_PUSH_HOST}/in/ar_xyzabcde/:_authToken"]
+        calls[0]["env"][f"NPM_CONFIG_//{NPM_READ_HOST}/in/ar_xyzabcde/:_authToken"]
         == "rvs_sltAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
     )
+    assert "Target:" not in result.output
+
+
+@pytest.mark.parametrize(
+    ("argv", "prompt"),
+    [
+        (["dist-tag", "add", "demo@1.0.0"], "Point npm dist-tag 'latest' at demo@1.0.0?"),
+        (["dist-tag", "set", "demo@1.0.0", "latest"], "Point npm dist-tag 'latest'"),
+        (["dist-tag", "add", "demo@1.0.0", "--tag", "latest"], "Point npm dist-tag 'latest'"),
+        (["dist-tag", "rm", "demo", "beta"], "Remove npm dist-tag 'beta' from demo?"),
+        (["dist-tags", "remove", "demo", "latest"], "Remove npm dist-tag 'latest' from demo?"),
+    ],
+)
+def test_native_npm_dist_tag_changes_to_latest_and_removals_are_confirmed(
+    monkeypatch: Any, tmp_path: Path, argv, prompt
+) -> None:
+    _isolate_config(monkeypatch, tmp_path)
+    _mock_native_tools(monkeypatch)
+    minted = _record_mints(monkeypatch)
+    calls: list[dict[str, Any]] = []
+    _capture_run(monkeypatch, calls)
+    base = ["npm", "--rvs-target", "staging/repo-npm", *argv]
+
+    declined = runner.invoke(app, base, input="n\n")
+    accepted = runner.invoke(app, base, input="y\n")
+    skipped = runner.invoke(app, [*base[:1], "--rvs-yes", *base[1:]])
+
+    assert declined.exit_code != 0
+    assert prompt in " ".join(declined.output.split())
+    assert "Target: repo:staging/repo" in declined.output
+    assert accepted.exit_code == 0, accepted.output
+    assert skipped.exit_code == 0, skipped.output
+    assert "Target:" not in skipped.output
+    assert len(calls) == 2
+    for call in calls:
+        assert call["cmd"][2:4] == ["--registry", f"{NPM_PUSH_URL}/in/ar_xyzabcde/"]
+        assert "--rvs-yes" not in call["cmd"]
+    assert minted[-1] == ["read", "publish"]
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["dist-tag", "add", "demo@2.0.0-beta.1", "beta"],
+        ["dist-tag", "add", "demo@2.0.0-beta.1", "--tag", "beta"],
+        # npm refuses these with its usage message before any request.
+        ["dist-tag", "add"],
+        ["dist-tag", "rm", "demo"],
+    ],
+)
+def test_native_npm_dist_tag_additions_of_other_tags_are_not_confirmed(
+    monkeypatch: Any, tmp_path: Path, argv
+) -> None:
+    _isolate_config(monkeypatch, tmp_path)
+    _mock_native_tools(monkeypatch)
+    calls: list[dict[str, Any]] = []
+    _capture_run(monkeypatch, calls)
+
+    result = runner.invoke(app, ["npm", "--rvs-target", "staging/repo-npm", *argv])
+
+    assert result.exit_code == 0, result.output
+    assert "Target:" not in result.output
+    assert calls[0]["cmd"][2:4] == ["--registry", f"{NPM_PUSH_URL}/in/ar_xyzabcde/"]
+
+
+def test_native_npm_dist_tag_default_tag_follows_npm_configuration() -> None:
+    argv = ["dist-tag", "add", "demo@1.0.0"]
+
+    assert native_runner._npm_dist_tag_confirmation(argv, {}) is not None
+    assert native_runner._npm_dist_tag_confirmation(argv, {"NPM_CONFIG_TAG": "next"}) is None
+    assert native_runner._npm_dist_tag_confirmation(argv, {"npm_config_tag": "next"}) is None
+    assert native_runner._npm_dist_tag_confirmation(["install", "demo"], {}) is None
+
+
+def test_native_npm_dist_tag_confirmation_in_json_mode_needs_rvs_yes(
+    monkeypatch: Any, tmp_path: Path
+) -> None:
+    _isolate_config(monkeypatch, tmp_path)
+    _mock_native_tools(monkeypatch)
+    calls: list[dict[str, Any]] = []
+    _capture_run(monkeypatch, calls)
+
+    result = runner.invoke(
+        app,
+        ["--json", "npm", "--rvs-target", "staging/repo-npm", "dist-tag", "rm", "demo", "beta"],
+    )
+
+    assert result.exit_code == 1
+    assert "--rvs-yes" in result.output
+    assert calls == []
 
 
 def test_native_npm_repo_override_replaces_conflicting_registry_flag(

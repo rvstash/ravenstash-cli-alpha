@@ -106,11 +106,14 @@ Package commands use the repository chosen with `rvs art select` unless you pass
 rvs art package list
 rvs art package show internal-sdk
 rvs art package show internal-sdk --version 1.2.0
+rvs art package tag list @acme/widgets
+rvs art package tag set @acme/widgets beta 2.0.0-beta.1
 ```
 
 Add `--format pypi`, `npm`, or `maven` only when the repository has more than one
 of these formats. `package show` lists the newest 50 versions; use `--limit N` or
-`--all-versions` for more.
+`--all-versions` for more. `package tag` manages npm distribution tags; unlike
+OCI tags, a package tag moves when you set it to another version.
 
 Renaming or deleting a repository, changing its package sources, changing a
 private mirror's package-age policy, deleting a private mirror, and deleting a

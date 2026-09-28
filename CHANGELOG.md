@@ -6,7 +6,28 @@ All notable user-facing changes to `rvs` are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `rvs art package tag list|set|delete` manage npm distribution tags. `set`
+  creates a tag or moves it to another version; unlike OCI tags, package tags
+  move. `--expect-revision` applies a change only if nobody changed the tag
+  since `tag list` showed its revision. Moving `latest` and deleting a tag ask
+  for confirmation unless `--yes` is passed.
+
 ### Changed
+
+- The package API reports effective tags as `tags` instead of `dist_tags`, and
+  every version carries the tags that point at it. `rvs art package show` prints
+  them in a `Tags` row and column and marks a `latest` that falls back to
+  another version, or a tag that is hidden, while the version it is set to
+  cannot be installed from the repository. With root `--json`, `package show`
+  adds the tag detail as `tags`. This release requires the matching Ravenstash
+  API; earlier `rvs` releases stop showing distribution tags.
+- `rvs npm dist-tag ls` reads tags from the repository's install address with a
+  read-only credential instead of requesting publish access. `dist-tag add` and
+  `dist-tag rm` still use the publish address with publish access, and now ask
+  for confirmation before pointing `latest` at another version and before
+  removing any tag; `--rvs-yes` skips it.
 
 - Deleting package content moves it to the repository trash, where it can be
   restored in the web app until it is permanently deleted.

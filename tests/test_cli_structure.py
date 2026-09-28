@@ -245,3 +245,22 @@ def test_every_command_signature_resolves_at_runtime() -> None:
     paths = set(_command_paths(get_command(app)))
 
     assert {"auth login", "art token mint", "status"} <= paths
+    assert {"art package tag list", "art package tag set", "art package tag delete"} <= paths
+
+
+def test_package_tag_commands_are_listed_in_workflow_order() -> None:
+    package_result = runner.invoke(app, ["art", "package", "--help"])
+    tag_result = runner.invoke(app, ["art", "package", "tag", "--help"])
+
+    assert package_result.exit_code == 0
+    assert tag_result.exit_code == 0
+    assert "tag" in unstyle(package_result.output)
+    group: object = get_command(app)
+    for name in ("art", "package", "tag"):
+        assert isinstance(group, TyperGroup)
+        group = group.get_command(Context(group), name)
+    assert isinstance(group, TyperGroup)
+    assert group.list_commands(Context(group)) == ["list", "set", "delete"]
+    assert "Package tags move, unlike OCI tags" in unstyle(
+        runner.invoke(app, ["art", "package", "tag", "set", "--help"]).output
+    )
