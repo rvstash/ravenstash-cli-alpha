@@ -12,7 +12,11 @@ All notable user-facing changes to `rvs` are recorded here. The format follows
   creates a tag or moves it to another version; unlike OCI tags, package tags
   move. `--expect-revision` applies a change only if nobody changed the tag
   since `tag list` showed its revision. Moving `latest` and deleting a tag ask
-  for confirmation unless `--yes` is passed.
+  for confirmation unless `--yes` is passed. `tag list` lists `latest` first
+  and says why a tag does not resolve to the version it is set to (in the
+  trash, or not installable here). Callers without publish access see only
+  tags that resolve, without stored versions, as npm's own `dist-tag ls` shows
+  them.
 
 ### Changed
 
@@ -23,16 +27,13 @@ All notable user-facing changes to `rvs` are recorded here. The format follows
   cannot be installed from the repository. With root `--json`, `package show`
   adds the tag detail as `tags`. This release requires the matching Ravenstash
   API; earlier `rvs` releases stop showing distribution tags.
-- `rvs art package tag list` lists `latest` first and says why a tag does not
-  resolve to the version it is set to (in the trash, or not installable here).
-  Callers without publish access see only tags that resolve, without stored
-  versions, as npm's own `dist-tag ls` shows them.
 - `rvs npm dist-tag ls` reads tags from the repository's install address with a
   read-only credential instead of requesting publish access. `dist-tag add` and
-  `dist-tag rm` still use the publish address with publish access, and now ask
-  for confirmation before pointing `latest` at another version and before
-  removing any tag; `--rvs-yes` skips it.
-
+  `dist-tag rm` still use the publish address with publish access.
+- `rvs npm dist-tag add` and `rvs npm dist-tag rm` now ask for confirmation when
+  they change `latest` (including `dist-tag add PACKAGE` with no version, which
+  npm sends as `*`) or remove any tag. Non-interactive runs, such as CI, must
+  pass `--rvs-yes`, or they stop without the change.
 - Deleting package content moves it to the repository trash, where it can be
   restored in the web app until it is permanently deleted.
   `rvs art package delete-version` and `rvs art oci manifest delete` say so in
@@ -57,6 +58,8 @@ All notable user-facing changes to `rvs` are recorded here. The format follows
   as the npm command itself, so a package or argument with one of those names
   (for example `rvs npm install unpublish`) no longer requests publish or delete
   authority or a publish confirmation.
+- `rvs npm tag`, a command npm no longer has, no longer requests a publish
+  credential before npm rejects it.
 
 ## [0.14.15] - 2026-09-27
 

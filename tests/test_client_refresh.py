@@ -324,6 +324,15 @@ def test_api_version_and_groups_are_centralized_in_path_builders() -> None:
         "/v0/artifacts/repositories/ar_xyzabcde/formats/pypi/packages"
     )
     assert segment("sha256:abc/def") == "sha256%3Aabc%2Fdef"
+    assert segment("a@b") == "a%40b"
+    assert segment("...") == "..."
+
+
+@pytest.mark.parametrize("value", ["", ".", ".."])
+def test_path_segments_refuse_values_that_url_normalization_resolves(value: str) -> None:
+    # HTTP clients resolve dot segments, so these would address another route.
+    with pytest.raises(ValueError, match="cannot be empty"):
+        segment(value)
 
 
 @pytest.mark.parametrize("builder", [api_path, platform_path, artifacts_path])

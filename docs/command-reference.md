@@ -249,8 +249,10 @@ publish`, or `rvs mvn deploy`. Publishing commands ask for confirmation unless
 read-only access. `rvs npm dist-tag add` and `rvs npm dist-tag rm` change them
 through the publish address with publish access, so there is no `--registry` to
 pass. Pointing `latest` at another version (including `dist-tag add
-PACKAGE@VERSION` without a tag, which npm treats as `latest`) and removing any
-tag ask for confirmation unless `--rvs-yes` is supplied.
+PACKAGE@VERSION` without a tag, which npm treats as `latest`, and `dist-tag add
+PACKAGE` without a version, which npm sends as `*`) and removing any tag ask for
+confirmation unless `--rvs-yes` is supplied. A run that cannot answer, such as
+CI, stops without the change unless it passes `--rvs-yes`.
 
 pnpm, Yarn, Bun, Gradle, and sbt can use Ravenstash package addresses, but there
 are no `rvs pnpm`, `rvs yarn`, `rvs bun`, `rvs gradle`, or `rvs sbt` commands.

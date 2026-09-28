@@ -18,12 +18,13 @@ from ..account.commands import display_name as account_display_name
 from ..api import (
     artifacts_path,
     collection_all,
+    is_path_segment,
     platform_path,
     read_collection,
     segment,
 )
 from ..client import ApiClient, ApiError
-from ..publishing import clean_display
+from ..publishing import confirm_question
 from ..status import (
     account_json,
     inspect_selection,
@@ -1333,13 +1334,10 @@ def _tag_error(exc: ApiError) -> str:
     return f"{exc} {hint}" if hint else str(exc)
 
 
-def _confirm_tag_change(question: str, *, yes: bool) -> None:
-    if yes:
-        return
-    if output.is_json():
-        output.fatal("This tag change requires confirmation. Pass --yes.")
-    # Package and tag names are data, never terminal control sequences.
-    typer.confirm(clean_display(question), default=False, abort=True, err=True)
+def _require_tag_name(tag: str) -> None:
+    # HTTP clients resolve dot segments, so `..` would address another route.
+    if not is_path_segment(tag):
+        output.fatal("A package tag cannot be empty, '.', or '..'.")
 
 
 @package_tag_app.command("list")
@@ -1415,14 +1413,16 @@ def package_tag_set(
     Package tags move, unlike OCI tags. Moving `latest` changes what installs
     without a version or tag resolve to, so it asks for confirmation.
     """
+    _require_tag_name(tag)
     repository_unique_ref, registry_kind, display = _tag_lane(
         repo, kind, profile, "Changing package tags"
     )
     if tag == _LATEST_TAG:
-        _confirm_tag_change(
+        confirm_question(
             f"Point '{_LATEST_TAG}' of {name} in '{display}' at {version}? Installs "
             "without a version or tag then get this version.",
             yes=yes,
+            skip_option="--yes",
         )
     client = _client(profile)
     try:
@@ -1468,12 +1468,14 @@ def package_tag_delete(
     Installs by the tag stop working. `latest` cannot be deleted while the
     package has versions; move it with `tag set` instead.
     """
+    _require_tag_name(tag)
     repository_unique_ref, registry_kind, display = _tag_lane(
         repo, kind, profile, "Changing package tags"
     )
-    _confirm_tag_change(
+    confirm_question(
         f"Delete tag '{tag}' of {name} in '{display}'? Installs by this tag stop working.",
         yes=yes,
+        skip_option="--yes",
     )
     client = _client(profile)
     try:

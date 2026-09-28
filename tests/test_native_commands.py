@@ -320,6 +320,8 @@ def test_native_npm_operations_come_from_the_command_not_package_names() -> None
         ["install", "publish"],
         ["view", "demo", "dist-tag"],
         ["install", "tag", "deprecate"],
+        # npm has had no `tag` command since npm 7; it never needs publish.
+        ["tag", "demo@1.0.0", "beta"],
         ["exec", "--", "npm", "unpublish", "demo"],
     ):
         assert operations("npm", argv) == ("read",), argv
@@ -584,6 +586,13 @@ def test_native_npm_dist_tag_list_reads_the_download_registry_with_read_only_acc
         (["dist-tag", "add", "demo@1.0.0", "--tag", "latest"], "Point npm dist-tag 'latest'"),
         (["dist-tag", "rm", "demo", "beta"], "Remove npm dist-tag 'beta' from demo?"),
         (["dist-tags", "remove", "demo", "latest"], "Remove npm dist-tag 'latest' from demo?"),
+        # npm reads a spec without a version as `*` and sends that to `latest`.
+        (
+            ["dist-tag", "add", "demo"],
+            "Point npm dist-tag 'latest' at demo (no version given; npm sends '*')?",
+        ),
+        (["dist-tag", "add", "demo@"], "at demo@ (no version given; npm sends '*')?"),
+        (["dist-tag", "add", "@scope/demo", "latest"], "at @scope/demo (no version given"),
     ],
 )
 def test_native_npm_dist_tag_changes_to_latest_and_removals_are_confirmed(
@@ -618,10 +627,9 @@ def test_native_npm_dist_tag_changes_to_latest_and_removals_are_confirmed(
     [
         ["dist-tag", "add", "demo@2.0.0-beta.1", "beta"],
         ["dist-tag", "add", "demo@2.0.0-beta.1", "--tag", "beta"],
+        ["dist-tag", "add", "demo", "beta"],
         # npm refuses these with its usage message before any request.
         ["dist-tag", "add"],
-        ["dist-tag", "add", "demo"],
-        ["dist-tag", "add", "@scope/demo", "latest"],
         ["dist-tag", "rm", "demo"],
     ],
 )
@@ -661,6 +669,52 @@ def test_native_npm_dist_tag_default_tag_follows_npm_configuration() -> None:
     assert native_runner._npm_dist_tag_confirmation(argv, {"NPM_CONFIG_TAG": "next"}) is None
     assert native_runner._npm_dist_tag_confirmation(argv, {"npm_config_tag": "next"}) is None
     assert native_runner._npm_dist_tag_confirmation(["install", "demo"], {}) is None
+
+
+def test_native_npm_dist_tag_tag_option_before_the_command_selects_the_tag(
+    monkeypatch: Any, tmp_path: Path
+) -> None:
+    _isolate_config(monkeypatch, tmp_path)
+    _mock_native_tools(monkeypatch)
+    minted = _record_mints(monkeypatch)
+    calls: list[dict[str, Any]] = []
+    _capture_run(monkeypatch, calls)
+    argv = ["dist-tag", "add", "demo@1.0.0"]
+
+    beta = runner.invoke(app, ["npm", "--rvs-target", "staging/repo-npm", "--tag", "beta", *argv])
+    latest = runner.invoke(
+        app, ["npm", "--rvs-target", "staging/repo-npm", "--tag", "latest", *argv], input="y\n"
+    )
+
+    assert beta.exit_code == 0, beta.output
+    assert "Target:" not in beta.output
+    assert latest.exit_code == 0, latest.output
+    assert "Point npm dist-tag 'latest' at demo@1.0.0?" in " ".join(latest.output.split())
+    assert minted == [["read", "publish"], ["read", "publish"]]
+    for call, tag in zip(calls, ("beta", "latest"), strict=True):
+        assert call["cmd"][1:3] == ["--tag", tag]
+        assert call["cmd"][-2:] == ["--registry", f"{NPM_PUSH_URL}/in/ar_xyzabcde/"]
+
+
+@pytest.mark.parametrize(
+    "argv", [["dist-tag", "add", "demo@1.0.0"], ["dist-tag", "rm", "demo", "beta"]]
+)
+def test_native_npm_dist_tag_confirmation_without_an_answer_needs_rvs_yes(
+    monkeypatch: Any, tmp_path: Path, argv
+) -> None:
+    _isolate_config(monkeypatch, tmp_path)
+    _mock_native_tools(monkeypatch)
+    calls: list[dict[str, Any]] = []
+    _capture_run(monkeypatch, calls)
+
+    # No input and no terminal, as in CI: the question cannot be answered.
+    result = runner.invoke(app, ["npm", "--rvs-target", "staging/repo-npm", *argv])
+
+    assert result.exit_code == 1
+    message = " ".join(result.output.split())
+    assert "no answer could be read" in message
+    assert "Pass --rvs-yes in non-interactive runs such as CI." in message
+    assert calls == []
 
 
 def test_native_npm_dist_tag_confirmation_in_json_mode_needs_rvs_yes(

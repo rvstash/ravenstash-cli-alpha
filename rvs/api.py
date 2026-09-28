@@ -72,10 +72,19 @@ def artifacts_path(path: str) -> str:
     return _grouped(ARTIFACTS_PRODUCT, path)
 
 
+def is_path_segment(value: str) -> bool:
+    """Whether ``value`` can be one path segment that URL normalization keeps.
+
+    ``quote`` leaves ``.`` alone, and HTTP clients resolve the dot segments
+    ``.`` and ``..``, so those (and the empty segment) would change the route.
+    """
+    return value not in {"", ".", ".."}
+
+
 def segment(value: str) -> str:
     """Encode one caller-supplied path segment, such as a reference or digest."""
-    if not value:
-        raise ValueError("Ravenstash API path segments cannot be empty")
+    if not is_path_segment(value):
+        raise ValueError("Ravenstash API path segments cannot be empty, '.', or '..'")
     return quote(value, safe="")
 
 

@@ -3,6 +3,7 @@
 import glob
 import json
 import re
+import sys
 import tarfile
 import xml.etree.ElementTree as ET
 import zipfile
@@ -72,16 +73,50 @@ def confirm_context(
     confirm_publish(context.target.display_selector, account, artifacts, yes=yes)
 
 
+def _stdin_is_terminal() -> bool:
+    return bool(getattr(sys.stdin, "isatty", lambda: False)())
+
+
+def confirm_question(
+    question: str, *, yes: bool, skip_option: str, header: str | None = None
+) -> None:
+    """Ask before a change that is not a publish; ``skip_option`` skips the question.
+
+    Names in the question are data, so control characters are shown as
+    placeholders. A run that cannot answer, such as CI with no input, aborts
+    with a message naming ``skip_option`` instead of a bare "Aborted.".
+    """
+    if yes:
+        return
+    if output.is_json():
+        output.fatal(f"This change requires confirmation. Pass {skip_option}.")
+    if header is not None:
+        typer.echo(clean_display(header), err=True)
+    try:
+        confirmed = typer.confirm(clean_display(question), default=False, err=True)
+    except typer.Abort:
+        if _stdin_is_terminal():
+            raise
+        output.fatal(
+            "This change requires confirmation, but no answer could be read. "
+            f"Pass {skip_option} in non-interactive runs such as CI."
+        )
+    if not confirmed:
+        raise typer.Abort()
+
+
 def confirm_change(context: RegistryContext, question: str, *, yes: bool = False) -> None:
     """Confirm a native change that is not a publish, such as moving a dist-tag."""
     if yes:
         return
-    if output.is_json():
-        output.fatal("This change requires confirmation. Pass --yes (native wrappers: --rvs-yes).")
     account = config.cached_account(context.profile_name, context.customer_id)
-    owner = f" ({clean_display(display_name(account))})" if account is not None else ""
-    typer.echo(f"Target: {clean_display(context.target.display_selector)}{owner}", err=True)
-    typer.confirm(clean_display(question), default=False, abort=True, err=True)
+    owner = f" ({display_name(account)})" if account is not None else ""
+    confirm_question(
+        question,
+        yes=yes,
+        skip_option="--rvs-yes",
+        header=f"Target: {context.target.display_selector}{owner}",
+    )
 
 
 def _parse_pypi_metadata(raw: str) -> dict[str, str]:

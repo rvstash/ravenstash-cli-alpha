@@ -787,7 +787,7 @@ def test_artifacts_package_show_all_versions_follows_every_page_as_json(
     fake = _FakeApiClient(
         [
             _repository_entry("repo-npm"),
-            _package_summary(dist_tags={"latest": "1.2.3", "next": "2.0.0-rc.1"}),
+            _package_summary(tags={"latest": "1.2.3", "next": "2.0.0-rc.1"}),
             {"items": [_version_summary("2.0.0-rc.1")], "next_cursor": "v1"},
             {
                 "items": [_version_summary("1.2.3"), _version_summary("1.0.0", deprecated=True)],
@@ -814,7 +814,7 @@ def test_artifacts_package_show_all_versions_follows_every_page_as_json(
     ]
     (document,) = (json.loads(line) for line in result.stdout.splitlines())
     assert document["repository"] == "ar_xyzabcde"
-    assert document["package"]["dist_tags"] == {"latest": "1.2.3", "next": "2.0.0-rc.1"}
+    assert document["package"]["tags"] == {"latest": "1.2.3", "next": "2.0.0-rc.1"}
     assert document["package"]["latest_stable_version"] == "1.2.3"
     assert [item["version"] for item in document["versions"]] == ["2.0.0-rc.1", "1.2.3", "1.0.0"]
     assert document["versions"][2] == _version_summary("1.0.0", deprecated=True)
@@ -1836,13 +1836,121 @@ def test_package_show_names_why_a_tag_does_not_resolve() -> None:
         )
         == "stable=- (hidden: not installable here; set to 1.2.0)"
     )
-    # Readers without publish authority get neither a stored version nor a reason.
+    # A fallback without a reason still names its state, never a placeholder.
     assert (
         artifacts_cmd._tag_detail_label(
             _package_tag("latest", "1.1.0", stored_version=None, state="fallback")
         )
         == "latest=1.1.0 (fallback)"
     )
+    # Readers without publish authority see a fallback `latest` as effective.
+    assert artifacts_cmd._tag_detail_label(_reader_tag("latest", "1.1.0")) == "latest=1.1.0"
+
+
+def _reader_tag(tag: str, version: str) -> dict[str, Any]:
+    """A tag as callers without publish authority receive it."""
+    return {
+        "tag": tag,
+        "version": version,
+        "stored_version": None,
+        "state": "effective",
+        "hidden_reason": None,
+        "revision": None,
+        "updated_at": None,
+    }
+
+
+def test_package_tag_list_for_readers_prints_no_placeholders(monkeypatch, tmp_path: Path) -> None:
+    _isolate_config(monkeypatch, tmp_path)
+    items = [_reader_tag("latest", "1.1.0"), _reader_tag("beta", "2.0.0-beta.1")]
+    _use_fake_client(monkeypatch, _FakeApiClient([_npm_repository(), items]))
+
+    result = runner.invoke(
+        artifacts_cmd.app, ["package", "tag", "list", "demo", "--target", "repo-npm"]
+    )
+
+    assert result.exit_code == 0, result.output
+    text = " ".join(result.stdout.split())
+    for expected in ("latest", "1.1.0", "beta", "2.0.0-beta.1", "effective"):
+        assert expected in text
+    for placeholder in ("None", "?", "fallback", "hidden"):
+        assert placeholder not in text
+
+
+@pytest.mark.parametrize("command", ["set", "delete"])
+@pytest.mark.parametrize("tag", ["", ".", ".."])
+def test_package_tag_changes_refuse_dot_segment_names_before_asking(
+    monkeypatch, tmp_path: Path, command: str, tag: str
+) -> None:
+    _isolate_config(monkeypatch, tmp_path)
+    fake = _FakeApiClient([_npm_repository()])
+    _use_fake_client(monkeypatch, fake)
+    arguments = [tag, "1.0.0"] if command == "set" else [tag]
+
+    result = runner.invoke(
+        artifacts_cmd.app,
+        ["package", "tag", command, "demo", *arguments, "--target", "repo-npm"],
+        input="y\n",
+    )
+
+    assert result.exit_code == 1
+    assert "A package tag cannot be empty, '.', or '..'." in " ".join(result.output.split())
+    assert "?" not in result.output
+    assert fake.calls == []
+
+
+def test_package_tag_names_are_percent_encoded_and_round_trip(monkeypatch, tmp_path: Path) -> None:
+    import httpx2
+    from rvs.api import api_url
+
+    _isolate_config(monkeypatch, tmp_path)
+    fake = _FakeApiClient(
+        [
+            _npm_repository(),
+            {"tag": "a@b", "version": "1.0.0", "revision": 1, "result": "created"},
+            _npm_repository(),
+        ]
+    )
+    _use_fake_client(monkeypatch, fake)
+
+    created = runner.invoke(
+        artifacts_cmd.app,
+        ["package", "tag", "set", "demo", "a@b", "1.0.0", "--target", "repo-npm"],
+    )
+    deleted = runner.invoke(
+        artifacts_cmd.app,
+        ["package", "tag", "delete", "demo", "a@b", "--target", "repo-npm", "--yes"],
+    )
+
+    assert created.exit_code == 0, created.output
+    assert deleted.exit_code == 0, deleted.output
+    changes = [call for call in fake.calls if call[0] in {"PUT", "DELETE"}]
+    assert [call[:2] for call in changes] == [
+        ("PUT", f"{_TAGS_PATH}/a%40b"),
+        ("DELETE", f"{_TAGS_PATH}/a%40b"),
+    ]
+    for _method, path, _params in changes:
+        url = httpx2.URL(api_url("https://api.example.test", path))
+        assert url.raw_path == f"{_TAGS_PATH}/a%40b".encode()
+        assert url.path.rsplit("/", 1)[1] == "a@b"
+
+
+def test_package_tag_confirmation_without_an_answer_names_yes(monkeypatch, tmp_path: Path) -> None:
+    _isolate_config(monkeypatch, tmp_path)
+    fake = _FakeApiClient([_npm_repository()])
+    _use_fake_client(monkeypatch, fake)
+
+    # No input: like CI, the run cannot answer the question.
+    result = runner.invoke(
+        artifacts_cmd.app,
+        ["package", "tag", "delete", "demo", "beta", "--target", "repo-npm"],
+    )
+
+    assert result.exit_code == 1
+    message = " ".join(result.output.split())
+    assert "no answer could be read" in message
+    assert "Pass --yes in non-interactive runs" in message
+    assert all(call[0] == "GET" for call in fake.calls)
 
 
 def test_package_tag_changes_in_json_mode_need_yes(monkeypatch, tmp_path: Path) -> None:

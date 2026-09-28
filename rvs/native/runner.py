@@ -658,9 +658,6 @@ def _npm_dist_tag_confirmation(argv: list[str], env: Mapping[str, str]) -> str |
     if spec is None or (action == "rm" and explicit is None):
         # npm refuses the command with its usage message before any request.
         return None
-    if action == "add" and not _npm_spec_has_version(spec):
-        # `npm dist-tag add PACKAGE` without a version is a usage error too.
-        return None
     if action == "rm":
         return f"Remove npm dist-tag '{explicit}' from {spec}? Installs by this tag stop working."
     # npm falls back to its `tag` setting, which defaults to `latest`.
@@ -673,8 +670,12 @@ def _npm_dist_tag_confirmation(argv: list[str], env: Mapping[str, str]) -> str |
     )
     if tag != _NPM_DEFAULT_TAG:
         return None
+    # A spec without a version is not a usage error: npm (npm-package-arg) reads
+    # `demo`, `@scope/demo`, and `demo@` as the range `*` and sends that as the
+    # tag's version, so the change is confirmed like any other.
+    target = spec if _npm_spec_has_version(spec) else f"{spec} (no version given; npm sends '*')"
     return (
-        f"Point npm dist-tag 'latest' at {spec}? "
+        f"Point npm dist-tag 'latest' at {target}? "
         "`npm install` without a version or tag then installs it."
     )
 
@@ -700,7 +701,7 @@ def _npm_is_mutation(argv: list[str]) -> bool:
     command = _npm_command(argv)
     if command == "dist-tag":
         return _npm_dist_tag_action(argv) != "ls"
-    return command in {"unpublish", "deprecate", "tag"}
+    return command in {"unpublish", "deprecate"}
 
 
 def _replace_npm_registry_arg(cmd: list[str], native_arg_start: int, registry_url: str) -> None:
