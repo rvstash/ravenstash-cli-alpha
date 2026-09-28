@@ -46,7 +46,7 @@ from .targets import (
     resolve_repository_entry,
     resolve_target,
 )
-from .trash import MOVED_TO_TRASH
+from .trash import moved_to_trash
 
 
 app = typer.Typer(
@@ -1101,7 +1101,7 @@ def package_delete_version(
         )
     except ApiError as exc:
         output.fatal(str(exc))
-    output.success(MOVED_TO_TRASH)
+    output.success(moved_to_trash(f"{name}@{version}", f"'{display}'"))
 
 
 def _update_package_version(

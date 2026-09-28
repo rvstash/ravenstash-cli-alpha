@@ -305,12 +305,39 @@ def test_native_commands_request_only_the_operations_they_need() -> None:
         "read",
         "publish",
     )
+    assert native_runner._operations_for("npm", ["dist-tags", "ls", "demo"]) == (
+        "read",
+        "publish",
+    )
     assert native_runner._operations_for("mvn", ["test"]) == ("read",)
     assert native_runner._operations_for("mvn", ["deploy"]) == ("read", "publish")
     assert native_runner._operations_for(
         "mvn",
         ["org.apache.maven.plugins:maven-deploy-plugin:3.1.3:deploy-file"],
     ) == ("read", "publish")
+
+
+def test_native_npm_operations_come_from_the_command_not_package_names() -> None:
+    operations = native_runner._operations_for
+    # Only the npm command counts; later positionals are package specs or arguments.
+    for argv in (
+        ["install", "unpublish"],
+        ["install", "publish"],
+        ["view", "demo", "dist-tag"],
+        ["install", "tag", "deprecate"],
+        ["exec", "--", "npm", "unpublish", "demo"],
+    ):
+        assert operations("npm", argv) == ("read",), argv
+        assert not native_runner._is_publishing("npm", argv), argv
+    # An option value before the command is not the command.
+    assert operations("npm", ["--loglevel", "verbose", "unpublish", "demo@1.0.0"]) == (
+        "read",
+        "publish",
+        "delete",
+    )
+    assert operations("npm", ["--workspace=pkg", "publish"]) == ("publish",)
+    assert operations("npm", ["--tag", "unpublish", "install", "demo"]) == ("read",)
+    assert native_runner._npm_command(["--force"]) is None
 
 
 def test_native_npm_respects_project_npmrc_and_injects_path_scoped_auth(

@@ -143,8 +143,8 @@ not prevent installation. Maven has no corresponding lifecycle operation.
 
 Deleting a package version or an OCI manifest moves it to the repository trash.
 It stops being installable within seconds and disappears from listings. You can
-restore it in the web app until the repository's retention period ends; then it
-is permanently deleted. Until then, the same version, file, or manifest digest
+restore it in the web app until the trash retention period ends; then it is
+permanently deleted. Until then, the same version, file, or manifest digest
 cannot be published again (other versions can), and a publish of it is refused
 with a message that names the permanent-deletion date.
 
@@ -157,9 +157,11 @@ with a message that names the permanent-deletion date.
 | `rvs npm unpublish PACKAGE --force` | Moves the package's only remaining version to the trash. |
 | `rvs oras manifest delete REFERENCE` | Moves a manifest to the trash through ORAS. |
 
-These commands ask for confirmation unless you pass `--yes` (`rvs npm` and `rvs
-oras` keep the native tool's own confirmation). A manifest that an image index in
-the same path references cannot be deleted alone; delete the index instead.
+The `rvs art` commands ask for confirmation unless you pass `--yes`. `rvs oras
+manifest delete` keeps ORAS's own confirmation, which `--force` skips. `rvs npm
+unpublish` does not ask: npm has no confirmation prompt for unpublish and only
+requires `--force` to unpublish a whole package. A manifest that an image index
+in the same path references cannot be deleted alone; delete the index instead.
 
 Deleting needs delete authority, which publish authority never includes.
 `rvs npm unpublish` and `rvs oras manifest delete` request it for their temporary

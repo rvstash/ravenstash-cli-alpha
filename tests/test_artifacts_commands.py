@@ -1113,8 +1113,8 @@ def test_artifacts_package_mutations_call_expected_api_paths(monkeypatch, tmp_pa
     assert delete_version_result.exit_code == 0
     # A deleted version goes to the repository trash, not away for good.
     assert (
-        "Moved to trash. Restore it in the web app before it is permanently deleted."
-        in " ".join(delete_version_result.output.split())
+        "Moved demo@1.0.0 in 'repo:test-account/repo' to trash. Restore it in the web "
+        "app before it is permanently deleted." in " ".join(delete_version_result.output.split())
     )
     assert yank_result.exit_code == 0
     assert unyank_result.exit_code == 0
@@ -1578,25 +1578,22 @@ def test_package_delete_version_confirms_the_move_to_trash(monkeypatch, tmp_path
     assert all(method != "DELETE" for method, _path, _params in fake.calls)
 
 
-def test_trash_errors_show_their_own_message() -> None:
+def test_self_explaining_errors_show_their_own_message() -> None:
     from rvs.client import ApiError
 
-    message = (
-        "demo 1.0.0 was deleted and is in the trash until 2026-10-05 10:00 UTC. "
-        "Restore it in the web app, or publish a different version."
-    )
+    message = "This manifest is part of an image index (sha256:bb). Delete the index instead."
 
     error = ApiError(
         409,
         {
-            "code": "content_in_trash",
+            "code": "manifest_referenced_by_index",
             "message": message,
-            "purge_after": "2026-10-05T10:00:00Z",
+            "details": {"parent_digests": ["sha256:bb"]},
         },
     )
 
     assert str(error) == message
-    assert error.code == "content_in_trash"
+    assert error.code == "manifest_referenced_by_index"
     # Other conflicts keep the HTTP status and code prefix.
     assert str(ApiError(409, {"code": "Conflict", "message": "Tag exists"})) == (
         "HTTP 409 Conflict: Tag exists"

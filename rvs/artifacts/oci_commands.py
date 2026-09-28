@@ -15,7 +15,7 @@ from ..api import artifacts_path, collection_items, segment
 from ..client import ApiClient, ApiError
 from ..oci.reference import qualify_reference
 from .discovery import discover
-from .trash import MOVED_TO_TRASH
+from .trash import moved_to_trash
 
 
 app = typer.Typer(help="Manage OCI paths, manifests, tags and referrers.", no_args_is_help=True)
@@ -91,7 +91,7 @@ def _request(
                 client.delete(url, params=params)
         if response is None:
             output.success(
-                MOVED_TO_TRASH
+                moved_to_trash(subject, found.target.display_selector)
                 if trash
                 else f"Deleted {subject} from {found.target.display_selector}."
             )

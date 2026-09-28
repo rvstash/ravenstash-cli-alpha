@@ -177,7 +177,8 @@ def test_oci_tag_create_json_reports_whether_the_tag_was_created(transport, stat
         (
             ["manifest", "delete", "images/api@" + DIGEST, "--yes"],
             "manifests/sha256%3A" + "a" * 64,
-            "Moved to trash. Restore it in the web app before it is permanently deleted.",
+            f"Moved images/api@{DIGEST} in main/packages to trash. Restore it in the web "
+            "app before it is permanently deleted.",
         ),
     ],
 )

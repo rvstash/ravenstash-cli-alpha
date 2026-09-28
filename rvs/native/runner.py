@@ -258,7 +258,8 @@ def _selected_customer_id(options: NativeOptions) -> str | None:
 def _is_publishing(tool: NativeTool, argv: list[str]) -> bool:
     return (
         (tool == "twine" and "upload" in argv)
-        or (tool in {"uv", "npm"} and "publish" in argv)
+        or (tool == "uv" and "publish" in argv)
+        or (tool == "npm" and _npm_is_publish(argv))
         or (tool == "mvn" and _maven_is_upload(argv))
     )
 
@@ -569,22 +570,62 @@ def _inject_npm_override(
         env["NPM_CONFIG_GLOBALCONFIG"] = str(global_npmrc)
 
 
+# npm options that take a separate value and may precede the command, so the
+# value is not mistaken for it (for example `npm --loglevel verbose publish`).
+_NPM_VALUE_OPTIONS = frozenset(
+    {
+        "--registry",
+        "--userconfig",
+        "--globalconfig",
+        "--prefix",
+        "-C",
+        "--cache",
+        "--loglevel",
+        "--location",
+        "-L",
+        "--workspace",
+        "-w",
+        "--otp",
+        "--tag",
+        "--access",
+        "--scope",
+        "--auth-type",
+    }
+)
+# npm's own aliases for the commands classified here.
+_NPM_COMMAND_ALIASES = {"dist-tags": "dist-tag"}
+
+
+def _npm_command(argv: list[str]) -> str | None:
+    """Return the npm command: the first positional argument, alias-resolved.
+
+    Later positionals are package specs or command arguments, so a package named
+    `unpublish` in `npm install unpublish` never changes the classification.
+    """
+    skip_value = False
+    for arg in argv:
+        if skip_value:
+            skip_value = False
+        elif arg in _NPM_VALUE_OPTIONS:
+            skip_value = True
+        elif not arg.startswith("-"):
+            return _NPM_COMMAND_ALIASES.get(arg, arg)
+    return None
+
+
 def _npm_is_publish(argv: list[str]) -> bool:
-    return any(arg == "publish" for arg in argv if not arg.startswith("-"))
+    return _npm_command(argv) == "publish"
 
 
 def _npm_is_unpublish(argv: list[str]) -> bool:
-    return any(arg == "unpublish" for arg in argv if not arg.startswith("-"))
+    return _npm_command(argv) == "unpublish"
 
 
 def _npm_is_mutation(argv: list[str]) -> bool:
-    positional = [arg for arg in argv if not arg.startswith("-")]
-    if any(arg in {"unpublish", "deprecate", "tag"} for arg in positional):
-        return True
     # Ravenstash serves the native dist-tag endpoint from its upload host for both
     # reads and mutations. Route ``ls`` there as well and request the combined
     # capability expected by that authenticated endpoint.
-    return "dist-tag" in positional
+    return _npm_command(argv) in {"unpublish", "deprecate", "tag", "dist-tag"}
 
 
 def _replace_npm_registry_arg(cmd: list[str], native_arg_start: int, registry_url: str) -> None:
