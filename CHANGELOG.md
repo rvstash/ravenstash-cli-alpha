@@ -60,6 +60,8 @@ All notable user-facing changes to `rvs` are recorded here. The format follows
   authority or a publish confirmation.
 - `rvs npm tag`, a command npm no longer has, no longer requests a publish
   credential before npm rejects it.
+- `rvs npm undeprecate` (npm 11) uses the publish address with publish access,
+  like `rvs npm deprecate`, instead of failing with a read-only credential.
 
 ## [0.14.15] - 2026-09-27
 

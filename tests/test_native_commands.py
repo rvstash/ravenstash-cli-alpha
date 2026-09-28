@@ -297,6 +297,10 @@ def test_native_commands_request_only_the_operations_they_need() -> None:
         "read",
         "publish",
     )
+    assert native_runner._operations_for("npm", ["undeprecate", "demo@1"]) == (
+        "read",
+        "publish",
+    )
     assert native_runner._operations_for("npm", ["dist-tag", "add", "demo@1", "next"]) == (
         "read",
         "publish",

@@ -701,7 +701,7 @@ def _npm_is_mutation(argv: list[str]) -> bool:
     command = _npm_command(argv)
     if command == "dist-tag":
         return _npm_dist_tag_action(argv) != "ls"
-    return command in {"unpublish", "deprecate"}
+    return command in {"unpublish", "deprecate", "undeprecate"}
 
 
 def _replace_npm_registry_arg(cmd: list[str], native_arg_start: int, registry_url: str) -> None:
