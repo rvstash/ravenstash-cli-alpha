@@ -1793,6 +1793,58 @@ def test_package_tag_delete_always_confirms(monkeypatch, tmp_path: Path) -> None
     ]
 
 
+def test_package_tag_confirmation_shows_control_characters_as_placeholders(
+    monkeypatch, tmp_path: Path
+) -> None:
+    _isolate_config(monkeypatch, tmp_path)
+    fake = _FakeApiClient([_npm_repository()])
+    _use_fake_client(monkeypatch, fake)
+
+    declined = runner.invoke(
+        artifacts_cmd.app,
+        ["package", "tag", "delete", "demo\x1b[2J", "beta", "--target", "repo-npm"],
+        input="n\n",
+    )
+
+    assert declined.exit_code == 1
+    assert "\x1b" not in declined.output
+    assert "Delete tag 'beta' of demo?[2J" in declined.output
+
+
+def test_package_show_names_why_a_tag_does_not_resolve() -> None:
+    assert (
+        artifacts_cmd._tag_detail_label(
+            _package_tag(
+                "latest",
+                "1.1.0",
+                stored_version="1.2.0",
+                state="fallback",
+                hidden_reason="in_trash",
+            )
+        )
+        == "latest=1.1.0 (fallback: in the trash; set to 1.2.0)"
+    )
+    assert (
+        artifacts_cmd._tag_detail_label(
+            _package_tag(
+                "stable",
+                None,
+                stored_version="1.2.0",
+                state="hidden",
+                hidden_reason="not_available",
+            )
+        )
+        == "stable=- (hidden: not installable here; set to 1.2.0)"
+    )
+    # Readers without publish authority get neither a stored version nor a reason.
+    assert (
+        artifacts_cmd._tag_detail_label(
+            _package_tag("latest", "1.1.0", stored_version=None, state="fallback")
+        )
+        == "latest=1.1.0 (fallback)"
+    )
+
+
 def test_package_tag_changes_in_json_mode_need_yes(monkeypatch, tmp_path: Path) -> None:
     _isolate_config(monkeypatch, tmp_path)
     fake = _FakeApiClient([_npm_repository()])
@@ -1926,9 +1978,8 @@ def test_package_show_prints_effective_tags_and_marks_fallbacks(
     assert "Tags" in text
 
 
-@pytest.mark.parametrize("field", ["tags", "dist_tags"])
 def test_package_show_reads_summary_tags_when_the_detail_is_unavailable(
-    monkeypatch, tmp_path: Path, field
+    monkeypatch, tmp_path: Path
 ) -> None:
     _isolate_config(monkeypatch, tmp_path)
 
@@ -1939,8 +1990,7 @@ def test_package_show_reads_summary_tags_when_the_detail_is_unavailable(
             return super().get(path, params)
 
     summary = _package_summary()
-    summary.pop("tags")
-    summary[field] = {"latest": "1.2.3"}
+    summary["tags"] = {"latest": "1.2.3"}
     fake = NoTagDetail([_npm_repository(), summary, {"items": [], "next_cursor": None}])
     _use_fake_client(monkeypatch, fake)
 

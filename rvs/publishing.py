@@ -29,7 +29,7 @@ class PublishItem:
     file_count: int | None = None
 
 
-def _clean(value: str) -> str:
+def clean_display(value: str) -> str:
     # Names are data, never terminal control sequences or Rich markup.
     return "".join(character if character.isprintable() else "?" for character in value)
 
@@ -46,11 +46,14 @@ def confirm_publish(
     if output.is_json():
         output.fatal("Publishing requires confirmation. Pass --yes (native wrappers: --rvs-yes).")
 
-    typer.echo(f"Publish to {_clean(repository)} ({_clean(display_name(account))})\n", err=True)
+    typer.echo(
+        f"Publish to {clean_display(repository)} ({clean_display(display_name(account))})\n",
+        err=True,
+    )
     for item in artifacts:
-        typer.echo(_clean(item.identity), err=True)
+        typer.echo(clean_display(item.identity), err=True)
         for detail in item.details:
-            typer.echo(f"  {_clean(detail)}", err=True)
+            typer.echo(f"  {clean_display(detail)}", err=True)
     typer.echo(err=True)
     if artifacts and all(item.file_count is not None for item in artifacts):
         count = sum(item.file_count or 0 for item in artifacts)
@@ -76,9 +79,9 @@ def confirm_change(context: RegistryContext, question: str, *, yes: bool = False
     if output.is_json():
         output.fatal("This change requires confirmation. Pass --yes (native wrappers: --rvs-yes).")
     account = config.cached_account(context.profile_name, context.customer_id)
-    owner = f" ({_clean(display_name(account))})" if account is not None else ""
-    typer.echo(f"Target: {_clean(context.target.display_selector)}{owner}", err=True)
-    typer.confirm(_clean(question), default=False, abort=True, err=True)
+    owner = f" ({clean_display(display_name(account))})" if account is not None else ""
+    typer.echo(f"Target: {clean_display(context.target.display_selector)}{owner}", err=True)
+    typer.confirm(clean_display(question), default=False, abort=True, err=True)
 
 
 def _parse_pypi_metadata(raw: str) -> dict[str, str]:

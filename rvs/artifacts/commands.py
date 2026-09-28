@@ -23,6 +23,7 @@ from ..api import (
     segment,
 )
 from ..client import ApiClient, ApiError
+from ..publishing import clean_display
 from ..status import (
     account_json,
     inspect_selection,
@@ -891,8 +892,7 @@ _TAGGED_PACKAGE_FORMATS = ("npm",)
 
 
 def _package_tags(item: dict) -> object:
-    # `dist_tags` is the field name used before package tags became generic.
-    return item.get("tags") if "tags" in item else item.get("dist_tags")
+    return item.get("tags")
 
 
 def _tags_label(tags: object, details: list[dict] | None = None) -> str:
@@ -905,16 +905,27 @@ def _tags_label(tags: object, details: list[dict] | None = None) -> str:
     return ", ".join(f"{tag}={version}" for tag, version in sorted(tags.items()))
 
 
+_HIDDEN_REASONS = {"in_trash": "in the trash", "not_available": "not installable here"}
+
+
+def _tag_state(entry: dict) -> str:
+    """The tag's state, with why its stored version is not installable."""
+    state = str(entry.get("state") or "")
+    reason = _HIDDEN_REASONS.get(str(entry.get("hidden_reason") or ""))
+    return f"{state}: {reason}" if reason and state in {"fallback", "hidden"} else state
+
+
 def _tag_detail_label(entry: dict) -> str:
     tag = str(entry.get("tag", ""))
     version = entry.get("version")
     stored = entry.get("stored_version")
     state = entry.get("state")
     label = f"{tag}={version or '-'}"
-    if state == "fallback":
-        return f"{label} (fallback; set to {stored})" if stored else f"{label} (fallback)"
-    if state == "hidden":
-        return f"{label} (hidden; set to {stored})" if stored else f"{label} (hidden)"
+    if state in {"fallback", "hidden"}:
+        details = [_tag_state(entry)]
+        if stored:
+            details.append(f"set to {stored}")
+        return f"{label} ({'; '.join(details)})"
     return label
 
 
@@ -1326,7 +1337,8 @@ def _confirm_tag_change(question: str, *, yes: bool) -> None:
         return
     if output.is_json():
         output.fatal("This tag change requires confirmation. Pass --yes.")
-    typer.confirm(question, default=False, abort=True, err=True)
+    # Package and tag names are data, never terminal control sequences.
+    typer.confirm(clean_display(question), default=False, abort=True, err=True)
 
 
 @package_tag_app.command("list")
@@ -1370,7 +1382,7 @@ def package_tag_list(
             [
                 str(item.get("tag", "")),
                 str(item.get("version") or "-"),
-                str(item.get("state") or ""),
+                _tag_state(item),
                 str(item.get("stored_version") or ""),
                 "" if item.get("revision") is None else str(item["revision"]),
             ]

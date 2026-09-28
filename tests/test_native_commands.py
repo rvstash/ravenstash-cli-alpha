@@ -620,6 +620,8 @@ def test_native_npm_dist_tag_changes_to_latest_and_removals_are_confirmed(
         ["dist-tag", "add", "demo@2.0.0-beta.1", "--tag", "beta"],
         # npm refuses these with its usage message before any request.
         ["dist-tag", "add"],
+        ["dist-tag", "add", "demo"],
+        ["dist-tag", "add", "@scope/demo", "latest"],
         ["dist-tag", "rm", "demo"],
     ],
 )
@@ -636,6 +638,20 @@ def test_native_npm_dist_tag_additions_of_other_tags_are_not_confirmed(
     assert result.exit_code == 0, result.output
     assert "Target:" not in result.output
     assert calls[0]["cmd"][2:4] == ["--registry", f"{NPM_PUSH_URL}/in/ar_xyzabcde/"]
+
+
+@pytest.mark.parametrize(
+    ("spec", "has_version"),
+    [
+        ("demo@1.0.0", True),
+        ("@scope/demo@1.0.0", True),
+        ("demo", False),
+        ("demo@", False),
+        ("@scope/demo", False),
+    ],
+)
+def test_native_npm_dist_tag_spec_needs_a_version(spec: str, has_version: bool) -> None:
+    assert native_runner._npm_spec_has_version(spec) is has_version
 
 
 def test_native_npm_dist_tag_default_tag_follows_npm_configuration() -> None:

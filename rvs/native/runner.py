@@ -658,6 +658,9 @@ def _npm_dist_tag_confirmation(argv: list[str], env: Mapping[str, str]) -> str |
     if spec is None or (action == "rm" and explicit is None):
         # npm refuses the command with its usage message before any request.
         return None
+    if action == "add" and not _npm_spec_has_version(spec):
+        # `npm dist-tag add PACKAGE` without a version is a usage error too.
+        return None
     if action == "rm":
         return f"Remove npm dist-tag '{explicit}' from {spec}? Installs by this tag stop working."
     # npm falls back to its `tag` setting, which defaults to `latest`.
@@ -674,6 +677,13 @@ def _npm_dist_tag_confirmation(argv: list[str], env: Mapping[str, str]) -> str |
         f"Point npm dist-tag 'latest' at {spec}? "
         "`npm install` without a version or tag then installs it."
     )
+
+
+def _npm_spec_has_version(spec: str) -> bool:
+    """Whether `name@version` names a version; scoped names start with `@`."""
+    name_and_version = spec[1:] if spec.startswith("@") else spec
+    _, separator, version = name_and_version.partition("@")
+    return bool(separator and version)
 
 
 def _npm_is_publish(argv: list[str]) -> bool:

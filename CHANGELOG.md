@@ -23,6 +23,10 @@ All notable user-facing changes to `rvs` are recorded here. The format follows
   cannot be installed from the repository. With root `--json`, `package show`
   adds the tag detail as `tags`. This release requires the matching Ravenstash
   API; earlier `rvs` releases stop showing distribution tags.
+- `rvs art package tag list` lists `latest` first and says why a tag does not
+  resolve to the version it is set to (in the trash, or not installable here).
+  Callers without publish access see only tags that resolve, without stored
+  versions, as npm's own `dist-tag ls` shows them.
 - `rvs npm dist-tag ls` reads tags from the repository's install address with a
   read-only credential instead of requesting publish access. `dist-tag add` and
   `dist-tag rm` still use the publish address with publish access, and now ask
