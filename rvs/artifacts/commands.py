@@ -902,7 +902,8 @@ def _tags_label(tags: object, details: list[dict] | None = None) -> str:
         return ", ".join(_tag_detail_label(entry) for entry in details)
     if not isinstance(tags, dict):
         return ""
-    return ", ".join(f"{tag}={version}" for tag, version in sorted(tags.items()))
+    order = sorted(tags.items(), key=lambda item: (item[0] != _LATEST_TAG, item[0]))
+    return ", ".join(f"{tag}={version}" for tag, version in order)
 
 
 _HIDDEN_REASONS = {"in_trash": "in the trash", "not_available": "not installable here"}

@@ -1990,7 +1990,7 @@ def test_package_show_reads_summary_tags_when_the_detail_is_unavailable(
             return super().get(path, params)
 
     summary = _package_summary()
-    summary["tags"] = {"latest": "1.2.3"}
+    summary["tags"] = {"beta": "2.0.0-beta.1", "latest": "1.2.3"}
     fake = NoTagDetail([_npm_repository(), summary, {"items": [], "next_cursor": None}])
     _use_fake_client(monkeypatch, fake)
 
@@ -1999,7 +1999,7 @@ def test_package_show_reads_summary_tags_when_the_detail_is_unavailable(
     )
 
     assert result.exit_code == 0, result.output
-    assert "latest=1.2.3" in result.stdout
+    assert "latest=1.2.3, beta=2.0.0-beta.1" in result.stdout
 
 
 def test_package_show_version_lists_its_tags(monkeypatch, tmp_path: Path) -> None:
