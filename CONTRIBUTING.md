@@ -16,25 +16,24 @@ All development targets `main`.
 3. Mark the pull request ready when it should enter CI. Draft pull requests do
    not run the expensive suites.
 4. Resolve review conversations and wait for the aggregate `CI gate`.
-5. After approval and successful required gates, a maintainer normally uses
-   GitHub's **Rebase and merge**. **Squash and merge** is also available when a
-   pull request's intermediate history should intentionally become one commit.
-   Maintainers may locally fast-forward a reviewed branch when preserving its
-   exact commit objects or signatures is required.
-6. GitHub automatically deletes the remote head branch after the pull request
-   lands. If a local fast-forward does not trigger that cleanup, the maintainer
-   deletes the short-lived remote branch explicitly.
+5. After approval and successful required gates, a maintainer lands the pull
+   request locally: `git merge --ff-only` the reviewed branch into `main` and
+   push `main`. GitHub then marks the pull request as merged. When a pull
+   request's intermediate history should intentionally become one commit, the
+   maintainer instead lands one verified squash commit.
+6. The maintainer deletes the short-lived remote branch after it lands.
 
-All three landing modes keep history linear. Rebase preserves the complete
-reviewed commit sequence with new object IDs; squash replaces it with one new
-commit; fast-forward preserves the original object IDs and signatures. Merge
-commits are disabled. Rebase the topic branch when its target advances, and do
-not force-push a protected branch as part of normal development.
+Both landing modes keep history linear. A fast-forward preserves the reviewed
+commit objects and signatures; a squash replaces them with one new commit.
+GitHub's **Rebase and merge** is not used, and merge commits are disabled. When
+`main` advances, update and re-sign the topic branch so it can fast-forward, and
+do not force-push a protected branch as part of normal development.
 
-Do not push directly to `main`, even when an administrator bypass technically
-permits it. That bypass is reserved for an explicitly authorized emergency
-recovery operation. The
-same required checks must pass for the exact resulting protected-branch commit.
+Push to `main` only to land a reviewed pull request that has passed its gates,
+never to bypass review, even when an administrator bypass technically permits
+it. That bypass is reserved for an explicitly authorized emergency recovery
+operation. The same required checks must pass for the exact resulting
+protected-branch commit.
 
 ## When CI runs
 
@@ -43,7 +42,7 @@ same required checks must pass for the exact resulting protected-branch commit.
   `main` starts one CI run. A selector fans out only the checks
   affected by the changed paths; independent jobs run in parallel and converge
   on the stable `CI gate`. A new commit cancels the superseded run.
-- A rebase, squash, or fast-forward landing on `main` reruns that path-aware
+- A fast-forward or squash landing on `main` reruns that path-aware
   CI for the exact protected-branch commit. It does not build every release
   target and never publishes anything. Release automation accepts only an exact
   SHA that passed the aggregate gate.

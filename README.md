@@ -16,11 +16,11 @@ rvs --version
 ```
 
 Release artifacts are built for Linux amd64/arm64 (glibc and musl), macOS Intel
-and Apple Silicon, Windows x64/ARM64, and Nix. See the compatibility policy for
-the support status of each installation path.
-
-For supported systems and upgrade instructions, see the
-[CLI overview](https://docs.ravenstash.com/cli/overview/).
+and Apple Silicon, Windows x64/ARM64, and Nix. The
+[platform compatibility policy](docs/linux-compatibility.md) gives the support
+status of each installation path, and the
+[CLI overview](https://docs.ravenstash.com/cli/overview/) covers supported
+systems and upgrades.
 
 ## Get started
 
@@ -50,7 +50,7 @@ rvs mvn verify
 
 `platform/packages` means the `packages` repository in the `platform`
 namespace. Run `rvs art repo list` to see the repositories available to the
-selected account.
+selected account, and `rvs status` or `rvs art status` to see what `rvs` acts on.
 
 ## Private mirrors
 
@@ -83,6 +83,20 @@ In a protected automation job, use `--rvs-yes` with these wrapped tools.
 Deletion commands under `rvs art`, such as `rvs art package delete-version`,
 take `--yes` instead.
 
+## Use in CI
+
+Store a personal access token or an organization automation token as a CI
+secret and expose it as `RVS_TOKEN`. Commands then act for the account that owns
+the token, so the job needs no sign-in or account selection:
+
+```bash
+rvs pip install internal-sdk --rvs-target platform/packages
+rvs twine upload dist/* --rvs-target platform/packages --rvs-yes
+```
+
+A saved or shell account selection does not apply while `RVS_TOKEN` is set, and
+`RVS_ACCOUNT_REF`, if set, must name the same account.
+
 ## Inspect packages
 
 Package commands use the repository chosen with `rvs art select` unless you pass
@@ -102,6 +116,63 @@ Renaming or deleting a repository, changing its package sources, changing a
 private mirror's package-age policy, deleting a private mirror, and deleting a
 whole package are done in the Ravenstash web app.
 
+## Repositories and formats
+
+Options that take several formats accept comma-separated values, repeated flags,
+or both:
+
+```bash
+rvs art repo create packages --format pypi,npm,maven,oci
+rvs art token mint --target platform/packages -f pypi -f oci
+```
+
+Whitespace is trimmed and duplicates are removed. Empty or unknown formats fail
+before any change is made. Commands that need one format still accept only one.
+
+## OCI content
+
+OCI is one repository format that holds container images and Helm charts. Use
+`rvs docker`, `rvs helm`, or `rvs oras` to transfer content; ORAS needs no
+Ravenstash format flag. Wrapper credentials and logouts stay in temporary
+configuration, including separate ORAS copy source and destination configs.
+
+Inspect and tag content without launching a native tool:
+
+```bash
+rvs art oci list --content-type helm_chart --target platform/packages
+rvs art oci manifest list charts/api
+rvs art oci manifest show charts/api@sha256:YOUR_DIGEST
+rvs art oci tag list charts/api
+rvs art oci tag list charts/api --digest sha256:YOUR_DIGEST
+rvs art oci tag create charts/api@sha256:YOUR_DIGEST stable
+```
+
+These OCI lists return one page: they accept `--limit` and `--cursor`, and root
+`--json` returns the page with its `next_cursor`. Other listings, such as
+`rvs art repo list` and `rvs art package list`, read every page. Manifest
+listings show each manifest's newest tags and its tag count; `tag list --digest`
+lists every tag of one manifest. `tag create` points a new tag at a manifest and
+never moves a tag that already points at another manifest.
+
+## Package evidence
+
+Stage or attach package evidence without changing native publishing:
+
+```bash
+rvs art evidence stage dist/demo-1.0.0-py3-none-any.whl \
+  --target platform/packages --format pypi \
+  --package demo --version 1.0.0 --scope artifact \
+  --evidence cyclonedx=bom.cdx.json --analysis-context observed
+
+rvs art evidence status pe_EXAMPLE --wait
+rvs art evidence sbom af_EXAMPLE --analysis-context observed -o demo.cdx.json
+```
+
+Staging does not publish the package; use the normal native client afterward.
+Release scope freezes every explicitly supplied digest and never includes future
+files. `--profile`/`-p` selects the profile, so evidence uses the separate
+`--analysis-context` option for its analysis context.
+
 ## Native setup and manual tokens
 
 Print instructions without changing files or creating credentials:
@@ -114,17 +185,21 @@ rvs art endpoint --format npm
 rvs art reference backend:latest --format oci
 ```
 
-For tools outside the wrappers, `rvs art token mint --format oci
---access publish` creates one temporary credential for both content types in the selected
-repository. Native logins may share a host credential store; the templates use
-separate temporary OCI configs. A logout against a shared store can affect other tools.
+For tools that `rvs` does not wrap, `rvs art token mint --format oci --access
+publish` creates one temporary credential that can push both container images
+and Helm charts to the selected repository. The printed templates keep that
+credential in a separate, temporary OCI configuration. If you log in with a
+native tool instead, remember that its credential store may be shared, so a
+later logout can affect other tools.
 
-`rvs update` previews the latest update in the rolling `v0` channel, and `--apply`
-installs it through APT, the signed portable updater, or the owning package
-manager. `rvs update --to 0.MINOR` selects the latest stable patch in that minor
-line for one update without pinning future updates to it. To test a
-signed prerelease on an APT or portable installation, use
-`rvs update --candidate X.Y.ZrcN`; add `--apply` after reviewing it.
+## Updates
+
+`rvs update` previews the latest update in the rolling `v0` channel, and
+`--apply` installs it through APT, the signed portable updater, or the package
+manager that installed `rvs`. `rvs update --to 0.MINOR` selects the latest
+stable patch in that minor line for one update, without pinning future updates
+to it. To test a signed prerelease on an APT or portable installation, run
+`rvs update --candidate X.Y.ZrcN`, then add `--apply` after reviewing it.
 
 ## Profiles and runtimes
 
@@ -148,6 +223,7 @@ rvs runtime list
 
 - [Quickstart](docs/quickstart.md)
 - [Command reference](docs/command-reference.md)
+- [Platform compatibility policy](docs/linux-compatibility.md)
 - [Changelog](CHANGELOG.md)
 - [Security policy](SECURITY.md)
 - [Support](SUPPORT.md)
@@ -155,12 +231,9 @@ rvs runtime list
 
 ## Contributing
 
-All changes go through a short-lived branch and a pull request to `main` or a
-supported maintenance branch. Pull requests normally use rebase-and-merge;
-squash and verified fast-forward landings are also supported, merge commits are
-disabled, and merged head branches are deleted automatically. See
-[CONTRIBUTING.md](CONTRIBUTING.md) for the checks, branch
-model, and release lifecycle, and [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) for
+Changes go through a short-lived branch and a pull request to `main`. See
+[CONTRIBUTING.md](CONTRIBUTING.md) for the branch and landing rules, the checks,
+and the release lifecycle, and [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) for
 community expectations.
 
 Run the repository checks from this directory:
@@ -168,58 +241,11 @@ Run the repository checks from this directory:
 ```bash
 .venv/bin/coverage run -m pytest
 .venv/bin/coverage report
-.venv/bin/ruff check rvs tests
+.venv/bin/ruff format --check rvs tests packaging/repository packaging/scripts
+.venv/bin/ruff check rvs tests packaging/repository packaging/scripts
 .venv/bin/pyright
 ```
 
+## License
+
 `rvs` is licensed under the [Apache License 2.0](LICENSE).
-
-Multi-format options accept comma-separated values, repeated flags, or both:
-
-```bash
-rvs art repo create packages --format pypi,npm,maven,oci
-rvs art token mint --target platform/packages -f pypi -f oci
-```
-
-Whitespace is trimmed and duplicates are removed. Empty or unknown formats fail
-before any mutation. Commands requiring one format still accept only one.
-
-
-OCI is one repository format containing container images and Helm charts. Manage
-its graph without launching a native tool:
-
-```bash
-rvs art oci list --content-type helm_chart --target platform/packages
-rvs art oci manifest list charts/api
-rvs art oci manifest show charts/api@sha256:YOUR_DIGEST
-rvs art oci tag list charts/api
-rvs art oci tag list charts/api --digest sha256:YOUR_DIGEST
-rvs art oci tag create charts/api@sha256:YOUR_DIGEST stable
-```
-
-These lists return one page: they expose `--limit` and `--cursor`, and root
-`--json` returns the page with its `next_cursor`. Manifest listings show each
-manifest's newest tags and its tag count; `tag list --digest` lists every tag of
-one manifest. `tag create` points a new tag at a manifest and never moves a tag
-that already points at another manifest. Other listings, such as
-`rvs art repo list` and `rvs art package list`, read every page.
-Use `rvs docker`, `rvs helm`, or `rvs oras` to transfer native content. ORAS needs
-no Ravenstash format flag. Wrapper credentials and logout changes stay in temporary
-configuration, including independent ORAS copy source/destination configs.
-
-Stage or attach package evidence without changing native publishing:
-
-```bash
-rvs art evidence stage dist/demo-1.0.0-py3-none-any.whl \
-  --target platform/packages --format pypi \
-  --package demo --version 1.0.0 --scope artifact \
-  --evidence cyclonedx=bom.cdx.json --analysis-context observed
-
-rvs art evidence status pe_EXAMPLE --wait
-rvs art evidence sbom af_EXAMPLE --analysis-context observed -o demo.cdx.json
-```
-
-Staging does not publish the package; use the normal native client afterward.
-Release scope freezes every explicitly supplied digest and never includes future
-files. `--profile/-p` selects an RVS connection profile; evidence uses the distinct
-`--analysis-context` option.
