@@ -1,8 +1,7 @@
 # AGENTS.md
 
 This file is the complete operating guide for automated contributors to the
-public `rvs` repository. Do not rely on instructions from a parent checkout or
-from private Ravenstash repositories.
+public `rvs` repository; it relies on nothing outside this repository.
 
 ## Repository scope
 
@@ -18,14 +17,13 @@ control-plane URL separate from package download and upload URLs.
 
 ## Contribution workflow
 
-- Prefer a short-lived branch and pull request for normal work. After approval
-  and successful required gates, use exactly one of two linear landing modes:
-  create one verified squash commit, or locally run `git merge --ff-only` and
-  push the protected branch. The fast-forward mode preserves the reviewed
-  commit object IDs and signatures; squashing intentionally replaces them.
+- Use a short-lived branch and pull request for every change. After approval
+  and successful required gates, land it in one of two linear ways: locally run
+  `git merge --ff-only` and push `main` (preferred; it keeps the reviewed,
+  signed commit objects), or create one verified squash commit when the
+  intermediate history should become one commit.
 - Do not use GitHub's **Rebase and merge** or create merge commits. Never
-  force-push a protected branch. On this alpha repository, an explicitly
-  authorized maintainer or agent may also push a direct linear update.
+  force-push a protected branch.
 - Target `main` for all development and releases.
 - Keep commits reviewable and self-contained. If a branch cannot fast-forward,
   either use the allowed squash mode or have the contributor update and re-sign
@@ -42,8 +40,10 @@ control-plane URL separate from package download and upload URLs.
   or `rvs/native/` module; do not mix it into unrelated command groups.
 - Do not hardcode development or staging endpoints. Support alternate
   environments through user configuration or process environment variables.
-- Never add destructive APT reset behavior. Published versions and repository
-  objects are append-only; corrections receive a new patch version.
+- Never add destructive APT reset behavior. The bytes and metadata of a
+  retained APT suite are immutable; corrections receive a new patch version.
+  A whole distribution namespace is removed only through an explicitly
+  approved, manifest-controlled retirement.
 - Release candidates use PEP 440 `X.Y.ZrcN` versions and GitHub prereleases.
   They must not be added to stable APT suites.
 - Test builds use `X.Y.Z.dev<RUN_ID>+g<SHA8>`, remain unsigned seven-day GitHub

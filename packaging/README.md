@@ -164,9 +164,8 @@ release pass their publication gates, the protected promotion stage embeds the
 exact attested bytes in a dedicated
 Cloudflare Worker at `https://ravenstash.com/install.sh` and
 `https://ravenstash.com/install.ps1`. The Worker does not
-fetch executable shell code from R2, and the frontend website repository
-contains no installer implementation. The promotion workflow independently checks
-out the immutable release source, refuses installer rollback, deploys only bytes
+fetch executable shell code from R2. The promotion jobs of the stable release
+workflow independently check out the immutable release source, refuses installer rollback, deploys only bytes
 that match the release's signed inventory, verifies the live routes, and
 publishes the newly signed recommended-channel manifest last.
 
