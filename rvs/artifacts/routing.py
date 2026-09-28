@@ -6,7 +6,7 @@ Ravenstash registry protocol routes are intentionally kind-specific:
     npm:   https://npm.rvsta.sh/{native_path}/
     Maven: https://maven.rvsta.sh/{native_path}/
 
-``native_path`` is the opaque host-less path DevAPI returns with a minted
+``native_path`` is the opaque host-less path the API returns with a minted
 package credential (for example ``/in/ar_...``). rvs does not interpret it; it
 only checks that it is a plain relative path before joining it to an exact
 discovered service URL. No hostname labels are derived.
@@ -16,7 +16,7 @@ import re
 from urllib.parse import urlparse
 
 
-# Unreserved URL characters plus the few DevAPI uses in names; no "%", "?",
+# Unreserved URL characters plus the few the API uses in names; no "%", "?",
 # "#", "\\", or whitespace, so a path can never change the host or the query.
 _NATIVE_PATH_SEGMENT = re.compile(r"[A-Za-z0-9._~@+-]+")
 _MAX_NATIVE_PATH_LENGTH = 512

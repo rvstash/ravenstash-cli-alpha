@@ -17,11 +17,11 @@ import typer
 from .. import config as cfg_mod
 from .. import output
 from ..account.commands import acting_account_ref, resolve_account
+from ..api import repository_mint_token_path
 from ..artifacts.routing import native_path as opaque_native_path
 from ..artifacts.targets import expected_repository_target, resolve_target
 from ..auth.token_format import STATIC_NATIVE_DURATION_SECONDS, validate_public_token
 from ..client import ApiClient, ApiError
-from ..devapi import repository_mint_token_path
 from ..publishing import confirm_publish, oci_artifacts
 from ..runtime import tools
 from ..subprocesses import child_environment

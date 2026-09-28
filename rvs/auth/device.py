@@ -14,14 +14,14 @@ from rich.live import Live
 from .. import auth as auth_mod
 from .. import config as cfg_mod
 from .. import output
-from ..artifacts.meta import sync_native_registries
-from ..client import ApiRouteRetiredError, check_route_lifecycle
-from ..devapi import api_url as devapi_url
-from ..devapi import (
+from ..api import api_url as endpoint_url
+from ..api import (
     platform_path,
     retry_after_seconds,
     validate_api_version,
 )
+from ..artifacts.meta import sync_native_registries
+from ..client import ApiRouteRetiredError, check_route_lifecycle
 
 
 _POLL_FRAMES = ("🔄", "🔃")
@@ -233,7 +233,7 @@ def perform_device_login(
             if requested_duration_seconds is not None:
                 request_payload["requested_duration_seconds"] = requested_duration_seconds
             create_resp = client.post(
-                devapi_url(resolved_api_url, platform_path("auth/device/code")),
+                endpoint_url(resolved_api_url, platform_path("auth/device/code")),
                 headers={"User-Agent": f"rvs/{rvs_version}"},
                 json=request_payload,
             )
@@ -258,7 +258,7 @@ def perform_device_login(
         with httpx.Client(timeout=15.0) as client, _AuthorizationPollDisplay() as poll_display:
             while time.monotonic() < deadline:
                 poll_resp = client.post(
-                    devapi_url(resolved_api_url, platform_path("auth/device/token")),
+                    endpoint_url(resolved_api_url, platform_path("auth/device/token")),
                     headers={"User-Agent": _rvs_user_agent()},
                     json={"device_code": device_code},
                 )

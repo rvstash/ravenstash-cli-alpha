@@ -5,8 +5,8 @@ from typing import cast
 
 from .. import config as cfg
 from ..account.commands import acting_account_ref, resolve_account
+from ..api import artifacts_path, collection_all
 from ..client import ApiClient
-from ..devapi import artifacts_path, collection_all
 from ..oci.registry import normalized_registry_host
 from ..oci.runner import _friendly_oci_root
 from .formats import FORMATS

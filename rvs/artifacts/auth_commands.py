@@ -11,9 +11,9 @@ import httpx2 as httpx
 import typer
 
 from .. import output
+from ..api import remote_cache_mint_token_path, repository_mint_token_path
 from ..auth.token_format import validate_public_token
 from ..client import ApiClient, ApiError
-from ..devapi import remote_cache_mint_token_path, repository_mint_token_path
 from .discovery import discover
 from .formats import flatten_formats
 from .targets import (

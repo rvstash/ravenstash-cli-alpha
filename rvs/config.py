@@ -43,8 +43,8 @@ Config file shape
 
 Endpoint overrides from the process environment, ``~/.rvs/profiles.env``, or
 an explicit ``RVS_ENV_FILE`` only seed a profile that is not saved yet. A saved
-profile keeps its own DevAPI URL, optional ``repository_domain``, and discovered
-native-registry endpoints; stored device credentials are bound to the DevAPI
+profile keeps its own API URL, optional ``repository_domain``, and discovered
+native-registry endpoints; stored device credentials are bound to the Ravenstash API
 URL that issued them (``credential_api_url``).
 """
 
@@ -207,12 +207,12 @@ class ProfileConfig:
     # DNS suffix that rewrites discovered native-registry hosts; seeded once from
     # the environment when the profile is created.
     repository_domain: str | None = None
-    # DevAPI URL that issued the stored device credential.
+    # API URL that issued the stored device credential.
     credential_api_url: str | None = None
 
     @property
     def credential_origin_url(self) -> str:
-        """Return the DevAPI URL that stored device credentials belong to."""
+        """Return the Ravenstash API URL that stored device credentials belong to."""
         return self.credential_api_url or self.api_url
 
     def credential_origin_matches(self) -> bool:
@@ -910,13 +910,13 @@ def _write_raw(raw: dict) -> None:
 
 
 def stored_profile_api_url(profile_name: str) -> str | None:
-    """Return a saved profile's DevAPI URL, or ``None`` when it is not saved."""
+    """Return a saved profile's API URL, or ``None`` when it is not saved."""
     profile = load().profiles.get(profile_name)
     return profile.api_url if profile is not None else None
 
 
 def stored_credential_api_url(profile_name: str) -> str | None:
-    """Return the DevAPI URL that issued a saved profile's device credential."""
+    """Return the Ravenstash API URL that issued a saved profile's device credential."""
     profile = load().profiles.get(profile_name)
     return profile.credential_origin_url if profile is not None else None
 
@@ -1122,7 +1122,7 @@ def cache_account(
 ) -> AccountContext:
     """Cache safe account metadata, optionally making the account active.
 
-    *customer* is a DevAPI ``Account`` or embedded ``AccountSummary``. A summary
+    *customer* is an API ``Account`` or embedded ``AccountSummary``. A summary
     carries only ``ref``, ``handle``, and ``type``; the role and authority
     revision already cached from the full account list are then retained.
     """

@@ -25,13 +25,13 @@ from typing import IO, TYPE_CHECKING, Any
 
 import httpx2 as httpx
 
-from ..devapi import (
+from ..api import (
     ApiVersionMismatchError,
     platform_path,
     validate_api_version,
 )
-from ..devapi import (
-    api_url as devapi_url,
+from ..api import (
+    api_url as endpoint_url,
 )
 from . import stores
 from .token_format import validate_public_token
@@ -68,7 +68,7 @@ class NoCredentialStoreError(RuntimeError):
 def credential_origin_error(profile: str) -> str | None:
     """Explain why *profile*'s stored credential must not be sent, if it must not.
 
-    Device credentials are bound to the DevAPI that issued them. They are never
+    Device credentials are bound to the Ravenstash API that issued them. They are never
     sent to another origin, even when the profile's API URL was changed.
     """
     from .. import config as cfg_mod
@@ -442,7 +442,7 @@ def revoke_device_refresh_token(api_url: str, refresh_token: str) -> bool:
     try:
         with httpx.Client(timeout=15.0) as client:
             response = client.post(
-                devapi_url(api_url, platform_path("auth/device/revoke")),
+                endpoint_url(api_url, platform_path("auth/device/revoke")),
                 headers={"User-Agent": _rvs_user_agent()},
                 json={"refresh_token": refresh_token},
             )
@@ -530,7 +530,7 @@ def refresh_expiring_credential(
             "refresh_token": refresh_token,
             "platform": _device_platform(),
         }
-        refresh_url = devapi_url(issuer_api_url, platform_path("auth/device/refresh"))
+        refresh_url = endpoint_url(issuer_api_url, platform_path("auth/device/refresh"))
         headers = {"User-Agent": _rvs_user_agent()}
 
         def send() -> httpx.Response:

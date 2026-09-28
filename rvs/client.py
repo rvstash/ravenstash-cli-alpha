@@ -1,4 +1,4 @@
-"""HTTPX2-based Ravenstash DevAPI client.
+"""HTTPX2-based Ravenstash API client.
 
 All requests go through this module so that auth headers, base URL, and error
 handling are consistent everywhere.
@@ -8,7 +8,7 @@ Usage
     client = ApiClient.from_profile("default")
     repos = collection_all(client, artifacts_path("repositories"))
 
-Resource paths are built with the group-aware builders in :mod:`rvs.devapi`,
+Resource paths are built with the group-aware builders in :mod:`rvs.api`,
 which also follows collection pages.
 """
 
@@ -20,7 +20,7 @@ from typing import TYPE_CHECKING, Any
 
 from . import auth as auth_mod
 from . import config as cfg_mod
-from .devapi import (
+from .api import (
     API_ROUTE_RETIRED,
     ApiVersionMismatchError,
     api_url,
@@ -119,7 +119,7 @@ class ApiError(Exception):
         return self._http_message()
 
     def _http_message(self) -> str:
-        """Render a DevAPI error envelope as ``HTTP status Code: message``."""
+        """Render an API error envelope as ``HTTP status Code: message``."""
         if not isinstance(self.detail, dict):
             return f"HTTP {self.status_code}: {self.detail}"
         message = self.detail.get("message")
@@ -140,7 +140,7 @@ class ApiError(Exception):
 
 
 class ApiRouteRetiredError(ApiError):
-    """The DevAPI no longer serves a route this rvs release uses."""
+    """The API no longer serves a route this rvs release uses."""
 
     def __init__(self) -> None:
         super().__init__(410, {"code": API_ROUTE_RETIRED, "message": API_ROUTE_RETIRED_MESSAGE})
@@ -157,9 +157,9 @@ def deprecation_message(headers: Any) -> str:
 
 
 def check_route_lifecycle(response: Any) -> None:
-    """Stop on a retired DevAPI route and warn once about a deprecated one.
+    """Stop on a retired API route and warn once about a deprecated one.
 
-    Every DevAPI response passes through here. Any ``410`` means this release
+    Every API response passes through here. Any ``410`` means this release
     can no longer use the route; a ``Deprecation`` header produces one stderr
     warning per process so machine-readable stdout stays untouched.
     """
@@ -200,7 +200,7 @@ def retry_rate_limited(
 
 
 class ApiClient:
-    """Thin wrapper around the versioned Ravenstash DevAPI."""
+    """Thin wrapper around the versioned Ravenstash API."""
 
     def __init__(
         self,

@@ -11,8 +11,8 @@ from .. import auth as auth_mod
 from .. import config as cfg_mod
 from .. import output
 from ..account.commands import identity_display
+from ..api import platform_path
 from ..client import ApiClient, ApiError, ApiRouteRetiredError
-from ..devapi import platform_path
 from ..interactive import select_index
 from . import stores
 from .device import perform_device_login

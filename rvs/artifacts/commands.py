@@ -15,14 +15,14 @@ from ..account.commands import (
     resolve_account,
 )
 from ..account.commands import display_name as account_display_name
-from ..client import ApiClient, ApiError
-from ..devapi import (
+from ..api import (
     artifacts_path,
     collection_all,
     platform_path,
     read_collection,
     segment,
 )
+from ..client import ApiClient, ApiError
 from ..status import (
     account_json,
     inspect_selection,
@@ -289,7 +289,7 @@ def _resolve_repository_entry(
     kind: str | None = None,
     customer_id: str | None = None,
 ) -> dict:
-    """Resolve a repository selector to its DevAPI ``Repository``."""
+    """Resolve a repository selector to its API ``Repository``."""
     candidate = repo.strip().strip("/")
     if not candidate:
         output.fatal("Repository selector cannot be empty.")

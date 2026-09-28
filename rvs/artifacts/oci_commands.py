@@ -11,8 +11,8 @@ import httpx2 as httpx
 import typer
 
 from .. import output
+from ..api import artifacts_path, collection_items, segment
 from ..client import ApiClient, ApiError
-from ..devapi import artifacts_path, collection_items, segment
 from ..oci.reference import qualify_reference
 from .discovery import discover
 

@@ -27,8 +27,8 @@ from packaging.version import InvalidVersion, Version
 from .. import config as cfg_mod
 from .. import output
 from ..account.commands import ensure_active_account, resolve_account
+from ..api import artifacts_path, collection_all, collection_page, segment
 from ..client import ApiClient, ApiError
-from ..devapi import artifacts_path, collection_all, collection_page, segment
 from .targets import resolve_target
 
 

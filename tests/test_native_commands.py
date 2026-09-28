@@ -73,7 +73,7 @@ EXPECTED_REPOSITORY_TARGET = {
 }
 
 
-class _FakeDevApi:
+class _FakeApi:
     def get(self, path: str, params=None) -> _JsonResponse:
         if path == "/v0/platform/accounts":
             return _JsonResponse(
@@ -220,7 +220,7 @@ registry_base_url = "https://images.example.test"
     monkeypatch.setattr(
         ApiClient,
         "from_profile",
-        staticmethod(lambda profile=None: _FakeDevApi()),
+        staticmethod(lambda profile=None: _FakeApi()),
     )
 
 
@@ -258,7 +258,7 @@ def test_native_wrapper_rejects_wrong_type_before_starting_child(
 ):
     _isolate_config(monkeypatch, tmp_path)
     _mock_native_tools(monkeypatch)
-    original_post = _FakeDevApi.post
+    original_post = _FakeApi.post
 
     def wrong_credential(self, path, json=None):
         response = original_post(self, path, json)
@@ -266,7 +266,7 @@ def test_native_wrapper_rejects_wrong_type_before_starting_child(
         payload["access_token"] = wrong_token
         return _JsonResponse(payload)
 
-    monkeypatch.setattr(_FakeDevApi, "post", wrong_credential)
+    monkeypatch.setattr(_FakeApi, "post", wrong_credential)
     calls = []
     _capture_run(monkeypatch, calls)
     result = runner.invoke(app, ["pip", "install", "demo"])
@@ -366,7 +366,7 @@ def test_native_detected_registry_confirms_resolved_account(
     _mock_native_tools(monkeypatch)
     monkeypatch.setenv("NPM_CONFIG_REGISTRY", f"{NPM_PUSH_URL}/in/ar_xyzabcde/")
 
-    class OrgApi(_FakeDevApi):
+    class OrgApi(_FakeApi):
         def get(self, path, params=None):
             payload = super().get(path, params).json()
             payload["account"].update(type="organization")

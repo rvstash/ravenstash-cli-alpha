@@ -7,9 +7,9 @@ from rich.markup import escape
 
 from .. import config as cfg_mod
 from .. import output
+from ..api import collection_all, platform_path
 from ..auth.token_format import ACCOUNT_TOKEN_MARKERS
 from ..client import ApiClient, ApiError
-from ..devapi import collection_all, platform_path
 from ..interactive import select_index
 from .handles import typed_handle
 

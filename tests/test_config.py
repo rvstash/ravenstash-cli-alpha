@@ -77,7 +77,7 @@ default_profile = "staging"
 
 def test_env_api_url_never_replaces_saved_profile_url(monkeypatch, tmp_path: Path) -> None:
     config_dir, config_file = _point_config(monkeypatch, tmp_path)
-    monkeypatch.setenv("RVS_PROFILE_STAGING_API_URL", "https://devapi.staging.example.test")
+    monkeypatch.setenv("RVS_PROFILE_STAGING_API_URL", "https://api.staging.example.test")
     config_dir.mkdir()
     config_file.write_text(
         """

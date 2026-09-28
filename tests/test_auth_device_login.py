@@ -24,7 +24,7 @@ from rvs.auth import device as login_mod
 
 runner = CliRunner()
 
-# DevAPI 0.22 shape: keyed by format, one nullable field set, unknown formats allowed.
+# Discovery shape: keyed by format, one nullable field set, unknown formats allowed.
 NATIVE_REGISTRIES = {
     "pypi": {
         "read_base_url": "https://pypi.rvsta.sh",
@@ -900,7 +900,7 @@ def test_refresh_expiring_credential_rotates_tokens(
     assert profile.refresh_expires_at is not None
 
 
-def test_revoke_device_refresh_token_posts_to_devapi(monkeypatch) -> None:
+def test_revoke_device_refresh_token_posts_to_the_api(monkeypatch) -> None:
     _FakeClient.requests = []
     _FakeClient.responses = [_FakeResponse(204, {})]
 

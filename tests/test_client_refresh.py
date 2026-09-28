@@ -5,8 +5,7 @@ import pytest
 from rvs import auth as auth_mod
 from rvs import client as client_mod
 from rvs import config as cfg_mod
-from rvs.client import ApiClient, ApiError, ApiRouteRetiredError
-from rvs.devapi import (
+from rvs.api import (
     api_path,
     api_url,
     artifacts_path,
@@ -20,6 +19,7 @@ from rvs.devapi import (
     route_sunset_date,
     segment,
 )
+from rvs.client import ApiClient, ApiError, ApiRouteRetiredError
 
 
 class _FakeHttpClient:
@@ -315,7 +315,7 @@ def test_api_client_request_methods_pass_paths_payloads_and_params(monkeypatch) 
     assert _FakeHttpClient.requests[2][3]["json"] == {"name": "new"}
 
 
-def test_devapi_version_and_groups_are_centralized_in_path_builders() -> None:
+def test_api_version_and_groups_are_centralized_in_path_builders() -> None:
     assert api_path("meta") == "/v0/meta"
     assert platform_path("auth/device/code") == "/v0/platform/auth/device/code"
     assert platform_path("/me") == "/v0/platform/me"
@@ -726,7 +726,7 @@ def test_collections_reject_invalid_pages(pages) -> None:
 
 
 def test_collections_stop_reading_an_unending_listing(monkeypatch) -> None:
-    monkeypatch.setattr("rvs.devapi._MAX_COLLECTION_PAGES", 3)
+    monkeypatch.setattr("rvs.api._MAX_COLLECTION_PAGES", 3)
     client = _PagedClient([{"items": [], "next_cursor": f"c{n}"} for n in range(3)])
 
     with pytest.raises(ValueError, match="did not end"):

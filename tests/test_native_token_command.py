@@ -4,12 +4,12 @@ from unittest.mock import Mock
 import httpx2 as httpx
 import pytest
 from rvs import output
+from rvs.api import remote_cache_mint_token_path, repository_mint_token_path
 from rvs.artifacts import auth_commands
 from rvs.artifacts.discovery import Discovery
 from rvs.auth import credentials
 from rvs.cli import app
 from rvs.client import ApiClient, ApiError
-from rvs.devapi import remote_cache_mint_token_path, repository_mint_token_path
 from typer.testing import CliRunner
 
 
@@ -102,7 +102,7 @@ class _Transport:
         return self.response
 
 
-def _devapi_answers(monkeypatch, response: httpx.Response) -> None:
+def _api_answers(monkeypatch, response: httpx.Response) -> None:
     monkeypatch.setattr(httpx, "Client", _Transport(response))
     monkeypatch.setattr(
         ApiClient,
@@ -119,7 +119,7 @@ def _devapi_answers(monkeypatch, response: httpx.Response) -> None:
     ],
 )
 def test_manual_on_a_retired_route_fails_cleanly_without_stdout(issuer, monkeypatch, response):
-    _devapi_answers(monkeypatch, response)
+    _api_answers(monkeypatch, response)
 
     result = runner.invoke(app, ["art", "token", "mint", "--target", "space/packages"])
 
@@ -136,7 +136,7 @@ def test_manual_deprecation_warning_never_reaches_stdout(issuer, monkeypatch):
 
     monkeypatch.setattr(client_mod, "_deprecation_warned", False)
     payload = issuer.issue_native.return_value.json()
-    _devapi_answers(
+    _api_answers(
         monkeypatch,
         httpx.Response(200, json=payload, headers={"Deprecation": "@1", "Sunset": "bogus"}),
     )

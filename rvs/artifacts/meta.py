@@ -14,8 +14,8 @@ from typing import Literal
 import httpx2 as httpx
 
 from .. import config as cfg_mod
+from ..api import api_url, artifacts_path, validate_api_version
 from ..client import ApiRouteRetiredError, check_route_lifecycle, rvs_user_agent
-from ..devapi import api_url, artifacts_path, validate_api_version
 
 
 logger = logging.getLogger(__name__)

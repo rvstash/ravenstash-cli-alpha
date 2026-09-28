@@ -7,14 +7,14 @@ from typing import Literal, cast
 from .. import config as cfg_mod
 from .. import output
 from ..account.commands import acting_account_ref, ensure_active_account
-from ..auth.token_format import STATIC_NATIVE_DURATION_SECONDS, validate_public_token
-from ..client import ApiClient, ApiError
-from ..devapi import (
+from ..api import (
     artifacts_path,
     collection_all,
     remote_cache_mint_token_path,
     repository_mint_token_path,
 )
+from ..auth.token_format import STATIC_NATIVE_DURATION_SECONDS, validate_public_token
+from ..client import ApiClient, ApiError
 from .formats import FORMATS
 from .routing import native_path
 
@@ -131,7 +131,7 @@ def token_scope_hint(kind: str | None = None) -> str:
 
 
 def repository_formats(repository: dict) -> tuple[str, ...]:
-    """Return the enabled formats of a DevAPI ``Repository``."""
+    """Return the enabled formats of an API ``Repository``."""
     return tuple(item["format"] for item in repository["formats"])
 
 
@@ -235,7 +235,7 @@ def is_stable_repository_selector(selector: str) -> bool:
 def resolve_repository_entry(
     client: ApiClient, selector: str, customer_id: str, kind: str | None = None
 ) -> dict:
-    """Resolve a repository selector to its DevAPI ``Repository``."""
+    """Resolve a repository selector to its API ``Repository``."""
     stable = is_stable_repository_selector(selector)
     params = {"selector": selector}
     if not stable:

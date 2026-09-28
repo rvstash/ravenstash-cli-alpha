@@ -1,6 +1,6 @@
-"""Ravenstash DevAPI version selection, path builders, and wire-shape helpers.
+"""Ravenstash API version selection, path builders, and wire-shape helpers.
 
-Every DevAPI resource lives below one API generation and one owning group:
+Every API resource lives below one API generation and one owning group:
 ``/v0/platform/...`` for platform identity and sign-in, and ``/v0/{product}/...``
 for product resources such as ``/v0/artifacts/...``. Command modules pass
 group-relative paths to :func:`platform_path` or :func:`artifacts_path`; they
@@ -186,7 +186,7 @@ def read_collection(
     max_items: int | None = None,
     cursor: str | None = None,
 ) -> Collection:
-    """Read a DevAPI collection by following ``next_cursor``.
+    """Read an API collection by following ``next_cursor``.
 
     Every page is requested with ``limit`` and, after the first, the cursor the
     previous page returned. Reading stops when the server returns a null cursor
@@ -223,5 +223,5 @@ def read_collection(
 def collection_all(
     client: _PageReader, path: str, params: dict[str, Any] | None = None
 ) -> list[dict[str, Any]]:
-    """Return every item of a DevAPI collection, following all pages."""
+    """Return every item of an API collection, following all pages."""
     return read_collection(client, path, params).items
