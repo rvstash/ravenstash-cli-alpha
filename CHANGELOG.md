@@ -6,6 +6,25 @@ All notable user-facing changes to `rvs` are recorded here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- Deleting package content moves it to the repository trash, where it can be
+  restored in the web app until it is permanently deleted.
+  `rvs art package delete-version` and `rvs art oci manifest delete` say so in
+  their confirmation and print "Moved to trash. Restore it in the web app before
+  it is permanently deleted."; `rvs oras manifest delete` and `rvs npm unpublish`
+  explain it before the native tool runs. `rvs art oci tag delete` still deletes
+  the tag at once.
+- `rvs npm unpublish` requests delete authority for its temporary credential,
+  because publish authority no longer allows native deletion. Existing
+  publish-only tokens can no longer unpublish; mint one with `--access admin`.
+  Whole-package unpublish (`npm unpublish PACKAGE --force`, which npm also
+  sends for a package's last version) moves that version to the trash only
+  while the package has exactly one version left; otherwise Ravenstash answers
+  `E405`, and `rvs` points to `rvs art package delete-version` and the web app.
+- An error for content that is in the trash, or for a manifest that an index
+  still references, shows the server's explanation without the HTTP prefix.
+
 ## [0.14.15] - 2026-09-27
 
 ### Changed

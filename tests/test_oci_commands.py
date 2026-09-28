@@ -89,7 +89,7 @@ class _Api:
         assert path == EXPECTED_MINT_PATH
         assert set(json) == {"formats", "operations", "duration_seconds", "expected_target"}
         assert json["formats"] == ["oci"]
-        assert json["operations"] in (["read"], ["read", "publish"])
+        assert json["operations"] in (["read"], ["read", "publish"], ["read", "delete"])
         assert json["expected_target"] == EXPECTED_TARGET
         return _Response(
             {
@@ -439,6 +439,47 @@ def test_native_signal_is_forwarded_with_shell_exit_code_and_secret_cleanup(
     assert result.exit_code == 128 + signal.SIGTERM
     assert captured["signals"] == [signal.SIGTERM]
     assert not captured["broker"].exists()
+
+
+def test_oras_manifest_delete_explains_the_trash_before_oras_confirms(
+    monkeypatch, tmp_path: Path
+) -> None:
+    _setup(monkeypatch, tmp_path)
+    launches = []
+    monkeypatch.setattr(oci_runner, "_run_process", lambda cmd, env: launches.append(cmd))
+
+    result = runner.invoke(
+        app,
+        [
+            "oras",
+            "--rvs-target",
+            "main/images",
+            "manifest",
+            "delete",
+            "oci.rvsta.sh/main/images/backend@sha256:" + "a" * 64,
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert launches[0][1:3] == ["manifest", "delete"]
+    # ORAS asks for confirmation itself and exits 0 when it is declined, so the
+    # trash is explained before it runs rather than claimed afterwards.
+    notice = " ".join(result.stderr.split())
+    assert "moves it to the repository trash" in notice
+    assert "Restore it in the web app before it is permanently deleted." in notice
+
+
+def test_oras_pull_prints_no_trash_notice(monkeypatch, tmp_path: Path) -> None:
+    _setup(monkeypatch, tmp_path)
+    monkeypatch.setattr(oci_runner, "_run_process", lambda cmd, env: None)
+
+    result = runner.invoke(
+        app,
+        ["oras", "--rvs-target", "main/images", "pull", "oci.rvsta.sh/main/images/a:one"],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "trash" not in result.output
 
 
 @pytest.mark.parametrize("other_root", ["in/ar_23456789", "Main/Other"])

@@ -28,6 +28,7 @@ from ..artifacts.routing import (
     npm_auth_token_key,
 )
 from ..artifacts.targets import registry_context
+from ..artifacts.trash import NATIVE_UNPUBLISH_NOTICE, WHOLE_PACKAGE_UNPUBLISH_HINT
 from ..publishing import PublishItem, confirm_context, native_artifacts
 from ..runtime import tools
 from ..subprocesses import child_environment
@@ -40,7 +41,7 @@ if TYPE_CHECKING:
 
 NativeTool = Literal["pip", "uv", "twine", "npm", "mvn"]
 RegistryKind = Literal["pypi", "npm", "maven"]
-PackageOperation = Literal["read", "publish"]
+PackageOperation = Literal["read", "publish", "delete"]
 ConfigPolicy = Literal["respect", "override", "isolate"]
 
 POLICIES: tuple[ConfigPolicy, ...] = ("respect", "override", "isolate")
@@ -141,9 +142,14 @@ def run(tool: NativeTool, argv: list[str], options: NativeOptions) -> None:
         plan = _build_plan(tool, argv, options, Path(temp_dir))
         if plan.native_command:
             warn_if_old(tool, list(plan.native_command))
+        unpublishing = bool(plan.native_command) and tool == "npm" and _npm_is_unpublish(argv)
+        if unpublishing:
+            typer.echo(NATIVE_UNPUBLISH_NOTICE, err=True)
         result = subprocess.run(plan.cmd, env=plan.env, check=False)
         code = getattr(result, "returncode", 0)
         if code:
+            if unpublishing:
+                typer.echo(WHOLE_PACKAGE_UNPUBLISH_HINT, err=True)
             raise typer.Exit(code)
 
 
@@ -267,6 +273,11 @@ def _operations_for(
         return ("publish",)
     if tool == "npm" and _npm_is_publish(argv):
         return ("publish",)
+    if tool == "npm" and _npm_is_unpublish(argv):
+        # Publish never implies deletion. npm reads the write packument and
+        # sends the edited document to the upload host before its delete, and
+        # those steps keep requiring publish.
+        return ("read", "publish", "delete")
     if tool == "npm" and _npm_is_mutation(argv):
         return ("read", "publish")
     if tool == "mvn" and _maven_is_upload(argv):
@@ -560,6 +571,10 @@ def _inject_npm_override(
 
 def _npm_is_publish(argv: list[str]) -> bool:
     return any(arg == "publish" for arg in argv if not arg.startswith("-"))
+
+
+def _npm_is_unpublish(argv: list[str]) -> bool:
+    return any(arg == "unpublish" for arg in argv if not arg.startswith("-"))
 
 
 def _npm_is_mutation(argv: list[str]) -> bool:

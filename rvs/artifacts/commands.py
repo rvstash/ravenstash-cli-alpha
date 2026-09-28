@@ -46,6 +46,7 @@ from .targets import (
     resolve_repository_entry,
     resolve_target,
 )
+from .trash import MOVED_TO_TRASH
 
 
 app = typer.Typer(
@@ -1073,17 +1074,23 @@ def _print_package_version(
 def package_delete_version(
     account: str | None = typer.Option(None, "--account"),
     name: str = typer.Argument(..., help="Package name."),
-    version: str = typer.Argument(..., help="Version to delete."),
+    version: str = typer.Argument(..., help="Version to move to the trash."),
     repo: str | None = typer.Option(None, "--target", "-t", help=_PACKAGE_TARGET_HELP),
     kind: str | None = typer.Option(None, "--format", "-f", help=_PACKAGE_FORMAT_HELP),
     profile: str | None = typer.Option(None, "--profile", "-p"),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation prompt."),
 ) -> None:
-    """Delete one package version."""
+    """Move one package version to the repository trash.
+
+    It stops being installable, and the same version cannot be published again
+    until it is permanently deleted. Restore it in the web app until then.
+    """
     repository_unique_ref, registry_kind, display = _package_lane(repo, kind, profile)
     if not yes:
         typer.confirm(
-            f"Delete {registry_kind} package version {name}@{version} from '{display}'?",
+            f"Move {registry_kind} package version {name}@{version} in '{display}' to trash? "
+            "It stops being installable and this version can't be published again until "
+            "it is permanently deleted. You can restore it in the web app until then.",
             abort=True,
         )
     client = _client(profile)
@@ -1094,7 +1101,7 @@ def package_delete_version(
         )
     except ApiError as exc:
         output.fatal(str(exc))
-    output.success(f"Deleted {name}@{version} from '{display}'.")
+    output.success(MOVED_TO_TRASH)
 
 
 def _update_package_version(

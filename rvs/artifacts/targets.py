@@ -20,7 +20,7 @@ from .routing import native_path
 
 
 PackageKind = Literal["pypi", "npm", "maven"]
-PackageOperation = Literal["read", "publish"]
+PackageOperation = Literal["read", "publish", "delete"]
 DEFAULT_OFFICIAL_SOURCES: dict[PackageKind, str] = {
     "pypi": "pypiorg",
     "npm": "npmjs",

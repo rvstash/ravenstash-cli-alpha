@@ -105,7 +105,8 @@ Renaming or deleting a repository, changing a repository's package sources,
 changing a private mirror's package-age policy, deleting a private mirror, and
 deleting a whole package are managed in the Ravenstash web app only. `rvs` can
 list and show these resources, delete single package versions and OCI content,
-and yank or deprecate versions.
+and yank or deprecate versions. Restoring deleted content from the repository
+trash is also done in the web app.
 
 ## Packages
 
@@ -120,7 +121,7 @@ and yank or deprecate versions.
 | `rvs art package unyank PACKAGE VERSION` | Makes a yanked PyPI version selectable again. |
 | `rvs art package deprecate PACKAGE VERSION --message TEXT` | Adds an npm deprecation warning. |
 | `rvs art package undeprecate PACKAGE VERSION` | Clears an npm deprecation warning. |
-| `rvs art package delete-version PACKAGE VERSION` | Deletes one version. |
+| `rvs art package delete-version PACKAGE VERSION` | Moves one version to the repository trash. |
 
 Package commands act on the repository chosen with `rvs art select` unless you
 pass `--target NAMESPACE/REPOSITORY` (or `in/ar_...`). `--format` is needed only
@@ -137,6 +138,38 @@ one of its `files`, each carrying a `digests` object keyed by algorithm (such as
 
 Yanking is a PyPI resolver control. npm deprecation is warning metadata and does
 not prevent installation. Maven has no corresponding lifecycle operation.
+
+## Deleting content
+
+Deleting a package version or an OCI manifest moves it to the repository trash.
+It stops being installable within seconds and disappears from listings. You can
+restore it in the web app until the repository's retention period ends; then it
+is permanently deleted. Until then, the same version, file, or manifest digest
+cannot be published again (other versions can), and a publish of it is refused
+with a message that names the permanent-deletion date.
+
+| Command | What it does |
+| --- | --- |
+| `rvs art package delete-version PACKAGE VERSION` | Moves one version to the trash. |
+| `rvs art oci manifest delete PATH@sha256:DIGEST` | Moves a manifest, with its referrers, to the trash. Its tags stop resolving until it is restored. |
+| `rvs art oci tag delete PATH:TAG` | Deletes a tag at once; tags are not trashed and the manifest stays. |
+| `rvs npm unpublish PACKAGE@VERSION` | Moves one npm version to the trash. |
+| `rvs npm unpublish PACKAGE --force` | Moves the package's only remaining version to the trash. |
+| `rvs oras manifest delete REFERENCE` | Moves a manifest to the trash through ORAS. |
+
+These commands ask for confirmation unless you pass `--yes` (`rvs npm` and `rvs
+oras` keep the native tool's own confirmation). A manifest that an image index in
+the same path references cannot be deleted alone; delete the index instead.
+
+Deleting needs delete authority, which publish authority never includes.
+`rvs npm unpublish` and `rvs oras manifest delete` request it for their temporary
+credential; a token minted with `rvs art token mint` needs `--access admin`.
+npm sends the same whole-package request for `npm unpublish PACKAGE --force`
+and for unpublishing a package's last remaining version. It succeeds only while
+the package has exactly one version left, which it moves to the trash. With
+more versions it is refused with `405` ("Delete whole packages in the web
+app."): delete single versions with `npm unpublish PACKAGE@VERSION` or `rvs art
+package delete-version`, and whole packages in the web app.
 
 ## Listings and limits
 

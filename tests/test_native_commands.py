@@ -146,7 +146,12 @@ class _FakeApi:
         assert path == REPOSITORY_MINT_PATH
         assert json is not None
         assert set(json) == {"formats", "operations", "duration_seconds", "expected_target"}
-        assert json["operations"] in (["read"], ["publish"], ["read", "publish"])
+        assert json["operations"] in (
+            ["read"],
+            ["publish"],
+            ["read", "publish"],
+            ["read", "publish", "delete"],
+        )
         assert json["expected_target"] == EXPECTED_REPOSITORY_TARGET
         return _JsonResponse(
             {
@@ -282,9 +287,11 @@ def test_native_commands_request_only_the_operations_they_need() -> None:
     assert native_runner._operations_for("twine", ["upload", "dist/*"]) == ("publish",)
     assert native_runner._operations_for("npm", ["ci"]) == ("read",)
     assert native_runner._operations_for("npm", ["publish"]) == ("publish",)
+    # Publish never implies deletion: unpublish requests delete explicitly.
     assert native_runner._operations_for("npm", ["unpublish", "demo@1.0.0"]) == (
         "read",
         "publish",
+        "delete",
     )
     assert native_runner._operations_for("npm", ["deprecate", "demo@1", "old"]) == (
         "read",
@@ -436,6 +443,45 @@ def test_native_npm_repo_override_uses_upload_registry_for_unpublish(
         calls[0]["env"][f"NPM_CONFIG_//{NPM_PUSH_HOST}/in/ar_xyzabcde/:_authToken"]
         == "rvs_sltAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
     )
+    assert "moves the version to the repository trash" in " ".join(result.stderr.split())
+
+
+def test_native_npm_unpublish_mints_delete_authority_and_explains_refusals(
+    monkeypatch: Any,
+    tmp_path: Path,
+) -> None:
+    _isolate_config(monkeypatch, tmp_path)
+    _mock_native_tools(monkeypatch)
+    minted: list[list[str]] = []
+    original_post = _FakeApi.post
+
+    def recording_post(self, path, json=None):
+        if json is not None and "operations" in json:
+            minted.append(list(json["operations"]))
+        return original_post(self, path, json)
+
+    monkeypatch.setattr(_FakeApi, "post", recording_post)
+
+    class _Refused:
+        returncode = 1
+
+    monkeypatch.setattr(
+        native_runner.subprocess,
+        "run",
+        lambda cmd, *, env, check: _Refused(),
+    )
+
+    result = runner.invoke(
+        app,
+        ["npm", "--rvs-target", "staging/repo-npm", "unpublish", "demo", "--force"],
+    )
+
+    assert result.exit_code == 1
+    assert minted == [["read", "publish", "delete"]]
+    stderr = " ".join(result.stderr.split())
+    assert "E405" in stderr
+    assert "works only while it has one version left" in stderr
+    assert "rvs art package delete-version NAME VERSION" in stderr
 
 
 def test_native_npm_repo_override_uses_upload_registry_for_dist_tag_list(

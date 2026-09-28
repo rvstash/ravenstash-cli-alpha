@@ -1111,6 +1111,11 @@ def test_artifacts_package_mutations_call_expected_api_paths(monkeypatch, tmp_pa
     # Deleting a whole package is browser-only.
     assert delete_result.exit_code == 2
     assert delete_version_result.exit_code == 0
+    # A deleted version goes to the repository trash, not away for good.
+    assert (
+        "Moved to trash. Restore it in the web app before it is permanently deleted."
+        in " ".join(delete_version_result.output.split())
+    )
     assert yank_result.exit_code == 0
     assert unyank_result.exit_code == 0
     assert deprecate_result.exit_code == 0
@@ -1543,3 +1548,56 @@ def test_package_commands_explain_a_target_or_format_they_cannot_use(
     assert message in " ".join(result.output.split())
     # Nothing beyond the repository lookup is attempted.
     assert all(call[1].endswith("/resolve") for call in fake.calls)
+
+
+def test_package_delete_version_confirms_the_move_to_trash(monkeypatch, tmp_path: Path) -> None:
+    _isolate_config(monkeypatch, tmp_path)
+    fake = _FakeApiClient()
+    _use_fake_client(monkeypatch, fake)
+
+    result = runner.invoke(
+        artifacts_cmd.app,
+        [
+            "package",
+            "delete-version",
+            "demo",
+            "1.0.0",
+            "--target",
+            "repo-pypi",
+            "--format",
+            "pypi",
+        ],
+        input="n\n",
+    )
+
+    prompt = " ".join(result.output.split())
+    assert result.exit_code == 1
+    assert "Move pypi package version demo@1.0.0 in 'repo:test-account/repo' to trash?" in prompt
+    assert "can't be published again until it is permanently deleted" in prompt
+    assert "restore it in the web app" in prompt
+    assert all(method != "DELETE" for method, _path, _params in fake.calls)
+
+
+def test_trash_errors_show_their_own_message() -> None:
+    from rvs.client import ApiError
+
+    message = (
+        "demo 1.0.0 was deleted and is in the trash until 2026-10-05 10:00 UTC. "
+        "Restore it in the web app, or publish a different version."
+    )
+
+    error = ApiError(
+        409,
+        {
+            "code": "content_in_trash",
+            "message": message,
+            "purge_after": "2026-10-05T10:00:00Z",
+        },
+    )
+
+    assert str(error) == message
+    assert error.code == "content_in_trash"
+    # Other conflicts keep the HTTP status and code prefix.
+    assert str(ApiError(409, {"code": "Conflict", "message": "Tag exists"})) == (
+        "HTTP 409 Conflict: Tag exists"
+    )

@@ -15,6 +15,7 @@ from ..api import artifacts_path, collection_items, segment
 from ..client import ApiClient, ApiError
 from ..oci.reference import qualify_reference
 from .discovery import discover
+from .trash import MOVED_TO_TRASH
 
 
 app = typer.Typer(help="Manage OCI paths, manifests, tags and referrers.", no_args_is_help=True)
@@ -53,6 +54,7 @@ def _request(
     body: dict | None = None,
     yes: bool = False,
     subject: str = "",
+    trash: bool = False,
 ) -> None:
     try:
         with contextlib.redirect_stdout(sys.stderr):
@@ -66,7 +68,14 @@ def _request(
             client = ApiClient.from_profile(found.profile)
             url = artifacts_path(f"repositories/{segment(reference)}/formats/oci/{suffix}")
             if method == "DELETE" and not yes:
-                typer.confirm(f"Delete {subject} from {found.target.display_selector}?", abort=True)
+                prompt = (
+                    f"Move manifest {subject} in {found.target.display_selector} to trash? "
+                    "Its referrers move with it and its tags stop resolving. You can "
+                    "restore it in the web app until it is permanently deleted."
+                    if trash
+                    else f"Delete {subject} from {found.target.display_selector}?"
+                )
+                typer.confirm(prompt, abort=True)
             response = None
             if method == "GET":
                 response = client.get(
@@ -81,7 +90,11 @@ def _request(
                 # Deletions answer 204 without a body; an absent object is a 404.
                 client.delete(url, params=params)
         if response is None:
-            output.success(f"Deleted {subject} from {found.target.display_selector}.")
+            output.success(
+                MOVED_TO_TRASH
+                if trash
+                else f"Deleted {subject} from {found.target.display_selector}."
+            )
             return
         payload = response.json()
         if method == "PUT":
@@ -235,6 +248,12 @@ def manifest_app_delete(
     account: str | None = typer.Option(None, "--account"),
     profile: str | None = typer.Option(None, "--profile", "-p"),
 ) -> None:
+    """Move a manifest to the repository trash.
+
+    Its referrers move with it, and its tags stop resolving until it is restored
+    in the web app. A manifest that an index in the path references cannot be
+    deleted alone; delete the index instead.
+    """
     path, digest = _validated(_reference, reference, "digest")
     _request(
         "DELETE",
@@ -245,6 +264,7 @@ def manifest_app_delete(
         params={"path": path},
         yes=yes,
         subject=reference,
+        trash=True,
     )
 
 
@@ -281,6 +301,7 @@ def tag_app_delete(
     account: str | None = typer.Option(None, "--account"),
     profile: str | None = typer.Option(None, "--profile", "-p"),
 ) -> None:
+    """Delete a tag at once; tags are not moved to the trash and the manifest stays."""
     path, tag = _validated(_reference, reference, "tag")
     _request(
         "DELETE",

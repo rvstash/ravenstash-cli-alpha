@@ -39,6 +39,10 @@ if TYPE_CHECKING:
 
 
 INVALID_CURSOR = "InvalidCursor"
+CONTENT_IN_TRASH = "content_in_trash"
+MANIFEST_REFERENCED_BY_INDEX = "manifest_referenced_by_index"
+# Error codes whose message is the complete explanation, shown without the HTTP prefix.
+_SELF_EXPLAINING_CODES = frozenset({CONTENT_IN_TRASH, MANIFEST_REFERENCED_BY_INDEX})
 
 # Idempotent reads are retried when the server asks the client to back off.
 _RETRYABLE_READ_STATUSES = frozenset({429, 503})
@@ -116,6 +120,12 @@ class ApiError(Exception):
                 "The --cursor value is invalid or belongs to a different listing; "
                 "run the command again without --cursor."
             )
+        if self.code in _SELF_EXPLAINING_CODES:
+            # These messages name the content and what to do instead, for example
+            # the date a trashed version is permanently deleted.
+            message = self.detail.get("message") if isinstance(self.detail, dict) else None
+            if isinstance(message, str) and message:
+                return message
         return self._http_message()
 
     def _http_message(self) -> str:

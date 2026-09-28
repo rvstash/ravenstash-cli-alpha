@@ -20,6 +20,7 @@ from ..account.commands import acting_account_ref, resolve_account
 from ..api import repository_mint_token_path
 from ..artifacts.routing import native_path as opaque_native_path
 from ..artifacts.targets import expected_repository_target, resolve_target
+from ..artifacts.trash import NATIVE_MANIFEST_DELETE_NOTICE
 from ..auth.token_format import STATIC_NATIVE_DURATION_SECONDS, validate_public_token
 from ..client import ApiClient, ApiError
 from ..publishing import confirm_publish, oci_artifacts
@@ -443,6 +444,10 @@ def run(tool: OciTool, argv: list[str], options: OciOptions) -> None:
             typer.echo(f"Local tag: {destination} (retained if push fails).", err=True)
             if invocation.command[-1] == "tag":
                 return
+        if tool == "oras" and oras.parse(argv).command == ("manifest", "delete"):
+            # ORAS confirms and reports the delete itself, and exits 0 when its
+            # prompt is declined, so the trash is explained before it runs.
+            typer.echo(NATIVE_MANIFEST_DELETE_NOTICE, err=True)
         _run_process([executable, *argv], env)
 
 

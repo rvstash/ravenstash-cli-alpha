@@ -171,13 +171,17 @@ def test_oci_tag_create_json_reports_whether_the_tag_was_created(transport, stat
 
 
 @pytest.mark.parametrize(
-    ("args", "suffix"),
+    ("args", "suffix", "message"),
     [
-        (["tag", "delete", "images/api:1.2.3", "--yes"], "tags/1.2.3"),
-        (["manifest", "delete", "images/api@" + DIGEST, "--yes"], "manifests/sha256%3A" + "a" * 64),
+        (["tag", "delete", "images/api:1.2.3", "--yes"], "tags/1.2.3", "Deleted images/api:1.2.3"),
+        (
+            ["manifest", "delete", "images/api@" + DIGEST, "--yes"],
+            "manifests/sha256%3A" + "a" * 64,
+            "Moved to trash. Restore it in the web app before it is permanently deleted.",
+        ),
     ],
 )
-def test_oci_deletes_accept_an_empty_204(transport, args, suffix):
+def test_oci_deletes_accept_an_empty_204(transport, args, suffix, message):
     # A 204 has no body; the CLI must not try to decode one.
     transport.delete.return_value.json.side_effect = ValueError("no body")
     result = runner.invoke(app, ["art", "oci", *args])
@@ -186,7 +190,39 @@ def test_oci_deletes_accept_an_empty_204(transport, args, suffix):
         "/v0/artifacts/repositories/ar_23456789/formats/oci/" + suffix,
         params={"path": "images/api"},
     )
-    assert "Deleted" in result.stdout
+    assert message in " ".join(result.stdout.split())
+
+
+@pytest.mark.parametrize(
+    ("args", "prompt"),
+    [
+        (["manifest", "delete", "images/api@" + DIGEST], "Move manifest images/api@"),
+        (["tag", "delete", "images/api:1.2.3"], "Delete images/api:1.2.3 from"),
+    ],
+)
+def test_oci_delete_prompts_describe_what_happens(transport, args, prompt):
+    result = runner.invoke(app, ["art", "oci", *args], input="n\n")
+
+    assert result.exit_code != 0
+    assert prompt in " ".join(result.output.split())
+    if args[0] == "manifest":
+        assert "to trash?" in result.output
+        assert "restore it in the web app" in " ".join(result.output.split())
+    transport.delete.assert_not_called()
+
+
+def test_oci_manifest_referenced_by_an_index_explains_itself(transport):
+    from rvs.client import ApiError
+
+    message = "This manifest is part of an image index (sha256:bb). Delete the index instead."
+    transport.delete.side_effect = ApiError(
+        409, {"code": "manifest_referenced_by_index", "message": message}
+    )
+    result = runner.invoke(app, ["art", "oci", "manifest", "delete", "images/api@" + DIGEST, "-y"])
+
+    assert result.exit_code == 1
+    assert message in " ".join(result.stderr.split())
+    assert "HTTP 409" not in result.stderr
 
 
 def test_oci_delete_reports_an_absent_object(transport):
