@@ -70,7 +70,7 @@ repository target can be name-based (`NAMESPACE/REPOSITORY`) or ID-based
 
 | Command | What it does |
 | --- | --- |
-| `rvs art repo list` | Lists repositories. |
+| `rvs art repo list` | Lists repositories and your access to each: Reader, Publisher, Maintainer, or Admin. |
 | `rvs art repo create NAME --format FORMAT` | Creates a repository for one or more package formats. |
 | `rvs art repo show TARGET` | Shows repository details. |
 
