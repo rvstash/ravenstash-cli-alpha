@@ -6,6 +6,8 @@ All notable user-facing changes to `rvs` are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.14.16] - 2026-09-29
+
 ### Added
 
 - `rvs art package tag list|set|delete` manage npm distribution tags. `set`
@@ -62,6 +64,8 @@ All notable user-facing changes to `rvs` are recorded here. The format follows
   credential before npm rejects it.
 - `rvs npm undeprecate` (npm 11) uses the publish address with publish access,
   like `rvs npm deprecate`, instead of failing with a read-only credential.
+
+Detailed release notes: [RVS 0.14.16](docs/releases/0.14.16.md).
 
 ## [0.14.15] - 2026-09-27
 
@@ -376,7 +380,8 @@ Detailed release notes: [RVS 0.14.4](docs/releases/0.14.4.md).
 
 Detailed release notes: [RVS 0.14.3](docs/releases/0.14.3.md).
 
-[Unreleased]: https://github.com/rvstash/ravenstash-cli-alpha/compare/v0.14.15...HEAD
+[Unreleased]: https://github.com/rvstash/ravenstash-cli-alpha/compare/v0.14.16...HEAD
+[0.14.16]: https://github.com/rvstash/ravenstash-cli-alpha/compare/v0.14.15...v0.14.16
 [0.14.15]: https://github.com/rvstash/ravenstash-cli-alpha/compare/v0.14.14...v0.14.15
 [0.14.14]: https://github.com/rvstash/ravenstash-cli-alpha/compare/v0.14.13...v0.14.14
 [0.14.13]: https://github.com/rvstash/ravenstash-cli-alpha/compare/v0.14.12...v0.14.13
