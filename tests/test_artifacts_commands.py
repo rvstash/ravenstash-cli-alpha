@@ -1807,7 +1807,8 @@ def test_package_tag_confirmation_shows_control_characters_as_placeholders(
     )
 
     assert declined.exit_code == 1
-    assert "\x1b" not in declined.output
+    # Click colors "Aborted." when CI forces color; only the name's sequence matters.
+    assert "\x1b[2J" not in declined.output
     assert "Delete tag 'beta' of demo?[2J" in declined.output
 
 
