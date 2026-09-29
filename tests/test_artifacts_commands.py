@@ -203,7 +203,7 @@ def test_artifacts_repo_list_filters_by_kind_and_uses_profile_customer(
 
     assert result.exit_code == 0
     assert "pypi, npm" in result.output
-    assert "Admin" in result.output
+    assert "Maintainer" in result.output
     assert fake.calls == [
         (
             "GET",
@@ -240,6 +240,25 @@ def test_artifacts_repo_list_omits_unset_query_filters(
     assert "Account" in result.output
     assert "test-account" in result.output
     assert "No repositories found" in result.output
+
+
+@pytest.mark.parametrize(
+    ("allowed_actions", "label"),
+    [
+        (["content.read", "repository.read", "upstream.read"], "Reader"),
+        (["content.read", "content.publish"], "Publisher"),
+        (["content.read", "content.publish", "content.delete", "upstream.write"], "Maintainer"),
+        (["content.read", "repository.write", "repository.security.write"], "Maintainer"),
+        (["content.read", "repository.settings.write"], "Admin"),
+        (["content.read", "content.delete", "repository.delete"], "Admin"),
+        ([], "Unknown"),
+    ],
+)
+def test_repository_access_label_names_the_four_levels(
+    allowed_actions: list[str], label: str
+) -> None:
+    repository = _repository_entry(allowed_actions=allowed_actions)
+    assert artifacts_cmd._repository_access_label(repository) == label
 
 
 def test_artifacts_repo_list_preserves_json_shape_and_uses_typed_account_handle(

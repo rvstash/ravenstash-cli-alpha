@@ -391,14 +391,32 @@ def _remote_cache_path(remote_cache_ref: str) -> str:
 # ── repo ─────────────────────────────────────────────────────────────────────
 
 
+# Actions only the Admin level adds on top of Maintainer.
+_ADMIN_ACTIONS = frozenset({"repository.delete", "repository.settings.write"})
+# Actions the Maintainer level adds on top of Publisher.
+_MAINTAINER_ACTIONS = frozenset(
+    {
+        "content.delete",
+        "upstream.write",
+        "repository.write",
+        "repository.security.write",
+        "repository.access.write",
+        "repository.metrics.read",
+    }
+)
+
+
 def _repository_access_label(repository: dict) -> str:
+    """Name the highest repository level the caller's actions reach."""
     actions = set(repository["allowed_actions"])
-    if actions & {"repository.write", "repository.delete", "upstream.write", "content.delete"}:
+    if actions & _ADMIN_ACTIONS:
         return "Admin"
+    if actions & _MAINTAINER_ACTIONS:
+        return "Maintainer"
     if "content.publish" in actions:
-        return "Publish"
+        return "Publisher"
     if "content.read" in actions:
-        return "Read"
+        return "Reader"
     return "Unknown"
 
 

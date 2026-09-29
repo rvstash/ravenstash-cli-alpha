@@ -6,6 +6,14 @@ All notable user-facing changes to `rvs` are recorded here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- `rvs art repo list` names your access with the repository levels Reader,
+  Publisher, Maintainer, and Admin. A Maintainer, who can delete versions and
+  manage upstreams, security, and access but cannot change repository settings
+  or delete the repository, was previously shown as `Admin`; the `access` value
+  in `--json` output uses the same names.
+
 ## [0.14.16] - 2026-09-29
 
 ### Added
