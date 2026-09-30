@@ -6,6 +6,8 @@ All notable user-facing changes to `rvs` are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.14.17] - 2026-09-30
+
 ### Changed
 
 - `rvs art repo list` names your access with the repository levels Reader,
@@ -13,6 +15,8 @@ All notable user-facing changes to `rvs` are recorded here. The format follows
   manage upstreams, security, and access but cannot change repository settings
   or delete the repository, was previously shown as `Admin`; the `access` value
   in `--json` output uses the same names.
+
+Detailed release notes: [RVS 0.14.17](docs/releases/0.14.17.md).
 
 ## [0.14.16] - 2026-09-29
 
@@ -388,7 +392,8 @@ Detailed release notes: [RVS 0.14.4](docs/releases/0.14.4.md).
 
 Detailed release notes: [RVS 0.14.3](docs/releases/0.14.3.md).
 
-[Unreleased]: https://github.com/rvstash/ravenstash-cli-alpha/compare/v0.14.16...HEAD
+[Unreleased]: https://github.com/rvstash/ravenstash-cli-alpha/compare/v0.14.17...HEAD
+[0.14.17]: https://github.com/rvstash/ravenstash-cli-alpha/compare/v0.14.16...v0.14.17
 [0.14.16]: https://github.com/rvstash/ravenstash-cli-alpha/compare/v0.14.15...v0.14.16
 [0.14.15]: https://github.com/rvstash/ravenstash-cli-alpha/compare/v0.14.14...v0.14.15
 [0.14.14]: https://github.com/rvstash/ravenstash-cli-alpha/compare/v0.14.13...v0.14.14
