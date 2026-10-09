@@ -1610,14 +1610,14 @@ def test_self_explaining_errors_show_their_own_message() -> None:
     error = ApiError(
         409,
         {
-            "code": "manifest_referenced_by_index",
+            "code": "ManifestReferencedByIndex",
             "message": message,
             "details": {"parent_digests": ["sha256:bb"]},
         },
     )
 
     assert str(error) == message
-    assert error.code == "manifest_referenced_by_index"
+    assert error.code == "ManifestReferencedByIndex"
     # Other conflicts keep the HTTP status and code prefix.
     assert str(ApiError(409, {"code": "Conflict", "message": "Tag exists"})) == (
         "HTTP 409 Conflict: Tag exists"

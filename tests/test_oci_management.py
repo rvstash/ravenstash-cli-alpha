@@ -217,7 +217,7 @@ def test_oci_manifest_referenced_by_an_index_explains_itself(transport):
 
     message = "This manifest is part of an image index (sha256:bb). Delete the index instead."
     transport.delete.side_effect = ApiError(
-        409, {"code": "manifest_referenced_by_index", "message": message}
+        409, {"code": "ManifestReferencedByIndex", "message": message}
     )
     result = runner.invoke(app, ["art", "oci", "manifest", "delete", "images/api@" + DIGEST, "-y"])
 

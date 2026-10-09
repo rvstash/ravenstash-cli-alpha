@@ -233,7 +233,7 @@ def _intent_payload(
         (
             {
                 "sha256_digest": item.sha256,
-                "size": item.size,
+                "size_bytes": item.size,
                 "filename": item.filename,
             }
             if isinstance(item, FileDigest)
@@ -255,7 +255,7 @@ def _intent_payload(
             {
                 "evidence_type": evidence_type,
                 "filename": item.filename,
-                "size": item.size,
+                "size_bytes": item.size,
                 "sha256_digest": item.sha256,
             }
             for evidence_type, item in evidence
@@ -469,7 +469,7 @@ def upload(
             artifacts=[
                 {
                     "sha256_digest": item["digests"]["sha256"],
-                    "size": item["size_bytes"],
+                    "size_bytes": item["size_bytes"],
                     "filename": item["filename"],
                 }
                 for item in selected

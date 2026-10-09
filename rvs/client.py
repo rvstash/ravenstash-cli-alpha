@@ -39,7 +39,7 @@ if TYPE_CHECKING:
 
 
 INVALID_CURSOR = "InvalidCursor"
-MANIFEST_REFERENCED_BY_INDEX = "manifest_referenced_by_index"
+MANIFEST_REFERENCED_BY_INDEX = "ManifestReferencedByIndex"
 # Error codes whose message is the complete explanation, shown without the HTTP prefix.
 _SELF_EXPLAINING_CODES = frozenset({MANIFEST_REFERENCED_BY_INDEX})
 

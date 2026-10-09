@@ -50,7 +50,7 @@ class _Client:
                 "ref": "pe_23456789abcdefghijkmn",
                 "state": "prepared",
                 "analysis_state": "not_started",
-                "bound_artifact_refs": [],
+                "bound_file_refs": [],
             }
         )
 
@@ -508,7 +508,7 @@ def test_upload_resolves_release_artifacts_and_completes_uploads_by_ref(
     assert create_body["repository_ref"] == "ar_23456789"
     assert create_body["package_name"] == "demo"
     assert create_body["artifact_manifest"] == [
-        {"sha256_digest": digest, "size": 5, "filename": "demo-1.0.0-py3-none-any.whl"}
+        {"sha256_digest": digest, "size_bytes": 5, "filename": "demo-1.0.0-py3-none-any.whl"}
     ]
     assert [call[:2] for call in calls[2:]] == [
         ("POST", "/v0/artifacts/package-evidence/intents/pe_23456789abcdefghijkmn/uploads"),
