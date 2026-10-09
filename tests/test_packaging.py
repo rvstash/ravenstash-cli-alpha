@@ -474,6 +474,10 @@ def test_installer_worker_binds_both_public_routes() -> None:
 
     assert 'pattern = "https://ravenstash.com/install.sh*"' in configuration
     assert 'pattern = "https://ravenstash.com/install.ps1*"' in configuration
+    # Routes name their zone; the tree carries no zone or account identifier.
+    assert configuration.count('zone_name = "ravenstash.com"') == 2
+    assert "zone_id" not in configuration
+    assert "account_id" not in configuration
 
 
 def test_installer_worker_embeds_both_installers_before_every_build() -> None:
