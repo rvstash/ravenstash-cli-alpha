@@ -1734,13 +1734,17 @@ def _upstream_tag(
 
 
 def _table_rows(stdout: str) -> dict[str, list[str]]:
-    """Rows of a printed table by their first cell."""
-    rows: dict[str, list[str]] = {}
-    for line in stdout.splitlines():
-        if "│" in line:
-            cells = [cell.strip() for cell in line.strip().strip("│").split("│")]
-            rows[cells[0]] = cells
-    return rows
+    """Body rows of a printed table by their first cell.
+
+    The header is the first row; its separator depends on the terminal, and
+    Windows draws it like a body row.
+    """
+    lines = [
+        [cell.strip() for cell in re.split("[┃│]", line.strip().strip("┃│"))]
+        for line in stdout.splitlines()
+        if "│" in line or "┃" in line
+    ]
+    return {cells[0]: cells for cells in lines[1:]}
 
 
 def test_package_tag_list_names_each_tag_source_and_marks_read_only_tags(
