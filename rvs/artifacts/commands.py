@@ -916,7 +916,7 @@ def _package_tags(item: dict) -> object:
 
 def _tags_label(tags: object, details: list[dict] | None = None) -> str:
     """Show effective tags as ``tag=version``, noting tags that do not resolve
-    to their stored version in this repository."""
+    to their stored version in this repository and tags an upstream defines."""
     if details:
         return ", ".join(_tag_detail_label(entry) for entry in details)
     if not isinstance(tags, dict):
@@ -926,6 +926,14 @@ def _tags_label(tags: object, details: list[dict] | None = None) -> str:
 
 
 _HIDDEN_REASONS = {"in_trash": "in the trash", "not_available": "not installable here"}
+_REPOSITORY_TAG_SOURCE = "repository"
+# Where a tag's version is defined: the repository itself, or one of its upstreams.
+_TAG_SOURCES = {
+    _REPOSITORY_TAG_SOURCE: "this repository",
+    "upstream_repository": "upstream repository",
+    "remote_cache": "remote cache",
+    "upstream": "upstream",
+}
 
 
 def _tag_state(entry: dict) -> str:
@@ -935,18 +943,39 @@ def _tag_state(entry: dict) -> str:
     return f"{state}: {reason}" if reason and state in {"fallback", "hidden"} else state
 
 
+def _tag_source(entry: dict) -> str:
+    """The source kind of a tag; an answer without one lists the repository's own."""
+    source = entry.get("source")
+    if isinstance(source, str) and source:
+        return source
+    return "upstream" if entry.get("read_only") else _REPOSITORY_TAG_SOURCE
+
+
+def _tag_source_label(entry: dict) -> str:
+    source = _tag_source(entry)
+    return _TAG_SOURCES.get(source, source)
+
+
+def _tag_source_cell(entry: dict) -> str:
+    """The source with the upstream's position, as `repo upstream list` shows it."""
+    label = _tag_source_label(entry)
+    position = entry.get("upstream_position")
+    return f"{label} (position {position})" if isinstance(position, int) else label
+
+
 def _tag_detail_label(entry: dict) -> str:
     tag = str(entry.get("tag", ""))
     version = entry.get("version")
     stored = entry.get("stored_version")
-    state = entry.get("state")
-    label = f"{tag}={version or '-'}"
-    if state in {"fallback", "hidden"}:
-        details = [_tag_state(entry)]
+    details: list[str] = []
+    if entry.get("state") in {"fallback", "hidden"}:
+        details.append(_tag_state(entry))
         if stored:
             details.append(f"set to {stored}")
-        return f"{label} ({'; '.join(details)})"
-    return label
+    if _tag_source(entry) != _REPOSITORY_TAG_SOURCE:
+        details.append(f"from {_tag_source_label(entry)}")
+    label = f"{tag}={version or '-'}"
+    return f"{label} ({'; '.join(details)})" if details else label
 
 
 def _read_package_tags(
@@ -1337,6 +1366,7 @@ _TAG_CONFLICT_HINTS = {
     "latest_required": "Every npm package keeps a `latest` tag while it has versions; move "
     "it with `rvs art package tag set` instead.",
     "tag_limit": "The package already has the maximum number of tags; delete one first.",
+    "read_only_upstream": "`rvs art package tag list` shows where each tag comes from.",
 }
 
 
@@ -1349,7 +1379,13 @@ def _tag_lane(
 def _tag_error(exc: ApiError) -> str:
     reason = exc.detail.get("reason") if isinstance(exc.detail, dict) else None
     hint = _TAG_CONFLICT_HINTS.get(reason) if isinstance(reason, str) else None
-    return f"{exc} {hint}" if hint else str(exc)
+    if not hint:
+        return str(exc)
+    # The API message is a sentence without its final period.
+    message = str(exc).rstrip()
+    if not message.endswith((".", "!", "?")):
+        message += "."
+    return f"{message} {hint}"
 
 
 def _require_tag_name(tag: str) -> None:
@@ -1368,8 +1404,10 @@ def package_tag_list(
 ) -> None:
     """List a package's tags as installs in this repository resolve them.
 
-    A tag whose version is not installable here is marked: `latest` falls back to
-    the best installable version, and other tags are hidden until it is.
+    The list holds the repository's own tags and the tags its upstreams define.
+    An upstream's tag is read-only here and can only be changed in its source.
+    A tag whose version is not installable here is marked: `latest` falls back
+    to the best installable version, and other tags are hidden until it is.
     """
     repository_unique_ref, registry_kind, display = _tag_lane(
         repo, kind, profile, "Listing package tags"
@@ -1394,12 +1432,14 @@ def package_tag_list(
         output.info(f"{name} has no tags in '{display}'.")
         return
     output.table(
-        ["Tag", "Version", "State", "Stored", "Revision"],
+        ["Tag", "Version", "State", "Source", "Read-only", "Stored", "Revision"],
         [
             [
                 str(item.get("tag", "")),
                 str(item.get("version") or "-"),
                 _tag_state(item),
+                _tag_source_cell(item),
+                _yes_no(item.get("read_only")),
                 str(item.get("stored_version") or ""),
                 "" if item.get("revision") is None else str(item["revision"]),
             ]
@@ -1429,7 +1469,9 @@ def package_tag_set(
     """Create TAG or move it to VERSION.
 
     Package tags move, unlike OCI tags. Moving `latest` changes what installs
-    without a version or tag resolve to, so it asks for confirmation.
+    without a version or tag resolve to, so it asks for confirmation. A tag
+    points only at the repository's own versions: a version or a package that
+    comes from an upstream is refused.
     """
     _require_tag_name(tag)
     repository_unique_ref, registry_kind, display = _tag_lane(
@@ -1483,15 +1525,18 @@ def package_tag_delete(
 ) -> None:
     """Delete TAG at once; the version it pointed at is unchanged.
 
-    Installs by the tag stop working. `latest` cannot be deleted while the
-    package has versions; move it with `tag set` instead.
+    Installs by the tag stop working unless an upstream supplies the same tag.
+    A tag an upstream defines is read-only here and cannot be deleted. `latest`
+    cannot be deleted while the package has versions, unless an upstream
+    supplies some of them: installs then resolve that upstream's `latest`.
     """
     _require_tag_name(tag)
     repository_unique_ref, registry_kind, display = _tag_lane(
         repo, kind, profile, "Changing package tags"
     )
     confirm_question(
-        f"Delete tag '{tag}' of {name} in '{display}'? Installs by this tag stop working.",
+        f"Delete tag '{tag}' of {name} in '{display}'? Installs by this tag stop working "
+        "unless an upstream supplies the same tag.",
         yes=yes,
         skip_option="--yes",
     )

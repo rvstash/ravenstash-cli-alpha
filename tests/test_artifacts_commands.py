@@ -1714,6 +1714,140 @@ def test_package_tag_list_says_when_a_package_has_none(monkeypatch, tmp_path: Pa
     assert "demo has no tags" in result.output
 
 
+def _upstream_tag(
+    tag: str, version: str, source: str = "upstream_repository", position: int | None = 1
+) -> dict[str, Any]:
+    """A tag an upstream defines: read-only here, without a stored version or revision."""
+    return {
+        "tag": tag,
+        "version": version,
+        "stored_version": None,
+        "state": "effective",
+        "hidden_reason": None,
+        "revision": None,
+        "updated_at": None,
+        "read_only": True,
+        "source": source,
+        "upstream_position": position,
+    }
+
+
+def _table_rows(stdout: str) -> dict[str, list[str]]:
+    """Rows of a printed table by their first cell."""
+    rows: dict[str, list[str]] = {}
+    for line in stdout.splitlines():
+        if "│" in line:
+            cells = [cell.strip() for cell in line.strip().strip("│").split("│")]
+            rows[cells[0]] = cells
+    return rows
+
+
+def test_package_tag_list_names_each_tag_source_and_marks_read_only_tags(
+    monkeypatch, tmp_path: Path
+) -> None:
+    _isolate_config(monkeypatch, tmp_path)
+    items = [
+        # The repository's own `latest`, served by an upstream's version meanwhile.
+        _package_tag(
+            "latest",
+            "2.1.0",
+            stored_version="1.0.0",
+            state="fallback",
+            hidden_reason="not_available",
+            revision=3,
+            read_only=False,
+            source="upstream_repository",
+            upstream_position=1,
+        ),
+        _package_tag(
+            "beta", "1.1.0-beta.1", read_only=False, source="repository", upstream_position=None
+        ),
+        _upstream_tag("canary", "2.2.0-canary.4"),
+        _upstream_tag("next", "3.0.0-rc.1", source="remote_cache", position=3),
+        # An upstream Ravenstash could not identify has no position.
+        _upstream_tag("lts", "1.8.2", source="upstream", position=None),
+        _upstream_tag("edge", "4.0.0", source="some_future_source", position=None),
+    ]
+    _use_fake_client(monkeypatch, _FakeApiClient([_npm_repository(), items]))
+    monkeypatch.setattr(output.console, "width", 200)
+
+    result = runner.invoke(
+        artifacts_cmd.app, ["package", "tag", "list", "demo", "--target", "repo-npm"]
+    )
+
+    assert result.exit_code == 0, result.output
+    header = " ".join(result.stdout.split())
+    assert "Tag ┃ Version ┃ State ┃ Source ┃ Read-only ┃ Stored ┃ Revision" in header
+    assert _table_rows(result.stdout) == {
+        "latest": [
+            "latest",
+            "2.1.0",
+            "fallback: not installable here",
+            "upstream repository (position 1)",
+            "no",
+            "1.0.0",
+            "3",
+        ],
+        "beta": ["beta", "1.1.0-beta.1", "effective", "this repository", "no", "1.1.0-beta.1", "1"],
+        "canary": [
+            "canary",
+            "2.2.0-canary.4",
+            "effective",
+            "upstream repository (position 1)",
+            "yes",
+            "",
+            "",
+        ],
+        "next": ["next", "3.0.0-rc.1", "effective", "remote cache (position 3)", "yes", "", ""],
+        "lts": ["lts", "1.8.2", "effective", "upstream", "yes", "", ""],
+        # A source `rvs` does not know yet is shown as Ravenstash reports it.
+        "edge": ["edge", "4.0.0", "effective", "some_future_source", "yes", "", ""],
+    }
+    for placeholder in ("None", "?", "hidden"):
+        assert placeholder not in result.stdout
+
+
+def test_package_tag_list_without_source_fields_lists_the_repository_tags(
+    monkeypatch, tmp_path: Path
+) -> None:
+    _isolate_config(monkeypatch, tmp_path)
+    # An answer without `source`: every tag is the repository's own unless it
+    # says it is read-only.
+    items = [_package_tag("latest", "1.0.0"), {**_package_tag("beta", "2.0.0"), "read_only": True}]
+    _use_fake_client(monkeypatch, _FakeApiClient([_npm_repository(), items]))
+    monkeypatch.setattr(output.console, "width", 200)
+
+    result = runner.invoke(
+        artifacts_cmd.app, ["package", "tag", "list", "demo", "--target", "repo-npm"]
+    )
+
+    assert result.exit_code == 0, result.output
+    rows = _table_rows(result.stdout)
+    assert rows["latest"][3:5] == ["this repository", "no"]
+    assert rows["beta"][3:5] == ["upstream", "yes"]
+
+
+def test_package_tag_list_json_passes_the_source_fields_through(
+    monkeypatch, tmp_path: Path
+) -> None:
+    _isolate_config(monkeypatch, tmp_path)
+    items = [
+        _package_tag("latest", "1.0.0", read_only=False, source="repository"),
+        _upstream_tag("next", "3.0.0-rc.1", source="remote_cache"),
+    ]
+    _use_fake_client(monkeypatch, _FakeApiClient([_npm_repository(), items]))
+    output.set_json(True)
+    try:
+        result = runner.invoke(
+            artifacts_cmd.app, ["package", "tag", "list", "demo", "--target", "repo-npm"]
+        )
+    finally:
+        output.set_json(False)
+
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.stdout)["items"] == items
+
+
 @pytest.mark.parametrize(
     ("result", "message"),
     [
@@ -1865,6 +1999,45 @@ def test_package_show_names_why_a_tag_does_not_resolve() -> None:
     )
     # Readers without publish authority see a fallback `latest` as effective.
     assert artifacts_cmd._tag_detail_label(_reader_tag("latest", "1.1.0")) == "latest=1.1.0"
+
+
+def test_package_show_names_the_source_of_an_upstream_tag() -> None:
+    assert (
+        artifacts_cmd._tag_detail_label(_upstream_tag("beta", "2.0.0-beta.1"))
+        == "beta=2.0.0-beta.1 (from upstream repository)"
+    )
+    assert (
+        artifacts_cmd._tag_detail_label(_upstream_tag("next", "3.0.0", source="remote_cache"))
+        == "next=3.0.0 (from remote cache)"
+    )
+    # The repository's own tags carry no source note, for publishers and readers.
+    assert (
+        artifacts_cmd._tag_detail_label(
+            _package_tag("latest", "1.0.0", read_only=False, source="repository")
+        )
+        == "latest=1.0.0"
+    )
+    assert (
+        artifacts_cmd._tag_detail_label(
+            {**_reader_tag("latest", "1.0.0"), "read_only": False, "source": "repository"}
+        )
+        == "latest=1.0.0"
+    )
+    # The repository's `latest` whose versions an upstream serves meanwhile.
+    assert (
+        artifacts_cmd._tag_detail_label(
+            _package_tag(
+                "latest",
+                "2.1.0",
+                stored_version="1.0.0",
+                state="fallback",
+                hidden_reason="not_available",
+                read_only=False,
+                source="upstream_repository",
+            )
+        )
+        == "latest=2.1.0 (fallback: not installable here; set to 1.0.0; from upstream repository)"
+    )
 
 
 def _reader_tag(tag: str, version: str) -> dict[str, Any]:
@@ -2019,6 +2192,7 @@ def test_package_tag_set_json_reports_the_mutation(monkeypatch, tmp_path: Path) 
         ("target_unavailable", "not installable in this repository"),
         ("latest_required", "move it with `rvs art package tag set`"),
         ("tag_limit", "maximum number of tags"),
+        ("read_only_upstream", "Refused. `rvs art package tag list` shows where each tag"),
         ("some_future_reason", "HTTP 409 Conflict: Refused"),
     ],
 )
@@ -2042,6 +2216,66 @@ def test_package_tag_conflicts_explain_their_reason(
 
     assert result.exit_code == 1
     assert hint in " ".join(result.output.split())
+
+
+@pytest.mark.parametrize(
+    ("argv", "method", "message"),
+    [
+        (
+            ["package", "tag", "set", "demo", "beta", "2.1.0", "--target", "repo-npm"],
+            "put",
+            "Version '2.1.0' comes from an upstream; a tag here can only point at this "
+            "repository's own versions",
+        ),
+        (
+            ["package", "tag", "delete", "demo", "canary", "--target", "repo-npm", "--yes"],
+            "delete",
+            "Tag 'canary' comes from an upstream; it is read-only here and can only be "
+            "changed in its source",
+        ),
+    ],
+)
+def test_package_tag_changes_to_upstream_content_show_the_refusal(
+    monkeypatch, tmp_path: Path, argv, method, message
+) -> None:
+    _isolate_config(monkeypatch, tmp_path)
+
+    def refuse(*_args, **_kwargs):
+        raise artifacts_cmd.ApiError(
+            409, {"code": "Conflict", "message": message, "reason": "read_only_upstream"}
+        )
+
+    fake = _FakeApiClient([_npm_repository()])
+    monkeypatch.setattr(fake, method, refuse)
+    _use_fake_client(monkeypatch, fake)
+
+    result = runner.invoke(artifacts_cmd.app, argv)
+
+    assert result.exit_code == 1
+    text = " ".join(result.output.split())
+    assert (
+        f"HTTP 409 Conflict: {message}. `rvs art package tag list` shows where each tag comes from."
+    ) in text
+    assert "Deleted" not in text and "Created" not in text
+
+
+def test_package_tag_delete_says_an_upstream_tag_may_take_over(monkeypatch, tmp_path: Path) -> None:
+    _isolate_config(monkeypatch, tmp_path)
+    fake = _FakeApiClient([_npm_repository()])
+    _use_fake_client(monkeypatch, fake)
+
+    declined = runner.invoke(
+        artifacts_cmd.app,
+        ["package", "tag", "delete", "demo", "latest", "--target", "repo-npm"],
+        input="n\n",
+    )
+
+    assert declined.exit_code == 1
+    assert (
+        "Installs by this tag stop working unless an upstream supplies the same tag."
+        in " ".join(declined.output.split())
+    )
+    assert all(call[0] == "GET" for call in fake.calls)
 
 
 @pytest.mark.parametrize(
@@ -2149,3 +2383,57 @@ def test_package_show_version_lists_its_tags(monkeypatch, tmp_path: Path) -> Non
     assert result.exit_code == 0, result.output
     assert "latest, lts" in result.stdout
     assert not any(call[1].endswith("/package/tags") for call in fake.calls)
+
+
+def test_package_show_lists_the_tags_of_an_upstream_supplied_package(
+    monkeypatch, tmp_path: Path
+) -> None:
+    _isolate_config(monkeypatch, tmp_path)
+    tags = [
+        _upstream_tag("latest", "4.17.21", source="remote_cache"),
+        _upstream_tag("next", "5.0.0-rc.2", source="remote_cache"),
+    ]
+    fake = _FakeApiClient(
+        [
+            _npm_repository(),
+            _package_summary(tags={"latest": "4.17.21", "next": "5.0.0-rc.2"}),
+            {"items": [_version_summary("4.17.21", tags=["latest"])], "next_cursor": None},
+            tags,
+        ]
+    )
+    _use_fake_client(monkeypatch, fake)
+    monkeypatch.setattr(output.console, "width", 200)
+
+    result = runner.invoke(
+        artifacts_cmd.app, ["package", "show", "demo", "--target", "repo-npm", "--format", "npm"]
+    )
+
+    assert result.exit_code == 0, result.output
+    text = " ".join(result.stdout.split())
+    assert "latest=4.17.21 (from remote cache), next=5.0.0-rc.2 (from remote cache)" in text
+    for placeholder in ("None", "?", "hidden", "fallback"):
+        assert placeholder not in text
+
+
+def test_package_show_json_carries_the_tag_source_fields(monkeypatch, tmp_path: Path) -> None:
+    _isolate_config(monkeypatch, tmp_path)
+    tags = [_upstream_tag("latest", "4.17.21", source="remote_cache")]
+    fake = _FakeApiClient(
+        [
+            _npm_repository(),
+            _package_summary(tags={"latest": "4.17.21"}),
+            {"items": [], "next_cursor": None},
+            tags,
+        ]
+    )
+    _use_fake_client(monkeypatch, fake)
+    output.set_json(True)
+    try:
+        result = runner.invoke(
+            artifacts_cmd.app, ["package", "show", "demo", "-t", "repo-npm", "-f", "npm"]
+        )
+    finally:
+        output.set_json(False)
+
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.stdout)["tags"] == tags

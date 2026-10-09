@@ -647,7 +647,9 @@ def _npm_dist_tag_confirmation(argv: list[str], env: Mapping[str, str]) -> str |
     """Return the question to confirm before an `npm dist-tag` change, if any.
 
     Moving `latest` changes what `npm install PACKAGE` resolves to, and removing
-    a tag breaks installs by it, so both are confirmed; other additions are not.
+    a tag breaks installs by it unless an upstream supplies the same tag, so both
+    are confirmed; other additions are not. The registry refuses a change to a
+    tag or version an upstream defines with its own message.
     """
     action = _npm_dist_tag_action(argv)
     if action not in {"add", "rm"}:
@@ -659,7 +661,10 @@ def _npm_dist_tag_confirmation(argv: list[str], env: Mapping[str, str]) -> str |
         # npm refuses the command with its usage message before any request.
         return None
     if action == "rm":
-        return f"Remove npm dist-tag '{explicit}' from {spec}? Installs by this tag stop working."
+        return (
+            f"Remove npm dist-tag '{explicit}' from {spec}? Installs by this tag stop "
+            "working unless an upstream supplies the same tag."
+        )
     # npm falls back to its `tag` setting, which defaults to `latest`.
     tag = (
         explicit

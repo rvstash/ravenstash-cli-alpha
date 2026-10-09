@@ -122,9 +122,9 @@ trash is also done in the web app.
 | `rvs art package deprecate PACKAGE VERSION --message TEXT` | Adds an npm deprecation warning. |
 | `rvs art package undeprecate PACKAGE VERSION` | Clears an npm deprecation warning. |
 | `rvs art package delete-version PACKAGE VERSION` | Moves one version to the repository trash. |
-| `rvs art package tag list PACKAGE` | Lists the package's tags (npm dist-tags) as installs in the repository resolve them. |
-| `rvs art package tag set PACKAGE TAG VERSION` | Creates `TAG` or moves it to `VERSION`. |
-| `rvs art package tag delete PACKAGE TAG` | Deletes a tag at once; the version stays. |
+| `rvs art package tag list PACKAGE` | Lists the package's tags (npm dist-tags) as installs in the repository resolve them, with the source of each tag. |
+| `rvs art package tag set PACKAGE TAG VERSION` | Creates one of the repository's own tags or moves it to `VERSION`. |
+| `rvs art package tag delete PACKAGE TAG` | Deletes one of the repository's own tags at once; the version stays. |
 
 Package commands act on the repository chosen with `rvs art select` unless you
 pass `--target NAMESPACE/REPOSITORY` (or `in/ar_...`). `--format` is needed only
@@ -157,11 +157,33 @@ best installable version and other tags are hidden. `tag list` marks those tags
 as `fallback` or `hidden` and shows the version they are set to under
 `Stored`; they apply again as soon as that version is installable.
 
+A repository stores and manages its own tags. When an upstream (an attached
+repository or a remote cache) supplies the package, or some of its versions, the
+tags that upstream defines apply to installs too. `tag list` and `package show`
+include them, also for a package the repository has no version of. In
+`tag list`, `Source` says where each tag's version comes from (`this
+repository`, `upstream repository`, or `remote cache`, with the upstream's
+position as `rvs art repo upstream list` shows it) and `Read-only` marks the
+tags an upstream defines; they have no stored version or revision. The
+repository's own `latest` that falls back to a version an upstream supplies is
+shown as `fallback` with that upstream as its source; it stays the repository's
+tag. With root `--json`, each item carries these fields as Ravenstash reports
+them.
+
+A read-only tag can only be changed in its source: `tag set` and `tag delete`
+refuse it, and `tag set` also refuses a version that comes from an upstream,
+because a repository's tags point only at its own versions. A tag of the
+repository takes precedence over an upstream's tag of the same name; deleting
+it lets the upstream's tag apply.
+
 `tag set` moves an existing tag. `tag list` shows each tag's revision; pass it as
 `--expect-revision N` to `tag set` or `tag delete` so the change applies only if
 nobody changed the tag since. Moving `latest` and deleting any tag ask for
 confirmation unless you pass `--yes`. `latest` cannot be deleted while the
-package has versions; move it instead. Changing tags needs publish access.
+package has versions; move it instead. The exception is a package whose
+versions partly come from an upstream: there the repository's own `latest` can
+be deleted, and installs then resolve the upstream's `latest`. Changing tags
+needs publish access.
 
 ### Package tags and OCI tags
 
@@ -252,7 +274,10 @@ pass. Pointing `latest` at another version (including `dist-tag add
 PACKAGE@VERSION` without a tag, which npm treats as `latest`, and `dist-tag add
 PACKAGE` without a version, which npm sends as `*`) and removing any tag ask for
 confirmation unless `--rvs-yes` is supplied. A run that cannot answer, such as
-CI, stops without the change unless it passes `--rvs-yes`.
+CI, stops without the change unless it passes `--rvs-yes`. Tags that an upstream
+defines are read-only: `dist-tag rm` of such a tag and `dist-tag add` of a
+version that comes from an upstream are refused with `409` and a message that
+says so.
 
 pnpm, Yarn, Bun, Gradle, and sbt can use Ravenstash package addresses, but there
 are no `rvs pnpm`, `rvs yarn`, `rvs bun`, `rvs gradle`, or `rvs sbt` commands.

@@ -6,6 +6,31 @@ All notable user-facing changes to `rvs` are recorded here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- `rvs art package tag list` lists every tag that installs in the repository
+  resolve: the repository's own tags and the tags its upstreams define. The new
+  `Source` column says where each tag comes from (this repository, an upstream
+  repository, or a remote cache, with the upstream's position as `rvs art repo
+  upstream list` shows it), and `Read-only` marks the tags an upstream defines,
+  which can only be changed in their source. With `--json`, every item carries
+  the new source fields as Ravenstash reports them. The list also works for a
+  package that an upstream supplies whole; it previously answered "not found".
+- `rvs art package show` prints the tags of a package that an upstream supplies
+  and notes the tags that come from an upstream, such as
+  `next=3.0.0-rc.1 (from remote cache)`.
+- `rvs art package tag set` and `tag delete` explain why a change is refused
+  when the tag, the version, or the whole package comes from an upstream,
+  instead of reporting "not found". A repository's tags can only point at its
+  own versions.
+- The repository's own `latest` tag can be deleted when an upstream supplies
+  some of the package's versions; installs then resolve that upstream's
+  `latest`.
+- The confirmations of `rvs art package tag delete` and `rvs npm dist-tag rm`
+  say that installs by the tag stop working unless an upstream supplies the
+  same tag. `rvs npm dist-tag add` and `rm` are refused with a clear message
+  for a tag or version that comes from an upstream.
+
 ## [0.14.17] - 2026-09-30
 
 ### Changed

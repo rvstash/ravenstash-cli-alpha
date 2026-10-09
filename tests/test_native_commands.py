@@ -675,6 +675,14 @@ def test_native_npm_dist_tag_default_tag_follows_npm_configuration() -> None:
     assert native_runner._npm_dist_tag_confirmation(["install", "demo"], {}) is None
 
 
+def test_native_npm_dist_tag_removal_says_an_upstream_tag_may_take_over() -> None:
+    # Removing the repository's tag uncovers an upstream's tag of the same name.
+    assert native_runner._npm_dist_tag_confirmation(["dist-tag", "rm", "demo", "beta"], {}) == (
+        "Remove npm dist-tag 'beta' from demo? Installs by this tag stop working "
+        "unless an upstream supplies the same tag."
+    )
+
+
 def test_native_npm_dist_tag_tag_option_before_the_command_selects_the_tag(
     monkeypatch: Any, tmp_path: Path
 ) -> None:
