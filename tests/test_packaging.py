@@ -1,3 +1,4 @@
+import json
 import os
 import shutil
 import subprocess
@@ -8,6 +9,7 @@ from pathlib import Path
 
 import pytest
 import yaml
+from rvs.portable_update import extract_release
 
 
 POSTINSTALL = Path(__file__).parents[1] / "packaging" / "scripts" / "postinstall.sh"
@@ -256,6 +258,19 @@ def test_protected_branch_has_stable_aggregate_ci_gates() -> None:
     assert jobs["nix"]["needs"] == "changes"
 
 
+def test_every_change_runs_the_test_suite_and_its_policy_checks() -> None:
+    jobs = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8"))["jobs"]
+    selector = jobs["changes"]["steps"][1]["run"]
+    gate = jobs["gate"]["steps"][0]["run"]
+
+    # No changed path, not even documentation, may skip the tracked-tree policy tests.
+    assert "quality=false" not in selector
+    assert selector.count("quality=true") == 1
+    assert selector.index("quality=true") < selector.index("while IFS= read -r path")
+    assert "pytest" in jobs["quality"]["steps"][-1]["run"]
+    assert 'test "$QUALITY_RESULT" = success' in gate
+
+
 def test_publication_graph_parallelizes_safe_jobs_and_serializes_mutations() -> None:
     publication = yaml.safe_load(
         (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
@@ -461,6 +476,22 @@ def test_installer_worker_binds_both_public_routes() -> None:
     assert 'pattern = "https://ravenstash.com/install.ps1*"' in configuration
 
 
+def test_installer_worker_embeds_both_installers_before_every_build() -> None:
+    worker = ROOT / "packaging/installer-worker"
+    scripts = json.loads((worker / "package.json").read_text(encoding="utf-8"))["scripts"]
+    embed = (worker / "scripts/embed-installer.mjs").read_text(encoding="utf-8")
+    entry = (worker / "src/index.js").read_text(encoding="utf-8")
+    ignored = (ROOT / ".gitignore").read_text(encoding="utf-8").splitlines()
+
+    # The embedded copies are build output: regenerated before use, never tracked.
+    assert scripts["check"].startswith("npm run embed && ")
+    assert scripts["deploy"].startswith("npm run embed && ")
+    for module in ("install.generated.js", "install-ps1.generated.js"):
+        assert f'"../src/{module}"' in embed
+        assert f'"./{module}"' in entry
+    assert "packaging/installer-worker/src/*.generated.js" in ignored
+
+
 def test_debian_package_installs_node_signature_verifier() -> None:
     manifest = (ROOT / "packaging" / "scripts" / "build-deb.sh").read_text(encoding="utf-8")
 
@@ -494,6 +525,103 @@ def test_frozen_bundle_dispatches_docker_credential_helper() -> None:
     assert "from rvs.entrypoint import main" in entrypoint
     assert 'Path(sys.argv[0]).stem == "docker-credential-rvs"' in shared_entrypoint
     assert "dist/pyinstaller/rvs/docker-credential-rvs" in build
+
+
+def _gnu_tar_is_available() -> bool:
+    tar = shutil.which("tar")
+    if os.name == "nt" or tar is None or shutil.which("bash") is None:
+        return False
+    described = subprocess.run([tar, "--version"], check=False, capture_output=True, text=True)
+    return "GNU tar" in described.stdout
+
+
+def _glibc_tarball_source(tmp_path: Path) -> Path:
+    """Place the tarball builder next to a frozen bundle shaped like the real one."""
+    source = tmp_path / "source"
+    scripts = source / "packaging" / "scripts"
+    scripts.mkdir(parents=True)
+    for name in ("common.sh", "build-tarball.sh"):
+        shutil.copy2(ROOT / "packaging" / "scripts" / name, scripts / name)
+    for document in ("README.md", "LICENSE", "NOTICE"):
+        shutil.copy2(ROOT / document, source / document)
+    frozen = source / "dist" / "pyinstaller" / "rvs"
+    (frozen / "_internal").mkdir(parents=True)
+    (frozen / "_internal" / "base_library.zip").write_bytes(b"library")
+    launcher = frozen / "rvs"
+    launcher.write_text("#!/bin/sh\nprintf 'Ravenstash CLI 0.14.4\\n'\n", encoding="utf-8")
+    launcher.chmod(0o755)
+    # The frozen build links its aliases, which the Debian package keeps as links.
+    for alias in ("ravenstash", "docker-credential-rvs"):
+        (frozen / alias).symlink_to("rvs")
+    return source
+
+
+def _build_glibc_tarball(source: Path) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        ["bash", "packaging/scripts/build-tarball.sh"],
+        check=False,
+        capture_output=True,
+        text=True,
+        cwd=source,
+        env=os.environ | {"RVS_VERSION": "0.14.4", "RVS_ARCH": "amd64", "SOURCE_DATE_EPOCH": "0"},
+    )
+
+
+@pytest.mark.skipif(not _gnu_tar_is_available(), reason="the glibc tarball build needs GNU tar")
+def test_glibc_tarball_ships_command_aliases_the_updater_accepts(tmp_path: Path) -> None:
+    source = _glibc_tarball_source(tmp_path)
+
+    result = _build_glibc_tarball(source)
+
+    assert result.returncode == 0, result.stderr
+    archive = source / "dist" / "release" / "rvs-v0.14.4-linux-amd64.tar.gz"
+    with tarfile.open(archive, "r:gz") as bundle:
+        assert [m.name for m in bundle.getmembers() if not (m.isreg() or m.isdir())] == []
+    extracted = extract_release(archive, tmp_path / "extracted", "0.14.4", "linux-amd64")
+    launcher = (extracted / "rvs").read_bytes()
+    for alias in ("ravenstash", "docker-credential-rvs"):
+        assert not (extracted / alias).is_symlink()
+        assert (extracted / alias).read_bytes() == launcher
+        assert os.access(extracted / alias, os.X_OK)
+    # The shared frozen bundle is left as it was for the Debian package.
+    assert (source / "dist" / "pyinstaller" / "rvs" / "ravenstash").is_symlink()
+
+
+@pytest.mark.skipif(not _gnu_tar_is_available(), reason="the glibc tarball build needs GNU tar")
+def test_glibc_tarball_build_fails_when_a_link_member_remains(tmp_path: Path) -> None:
+    source = _glibc_tarball_source(tmp_path)
+    internal = source / "dist" / "pyinstaller" / "rvs" / "_internal"
+    (internal / "libexample.so").symlink_to("base_library.zip")
+
+    result = _build_glibc_tarball(source)
+
+    assert result.returncode == 1
+    assert "not regular files or directories" in result.stderr
+    assert "_internal/libexample.so" in result.stderr
+    assert not (source / "dist" / "release" / "rvs-v0.14.4-linux-amd64.tar.gz").exists()
+
+
+def test_portable_archive_builds_copy_aliases_and_run_the_updater_extraction() -> None:
+    scripts = ROOT / "packaging" / "scripts"
+    portable = (scripts / "build_portable.py").read_text(encoding="utf-8")
+    tarball = (scripts / "build-tarball.sh").read_text(encoding="utf-8")
+    artifacts = (scripts / "build-release-artifacts.sh").read_text(encoding="utf-8")
+    smoke = (scripts / "smoke_portable.py").read_text(encoding="utf-8")
+    builder = (ROOT / ".github/workflows/_build-release-target.yml").read_text(encoding="utf-8")
+
+    # Installed clients reject link members, so no archive builder may create one.
+    for link_call in ("symlink", "hardlink", "os.link(", "ln -s"):
+        assert link_call not in portable
+        assert link_call not in tarball
+    assert "_copy_alias(executable, bundle" in portable
+    assert 'install -m 0755 "$STAGING/rvs" "$STAGING/$alias"' in tarball
+    assert "contains members that are not regular files or directories" in tarball
+    # Every target unpacks its own archive with the updater before it is handed off.
+    assert "extracted = extract_release(archive," in smoke
+    assert "packaging/scripts/smoke_portable.py" in artifacts
+    assert artifacts.index("build-tarball.sh") < artifacts.index("smoke_portable.py")
+    assert builder.count("packaging/scripts/smoke_portable.py") == 2
+    assert "packaging/scripts/build-in-ubuntu20.sh" in builder
 
 
 def test_installer_is_owned_by_cli_packaging_and_pins_release_identity() -> None:

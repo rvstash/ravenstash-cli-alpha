@@ -15,6 +15,9 @@ curl -fsSL https://ravenstash.com/install.sh | bash
 rvs --version
 ```
 
+Every installation also provides `ravenstash`, a full-name alias that accepts
+the same commands as `rvs`.
+
 Release artifacts are built for Linux amd64/arm64 (glibc and musl), macOS Intel
 and Apple Silicon, Windows x64/ARM64, and Nix. The
 [platform compatibility policy](docs/linux-compatibility.md) gives the support

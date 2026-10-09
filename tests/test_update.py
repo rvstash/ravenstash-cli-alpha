@@ -82,7 +82,10 @@ def test_update_does_not_self_replace_unmanaged_install(monkeypatch: Any) -> Non
 
     assert result.exit_code == 0
     assert "not a recognized managed installation" in result.output
-    assert "install.sh" in result.output
+    assert (
+        "Install a managed release with: curl -fsSL https://ravenstash.com/install.sh | bash"
+        in _one_line(result.output)
+    )
 
 
 def test_nix_detection_excludes_source_test_environment() -> None:
@@ -632,6 +635,126 @@ def test_update_to_stops_if_installed_package_changes(monkeypatch):
     assert calls == [[str(update_mod._APT_GET), "update"]]
 
 
+_MINOR_LINES = {
+    "schema": 1,
+    "recommended": "v0",
+    "channels": {
+        "v0": {
+            "latest": "0.16.0",
+            "minor_targets": {"0.15": "0.15.2", "0.16": "0.16.0"},
+            "status": "supported",
+        }
+    },
+}
+
+
+@pytest.mark.parametrize(
+    ("after_failure", "restore_exit", "restored", "message"),
+    [
+        (
+            # dpkg no longer reports a cleanly installed package.
+            (None, "0.16.0"),
+            0,
+            True,
+            "APT could not install rvs 0.15.2; rvs 0.14.3 was restored.",
+        ),
+        (
+            ("0.15.2", "0.16.0"),
+            0,
+            True,
+            "APT could not install rvs 0.15.2; rvs 0.14.3 was restored.",
+        ),
+        (
+            (None, "0.16.0"),
+            100,
+            True,
+            "APT could not install rvs 0.15.2, and restoring rvs 0.14.3 also failed. "
+            "Restore the package with: sudo apt-get install --allow-downgrades rvs=0.14.3",
+        ),
+        (
+            # APT stopped before it changed the package, so there is nothing to restore.
+            ("0.14.3", "0.16.0"),
+            0,
+            False,
+            "APT could not install rvs 0.15.2; rvs 0.14.3 is still installed.",
+        ),
+    ],
+)
+def test_update_to_restores_the_installed_version_when_apt_fails(
+    monkeypatch: Any,
+    after_failure: tuple[str | None, str],
+    restore_exit: int,
+    restored: bool,
+    message: str,
+) -> None:
+    versions = iter((("0.14.3", "0.16.0"), ("0.14.3", "0.16.0"), after_failure))
+    exits = iter((0, 100, restore_exit))
+    calls: list[list[str]] = []
+    monkeypatch.setattr(update_mod, "_apt_versions", lambda: next(versions))
+    monkeypatch.setattr(update_mod, "_upgrade_available", _newer)
+    monkeypatch.setattr(update_mod, "_current_channel", lambda: "v0")
+    monkeypatch.setattr(update_mod, "_channel_manifest", lambda: _MINOR_LINES)
+    monkeypatch.setattr(
+        update_mod, "_run_visible", lambda command: calls.append(command) or _completed(next(exits))
+    )
+
+    result = runner.invoke(app, ["update", "--to", "0.15", "--apply", "--yes"])
+
+    apt_get = str(update_mod._APT_GET)
+    expected = [
+        [apt_get, "update"],
+        [apt_get, "install", "--only-upgrade", "--yes", "rvs=0.15.2"],
+    ]
+    if restored:
+        expected.append([apt_get, "install", "--yes", "--allow-downgrades", "rvs=0.14.3"])
+    assert result.exit_code == 1
+    assert calls == expected
+    # The original failure is always the reported error, whatever the restore did.
+    assert _one_line(result.stderr).endswith(f"Error: {message}")
+    assert "Updated rvs" not in result.output
+
+
+def test_update_to_minor_leaves_later_plain_updates_on_the_newest_release(
+    monkeypatch: Any, tmp_path: Path
+) -> None:
+    apt_get = tmp_path / "apt-get"
+    apt_get.touch()
+    installed = ["0.14.3"]
+    calls: list[list[str]] = []
+
+    def fake_run(command: list[str]) -> Any:
+        calls.append(command)
+        if command[1] == "install":
+            installed[0] = command[-1].removeprefix("rvs=")
+        return _completed()
+
+    monkeypatch.setattr(update_mod, "_APT_GET", apt_get)
+    monkeypatch.setattr(update_mod, "_apt_versions", lambda: (installed[0], "0.16.0"))
+    monkeypatch.setattr(update_mod, "_upgrade_available", _newer)
+    monkeypatch.setattr(update_mod, "_current_channel", lambda: "v0")
+    monkeypatch.setattr(update_mod, "_channel_manifest", lambda: _MINOR_LINES)
+    monkeypatch.setattr(update_mod, "_run_visible", fake_run)
+
+    selected = runner.invoke(app, ["update", "--to", "0.15", "--apply", "--yes"])
+
+    assert selected.exit_code == 0, selected.output
+    assert installed == ["0.15.2"]
+    # One refresh and one exact install: the selector leaves no pin or hold behind.
+    assert calls == [
+        [str(apt_get), "update"],
+        [str(apt_get), "install", "--only-upgrade", "--yes", "rvs=0.15.2"],
+    ]
+
+    preview = runner.invoke(app, ["update"])
+    applied = runner.invoke(app, ["update", "--apply", "--yes"])
+
+    assert preview.exit_code == 0, preview.output
+    assert "rvs 0.16.0 is available (installed: 0.15.2)" in _one_line(preview.output)
+    assert applied.exit_code == 0, applied.output
+    assert calls[-1] == [str(apt_get), "install", "--only-upgrade", "--yes", "rvs=0.16.0"]
+    assert installed == ["0.16.0"]
+
+
 def test_update_reports_a_release_the_local_apt_list_does_not_know_yet(
     monkeypatch: Any,
 ) -> None:
@@ -765,7 +888,13 @@ def test_update_with_signed_channel_confirms_up_to_date_without_apt_hint(
 
 
 def _channels(recommended: str = "v0", **channels: dict[str, Any]) -> dict[str, Any]:
-    return {"schema": 1, "recommended": recommended, "channels": channels}
+    return {
+        "schema": 1,
+        "recommended": recommended,
+        "generated_at": "2026-09-27T05:00:00Z",
+        "expires": "2999-01-01T00:00:00Z",
+        "channels": channels,
+    }
 
 
 def _supported(latest: str, **minor_targets: str) -> dict[str, Any]:
@@ -936,6 +1065,17 @@ def test_apt_channel_manifest_rejects_unverified_or_inconsistent_manifest(
     _serve_apt_channels(httpx2_mock, monkeypatch, tmp_path, manifest, gpgv_exit)
 
     assert _verified_apt_channel_manifest() is None
+
+
+def test_apt_channel_manifest_ignores_a_manifest_without_a_validity_period(
+    httpx2_mock: Any, monkeypatch: Any, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    manifest = _channels(v0=_supported("0.15.1"))
+    del manifest["generated_at"], manifest["expires"]
+    _serve_apt_channels(httpx2_mock, monkeypatch, tmp_path, manifest)
+
+    assert _verified_apt_channel_manifest() is None
+    assert "Ignoring the release-channel manifest" in _one_line(capsys.readouterr().err)
 
 
 def test_apt_channel_manifest_requires_installed_keyring(monkeypatch: Any, tmp_path: Path) -> None:

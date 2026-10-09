@@ -10,7 +10,7 @@ import sys
 import tempfile
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
-from typing import Any
+from typing import Any, NoReturn
 
 import httpx2 as httpx
 import typer
@@ -447,7 +447,9 @@ def _delegate_package_manager_update(
     installed = _cli_version()
     if method is None:
         output.info(f"Ravenstash CLI {installed} is not a recognized managed installation.")
-        output.info("Install or migrate with: curl -fsSL https://ravenstash.com/install.sh | bash")
+        output.info(
+            "Install a managed release with: curl -fsSL https://ravenstash.com/install.sh | bash"
+        )
         return
     if candidate is not None:
         output.fatal(f"Release candidates are not installed through {method}.")
@@ -743,5 +745,21 @@ def _update_series(
         ).returncode
         != 0
     ):
-        output.fatal("APT could not install the selected rvs update.")
+        _restore_apt_version(installed, target_version)
     output.success(f"Updated rvs to {target_version} from {target_label}.")
+
+
+def _restore_apt_version(installed: str, target: str) -> NoReturn:
+    """Report a failed exact-version install after restoring the prior package."""
+
+    current, _candidate = _apt_versions()
+    if current == installed:
+        output.fatal(f"APT could not install rvs {target}; rvs {installed} is still installed.")
+    output.warn(f"APT could not install rvs {target}; restoring rvs {installed}.")
+    restore = [str(_APT_GET), "install", "--yes", "--allow-downgrades", f"rvs={installed}"]
+    if _run_visible(restore).returncode != 0:
+        output.fatal(
+            f"APT could not install rvs {target}, and restoring rvs {installed} also failed. "
+            f"Restore the package with: sudo apt-get install --allow-downgrades rvs={installed}"
+        )
+    output.fatal(f"APT could not install rvs {target}; rvs {installed} was restored.")

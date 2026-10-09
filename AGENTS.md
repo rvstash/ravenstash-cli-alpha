@@ -42,8 +42,7 @@ control-plane URL separate from package download and upload URLs.
   environments through user configuration or process environment variables.
 - Never add destructive APT reset behavior. The bytes and metadata of a
   retained APT suite are immutable; corrections receive a new patch version.
-  A whole distribution namespace is removed only through an explicitly
-  approved, manifest-controlled retirement.
+  This repository's tooling never removes a distribution namespace.
 - Release candidates use PEP 440 `X.Y.ZrcN` versions and GitHub prereleases.
   They must not be added to stable APT suites.
 - Test builds use `X.Y.Z.dev<RUN_ID>+g<SHA8>`, remain unsigned seven-day GitHub

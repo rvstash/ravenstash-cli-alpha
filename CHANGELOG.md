@@ -31,6 +31,41 @@ All notable user-facing changes to `rvs` are recorded here. The format follows
   same tag. `rvs npm dist-tag add` and `rm` are refused with a clear message
   for a tag or version that comes from an upstream.
 
+- Ravenstash API contract change, served by the API release that accompanies
+  this version; earlier `rvs` releases cannot create evidence intents against
+  it:
+  - byte sizes are `size_bytes` in evidence intents
+    (`artifact_manifest[].size` and `evidence[].size` in the request and the
+    response of `/v0/artifacts/package-evidence/intents`) and in OCI manifests
+    and their descriptors (`.../formats/oci/manifests`); `rvs art evidence`
+    commands send and print the new name, including with `--json`;
+  - an evidence intent names the published files it is bound to as
+    `bound_file_ref` and `bound_file_refs` (formerly `bound_artifact_ref` and
+    `bound_artifact_refs`);
+  - the matches of an ambiguous repository selector carry `account_handle`
+    (formerly `account_label`);
+  - deleting a manifest that an image index references answers the error code
+    `ManifestReferencedByIndex` (formerly `manifest_referenced_by_index`).
+- `rvs update` refuses a signed release-channel manifest that does not state
+  its validity period.
+- The glibc Linux portable archive ships the `ravenstash` and
+  `docker-credential-rvs` commands as regular files, like the other portable
+  archives, and is about twice as large. The Debian package is unchanged.
+- Native wrappers no longer print a dedicated hint for the removed
+  `--rvs-repo` option; use `--rvs-target`.
+
+### Fixed
+
+- `rvs update --apply` works on portable glibc Linux installations (amd64 and
+  arm64). Earlier portable archives contained symbolic links that the updater
+  refuses, so the update stopped with "unsafe path". Installations of 0.14.17
+  and earlier can update to this release.
+- When APT cannot install the version selected with `rvs update --to`, `rvs`
+  reinstalls the previous version and reports the failure instead of leaving
+  the package half-installed.
+- The installer reports a missing release asset as missing from the release
+  instead of calling the release private.
+
 ## [0.14.17] - 2026-09-30
 
 ### Changed

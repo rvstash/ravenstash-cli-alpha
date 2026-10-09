@@ -48,9 +48,11 @@ dist/release/rvs-v<version>-package-manifests.tar.gz
 ```
 
 The frozen bundle and Debian package expose both `rvs` and the long-form
-`ravenstash` alias. During Debian installation, the post-install script reports
-an informational notice when an AMD ROCm Validation Suite `rvs` executable is
-present under `/opt/rocm*`.
+`ravenstash` alias. Portable archives ship each command alias as a regular file,
+because `rvs update` refuses archives that contain links; the Debian package
+links its aliases instead. During Debian installation, the post-install script
+reports an informational notice when an AMD ROCm Validation Suite `rvs`
+executable is present under `/opt/rocm*`.
 
 Native symbols are stripped from Linux and macOS release bundles. Windows
 bundles omit the encrypted-vault `cryptography` dependency because that vault
@@ -139,9 +141,8 @@ The channel policy is published at the distribution-neutral
 The signed manifest carries `generated_at` and `expires` (seven days later, like
 the APT `Valid-Until`). The daily metadata refresh re-signs it for APT and, when
 only those two fields changed, for the portable path as well. `rvs update`
-rejects an expired manifest and one older than the newest it already accepted;
-manifests published before these fields existed are accepted until the first
-timestamped one has been seen.
+rejects a manifest without these fields, an expired manifest, and one older
+than the newest it already accepted.
 After the corresponding GitHub release is public, stable release automation
 publishes the neutral update policy alongside validation and signing for the
 protected installer-promotion jobs. Installer deployment waits for both,
@@ -171,13 +172,18 @@ publishes the newly signed recommended-channel manifest last.
 
 Path-aware CI runs source tests on native Linux ARM64, macOS Intel/Apple Silicon,
 and Windows x64/ARM64 in parallel, with quality checks and an Ubuntu 20.04
-package smoke test on Linux amd64. The manual/scheduled platform certification
-owns release-grade Alpine, Nix, glibc distribution, runtime-download, and desktop
-credential-store coverage. Each headless smoke test verifies normal startup,
-both aliases, `RVS_TOKEN` authentication, and the expected no-provider diagnostic
-without creating a plaintext store. Desktop keyring behavior is covered
-separately by provider and disposable round-trip tests because containers do not
-supply a real graphical D-Bus session.
+package smoke test on Linux amd64. It evaluates the Nix flake and builds the
+x86_64 Linux package when Nix or dependency inputs change. The manual/scheduled
+platform certification builds the frozen bundle on Linux, macOS, and Windows for
+both architectures and on Alpine musl, exercises real managed-runtime downloads
+there, runs the native credential store on macOS and Windows, and runs a
+disposable Secret Service round trip on Linux. Every release and test build
+smoke-tests its bundle where it is built: startup, help, the `ravenstash` alias,
+the unauthenticated status exit code, and unpacking the built archive with the
+updater's own extraction. Each glibc build also installs the Debian package on a
+clean Ubuntu 20.04 image. Desktop keyring behavior is covered separately by
+provider tests and that disposable round trip because containers do not supply a
+real graphical D-Bus session.
 
 Only protected GitHub environments in this repository define these Actions
 values:

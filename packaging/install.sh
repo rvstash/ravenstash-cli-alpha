@@ -137,7 +137,7 @@ download_release_asset() {
         '
   )"
   [[ "$asset_api" == https://api.github.com/repos/rvstash/ravenstash-cli-alpha/releases/assets/* ]] \
-    || fail "private release does not contain ${asset_name}"
+    || fail "release v${selected_release_version} does not contain ${asset_name}"
   curl --proto '=https' --proto-redir '=https' --tlsv1.2 -fsSL \
     -H "@${auth_header}" \
     -H 'Accept: application/octet-stream' \

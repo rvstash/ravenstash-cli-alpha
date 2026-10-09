@@ -352,10 +352,12 @@ without changing the active installation or its rolling `v0` channel. Add
 release. APT installations check the signed `v0` release channel, so a new
 release is reported even before the local APT package list is refreshed; `--apply`
 then refreshes only the Ravenstash APT source and installs that exact version
-through APT. Portable Linux, Alpine/musl, macOS, and Windows installations
-download, authenticate, stage, health-check, and atomically activate the matching
-native bundle. Nix, Homebrew, and WinGet installations delegate replacement to
-their package manager. Homebrew and WinGet upgrade their rolling major package.
+through APT. If APT cannot install a version selected with `--to`, `rvs`
+reinstalls the previously installed version and reports the failure. Portable
+Linux, Alpine/musl, macOS, and Windows installations download, authenticate,
+stage, health-check, and atomically activate the matching native bundle. Nix,
+Homebrew, and WinGet installations delegate replacement to their package manager.
+Homebrew and WinGet upgrade their rolling major package.
 Because their catalogs cannot reliably select an older minor from that package,
 an exact-minor request fails before mutation and offers the signed portable path.
 Homebrew and WinGet detection is ready for

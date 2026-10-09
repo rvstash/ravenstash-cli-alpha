@@ -49,11 +49,6 @@ def test_root_help_exposes_clean_public_command_surface() -> None:
         "art",
     ):
         assert command in result.output
-    for removed_root_command in ("pypi", "maven", "system", "sync", "tokens", "context"):
-        assert removed_root_command not in result.output
-    removed = runner.invoke(app, ["shell", "--help"])
-    assert removed.exit_code != 0
-    assert "No such command" in removed.output
 
 
 def test_root_help_groups_commands_by_ecosystem() -> None:
@@ -125,30 +120,6 @@ def test_version_option_prints_version() -> None:
     assert result.output.startswith("Ravenstash CLI ")
 
 
-def test_removed_compatibility_groups_are_rejected() -> None:
-    packages_result = runner.invoke(app, ["packages", "--help"])
-    keyring_result = runner.invoke(app, ["auth", "keyring", "doctor"])
-    cache_result = runner.invoke(app, ["art", "cache", "--help"])
-    remote_cache_result = runner.invoke(app, ["art", "remote-cache", "--help"])
-    defaults_result = runner.invoke(app, ["art", "repo", "defaults"])
-    set_default_result = runner.invoke(app, ["art", "repo", "set-default", "pypi", "repo"])
-
-    assert packages_result.exit_code != 0
-    assert keyring_result.exit_code != 0
-    assert cache_result.exit_code != 0
-    assert remote_cache_result.exit_code != 0
-    assert defaults_result.exit_code != 0
-    assert set_default_result.exit_code != 0
-
-
-@pytest.mark.parametrize("command", ["install", "pypi", "npm", "maven"])
-def test_artifact_execution_commands_are_removed(command: str) -> None:
-    result = runner.invoke(app, ["art", command, "--help"])
-
-    assert result.exit_code != 0
-    assert "No such command" in result.output
-
-
 @pytest.mark.parametrize("alias", ["art"])
 def test_repo_commands_are_registered(alias: str) -> None:
     repo_result = runner.invoke(app, [alias, "repo", "--help"])
@@ -156,13 +127,6 @@ def test_repo_commands_are_registered(alias: str) -> None:
     assert repo_result.exit_code == 0
     for command in ("list", "create", "show"):
         assert command in repo_result.output
-
-
-@pytest.mark.parametrize("command", ["repo", "pkg"])
-def test_retired_top_level_commands_are_removed(command: str) -> None:
-    result = runner.invoke(app, [command, "--help"])
-    assert result.exit_code != 0
-    assert "No such command" in result.output
 
 
 def test_artifact_spellings_share_one_command_application() -> None:
@@ -187,39 +151,12 @@ def test_registry_kind_has_no_ecosystem_alias() -> None:
     assert "--ecosystem" not in help_output
 
 
-def test_repository_group_rejects_removed_upstream_commands() -> None:
-    result = runner.invoke(app, ["art", "repo", "--help"])
+@pytest.mark.parametrize("command", ["docker", "helm", "oras"])
+def test_container_wrappers_reject_unknown_rvs_options(command: str) -> None:
+    result = runner.invoke(app, [command, "--rvs-unknown", "acme/packages", "version"])
 
-    assert result.exit_code == 0
-    help_output = unstyle(result.output)
-    assert "set-upstream" not in help_output
-    assert "clear-upstream" not in help_output
-
-
-@pytest.mark.parametrize("command", ["pip", "docker"])
-def test_native_wrappers_reject_removed_repository_option(command: str) -> None:
-    result = runner.invoke(app, [command, "--rvs-repo", "acme/packages", "version"])
-
-    assert result.exit_code != 0
-    assert "Use --rvs-target" in result.output
-
-
-@pytest.mark.parametrize(
-    "args",
-    [
-        ["ci", "list"],
-        ["ci", "run"],
-        ["ci", "run", "pipeline"],
-        ["ci", "status"],
-        ["ci", "status", "run_123"],
-        ["ci", "logs", "run_123"],
-    ],
-)
-def test_ci_placeholder_commands_are_registered(args: list[str]) -> None:
-    ci_result = runner.invoke(app, args)
-
-    assert ci_result.exit_code == 2
-    assert "No such command" in ci_result.output
+    assert result.exit_code == 1
+    assert "Unknown rvs option. Use --rvs-target for the target." in result.output
 
 
 def _command_paths(command: object, prefix: str = "") -> Iterator[str]:

@@ -47,8 +47,6 @@ def _run(
 ) -> None:
     from . import runner
 
-    if any(arg == "--rvs-repo" or arg.startswith("--rvs-repo=") for arg in ctx.args):
-        output.fatal("Unknown option '--rvs-repo'. Use --rvs-target.")
     if any(arg.split("=", 1)[0].startswith("--rvs-") for arg in ctx.args):
         output.fatal("Unknown rvs option. Use --rvs-target for the target.")
     runner.run(tool, list(ctx.args), _options(profile, target, account, customer_id, yes))

@@ -16,8 +16,10 @@ for the following targets:
 Path-aware CI tests source on native Linux, macOS, and Windows runners and builds
 one Ubuntu 20.04 baseline package when runtime or packaging inputs change. Nix
 checks run only when Nix or dependency inputs change. The scheduled or manual
-platform-certification workflow owns the exhaustive runtime matrix. One release
-workflow builds isolated native artifacts from one exact source commit, assembles
+platform-certification workflow builds the frozen bundle on native Linux, macOS,
+and Windows runners for both architectures and on Alpine musl, and exercises
+real managed-runtime downloads there. One release workflow builds isolated
+native artifacts from one exact source commit, assembles
 one collision-free checksum inventory, creates keyless Sigstore provenance for
 that complete inventory, and publishes those same bytes without rebuilding them.
 Maintainers can also build selected targets from an exact commit as an unsigned,
@@ -29,9 +31,12 @@ also pass integrity, installation, and clean-system certification. This prevents
 evaluated Nix output, a smoke-test bundle, or inherited Linux coverage from
 being presented as a certified release for Nix, macOS, Windows, or WSL.
 
-The glibc artifacts are built on Ubuntu 20.04. Portable amd64 smoke coverage includes
-Ubuntu 22.04, 24.04, and 26.04; Debian 12 and 13; Fedora 43 and 44; Rocky Linux 8 and
-9; AlmaLinux 10; Amazon Linux 2023; openSUSE Leap 15.6 and 16.0; and Arch Linux.
+The glibc artifacts are built on Ubuntu 20.04. Each glibc build installs the
+Debian package on a clean Ubuntu 20.04 image and runs it, and smoke-tests the
+portable archive in the build environment, including unpacking it the way
+`rvs update` does. A stable release also installs the published package from the
+public APT repository on Ubuntu 20.04 for amd64 and arm64. The repository's
+workflows exercise no other glibc distribution.
 Debian packages are published for both amd64 and arm64 in the same signed channel.
 
 `RVS_GITHUB_TOKEN` is optional and can raise GitHub API limits for installer
@@ -53,10 +58,12 @@ disposable write/read/delete operation before browser authorization.
 - Plaintext storage remains an explicitly acknowledged fallback and is never selected
   automatically.
 
-Release certification covers locked, unlocked, and absent desktop keyrings separately
-from headless sessions on real platform credential stores. Unit tests own provider
-selection, credential-pair rollback, refresh locking, vault behavior, and plaintext
-acknowledgement, but do not replace that host-level certification.
+Platform certification runs `rvs auth storage doctor` against the real credential
+store on macOS and Windows runners and against an unlocked GNOME Keyring Secret
+Service session on Linux. It does not exercise a locked or absent desktop keyring
+on a real host. Unit tests own provider selection, credential-pair rollback,
+refresh locking, vault behavior, and plaintext acknowledgement, but do not replace
+that host-level certification.
 
 ## Managed runtimes and native clients
 

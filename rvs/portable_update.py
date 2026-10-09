@@ -115,20 +115,12 @@ def _remember_generated_at(value: datetime) -> None:
 def check_manifest_freshness(payload: dict[str, Any], *, now: datetime | None = None) -> None:
     """Reject a stale or replayed signed release-channel manifest.
 
-    ``generated_at`` and ``expires`` are part of the signed document. Manifests
-    published before these fields existed are accepted until this installation
-    has seen one that carries them; from then on a manifest without them, one
-    that has expired, or one older than the newest already accepted is refused.
+    ``generated_at`` and ``expires`` are part of the signed document. A manifest
+    without them, one that has expired, or one older than the newest this
+    installation already accepted is refused.
     """
     current = now or datetime.now(UTC)
     last_seen = _last_seen_generated_at()
-    if "generated_at" not in payload and "expires" not in payload:
-        if last_seen is not None:
-            raise UpdateError(
-                "the signed release-channel manifest is older than one rvs already verified; "
-                "try again later"
-            )
-        return
     generated_at = _signed_timestamp(payload, "generated_at")
     expires = _signed_timestamp(payload, "expires")
     if expires <= generated_at:

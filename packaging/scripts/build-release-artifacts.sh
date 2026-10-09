@@ -14,6 +14,9 @@ export SOURCE_DATE_EPOCH="${SOURCE_DATE_EPOCH:-$(git log -1 --format=%ct 2>/dev/
 packaging/scripts/build-pyinstaller.sh
 RVS_VERSION="$VERSION" RVS_ARCH="$ARCH" packaging/scripts/build-deb.sh
 RVS_VERSION="$VERSION" RVS_ARCH="$ARCH" packaging/scripts/build-tarball.sh
+# Exercise the bundle and unpack the archive exactly as `rvs update --apply` does.
+uv run --no-sync python packaging/scripts/smoke_portable.py \
+  "build/release/rvs-v${VERSION}-linux-${ARCH}"
 
 mkdir -p dist/release
 cp "dist/packages/rvs_${VERSION}_${ARCH}.deb" dist/release/

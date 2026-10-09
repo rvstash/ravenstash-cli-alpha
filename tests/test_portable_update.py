@@ -83,6 +83,8 @@ def test_channel_discovery_authenticates_the_public_manifest(
     manifest = {
         "schema": 1,
         "recommended": "v0",
+        "generated_at": "2026-09-27T05:00:00Z",
+        "expires": "2999-01-01T00:00:00Z",
         "channels": {
             "v0": {
                 "latest": "0.15.1",
@@ -251,9 +253,6 @@ def test_channel_freshness_rejects_expired_and_regressing_manifests() -> None:
     check(newest, now=now)
     with pytest.raises(UpdateError, match="older than one rvs already verified"):
         check(_timed_manifest("2026-09-26T05:00:00Z", "2026-10-03T05:00:00Z"), now=now)
-    # Once timestamps were seen, a legacy manifest without them is also a replay.
-    with pytest.raises(UpdateError, match="older than one rvs already verified"):
-        check({"schema": 1, "channels": {}, "recommended": "v0"}, now=now)
     with pytest.raises(UpdateError, match="expired at"):
         check(
             _timed_manifest("2026-09-28T05:00:00Z", "2026-09-29T05:00:00Z"),
@@ -284,8 +283,27 @@ def test_channel_freshness_rejects_malformed_timestamps(fields: dict[str, Any]) 
         )
 
 
-def test_channel_freshness_accepts_legacy_manifest_before_any_timestamped_one() -> None:
-    portable_update_mod.check_manifest_freshness({"schema": 1, "channels": {}, "recommended": "v0"})
+def test_channel_freshness_requires_the_signed_validity_period() -> None:
+    # Nothing was accepted before, so only the missing fields can be the reason.
+    with pytest.raises(UpdateError, match=r"^the signed release-channel manifest has an invalid"):
+        portable_update_mod.check_manifest_freshness(
+            {"schema": 1, "channels": {}, "recommended": "v0"}
+        )
+
+
+def test_channel_discovery_rejects_a_manifest_without_a_validity_period(
+    httpx2_mock: Any, monkeypatch: Any
+) -> None:
+    manifest = _signed_manifest()
+    del manifest["generated_at"], manifest["expires"]
+    httpx2_mock.add_response(url=portable_update_mod.CHANNELS_URL, json=manifest)
+    httpx2_mock.add_response(url=f"{portable_update_mod.CHANNELS_URL}.gpg", content=b"signature")
+    monkeypatch.setattr(portable_update_mod, "verify_detached", lambda *_args: None)
+
+    with pytest.raises(UpdateError) as raised:
+        portable_update_mod.fetch_channel_manifest()
+
+    assert str(raised.value) == "the signed release-channel manifest has an invalid generated_at"
 
 
 def test_channel_discovery_rejects_an_expired_signed_manifest(
@@ -304,6 +322,8 @@ def _signed_manifest(**overrides: Any) -> dict[str, Any]:
     return {
         "schema": 1,
         "recommended": "v0",
+        "generated_at": "2026-09-27T05:00:00Z",
+        "expires": "2999-01-01T00:00:00Z",
         "channels": {
             "v0": {"latest": "0.15.1", "minor_targets": {"0.15": "0.15.1"}, "status": "supported"}
         },
@@ -635,6 +655,106 @@ def test_extract_release_rejects_symlink_members(tmp_path: Path) -> None:
         UpdateError, match=r"^the portable release archive contains an unsafe path$"
     ):
         extract_release(archive, tmp_path / "extracted", "0.14.4", "linux-musl-amd64")
+
+
+def test_extract_release_rejects_hard_link_members(tmp_path: Path) -> None:
+    archive = tmp_path / _ARCHIVE
+    root = "rvs-v0.14.4-linux-musl-amd64"
+    with tarfile.open(archive, "w:gz") as bundle:
+        launcher = tarfile.TarInfo(f"{root}/rvs")
+        launcher.mode = 0o755
+        launcher.size = len(b"launcher")
+        bundle.addfile(launcher, io.BytesIO(b"launcher"))
+        link = tarfile.TarInfo(f"{root}/ravenstash")
+        link.type = tarfile.LNKTYPE
+        link.linkname = f"{root}/rvs"
+        bundle.addfile(link)
+
+    with pytest.raises(
+        UpdateError, match=r"^the portable release archive contains an unsafe path$"
+    ):
+        extract_release(archive, tmp_path / "extracted", "0.14.4", "linux-musl-amd64")
+
+
+_RELEASE_TARGETS = (
+    "linux-amd64",
+    "linux-arm64",
+    "linux-musl-amd64",
+    "linux-musl-arm64",
+    "macos-amd64",
+    "macos-arm64",
+    "windows-amd64",
+    "windows-arm64",
+)
+
+
+def _staged_release(parent: Path, version: str, target: str) -> Path:
+    """Lay out one release bundle as the build scripts stage it for archiving."""
+    suffix = ".exe" if target.startswith("windows-") else ""
+    staging = parent / f"rvs-v{version}-{target}"
+    (staging / "_internal" / "rvs" / "resources").mkdir(parents=True)
+    (staging / "_internal" / "base_library.zip").write_bytes(b"library")
+    (staging / "_internal" / "rvs" / "resources" / "ravenstash-rvs.asc").write_bytes(b"key")
+    for command in ("rvs", "ravenstash", "docker-credential-rvs"):
+        launcher = staging / f"{command}{suffix}"
+        launcher.write_bytes(b"launcher")
+        launcher.chmod(0o755)
+    for document in ("README.md", "LICENSE", "NOTICE"):
+        (staging / document).write_bytes(b"document")
+    return staging
+
+
+@pytest.mark.parametrize("target", _RELEASE_TARGETS)
+def test_extract_release_accepts_every_published_archive_layout(
+    tmp_path: Path, target: str
+) -> None:
+    if target.startswith("windows-") and os.name != "nt":
+        pytest.skip("zip extraction keeps no POSIX execute bit; Windows-only archive")
+    version = "0.14.4"
+    staging = _staged_release(tmp_path / "staging", version, target)
+    suffix = ".exe" if target.startswith("windows-") else ""
+    if suffix:
+        archive = tmp_path / f"{staging.name}.zip"
+        with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED) as bundle:
+            for path in sorted(staging.rglob("*")):
+                if path.is_file():
+                    bundle.write(path, Path(staging.name) / path.relative_to(staging))
+    else:
+        archive = tmp_path / f"{staging.name}.tar.gz"
+        with tarfile.open(archive, "w:gz") as bundle:
+            bundle.add(staging, arcname=staging.name)
+
+    extracted = extract_release(archive, tmp_path / "extracted", version, target)
+
+    for command in ("rvs", "ravenstash", "docker-credential-rvs"):
+        launcher = extracted / f"{command}{suffix}"
+        assert launcher.is_file() and not launcher.is_symlink()
+        assert launcher.read_bytes() == b"launcher"
+        assert os.name == "nt" or os.access(launcher, os.X_OK)
+    assert (extracted / "_internal" / "rvs" / "resources" / "ravenstash-rvs.asc").is_file()
+
+
+@pytest.mark.parametrize("alias", ["ravenstash", "docker-credential-rvs"])
+def test_extract_release_rejects_a_bundle_whose_alias_is_a_link(tmp_path: Path, alias: str) -> None:
+    # Installed clients refuse link members, so a release must never ship one.
+    version, target = "0.14.4", "linux-amd64"
+    staging = _staged_release(tmp_path / "staging", version, target)
+    archive = tmp_path / f"{staging.name}.tar.gz"
+    with tarfile.open(archive, "w:gz") as bundle:
+        bundle.add(
+            staging,
+            arcname=staging.name,
+            filter=lambda m: None if m.name.endswith(f"/{alias}") else m,
+        )
+        link = tarfile.TarInfo(f"{staging.name}/{alias}")
+        link.type = tarfile.SYMTYPE
+        link.linkname = "rvs"
+        bundle.addfile(link)
+
+    with pytest.raises(
+        UpdateError, match=r"^the portable release archive contains an unsafe path$"
+    ):
+        extract_release(archive, tmp_path / "extracted", version, target)
 
 
 def test_extract_release_rejects_archive_for_another_target(tmp_path: Path) -> None:

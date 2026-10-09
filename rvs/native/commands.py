@@ -4,8 +4,6 @@ from typing import TYPE_CHECKING
 
 import typer
 
-from .. import output
-
 
 if TYPE_CHECKING:
     from . import runner
@@ -47,8 +45,6 @@ def _options(
 def _run(tool: runner.NativeTool, ctx: typer.Context, options: runner.NativeOptions) -> None:
     from . import runner
 
-    if any(arg == "--rvs-repo" or arg.startswith("--rvs-repo=") for arg in ctx.args):
-        output.fatal("Unknown option '--rvs-repo'. Use --rvs-target.")
     runner.run(tool, list(ctx.args), options)
 
 

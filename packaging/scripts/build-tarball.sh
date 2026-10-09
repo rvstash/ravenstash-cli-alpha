@@ -20,10 +20,17 @@ STAGING="build/release/rvs-v${VERSION}-linux-${ARCH}"
 rm -rf "$STAGING"
 mkdir -p "$STAGING"
 cp -a dist/pyinstaller/rvs/. "$STAGING/"
+# `rvs update` refuses archives with link members, so every command alias ships
+# as a regular copy of the launcher, like the other portable archives.
+for alias in ravenstash docker-credential-rvs; do
+  rm -f -- "$STAGING/$alias"
+  install -m 0755 "$STAGING/rvs" "$STAGING/$alias"
+done
 cp README.md "$STAGING/README.md"
 cp LICENSE "$STAGING/LICENSE"
 cp NOTICE "$STAGING/NOTICE"
 
+ARCHIVE="dist/release/rvs-v${VERSION}-linux-${ARCH}.tar.gz"
 mkdir -p dist/release
 tar \
   --sort=name \
@@ -32,5 +39,13 @@ tar \
   --group=0 \
   --numeric-owner \
   -C build/release \
-  -czf "dist/release/rvs-v${VERSION}-linux-${ARCH}.tar.gz" \
+  -czf "$ARCHIVE" \
   "rvs-v${VERSION}-linux-${ARCH}"
+
+members="$(tar -tvzf "$ARCHIVE")"
+if grep -q '^[^d-]' <<<"$members"; then
+  echo "error: ${ARCHIVE} contains members that are not regular files or directories:" >&2
+  grep '^[^d-]' <<<"$members" >&2
+  rm -f -- "$ARCHIVE"
+  exit 1
+fi
