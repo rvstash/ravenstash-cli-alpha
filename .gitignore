@@ -26,8 +26,10 @@ build/
 dist/
 packaging/repository/keys/ravenstash-rvs.gpg
 packaging/installer-worker/node_modules/
-packaging/installer-worker/src/install.generated.js
+packaging/installer-worker/.wrangler/
+packaging/installer-worker/src/*.generated.js
 packaging/installer-worker/src/install.sh
+packaging/installer-worker/src/install.ps1
 packaging/.installer-worker-check/
 *.egg-info/
 *.deb
@@ -45,6 +47,9 @@ packaging/.installer-worker-check/
 *.sha256
 *.sig
 *.asc
+# Pinned public keys and signed test fixtures are source, not build output.
 !packaging/repository/keys/ravenstash-rvs.asc
+!rvs/resources/ravenstash-rvs.asc
+!tests/fixtures/*.asc
 *.buildinfo
 *.changes

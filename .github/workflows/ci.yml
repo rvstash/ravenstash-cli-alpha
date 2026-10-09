@@ -42,7 +42,9 @@ jobs:
           PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
           PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
-          quality=false
+          # The test suite includes repository-wide policy checks over every
+          # tracked file, so it runs for every change regardless of its paths.
+          quality=true
           platform=false
           package=false
           policy=false
@@ -61,34 +63,28 @@ jobs:
           while IFS= read -r path; do
             case "$path" in
               __all__)
-                quality=true
                 platform=true
                 package=true
                 policy=true
                 nix=true
                 ;;
               rvs/*|tests/*)
-                quality=true
                 platform=true
                 package=true
                 ;;
               pyproject.toml|uv.lock)
-                quality=true
                 platform=true
                 package=true
                 nix=true
                 ;;
               packaging/scripts/*|packaging/pyinstaller/*|packaging/Dockerfile.ubuntu20)
-                quality=true
                 package=true
                 policy=true
                 ;;
               packaging/repository/*|packaging/install.sh|packaging/install.ps1|packaging/installer-worker/*)
-                quality=true
                 policy=true
                 ;;
               .github/*)
-                quality=true
                 policy=true
                 ;;
               flake.nix|flake.lock)
@@ -280,8 +276,8 @@ jobs:
           NIX_RESULT: ${{ needs.nix.result }}
         run: |
           test "$CHANGES_RESULT" = success
+          test "$QUALITY_RESULT" = success
           for result in \
-            "$QUALITY_RESULT" \
             "$PLATFORM_RESULT" \
             "$PACKAGE_RESULT" \
             "$POLICY_RESULT" \

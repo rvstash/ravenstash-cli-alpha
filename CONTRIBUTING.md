@@ -39,9 +39,10 @@ protected-branch commit.
 
 - A push to a feature branch with no pull request runs no repository CI.
 - Opening, reopening, updating, or marking ready a non-draft pull request to
-  `main` starts one CI run. A selector fans out only the checks
-  affected by the changed paths; independent jobs run in parallel and converge
-  on the stable `CI gate`. A new commit cancels the superseded run.
+  `main` starts one CI run. The test and lint job runs for every change,
+  because it includes repository-wide policy checks. A selector adds only the
+  other checks affected by the changed paths; independent jobs run in parallel
+  and converge on the stable `CI gate`. A new commit cancels the superseded run.
 - A fast-forward or squash landing on `main` reruns that path-aware
   CI for the exact protected-branch commit. It does not build every release
   target and never publishes anything. Release automation accepts only an exact
