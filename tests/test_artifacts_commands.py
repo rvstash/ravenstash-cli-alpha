@@ -1,4 +1,5 @@
 import json
+import re
 from typing import TYPE_CHECKING, Any
 
 import pytest
@@ -1777,7 +1778,8 @@ def test_package_tag_list_names_each_tag_source_and_marks_read_only_tags(
 
     assert result.exit_code == 0, result.output
     header = " ".join(result.stdout.split())
-    assert "Tag ┃ Version ┃ State ┃ Source ┃ Read-only ┃ Stored ┃ Revision" in header
+    # The header separator depends on the terminal: Windows draws a lighter box.
+    assert re.search(r"Tag\W+Version\W+State\W+Source\W+Read-only\W+Stored\W+Revision", header)
     assert _table_rows(result.stdout) == {
         "latest": [
             "latest",
